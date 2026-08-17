@@ -51,7 +51,15 @@ namespace GeneSys.Simulation
             Initialize();
         }
 
-        public void Initialize()
+        public void RestoreDefaultSettings()
+        {
+            config.RestoreDefaults();
+            Initialize(false);
+        }
+
+        public void Initialize() => Initialize(true);
+
+        private void Initialize(bool bindUi)
         {
             Shutdown();
             if (!SystemInfo.supportsComputeShaders)
@@ -77,7 +85,7 @@ namespace GeneSys.Simulation
             Clock.SetSpeed(config.simulationSpeed);
             if (display != null) display.Initialize(Resources, materialRegistry, config.grid);
             if (tools != null) { tools.Radius = config.brushRadius; tools.Strength = config.brushStrength; }
-            if (ui != null) ui.Initialize(this, display, tools);
+            if (bindUi && ui != null) ui.Initialize(this, display, tools);
             if (validator != null) validator.Initialize(this);
             Debug.Log($"GENESYS_INITIALIZED preset={config.preset} grid={Grid.angularResolution}x{Grid.radialResolution} targetTicks={config.ticksPerSecond:F1}", this);
         }

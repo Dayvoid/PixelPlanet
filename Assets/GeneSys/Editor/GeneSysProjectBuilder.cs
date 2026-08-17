@@ -60,6 +60,7 @@ namespace GeneSys.Editor
             panelSettings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
             panelSettings.referenceResolution = new Vector2Int(1920, 1080);
             panelSettings.match = 0.5f;
+            panelSettings.themeStyleSheet = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(Root + "/UI/GeneSysTheme.tss");
             EditorUtility.SetDirty(panelSettings);
 
             AssetDatabase.SaveAssets();

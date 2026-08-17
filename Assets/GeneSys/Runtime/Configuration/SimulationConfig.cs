@@ -1,3 +1,4 @@
+using System.Reflection;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 
@@ -67,6 +68,15 @@ namespace GeneSys.Configuration
         [Range(0.01f, 10f)] public float brushStrength = 1f;
         [Min(1)] public int validationIntervalTicks = 1000;
         [Range(0.0001f, 0.1f)] public float conservationTolerance = 0.02f;
+
+        public void RestoreDefaults()
+        {
+            SimulationConfig defaults = CreateInstance<SimulationConfig>();
+            foreach (FieldInfo field in typeof(SimulationConfig).GetFields(BindingFlags.Instance | BindingFlags.Public))
+                field.SetValue(this, field.GetValue(defaults));
+            Destroy(defaults);
+            ApplyPreset(preset);
+        }
 
         public void ApplyPreset(SimulationPreset value)
         {

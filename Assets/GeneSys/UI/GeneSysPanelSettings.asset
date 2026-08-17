@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 19101, guid: 0000000000000000e000000000000000, type: 0}
   m_Name: GeneSysPanelSettings
   m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.PanelSettings
-  themeUss: {fileID: -4733365628477956816, guid: c1cfbb6c99e02b043a8c320699ee0f86, type: 3}
+  themeUss: {fileID: -4733365628477956816, guid: b8e2d4a1c7f94e3a9b6c0d5e1f2a3b4c, type: 3}
   m_DisableNoThemeWarning: 0
   m_TargetTexture: {fileID: 0}
   m_RenderMode: 0

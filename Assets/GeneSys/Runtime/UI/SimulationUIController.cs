@@ -16,6 +16,23 @@ namespace GeneSys.UI
     [RequireComponent(typeof(UIDocument))]
     public sealed class SimulationUIController : MonoBehaviour
     {
+        private static readonly Dictionary<string, string> HeaderToTab = new()
+        {
+            { "Grid and timing", "world" },
+            { "World generation", "world" },
+            { "Material mechanics", "world" },
+            { "Geology", "geology" },
+            { "Hydrology and erosion", "hydrology" },
+            { "Solar and weather", "weather" },
+            { "Tools and validation", "performance" }
+        };
+
+        private static readonly HashSet<string> SkipSettingsFields = new()
+        {
+            nameof(SimulationConfig.brushRadius),
+            nameof(SimulationConfig.brushStrength)
+        };
+
         [SerializeField] private UIDocument document;
         [SerializeField] private SimulationValidator validator;
         private SimulationHost host;
@@ -25,8 +42,14 @@ namespace GeneSys.UI
         private Label statusLabel;
         private Label inspectLabel;
         private Button playButton;
-        private VisualElement sidePanel;
-        private VisualElement topBar;
+        private Button toolsHeader;
+        private Button settingsHeader;
+        private VisualElement clockPanel;
+        private VisualElement inspectorPanel;
+        private VisualElement toolsDrawer;
+        private VisualElement settingsDrawer;
+        private VisualElement toolsBody;
+        private VisualElement settingsBody;
         private bool initialized;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer renderer, SimulationTools simulationTools)
@@ -36,8 +59,14 @@ namespace GeneSys.UI
             tools = simulationTools;
             if (document == null) document = GetComponent<UIDocument>();
             VisualElement root = document.rootVisualElement;
-            sidePanel = root.Q("side-panel");
-            topBar = root.Q("top-bar");
+            clockPanel = root.Q("clock-panel");
+            inspectorPanel = root.Q("inspector-panel");
+            toolsDrawer = root.Q("tools-drawer");
+            settingsDrawer = root.Q("settings-drawer");
+            toolsHeader = root.Q<Button>("tools-header");
+            settingsHeader = root.Q<Button>("settings-header");
+            toolsBody = root.Q("tools-body");
+            settingsBody = root.Q("settings-body");
             statusLabel = root.Q<Label>("status");
             inspectLabel = root.Q<Label>("inspection");
             playButton = root.Q<Button>("play");
@@ -48,6 +77,7 @@ namespace GeneSys.UI
             root.Q<Button>("save")?.RegisterCallback<ClickEvent>(_ => SaveSnapshot());
             root.Q<Button>("load")?.RegisterCallback<ClickEvent>(_ => LoadSnapshot());
             root.Q<Button>("validate")?.RegisterCallback<ClickEvent>(_ => validator?.ValidateNow());
+            root.Q<Button>("restore-defaults")?.RegisterCallback<ClickEvent>(_ => RestoreDefaultSettings(root));
 
             var speed = root.Q<Slider>("speed");
             if (speed != null) { speed.value = host.Clock.Speed; speed.RegisterValueChangedCallback(evt => host.Clock.SetSpeed(evt.newValue)); }
@@ -56,13 +86,38 @@ namespace GeneSys.UI
             var strength = root.Q<Slider>("brush-strength");
             if (strength != null) { strength.value = tools.Strength; strength.RegisterValueChangedCallback(evt => tools.Strength = evt.newValue); }
 
+            SetupDrawers();
             SetupDropdowns(root);
             SetupTabs(root);
-            BuildSettings(root.Q<ScrollView>("settings-container"));
+            BuildSettings(root);
             tools.Inspected -= SetInspection;
             tools.Inspected += SetInspection;
             initialized = true;
             RefreshPlayLabel();
+        }
+
+        private void SetupDrawers()
+        {
+            toolsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(toolsHeader, toolsBody, toolsDrawer, "Tools"));
+            settingsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(settingsHeader, settingsBody, settingsDrawer, "Simulation Settings"));
+        }
+
+        private static void ToggleDrawer(Button header, VisualElement body, VisualElement drawer, string title)
+        {
+            if (header == null || body == null) return;
+            bool collapsed = body.ClassListContains("collapsed");
+            if (collapsed)
+            {
+                body.RemoveFromClassList("collapsed");
+                drawer?.RemoveFromClassList("collapsed");
+                header.text = title + " ▾";
+            }
+            else
+            {
+                body.AddToClassList("collapsed");
+                drawer?.AddToClassList("collapsed");
+                header.text = title + " ▸";
+            }
         }
 
         private void SetupDropdowns(VisualElement root)
@@ -110,27 +165,75 @@ namespace GeneSys.UI
 
         private static void SetupTabs(VisualElement root)
         {
-            string[] names = { "world", "materials", "geology", "hydrology", "weather", "performance" };
+            string[] names = { "world", "geology", "hydrology", "weather", "performance" };
+            void Show(string name)
+            {
+                foreach (string pageName in names)
+                {
+                    VisualElement page = root.Q($"page-{pageName}");
+                    if (page != null) page.style.display = pageName == name ? DisplayStyle.Flex : DisplayStyle.None;
+                    Button tab = root.Q<Button>($"tab-{pageName}");
+                    tab?.EnableInClassList("tab-button--active", pageName == name);
+                }
+            }
+
             foreach (string name in names)
             {
                 Button button = root.Q<Button>($"tab-{name}");
-                button?.RegisterCallback<ClickEvent>(_ =>
-                {
-                    foreach (string pageName in names)
-                    {
-                        VisualElement page = root.Q($"page-{pageName}");
-                        if (page != null) page.style.display = pageName == name ? DisplayStyle.Flex : DisplayStyle.None;
-                    }
-                });
+                string captured = name;
+                button?.RegisterCallback<ClickEvent>(_ => Show(captured));
+            }
+
+            Show("world");
+        }
+
+        private void RestoreDefaultSettings(VisualElement root)
+        {
+            host.RestoreDefaultSettings();
+            RefreshBoundControls(root);
+            BuildSettings(root);
+            RefreshPlayLabel();
+        }
+
+        private void RefreshBoundControls(VisualElement root)
+        {
+            var speed = root.Q<Slider>("speed");
+            if (speed != null) speed.SetValueWithoutNotify(host.Clock.Speed);
+            var radius = root.Q<SliderInt>("brush-radius");
+            if (radius != null) radius.SetValueWithoutNotify(tools.Radius);
+            var strength = root.Q<Slider>("brush-strength");
+            if (strength != null) strength.SetValueWithoutNotify(tools.Strength);
+            var preset = root.Q<DropdownField>("preset");
+            if (preset != null && preset.choices != null)
+            {
+                int index = (int)host.Config.preset;
+                if (index >= 0 && index < preset.choices.Count)
+                    preset.SetValueWithoutNotify(preset.choices[index]);
             }
         }
 
-        private void BuildSettings(ScrollView container)
+        private void BuildSettings(VisualElement root)
         {
-            if (container == null) return;
-            container.Clear();
+            var containers = new Dictionary<string, ScrollView>
+            {
+                { "world", root.Q<ScrollView>("settings-container") },
+                { "geology", root.Q<ScrollView>("settings-geology") },
+                { "hydrology", root.Q<ScrollView>("settings-hydrology") },
+                { "weather", root.Q<ScrollView>("settings-weather") },
+                { "performance", root.Q<ScrollView>("settings-performance") }
+            };
+            foreach (ScrollView container in containers.Values)
+                container?.Clear();
+
+            string currentTab = "world";
             foreach (FieldInfo field in typeof(SimulationConfig).GetFields(BindingFlags.Instance | BindingFlags.Public))
             {
+                HeaderAttribute header = field.GetCustomAttribute<HeaderAttribute>();
+                if (header != null && HeaderToTab.TryGetValue(header.header, out string tab))
+                    currentTab = tab;
+                if (SkipSettingsFields.Contains(field.Name)) continue;
+                if (!containers.TryGetValue(currentTab, out ScrollView container) || container == null) continue;
+
                 if (field.FieldType == typeof(float))
                 {
                     var control = new FloatField(Humanize(field.Name)) { value = (float)field.GetValue(host.Config) };
@@ -197,7 +300,15 @@ namespace GeneSys.UI
         {
             if (document == null || document.rootVisualElement.panel == null) return false;
             Vector2 panelPoint = RuntimePanelUtils.ScreenToPanel(document.rootVisualElement.panel, screenPosition);
-            return (sidePanel != null && sidePanel.worldBound.Contains(panelPoint)) || (topBar != null && topBar.worldBound.Contains(panelPoint));
+            return Contains(clockPanel, panelPoint)
+                || Contains(inspectorPanel, panelPoint)
+                || Contains(toolsDrawer, panelPoint)
+                || Contains(settingsDrawer, panelPoint);
+        }
+
+        private static bool Contains(VisualElement element, Vector2 panelPoint)
+        {
+            return element != null && element.worldBound.Contains(panelPoint);
         }
 
         private void SetInspection(CellInspection inspection)
