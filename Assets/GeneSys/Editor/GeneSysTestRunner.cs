@@ -1,0 +1,68 @@
+using UnityEditor;
+using UnityEditor.TestTools.TestRunner.Api;
+using UnityEngine;
+using System.IO;
+
+namespace GeneSys.Editor
+{
+    public static class GeneSysTestRunner
+    {
+        [MenuItem("Tools/GeneSys/Run EditMode Tests")]
+        public static void RunEditMode()
+        {
+            GeneSysTestObserver.Run(TestMode.EditMode);
+        }
+
+        [MenuItem("Tools/GeneSys/Run PlayMode Tests")]
+        public static void RunPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode);
+        }
+    }
+
+    [InitializeOnLoad]
+    internal static class GeneSysTestObserver
+    {
+        private static readonly string ResultPath = Path.GetFullPath(Path.Combine(Application.dataPath, "../Library/GeneSysTestResults.log"));
+        private static TestRunnerApi api;
+        private static Callback callback;
+
+        static GeneSysTestObserver()
+        {
+            EditorApplication.delayCall += EnsureRegistered;
+        }
+
+        private static void EnsureRegistered()
+        {
+            if (api != null) return;
+            api = ScriptableObject.CreateInstance<TestRunnerApi>();
+            callback = new Callback();
+            api.RegisterCallbacks(callback, 100);
+        }
+
+        public static void Run(TestMode mode)
+        {
+            EnsureRegistered();
+            File.AppendAllText(ResultPath, $"START {mode} {System.DateTime.UtcNow:O}\n");
+            api.Execute(new ExecutionSettings(new Filter { testMode = mode }));
+        }
+
+        private sealed class Callback : ICallbacks
+        {
+            public void RunStarted(ITestAdaptor testsToRun) { }
+            public void TestStarted(ITestAdaptor test) { }
+            public void TestFinished(ITestResultAdaptor result)
+            {
+                if (result.TestStatus == TestStatus.Failed)
+                    File.AppendAllText(ResultPath, $"FAIL {result.FullName} :: {result.Message}\n{result.StackTrace}\n");
+            }
+
+            public void RunFinished(ITestResultAdaptor result)
+            {
+                File.AppendAllText(ResultPath,
+                    $"FINISH status={result.TestStatus} pass={result.PassCount} fail={result.FailCount} skip={result.SkipCount} duration={result.Duration:F3}\n");
+                Debug.Log($"GENESYS_TESTS_FINISHED status={result.TestStatus} pass={result.PassCount} fail={result.FailCount}");
+            }
+        }
+    }
+}

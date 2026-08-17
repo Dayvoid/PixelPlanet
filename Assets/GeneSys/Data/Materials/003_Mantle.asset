@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 003_Mantle
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 3
+  displayName: Mantle
+  category: 4
+  displayColor: {r: 0.72, g: 0.08, b: 0.02, a: 1}
+  density: 4.5
+  rigidity: 0.8
+  angleOfRepose: 60
+  grainSize: 3
+  buoyancyBias: 0
+  thermalConductivity: 0.5
+  heatCapacity: 1.8
+  electricalConductivity: 0.3
+  absorbency: 0.02
+  porosity: 0.05
+  meltingTemperature: 850
+  boilingTemperature: 2600
+  thermalExpansion: 0.03
+  electricalExpansion: 0.01
+  solidPhaseId: 3
+  liquidPhaseId: 6
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0
+  bioModifiable: 0

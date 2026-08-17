@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 011_Vapor
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 11
+  displayName: Vapor
+  category: 1
+  displayColor: {r: 0.75, g: 0.82, b: 0.9, a: 1}
+  density: 0.0006
+  rigidity: 0
+  angleOfRepose: 0
+  grainSize: 1
+  buoyancyBias: 1
+  thermalConductivity: 0.025
+  heatCapacity: 1.9
+  electricalConductivity: 0
+  absorbency: 0
+  porosity: 0
+  meltingTemperature: 0
+  boilingTemperature: 100
+  thermalExpansion: 0.05
+  electricalExpansion: 0
+  solidPhaseId: 10
+  liquidPhaseId: 9
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0
+  bioModifiable: 0

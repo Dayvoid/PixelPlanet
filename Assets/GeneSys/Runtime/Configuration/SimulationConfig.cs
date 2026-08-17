@@ -1,0 +1,90 @@
+using GeneSys.Simulation.Topology;
+using UnityEngine;
+
+namespace GeneSys.Configuration
+{
+    public enum SimulationPreset { Validation, Standard, Stress }
+
+    [CreateAssetMenu(menuName = "GeneSys/Simulation Config", fileName = "SimulationConfig")]
+    public sealed class SimulationConfig : ScriptableObject
+    {
+        [Header("Grid and timing")]
+        public SimulationPreset preset = SimulationPreset.Validation;
+        public PolarGridDefinition grid = PolarGridDefinition.Validation;
+        [Min(1f)] public float ticksPerSecond = 20f;
+        [Range(0.05f, 16f)] public float simulationSpeed = 1f;
+        [Range(1, 8)] public int materialSubsteps = 1;
+        [Range(1, 32)] public int slowPassInterval = 4;
+        public int seed = 12345;
+
+        [Header("World generation")]
+        [Range(0.05f, 0.5f)] public float coreRatio = 0.24f;
+        [Range(0.05f, 0.6f)] public float mantleRatio = 0.42f;
+        [Range(0.01f, 0.25f)] public float crustRatio = 0.13f;
+        [Range(0.001f, 0.1f)] public float soilRatio = 0.025f;
+        [Range(0f, 0.2f)] public float borderNoise = 0.035f;
+        [Range(0f, 1f)] public float protrusionChance = 0.12f;
+        [Range(0f, 1f)] public float initialWaterTable = 0.55f;
+        [Range(0, 64)] public int faultCount = 12;
+
+        [Header("Material mechanics")]
+        [Range(0f, 5f)] public float gravityStrength = 1f;
+        [Range(0f, 4f)] public float thermalRate = 0.35f;
+        [Range(0f, 4f)] public float electricalRate = 0.3f;
+        [Range(0f, 4f)] public float pressureRate = 0.4f;
+        [Range(0f, 1f)] public float phaseHysteresis = 0.02f;
+
+        [Header("Geology")]
+        [Range(0f, 4f)] public float mantlePressure = 0.7f;
+        [Range(0f, 4f)] public float fractureRate = 0.2f;
+        [Range(0f, 4f)] public float extrusionRate = 0.3f;
+        [Range(0f, 2f)] public float volcanicCooling = 0.15f;
+        [Range(0f, 2f)] public float magmaViscosity = 0.5f;
+
+        [Header("Hydrology and erosion")]
+        [Range(0f, 4f)] public float infiltrationRate = 0.3f;
+        [Range(0f, 4f)] public float groundwaterRate = 0.18f;
+        [Range(0f, 2f)] public float dissolutionRate = 0.03f;
+        [Range(0f, 2f)] public float collapseRate = 0.03f;
+        [Range(0f, 2f)] public float erosionRate = 0.06f;
+        [Range(0f, 2f)] public float depositionRate = 0.08f;
+        [Range(0f, 2f)] public float baseSoilCohesion = 0.45f;
+
+        [Header("Solar and weather")]
+        [Min(1f)] public float dayLengthSeconds = 180f;
+        [Range(0f, 4f)] public float solarIntensity = 0.8f;
+        [Range(-100f, 100f)] public float spaceTemperature = -25f;
+        [Range(0f, 4f)] public float radiativeCooling = 0.2f;
+        [Range(0f, 4f)] public float windStrength = 0.35f;
+        [Range(0f, 1f)] public float windDamping = 0.04f;
+        [Range(0f, 4f)] public float evaporationRate = 0.1f;
+        [Range(0f, 4f)] public float condensationRate = 0.12f;
+        [Range(0f, 4f)] public float precipitationRate = 0.2f;
+        [Range(0f, 4f)] public float vaporPressureScale = 0.25f;
+
+        [Header("Tools and validation")]
+        [Range(1, 64)] public int brushRadius = 5;
+        [Range(0.01f, 10f)] public float brushStrength = 1f;
+        [Min(1)] public int validationIntervalTicks = 1000;
+        [Range(0.0001f, 0.1f)] public float conservationTolerance = 0.02f;
+
+        public void ApplyPreset(SimulationPreset value)
+        {
+            preset = value;
+            grid = value switch
+            {
+                SimulationPreset.Standard => PolarGridDefinition.Standard,
+                SimulationPreset.Stress => PolarGridDefinition.Stress,
+                _ => PolarGridDefinition.Validation
+            };
+            grid.Validate();
+        }
+
+        private void OnValidate()
+        {
+            grid.Validate();
+            ticksPerSecond = Mathf.Max(1f, ticksPerSecond);
+            dayLengthSeconds = Mathf.Max(1f, dayLengthSeconds);
+        }
+    }
+}

@@ -1,0 +1,129 @@
+#pragma kernel Groundwater
+#pragma kernel ErosionAndCollapse
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _Mechanics;
+float4 _Geology;
+float4 _Hydrology;
+float4 _Erosion;
+float4 _WeatherA;
+float4 _WeatherB;
+float4 _WeatherC;
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
+{
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void Groundwater(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = _FlowRead.Load(int3(cell, 0));
+    float4 aux = A(cell);
+    MaterialGpuData definition = D(material);
+    float porosity = saturate(definition.biology.z);
+    float absorbency = saturate(definition.transport.w);
+
+    float infiltration = min(state.z, absorbency * porosity * _Hydrology.x * _DeltaTime);
+    state.z -= infiltration;
+    aux.y += infiltration;
+
+    float neighbors = A(cell + int2(-1, 0)).y + A(cell + int2(1, 0)).y
+        + A(cell + int2(0, -1)).y + A(cell + int2(0, 1)).y;
+    float groundwaterDelta = (neighbors * 0.25 - aux.y) * porosity * _Hydrology.y * _DeltaTime;
+    aux.y = max(0.0, aux.y + clamp(groundwaterDelta, -0.05, 0.05));
+
+    uint above = M(cell + int2(0, 1));
+    bool exposed = D(above).metadata.x <= 1.0;
+    if (exposed && aux.y > 0.7)
+    {
+        float seep = min(aux.y - 0.7, _Hydrology.y * _DeltaTime);
+        aux.y -= seep;
+        state.z += seep;
+    }
+
+    float leftWater = S(cell + int2(-1, 0)).z;
+    float rightWater = S(cell + int2(1, 0)).z;
+    flow.x += (leftWater - rightWater) * 0.25 * _DeltaTime;
+    flow.y -= state.z * _Mechanics.x * 0.1 * _DeltaTime;
+    Write(cell, material, state, flow, aux);
+}
+
+[numthreads(8, 8, 1)]
+void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = _FlowRead.Load(int3(cell, 0));
+    float4 aux = A(cell);
+    MaterialGpuData definition = D(material);
+    float flowEnergy = length(flow) + state.z;
+    float bioModifier = saturate(aux.z);
+    float cohesion = saturate(_Erosion.z + definition.physical.y - bioModifier * 0.25);
+
+    if ((material == 4u || material == 5u) && aux.y > 0.55 && definition.metadata.z > 0.5)
+    {
+        float carve = _Hydrology.z * aux.y * (1.0 - cohesion) * _DeltaTime;
+        aux.w += carve;
+        if (aux.w > 1.25)
+        {
+            material = 8u;
+            aux.w = 0.0;
+            state.z += aux.y * 0.2;
+            aux.y *= 0.8;
+        }
+    }
+
+    if ((material == 7u || material == 4u) && flowEnergy > cohesion + 0.25)
+    {
+        float erode = _Erosion.x * flowEnergy * _DeltaTime;
+        aux.w += erode;
+        if (aux.w > 1.0)
+        {
+            material = 8u;
+            aux.w = 0.0;
+        }
+    }
+    else if (material == 8u && flowEnergy < _Erosion.y)
+    {
+        material = 7u;
+        flow *= 0.5;
+    }
+
+    uint below = M(cell + int2(0, -1));
+    if ((material == 4u || material == 7u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
+        material = 8u;
+
+    Write(cell, material, state, flow, aux);
+}

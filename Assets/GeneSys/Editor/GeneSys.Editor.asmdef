@@ -1,0 +1,19 @@
+{
+    "name": "GeneSys.Editor",
+    "rootNamespace": "GeneSys.Editor",
+    "references": [
+        "GeneSys.Runtime",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

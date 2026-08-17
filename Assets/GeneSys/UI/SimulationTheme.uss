@@ -1,0 +1,103 @@
+.root {
+    flex-grow: 1;
+    color: rgb(220, 229, 235);
+    font-size: 12px;
+}
+
+.top-bar {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    height: 44px;
+    flex-direction: row;
+    align-items: center;
+    padding-left: 8px;
+    padding-right: 8px;
+    background-color: rgba(12, 18, 23, 0.93);
+    border-radius: 5px;
+}
+
+.top-bar > * {
+    margin-right: 6px;
+}
+
+.top-bar .unity-base-field {
+    min-width: 145px;
+}
+
+.top-bar .unity-base-slider {
+    min-width: 190px;
+}
+
+.status {
+    flex-grow: 1;
+    -unity-text-align: middle-right;
+    color: rgb(132, 207, 187);
+}
+
+.side-panel {
+    position: absolute;
+    top: 60px;
+    left: 8px;
+    bottom: 8px;
+    width: 350px;
+    padding: 8px;
+    background-color: rgba(12, 18, 23, 0.93);
+    border-radius: 5px;
+}
+
+.tab-row {
+    flex-direction: row;
+    margin-bottom: 6px;
+}
+
+.tab-row > .unity-button {
+    flex-grow: 1;
+    min-width: 45px;
+    padding-left: 3px;
+    padding-right: 3px;
+}
+
+.settings-page {
+    flex-grow: 1;
+    min-height: 180px;
+}
+
+.settings-page.hidden {
+    display: none;
+}
+
+.section-title {
+    -unity-font-style: bold;
+    font-size: 13px;
+    margin-top: 4px;
+    margin-bottom: 6px;
+    color: rgb(126, 214, 191);
+}
+
+.settings-scroll {
+    flex-grow: 1;
+}
+
+.settings-scroll .unity-base-field {
+    margin-bottom: 2px;
+}
+
+.help {
+    white-space: normal;
+    color: rgb(162, 176, 185);
+    margin-top: 8px;
+}
+
+.inspector-title {
+    margin-top: 10px;
+}
+
+.inspection {
+    min-height: 112px;
+    padding: 6px;
+    white-space: normal;
+    background-color: rgba(2, 6, 8, 0.6);
+    border-radius: 3px;
+}

@@ -1,0 +1,67 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:Style src="SimulationTheme.uss" />
+    <ui:VisualElement name="root" class="root">
+        <ui:VisualElement name="top-bar" class="top-bar">
+            <ui:Button name="play" text="Pause" />
+            <ui:Button name="step" text="Step" />
+            <ui:Button name="regenerate" text="Regenerate" />
+            <ui:DropdownField name="preset" label="Preset" />
+            <ui:Slider name="speed" label="Speed" low-value="0.05" high-value="8" show-input-field="true" />
+            <ui:DropdownField name="overlay" label="Overlay" />
+            <ui:Label name="status" text="Initializing GeneSys..." class="status" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="side-panel" class="side-panel">
+            <ui:VisualElement class="tab-row">
+                <ui:Button name="tab-world" text="World" />
+                <ui:Button name="tab-materials" text="Matter" />
+                <ui:Button name="tab-geology" text="Geo" />
+                <ui:Button name="tab-hydrology" text="Water" />
+                <ui:Button name="tab-weather" text="Weather" />
+                <ui:Button name="tab-performance" text="Perf" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="page-world" class="settings-page">
+                <ui:Label text="Simulation Settings" class="section-title" />
+                <ui:ScrollView name="settings-container" class="settings-scroll" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="page-materials" class="settings-page hidden">
+                <ui:Label text="Brush and Material Tools" class="section-title" />
+                <ui:DropdownField name="brush-mode" label="Brush Mode" />
+                <ui:DropdownField name="material" label="Material" />
+                <ui:SliderInt name="brush-radius" label="Radius" low-value="1" high-value="64" show-input-field="true" />
+                <ui:Slider name="brush-strength" label="Strength" low-value="0.01" high-value="10" show-input-field="true" />
+                <ui:Label text="Selected Material Properties" class="section-title" />
+                <ui:ScrollView name="material-settings" class="settings-scroll" />
+                <ui:Label text="Left drag paints. Right click inspects. Middle drag pans. Mouse wheel zooms. Q/E rotates." class="help" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="page-geology" class="settings-page hidden">
+                <ui:Label text="Geology Diagnostics" class="section-title" />
+                <ui:Label text="Select Fault/Stress or Pressure overlays to tune faults, extrusion, magma pressure, viscosity, and cooling." class="help" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="page-hydrology" class="settings-page hidden">
+                <ui:Label text="Hydrology Diagnostics" class="section-title" />
+                <ui:Label text="Moisture, groundwater, chemical/bio, and flow overlays expose infiltration, aquifers, caves, erosion, and deposition." class="help" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="page-weather" class="settings-page hidden">
+                <ui:Label text="Weather Diagnostics" class="section-title" />
+                <ui:Label text="Temperature, pressure, wind, and vapor overlays show orbital heating and the complete water cycle." class="help" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="page-performance" class="settings-page hidden">
+                <ui:Label text="Validation and Persistence" class="section-title" />
+                <ui:Button name="validate" text="Validate GPU Fields" />
+                <ui:Button name="save" text="Save Snapshot" />
+                <ui:Button name="load" text="Load Snapshot" />
+                <ui:Label text="Validation checks finite values and tracked water conservation. Use the Validation preset for fast iteration." class="help" />
+            </ui:VisualElement>
+
+            <ui:Label text="Inspector (right click)" class="section-title inspector-title" />
+            <ui:Label name="inspection" text="No cell selected." class="inspection" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

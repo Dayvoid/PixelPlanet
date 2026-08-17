@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 000_Void
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 0
+  displayName: Void
+  category: 0
+  displayColor: {r: 0, g: 0, b: 0, a: 0}
+  density: 0
+  rigidity: 0
+  angleOfRepose: 0
+  grainSize: 1
+  buoyancyBias: 0
+  thermalConductivity: 0.01
+  heatCapacity: 0.01
+  electricalConductivity: 0
+  absorbency: 0
+  porosity: 0
+  meltingTemperature: -273
+  boilingTemperature: 10000
+  thermalExpansion: 0
+  electricalExpansion: 0
+  solidPhaseId: 0
+  liquidPhaseId: 0
+  gasPhaseId: 0
+  toxicity: 0
+  caloricContent: 0
+  bioModifiable: 0

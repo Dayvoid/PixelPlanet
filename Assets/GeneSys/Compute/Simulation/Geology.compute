@@ -1,0 +1,86 @@
+#pragma kernel Volcanism
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _Mechanics;
+float4 _Geology;
+float4 _Hydrology;
+float4 _Erosion;
+float4 _WeatherA;
+float4 _WeatherB;
+float4 _WeatherC;
+
+int2 Cell(int2 value) { return ClampCell(value, _GridSize); }
+
+[numthreads(8, 8, 1)]
+void Volcanism(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = _MaterialRead.Load(int3(cell, 0));
+    float4 state = _StateRead.Load(int3(cell, 0));
+    float2 flow = _FlowRead.Load(int3(cell, 0));
+    float4 aux = _AuxRead.Load(int3(cell, 0));
+    float radius = Radius01(cell.y, _GridSize.y);
+
+    bool mantle = material == 3u;
+    bool magma = material == 6u;
+    bool crust = material == 4u || material == 5u || material == 7u || material == 8u;
+    float fault = saturate(aux.w);
+
+    if (mantle || magma)
+        state.y += _Geology.x * (1.0 - radius) * _DeltaTime;
+
+    float pressureAbove = _StateRead.Load(int3(Cell(cell + int2(0, 1)), 0)).y;
+    float pressureGradient = max(0.0, state.y - pressureAbove);
+    aux.w = saturate(fault + pressureGradient * _Geology.y * _DeltaTime);
+
+    if (mantle && fault > 0.45 && state.y > 0.35)
+    {
+        material = 6u;
+        state.x = max(state.x, 950.0);
+        state.y = max(0.0, state.y - _Geology.z * _DeltaTime);
+        flow.y += _Geology.z * (1.0 - _WeatherC.w * 0.35) * _DeltaTime;
+    }
+    else if (crust && fault > 0.65 && pressureGradient > 0.25)
+    {
+        uint below = _MaterialRead.Load(int3(Cell(cell + int2(0, -1)), 0));
+        if (below == 6u || below == 3u)
+        {
+            material = 6u;
+            state.x = max(state.x, 900.0);
+            state.y += _Geology.z * 0.25;
+        }
+    }
+
+    if (magma)
+    {
+        state.x -= _Geology.w * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
+        if (state.x < 780.0)
+        {
+            material = 5u;
+            state.y *= 0.5;
+            flow *= 0.25;
+        }
+    }
+
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+}

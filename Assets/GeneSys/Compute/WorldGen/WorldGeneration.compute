@@ -1,0 +1,82 @@
+#pragma kernel GenerateWorld
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+RWTexture2D<uint> _MaterialWrite;
+RWTexture2D<float4> _StateWrite;
+RWTexture2D<float2> _FlowWrite;
+RWTexture2D<float4> _AuxWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Seed;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _LayerRatios;
+float4 _WorldGenParams;
+
+uint Hash(uint value)
+{
+    value ^= value >> 16;
+    value *= 0x7feb352d;
+    value ^= value >> 15;
+    value *= 0x846ca68b;
+    value ^= value >> 16;
+    return value;
+}
+
+float Hash01(uint value)
+{
+    return (Hash(value) & 0x00ffffff) / 16777215.0;
+}
+
+float AngularNoise(uint theta, uint salt)
+{
+    uint coarse = theta / 8;
+    uint next = coarse + 1;
+    float t = (theta % 8) / 8.0;
+    t = t * t * (3.0 - 2.0 * t);
+    float a = Hash01(coarse + (uint)_Seed * 7919 + salt);
+    float b = Hash01(next + (uint)_Seed * 7919 + salt);
+    return lerp(a, b, t) * 2.0 - 1.0;
+}
+
+[numthreads(8, 8, 1)]
+void GenerateWorld(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+
+    float radius = Radius01(id.y, _GridSize.y);
+    float noise = AngularNoise(id.x, 17) * _WorldGenParams.x;
+    float protrusionNoise = AngularNoise(id.x, 103);
+    float protrusion = protrusionNoise > (1.0 - _WorldGenParams.y) ? _WorldGenParams.x * 2.0 : 0.0;
+
+    float coreEdge = _LayerRatios.x + noise * 0.65;
+    float mantleEdge = coreEdge + _LayerRatios.y + noise;
+    float crustEdge = mantleEdge + _LayerRatios.z + noise * 0.4 + protrusion;
+    float soilEdge = min(_AtmosphereStartRadius, crustEdge + _LayerRatios.w + max(0.0, noise * 0.25));
+
+    uint material = 0;
+    if (radius < coreEdge) material = 2;
+    else if (radius < mantleEdge) material = 3;
+    else if (radius < crustEdge) material = 4;
+    else if (radius < soilEdge) material = 7;
+    else material = 1;
+
+    float faultCount = max(1.0, _WorldGenParams.w);
+    float angular = (id.x + 0.5) / _GridSize.x;
+    float faultWave = abs(frac(angular * faultCount + AngularNoise(id.y, 509) * 0.15) - 0.5);
+    float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, soilEdge);
+
+    float temperature = lerp(1500.0, 15.0, saturate(radius));
+    float pressure = saturate((soilEdge - radius) * 8.0) * 2.0;
+    float surfaceWater = 0.0;
+    float groundwater = 0.0;
+    if ((material == 4 || material == 7) && radius > mantleEdge && radius < lerp(mantleEdge, soilEdge, _WorldGenParams.z))
+        groundwater = saturate(Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed) * 0.8 + 0.2);
+
+    _MaterialWrite[id.xy] = material;
+    _StateWrite[id.xy] = float4(temperature, pressure, surfaceWater, 0.0);
+    _FlowWrite[id.xy] = 0.0;
+    _AuxWrite[id.xy] = float4(0.0, groundwater, 0.0, fault);
+}

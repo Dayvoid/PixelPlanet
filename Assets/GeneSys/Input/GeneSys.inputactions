@@ -1,0 +1,37 @@
+{
+    "name": "GeneSys",
+    "maps": [
+        {
+            "name": "Sandbox",
+            "id": "2cf67383-fb9c-44e4-a862-a117f78c9bf6",
+            "actions": [
+                { "name": "Point", "type": "PassThrough", "id": "a01d6c8e-a1fd-48ac-8adb-469b33db6d77", "expectedControlType": "Vector2", "processors": "", "interactions": "", "initialStateCheck": true },
+                { "name": "Paint", "type": "Button", "id": "dcfe65f7-c937-47ee-9e10-9022186040ee", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "Inspect", "type": "Button", "id": "8c9f6047-23ae-483d-bd2e-bcd85a5b0ecf", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "Pan", "type": "Button", "id": "379bc9ec-4156-4433-851b-ce60a73c0ec2", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "Zoom", "type": "PassThrough", "id": "40390351-f994-4904-9da6-059e48529756", "expectedControlType": "Vector2", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "Rotate", "type": "Value", "id": "de18dac3-e99e-4986-885b-b664687a88a0", "expectedControlType": "Axis", "processors": "", "interactions": "", "initialStateCheck": true }
+            ],
+            "bindings": [
+                { "name": "", "id": "6a83e64e-24bc-4a0c-b834-e4c7e0229993", "path": "<Mouse>/position", "interactions": "", "processors": "", "groups": "Keyboard&Mouse", "action": "Point", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "e9b5cb51-7c17-4694-9f05-c52d86689234", "path": "<Mouse>/leftButton", "interactions": "", "processors": "", "groups": "Keyboard&Mouse", "action": "Paint", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "7a1a9525-a90e-49c5-9466-d8d5ba4096da", "path": "<Mouse>/rightButton", "interactions": "", "processors": "", "groups": "Keyboard&Mouse", "action": "Inspect", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "62a1d4d4-cd03-4dd1-b21e-226a0f5cf804", "path": "<Mouse>/middleButton", "interactions": "", "processors": "", "groups": "Keyboard&Mouse", "action": "Pan", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "48785742-57ac-44b6-a4e4-5f9971dc290a", "path": "<Mouse>/scroll", "interactions": "", "processors": "", "groups": "Keyboard&Mouse", "action": "Zoom", "isComposite": false, "isPartOfComposite": false },
+                { "name": "QE", "id": "573e0de7-266f-4caa-aac9-07b198a127fd", "path": "1DAxis", "interactions": "", "processors": "", "groups": "", "action": "Rotate", "isComposite": true, "isPartOfComposite": false },
+                { "name": "negative", "id": "580eaa7d-d6b5-46f6-a8bb-cd3db69a3c62", "path": "<Keyboard>/e", "interactions": "", "processors": "", "groups": "Keyboard&Mouse", "action": "Rotate", "isComposite": false, "isPartOfComposite": true },
+                { "name": "positive", "id": "aeb930ed-a59c-48e9-af11-a2c277b84bc9", "path": "<Keyboard>/q", "interactions": "", "processors": "", "groups": "Keyboard&Mouse", "action": "Rotate", "isComposite": false, "isPartOfComposite": true }
+            ]
+        }
+    ],
+    "controlSchemes": [
+        {
+            "name": "Keyboard&Mouse",
+            "bindingGroup": "Keyboard&Mouse",
+            "devices": [
+                { "devicePath": "<Keyboard>", "isOptional": false, "isOR": false },
+                { "devicePath": "<Mouse>", "isOptional": false, "isOR": false }
+            ]
+        }
+    ]
+}

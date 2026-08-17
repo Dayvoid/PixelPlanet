@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 004_Rock
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 4
+  displayName: Rock
+  category: 4
+  displayColor: {r: 0.24, g: 0.25, b: 0.28, a: 1}
+  density: 3
+  rigidity: 0.95
+  angleOfRepose: 55
+  grainSize: 2
+  buoyancyBias: 0
+  thermalConductivity: 0.25
+  heatCapacity: 1.5
+  electricalConductivity: 0.15
+  absorbency: 0.08
+  porosity: 0.08
+  meltingTemperature: 900
+  boilingTemperature: 2400
+  thermalExpansion: 0.01
+  electricalExpansion: 0.005
+  solidPhaseId: 4
+  liquidPhaseId: 6
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0
+  bioModifiable: 1
