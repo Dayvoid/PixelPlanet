@@ -8,9 +8,8 @@ namespace GeneSys.Configuration
     public enum SimulationPreset { Validation, Standard, Stress }
 
     /// <summary>
-    /// Canonical water mass lives in the Water texture (liquid, groundwater, ice, vapor).
-    /// state.y is dynamic overpressure; hydrostatic pressure is a derived column field.
-    /// Material IDs 9/10/11 are presentation/host state only.
+    /// Canonical water mass contract: state.z = surface liquid/ice mass, aux.x = vapor, aux.y = groundwater.
+    /// Material IDs describe phase/appearance only; every transfer subtracts from one reservoir before adding to another.
     /// </summary>
     [CreateAssetMenu(menuName = "GeneSys/Simulation Config", fileName = "SimulationConfig")]
     public sealed class SimulationConfig : ScriptableObject
@@ -50,23 +49,15 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float electricalRate = 0.3f;
         [Range(0f, 4f)] public float pressureRate = 0.4f;
         [Range(0f, 1f)] public float phaseHysteresis = 0.02f;
-        [Range(0f, 2f)] public float atmosphericPressure = 0.12f;
-        [Range(0f, 4f)] public float hydrostaticGravity = 1f;
-        [Range(0f, 4f)] public float overpressureDiffusion = 0.2f;
-        [Range(0.1f, 16f)] public float maxOverpressure = 4f;
-        [Range(0f, 200f)] public float meltPressureSlope = 70f;
-        [Range(0f, 200f)] public float boilPressureSlope = 85f;
 
         [Header("Geology")]
-        [Range(0f, 4f)] public float mantlePressure = 0.35f;
-        [Range(0f, 4f)] public float fractureRate = 0.12f;
+        [Range(0f, 4f)] public float mantlePressure = 0.7f;
+        [Range(0f, 4f)] public float fractureRate = 0.2f;
         [Range(0f, 4f)] public float extrusionRate = 0.3f;
         [Range(0f, 2f)] public float volcanicCooling = 0.15f;
         [Range(0f, 2f)] public float magmaViscosity = 0.5f;
         [Range(0f, 4f)] public float hydrothermalStrength = 0.35f;
         [Range(0f, 4f)] public float ventChemicalRate = 0.12f;
-        [Range(0f, 1f)] public float faultRelaxation = 0.05f;
-        [Range(0f, 1f)] public float magmaDisplacementThreshold = 0.12f;
 
         [Header("Hydrology and erosion")]
         [Range(0f, 4f)] public float infiltrationRate = 0.3f;
@@ -83,7 +74,6 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float geyserHeatThreshold = 120f;
         [Range(0f, 4f)] public float geyserDischargeRate = 0.5f;
         [Range(0f, 8f)] public float geyserCooldownSeconds = 2.5f;
-        [Range(0f, 4f)] public float vaporTransportRate = 0.28f;
 
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;

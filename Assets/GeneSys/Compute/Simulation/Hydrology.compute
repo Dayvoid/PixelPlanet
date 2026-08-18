@@ -1,9 +1,5 @@
-#pragma kernel GroundwaterFlux
-#pragma kernel GroundwaterApply
-#pragma kernel VaporFlux
-#pragma kernel VaporApply
-#pragma kernel RunoffFlux
-#pragma kernel RunoffApply
+#pragma kernel Groundwater
+#pragma kernel RunoffAndDeposition
 #pragma kernel GeothermalDischarge
 #pragma kernel ErosionAndCollapse
 
@@ -17,11 +13,6 @@ Texture2D<float2> _FlowRead;
 RWTexture2D<float2> _FlowWrite;
 Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
-Texture2D<float4> _WaterRead;
-RWTexture2D<float4> _WaterWrite;
-RWTexture2D<float4> _Hydrostatic;
-RWTexture2D<int> _MotionIntent;
-RWTexture2D<float4> _WaterFlux;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -39,16 +30,12 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
-float4 _Phase;
-float4 _Pressure;
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
 float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
 float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
-float4 W(int2 value) { return _WaterRead.Load(int3(C(value), 0)); }
-float H(int2 value) { return _Hydrostatic[C(value)].x; }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 bool IsAtmosphereCell(int2 cell, uint material)
@@ -59,77 +46,20 @@ bool IsAtmosphereCell(int2 cell, uint material)
 
 bool IsExposedSurface(int2 cell, uint material)
 {
-    int2 above = NeighborCell(cell, int2(0, 1), _GridSize);
-    if (!InRadialBounds(above.y, _GridSize.y)) return true;
-    uint aboveMat = M(above);
-    return D(aboveMat).metadata.x <= 1.0 && material != 1u && material != 0u;
+    uint above = M(cell + int2(0, 1));
+    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u;
 }
 
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 water)
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
 {
-    state.z = 0.0;
-    aux.x = 0.0;
-    aux.y = 0.0;
     _MaterialWrite[cell] = material;
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
-    _WaterWrite[cell] = SafeFinite4(max(water, 0.0), 0.0);
-}
-
-float AcceptGround(int2 cell)
-{
-    uint material = M(cell);
-    return CanStoreGroundwater(material, D(material), A(cell).w) ? 1.0 : 0.0;
-}
-
-float AcceptVapor(int2 cell)
-{
-    uint material = M(cell);
-    MaterialGpuData definition = D(material);
-    if (IsOpenMaterial(material, definition) || IsAtmosphereCell(cell, material)) return 1.0;
-    return EffectivePermeability(definition, A(cell).w) > 0.02 ? 1.0 : 0.0;
 }
 
 [numthreads(8, 8, 1)]
-void GroundwaterFlux(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
-    int2 cell = id.xy;
-    float4 water = W(cell);
-    uint material = M(cell);
-    MaterialGpuData definition = D(material);
-    float perm = EffectivePermeability(definition, A(cell).w);
-    float4 flux = 0.0;
-    float rate = perm * _Hydrology.y * _DeltaTime;
-    float source = water.y;
-    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
-
-    [unroll]
-    for (int i = 0; i < 4; i++)
-    {
-        int2 n = NeighborCell(cell, offsets[i], _GridSize);
-        if (!InRadialBounds(n.y, _GridSize.y)) continue;
-        if (AcceptGround(n) < 0.5) continue;
-        float neighbor = W(n).y;
-        float area = CellAreaWeight(cell.y, _GridSize.y);
-        float neighborArea = CellAreaWeight(n.y, _GridSize.y);
-        float delta = source / max(0.0001, area) - neighbor / max(0.0001, neighborArea);
-        if (delta <= 0.0) continue;
-        float transfer = min(source * 0.2, delta * rate * min(area, neighborArea));
-        source -= transfer;
-        if (i == 0) flux.x += transfer;
-        else if (i == 1) flux.y += transfer;
-        else if (i == 2) flux.z += transfer;
-        else flux.w += transfer;
-    }
-
-    _WaterFlux[cell] = flux;
-    _WaterWrite[cell] = float4(water.x, max(0.0, water.y - flux.x - flux.y - flux.z - flux.w), water.z, water.w);
-}
-
-[numthreads(8, 8, 1)]
-void GroundwaterApply(uint3 id : SV_DispatchThreadID)
+void Groundwater(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
@@ -137,76 +67,44 @@ void GroundwaterApply(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
-    float4 water = _WaterWrite[cell];
     MaterialGpuData definition = D(material);
-    bool exposed = IsExposedSurface(cell, material);
-
-    int2 left = NeighborCell(cell, int2(-1, 0), _GridSize);
-    int2 right = NeighborCell(cell, int2(1, 0), _GridSize);
-    int2 below = NeighborCell(cell, int2(0, -1), _GridSize);
-    int2 above = NeighborCell(cell, int2(0, 1), _GridSize);
-    water.y += _WaterFlux[right].x + _WaterFlux[left].y;
-    if (InRadialBounds(above.y, _GridSize.y)) water.y += _WaterFlux[above].z;
-    if (InRadialBounds(below.y, _GridSize.y)) water.y += _WaterFlux[below].w;
-
     float porosity = saturate(definition.biology.z);
     float absorbency = saturate(definition.transport.w);
-    if (exposed && water.x > 0.01 && porosity > 0.05 && CanStoreGroundwater(material, definition, aux.w))
+    bool exposed = IsExposedSurface(cell, material);
+
+    if (exposed && state.z > 0.01 && porosity > 0.05)
     {
-        float infiltration = min(water.x, absorbency * porosity * _Hydrology.x * _DeltaTime);
-        water.x -= infiltration;
-        water.y += infiltration;
+        float infiltration = min(state.z, absorbency * porosity * _Hydrology.x * _DeltaTime);
+        state.z -= infiltration;
+        aux.y += infiltration;
     }
 
+    float neighbors = A(cell + int2(-1, 0)).y + A(cell + int2(1, 0)).y
+        + A(cell + int2(0, -1)).y + A(cell + int2(0, 1)).y;
+    float groundwaterDelta = (neighbors * 0.25 - aux.y) * porosity * _Hydrology.y * _DeltaTime;
+    aux.y = max(0.0, aux.y + clamp(groundwaterDelta, -0.05, 0.05));
+
     float springThreshold = _HydrologyB.x;
-    float head = water.y + state.y * 0.15 + aux.w * 0.25;
-    if (exposed && head > springThreshold && water.y > 0.0)
+    float head = aux.y + state.y * 0.15 + aux.w * 0.25;
+    if (exposed && head > springThreshold)
     {
-        float discharge = min(water.y, (head - springThreshold) * _HydrologyB.y * _DeltaTime);
-        water.y -= discharge;
-        water.x += discharge;
+        float discharge = min(aux.y, (head - springThreshold) * _HydrologyB.y * _DeltaTime);
+        aux.y -= discharge;
+        state.z += discharge;
         flow.y += discharge * 0.5;
     }
 
-    flow.x += (W(left).x - W(right).x) * 0.25 * _DeltaTime;
-    WriteCell(cell, material, state, flow, aux, water);
+    float leftWater = S(cell + int2(-1, 0)).z;
+    float rightWater = S(cell + int2(1, 0)).z;
+    flow.x += (leftWater - rightWater) * 0.25 * _DeltaTime;
+    if (material == 9u || state.z > 0.05)
+        flow.y -= state.z * _Mechanics.x * 0.1 * _DeltaTime;
+
+    Write(cell, material, state, flow, aux);
 }
 
 [numthreads(8, 8, 1)]
-void VaporFlux(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
-    int2 cell = id.xy;
-    float4 water = W(cell);
-    float4 flux = 0.0;
-    float vapor = water.w;
-    float vaporRate = _HydrologyC.z * _DeltaTime;
-    float totalP = H(cell) + max(0.0, S(cell).y);
-    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
-    [unroll]
-    for (int v = 0; v < 4; v++)
-    {
-        int2 n = NeighborCell(cell, offsets[v], _GridSize);
-        if (!InRadialBounds(n.y, _GridSize.y)) continue;
-        if (AcceptVapor(n) < 0.5) continue;
-        float neighborVapor = W(n).w;
-        float neighborP = H(n) + max(0.0, S(n).y);
-        float drive = (vapor - neighborVapor) + (totalP - neighborP) * 0.05;
-        if (v == 3) drive += max(0.0, vapor) * 0.2;
-        if (drive <= 0.0) continue;
-        float transfer = min(vapor * 0.25, drive * vaporRate);
-        vapor -= transfer;
-        if (v == 0) flux.x += transfer;
-        else if (v == 1) flux.y += transfer;
-        else if (v == 2) flux.z += transfer;
-        else flux.w += transfer;
-    }
-    _WaterFlux[cell] = flux;
-    _WaterWrite[cell] = float4(water.x, water.y, water.z, max(0.0, water.w - flux.x - flux.y - flux.z - flux.w));
-}
-
-[numthreads(8, 8, 1)]
-void VaporApply(uint3 id : SV_DispatchThreadID)
+void RunoffAndDeposition(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
@@ -214,94 +112,53 @@ void VaporApply(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
-    float4 water = _WaterWrite[cell];
-    int2 left = NeighborCell(cell, int2(-1, 0), _GridSize);
-    int2 right = NeighborCell(cell, int2(1, 0), _GridSize);
-    int2 below = NeighborCell(cell, int2(0, -1), _GridSize);
-    int2 above = NeighborCell(cell, int2(0, 1), _GridSize);
-    water.w += _WaterFlux[right].x + _WaterFlux[left].y;
-    if (InRadialBounds(above.y, _GridSize.y)) water.w += _WaterFlux[above].z;
-    if (InRadialBounds(below.y, _GridSize.y)) water.w += _WaterFlux[below].w;
-    WriteCell(cell, material, state, flow, aux, water);
-}
-
-[numthreads(8, 8, 1)]
-void RunoffFlux(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
-    int2 cell = id.xy;
-    uint material = M(cell);
-    float4 water = W(cell);
-    float4 flux = 0.0;
-    bool exposed = IsExposedSurface(cell, material);
-    if (IsAtmosphereCell(cell, material) && water.x > 0.0)
-    {
-        int2 below = NeighborCell(cell, int2(0, -1), _GridSize);
-        if (InRadialBounds(below.y, _GridSize.y))
-            flux.z += min(water.x, _WeatherB.w * _DeltaTime);
-    }
-    else if (exposed && water.x > 0.02)
-    {
-        int2 below = NeighborCell(cell, int2(0, -1), _GridSize);
-        int2 left = NeighborCell(cell, int2(-1, 0), _GridSize);
-        int2 right = NeighborCell(cell, int2(1, 0), _GridSize);
-        float remaining = water.x;
-        if (InRadialBounds(below.y, _GridSize.y) && W(below).x < water.x)
-        {
-            float transfer = min(remaining * 0.35, (water.x - W(below).x) * _HydrologyC.x * _DeltaTime);
-            remaining -= transfer;
-            flux.z += transfer;
-        }
-        float lateral = (W(left).x - W(right).x) * 0.5;
-        if (lateral > 0.0)
-        {
-            float transfer = min(remaining * 0.2, lateral * _HydrologyC.x * 0.35 * _DeltaTime);
-            remaining -= transfer;
-            flux.x += transfer;
-        }
-        else if (lateral < 0.0)
-        {
-            float transfer = min(remaining * 0.2, -lateral * _HydrologyC.x * 0.35 * _DeltaTime);
-            remaining -= transfer;
-            flux.y += transfer;
-        }
-    }
-    _WaterFlux[cell] = flux;
-    _WaterWrite[cell] = float4(max(0.0, water.x - flux.x - flux.y - flux.z - flux.w), water.y, water.z, water.w);
-}
-
-[numthreads(8, 8, 1)]
-void RunoffApply(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
-    int2 cell = id.xy;
-    uint material = M(cell);
-    float4 state = S(cell);
-    float2 flow = F(cell);
-    float4 aux = A(cell);
-    float4 water = _WaterWrite[cell];
     MaterialGpuData definition = D(material);
-
-    int2 left = NeighborCell(cell, int2(-1, 0), _GridSize);
-    int2 right = NeighborCell(cell, int2(1, 0), _GridSize);
-    int2 above = NeighborCell(cell, int2(0, 1), _GridSize);
-    int2 below = NeighborCell(cell, int2(0, -1), _GridSize);
-    water.x += _WaterFlux[right].x + _WaterFlux[left].y;
-    if (InRadialBounds(above.y, _GridSize.y)) water.x += _WaterFlux[above].z;
-    if (InRadialBounds(below.y, _GridSize.y)) water.x += _WaterFlux[below].w;
-
-    if ((material == 7u || material == 8u) && water.x > 0.05 && definition.biology.z > 0.2)
-        water.x = max(water.x, min(water.x, _HydrologyC.y));
-
     bool atmosphere = IsAtmosphereCell(cell, material);
-    if (!atmosphere && (IsOpenMaterial(material, definition) || material == 9u || material == 10u || material == 11u))
+    bool exposed = IsExposedSurface(cell, material);
+
+    float rainFromAbove = 0.0;
+    int2 above = cell + int2(0, 1);
+    if (!atmosphere)
     {
-        if (water.z > 0.12 && water.z >= water.x) material = 10u;
-        else if (water.x > 0.15) material = 9u;
-        else if (material == 9u || material == 10u || material == 11u) material = 1u;
+        float aboveFlowY = F(above).y;
+        if (aboveFlowY < -0.001)
+            rainFromAbove = min(-aboveFlowY * _HydrologyC.x * _DeltaTime, 1.0 - state.z);
     }
 
-    WriteCell(cell, material, state, flow, aux, water);
+    if (rainFromAbove > 0.0)
+    {
+        state.z += rainFromAbove;
+        flow.y += rainFromAbove;
+        if (material == 1u && state.z > 0.15)
+            material = state.x < 0.0 ? 10u : 9u;
+    }
+
+    if (exposed && state.z > 0.02)
+    {
+        float downhill = S(cell + int2(0, -1)).z - state.z;
+        float lateral = (S(cell + int2(-1, 0)).z - S(cell + int2(1, 0)).z) * 0.5;
+        float transfer = max(0.0, downhill) * _HydrologyC.x * _DeltaTime;
+        transfer += max(0.0, lateral) * _HydrologyC.x * 0.35 * _DeltaTime;
+        transfer = min(transfer, state.z * 0.35);
+        state.z -= transfer;
+        flow.x += lateral * _HydrologyC.x * 0.2 * _DeltaTime;
+        flow.y -= transfer * 2.0;
+    }
+
+    if ((material == 7u || material == 8u) && state.z > 0.05 && definition.biology.z > 0.2)
+    {
+        float pond = min(state.z, _HydrologyC.y * _DeltaTime * 0.25);
+        state.z = max(state.z - pond * 0.15, pond);
+    }
+
+    if (material == 9u && cell.y > 0)
+    {
+        uint belowMat = M(cell + int2(0, -1));
+        if (D(belowMat).metadata.x <= 1.0 && state.z > 0.2)
+            flow.y -= state.z * _Mechanics.x * 0.35 * _DeltaTime;
+    }
+
+    Write(cell, material, state, flow, aux);
 }
 
 [numthreads(8, 8, 1)]
@@ -313,51 +170,38 @@ void GeothermalDischarge(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
-    float4 water = W(cell);
     bool exposed = IsExposedSurface(cell, material);
-    int2 below = NeighborCell(cell, int2(0, -1), _GridSize);
-    float hotBelow = InRadialBounds(below.y, _GridSize.y) ? S(below).x : state.x;
-    uint belowMat = InRadialBounds(below.y, _GridSize.y) ? M(below) : material;
+
+    float hotBelow = S(cell + int2(0, -1)).x;
+    uint belowMat = M(cell + int2(0, -1));
     if (belowMat == 6u || belowMat == 3u) hotBelow = max(hotBelow, 850.0);
 
     float cooldownTicks = max(5.0, _HydrologyC.w * 20.0);
     float phase = frac((float)_Tick / cooldownTicks + Hash01(cell.x * 19349669u + cell.y * 83492791u + (uint)_Tick));
     bool geyserReady = phase > 0.92;
-    float totalP = H(cell) + max(0.0, state.y);
-    float boilT = PressureAdjustedBoil(100.0, totalP, _Phase.y);
-    float latent = max(0.1, D(9u).mechanics.y);
-    float heatCapacity = max(0.001, D(material).transport.y);
 
-    if (exposed && water.y > _HydrologyB.x && hotBelow > _HydrologyB.z && aux.w > 0.35 && geyserReady)
+    if (exposed && aux.y > _HydrologyB.x && hotBelow > _HydrologyB.z && aux.w > 0.35 && geyserReady)
     {
-        float energy = min(hotBelow, 40.0) * _DeltaTime;
-        float burst = min(water.y, min(_HydrologyB.w * _DeltaTime * 3.0, energy / latent));
-        water.y -= burst;
-        water.x += burst * 0.65;
-        water.w += burst * 0.35;
-        state.x += burst * 8.0;
-        state.y = min(_Pressure.w, state.y + burst * 0.4);
+        float burst = min(aux.y, _HydrologyB.w * _DeltaTime * 3.0);
+        aux.y -= burst;
+        state.z += burst * 0.65;
+        aux.x += burst * 0.35;
+        state.x += burst * 40.0;
+        state.y += burst * 0.4;
         flow.y += burst * 4.0;
     }
 
-    if ((water.x + water.y) > 0.0 && (belowMat == 6u || belowMat == 5u) && hotBelow > boilT && aux.w > 0.15)
+    if (material == 9u && (belowMat == 6u || belowMat == 5u) && hotBelow > 200.0 && aux.w > 0.25)
     {
-        float energy = min((hotBelow - boilT) * 0.04, 12.0) * _DeltaTime * _GeologyB.x;
-        float vent = min(water.x + water.y, energy / latent);
-        float fromGround = min(water.y, vent);
-        water.y -= fromGround;
-        float fromLiquid = min(water.x, vent - fromGround);
-        water.x -= fromLiquid;
-        float moved = fromGround + fromLiquid;
-        water.w += moved;
-        state.x += moved * 6.0;
-        aux.z += moved * _GeologyB.y;
-        flow.y += moved * 1.5;
-        state.y = min(_Pressure.w, state.y + moved * 0.1);
-        state.x -= moved * latent / heatCapacity * 0.25;
+        float vent = min(state.z, _GeologyB.x * _DeltaTime);
+        state.x += vent * 35.0;
+        aux.x += vent * 0.15;
+        aux.z += vent * _GeologyB.y;
+        flow.y += vent * 1.5;
+        state.y += vent * 0.1;
     }
 
-    WriteCell(cell, material, state, flow, aux, water);
+    Write(cell, material, state, flow, aux);
 }
 
 [numthreads(8, 8, 1)]
@@ -369,33 +213,32 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
-    float4 water = W(cell);
     MaterialGpuData definition = D(material);
-    float flowEnergy = length(flow) + water.x;
+    float flowEnergy = length(flow) + state.z;
     float bioModifier = saturate(aux.z);
     float cohesion = saturate(_Erosion.z + definition.physical.y - bioModifier * 0.25);
 
-    if ((material == 4u || material == 5u) && water.y > 0.55 && definition.metadata.z > 0.5)
+    if ((material == 4u || material == 5u) && aux.y > 0.55 && definition.metadata.z > 0.5)
     {
-        float carve = _Hydrology.z * water.y * (1.0 - cohesion) * _DeltaTime;
-        aux.w = saturate(aux.w + carve);
-        if (aux.w > 0.98)
+        float carve = _Hydrology.z * aux.y * (1.0 - cohesion) * _DeltaTime;
+        aux.w += carve;
+        if (aux.w > 1.25)
         {
             material = 8u;
-            aux.w = 0.35;
-            water.x += water.y * 0.2;
-            water.y *= 0.8;
+            aux.w = 0.0;
+            state.z += aux.y * 0.2;
+            aux.y *= 0.8;
         }
     }
 
     if ((material == 7u || material == 4u) && flowEnergy > cohesion + 0.25)
     {
         float erode = _Erosion.x * flowEnergy * _DeltaTime;
-        aux.w = saturate(aux.w + erode);
-        if (aux.w > 0.98)
+        aux.w += erode;
+        if (aux.w > 1.0)
         {
             material = 8u;
-            aux.w = 0.2;
+            aux.w = 0.0;
         }
     }
     else if (material == 8u && flowEnergy < _Erosion.y)
@@ -404,9 +247,9 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         flow *= 0.5;
     }
 
-    int2 below = NeighborCell(cell, int2(0, -1), _GridSize);
-    if (InRadialBounds(below.y, _GridSize.y) && (material == 4u || material == 7u) && (M(below) == 0u || M(below) == 1u) && cohesion < _Hydrology.w)
+    uint below = M(cell + int2(0, -1));
+    if ((material == 4u || material == 7u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
         material = 8u;
 
-    WriteCell(cell, material, state, flow, aux, water);
+    Write(cell, material, state, flow, aux);
 }

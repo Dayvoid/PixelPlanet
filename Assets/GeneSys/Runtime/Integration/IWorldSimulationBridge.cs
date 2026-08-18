@@ -26,7 +26,6 @@ namespace GeneSys.Integration
         RenderTexture EnvironmentalField { get; }
         RenderTexture FlowField { get; }
         RenderTexture ChemicalAndGroundwaterField { get; }
-        RenderTexture WaterField { get; }
         SurfaceFrame GetSurfaceFrame(Vector2Int cell);
         void QueueFieldDeposit(Vector2Int cell, int radius, int channel, float amount);
     }

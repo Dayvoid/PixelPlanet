@@ -45,8 +45,6 @@ namespace GeneSys.Simulation
         public RenderTexture EnvironmentalField => Resources?.StateRead;
         public RenderTexture FlowField => Resources?.FlowRead;
         public RenderTexture ChemicalAndGroundwaterField => Resources?.AuxRead;
-        public RenderTexture WaterField => Resources?.WaterRead;
-        public RenderTexture HydrostaticField => Resources?.Hydrostatic;
 
         private void Start()
         {
@@ -133,27 +131,6 @@ namespace GeneSys.Simulation
         public void QueueBrush(GpuPassScheduler.BrushCommand command)
         {
             if (IsReady) scheduler.QueueBrush(command);
-        }
-
-        public void RecomputeHydrostatic()
-        {
-            if (IsReady) scheduler.RecomputeHydrostatic();
-        }
-
-        public void MigrateLegacyWater()
-        {
-            if (IsReady) scheduler.MigrateLegacyWater();
-        }
-
-        public void StepNow(int ticks = 1)
-        {
-            if (!IsReady) return;
-            float dt = 1f / Mathf.Max(1f, config.ticksPerSecond);
-            for (int i = 0; i < ticks; i++)
-            {
-                scheduler.Step(dt);
-                Clock.SetTickCount(scheduler.TickIndex);
-            }
         }
 
         public void RefreshMaterialDefinitions()

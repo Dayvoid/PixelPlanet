@@ -128,12 +128,7 @@ namespace GeneSys.UI
             var overlay = root.Q<DropdownField>("overlay");
             if (overlay != null)
             {
-                overlay.choices = new List<string>
-                {
-                    "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind",
-                    "Vapor", "Groundwater", "Chemical/Bio", "Fault/Stress", "Toxicity/Calories",
-                    "Composite Water", "Ice", "Hydrothermal"
-                };
+                overlay.choices = new List<string> { "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor", "Groundwater", "Chemical/Bio", "Fault/Stress", "Toxicity/Calories", "Composite Water" };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
             }
@@ -324,13 +319,7 @@ namespace GeneSys.UI
         {
             if (inspectLabel == null) return;
             GeneSys.Materials.MaterialDefinition definition = host.MaterialRegistry.Get((int)inspection.materialId);
-            inspectLabel.text =
-                $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\n" +
-                $"Material: {(definition != null ? definition.displayName : inspection.materialId.ToString())}\n" +
-                $"T {inspection.state.x:F2}  Ptot {inspection.hydrostatic + inspection.state.y:F3}  Pdyn {inspection.state.y:F3}\n" +
-                $"Liquid {inspection.water.x:F3}  Ground {inspection.water.y:F3}\n" +
-                $"Ice {inspection.water.z:F3}  Vapor {inspection.water.w:F3}\n" +
-                $"Chemical {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}";
+            inspectLabel.text = $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\nMaterial: {(definition != null ? definition.displayName : inspection.materialId.ToString())}\nT {inspection.state.x:F2}  P {inspection.state.y:F3}\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\nVapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\nChemical {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}";
         }
 
         private void RefreshPlayLabel()
@@ -346,8 +335,7 @@ namespace GeneSys.UI
                 if (worldMetricsLabel == null) return;
                 worldMetricsLabel.text =
                     $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
-                    $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Ice {metrics.IceMass:F1} | Vapor {metrics.VaporMass:F1}\n" +
-                    $"Mantle {metrics.MantleCells} | Magma {metrics.MagmaCells} | P↑center {metrics.PressureIncreasesInward}";
+                    $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
             });
         }
 

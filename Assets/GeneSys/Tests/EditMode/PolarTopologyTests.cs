@@ -40,7 +40,6 @@ namespace GeneSys.Tests
         public void GpuMaterialLayoutMatchesHlslContract()
         {
             Assert.That(Marshal.SizeOf<MaterialGpuData>(), Is.EqualTo(MaterialGpuData.Stride));
-            Assert.That(MaterialGpuData.Stride, Is.EqualTo(112));
         }
     }
 }

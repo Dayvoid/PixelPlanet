@@ -15,11 +15,6 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture FlowWrite { get; private set; }
         public RenderTexture AuxRead { get; private set; }
         public RenderTexture AuxWrite { get; private set; }
-        public RenderTexture WaterRead { get; private set; }
-        public RenderTexture WaterWrite { get; private set; }
-        public RenderTexture Hydrostatic { get; private set; }
-        public RenderTexture MotionIntent { get; private set; }
-        public RenderTexture WaterFlux { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -39,11 +34,6 @@ namespace GeneSys.Simulation.Gpu
             FlowWrite = CreateTexture("GeneSys Flow B", GraphicsFormat.R32G32_SFloat);
             AuxRead = CreateTexture("GeneSys Aux A", GraphicsFormat.R32G32B32A32_SFloat);
             AuxWrite = CreateTexture("GeneSys Aux B", GraphicsFormat.R32G32B32A32_SFloat);
-            WaterRead = CreateTexture("GeneSys Water A", GraphicsFormat.R32G32B32A32_SFloat);
-            WaterWrite = CreateTexture("GeneSys Water B", GraphicsFormat.R32G32B32A32_SFloat);
-            Hydrostatic = CreateTexture("GeneSys Hydrostatic", GraphicsFormat.R32G32B32A32_SFloat);
-            MotionIntent = CreateTexture("GeneSys Motion Intent", GraphicsFormat.R32_SInt);
-            WaterFlux = CreateTexture("GeneSys Water Flux", GraphicsFormat.R32G32B32A32_SFloat);
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -76,7 +66,6 @@ namespace GeneSys.Simulation.Gpu
             (StateRead, StateWrite) = (StateWrite, StateRead);
             (FlowRead, FlowWrite) = (FlowWrite, FlowRead);
             (AuxRead, AuxWrite) = (AuxWrite, AuxRead);
-            (WaterRead, WaterWrite) = (WaterWrite, WaterRead);
         }
 
         public void CopyReadToWrite()
@@ -85,7 +74,6 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(StateRead, StateWrite);
             Graphics.CopyTexture(FlowRead, FlowWrite);
             Graphics.CopyTexture(AuxRead, AuxWrite);
-            Graphics.CopyTexture(WaterRead, WaterWrite);
         }
 
         public void Dispose()
@@ -94,11 +82,8 @@ namespace GeneSys.Simulation.Gpu
             Release(StateRead); Release(StateWrite);
             Release(FlowRead); Release(FlowWrite);
             Release(AuxRead); Release(AuxWrite);
-            Release(WaterRead); Release(WaterWrite);
-            Release(Hydrostatic); Release(MotionIntent); Release(WaterFlux);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
-            WaterRead = WaterWrite = Hydrostatic = MotionIntent = WaterFlux = null;
         }
 
         private static void Release(RenderTexture texture)

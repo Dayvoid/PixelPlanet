@@ -47,21 +47,13 @@ MonoBehaviour:
   electricalRate: 0.3
   pressureRate: 0.4
   phaseHysteresis: 0.02
-  atmosphericPressure: 0.12
-  hydrostaticGravity: 1
-  overpressureDiffusion: 0.2
-  maxOverpressure: 4
-  meltPressureSlope: 70
-  boilPressureSlope: 85
-  mantlePressure: 0.35
-  fractureRate: 0.12
+  mantlePressure: 0.7
+  fractureRate: 0.2
   extrusionRate: 0.3
   volcanicCooling: 0.15
   magmaViscosity: 0.5
   hydrothermalStrength: 0.35
   ventChemicalRate: 0.12
-  faultRelaxation: 0.05
-  magmaDisplacementThreshold: 0.12
   infiltrationRate: 0.3
   groundwaterRate: 0.18
   dissolutionRate: 0.03
@@ -76,7 +68,6 @@ MonoBehaviour:
   geyserHeatThreshold: 120
   geyserDischargeRate: 0.5
   geyserCooldownSeconds: 2.5
-  vaporTransportRate: 0.28
   dayLengthSeconds: 180
   solarIntensity: 0.8
   spaceTemperature: -25

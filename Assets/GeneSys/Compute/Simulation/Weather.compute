@@ -11,11 +11,6 @@ Texture2D<float2> _FlowRead;
 RWTexture2D<float2> _FlowWrite;
 Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
-Texture2D<float4> _WaterRead;
-RWTexture2D<float4> _WaterWrite;
-RWTexture2D<float4> _Hydrostatic;
-RWTexture2D<int> _MotionIntent;
-RWTexture2D<float4> _WaterFlux;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -33,16 +28,12 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
-float4 _Phase;
-float4 _Pressure;
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
 float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
 float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
-float4 W(int2 value) { return _WaterRead.Load(int3(C(value), 0)); }
-float H(int2 value) { return _Hydrostatic[C(value)].x; }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 bool IsAtmosphereCell(int2 cell, uint material)
@@ -51,21 +42,12 @@ bool IsAtmosphereCell(int2 cell, uint material)
     return radius >= _AtmosphereStartRadius || D(material).metadata.x == 1.0;
 }
 
-float TotalP(int2 cell, float4 state)
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
 {
-    return max(0.0, H(cell)) + max(0.0, state.y);
-}
-
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 water)
-{
-    state.z = 0.0;
-    aux.x = 0.0;
-    aux.y = 0.0;
     _MaterialWrite[cell] = material;
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
-    _WaterWrite[cell] = SafeFinite4(max(water, 0.0), 0.0);
 }
 
 [numthreads(8, 8, 1)]
@@ -77,7 +59,6 @@ void SolarAndWind(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
-    float4 water = W(cell);
     MaterialGpuData definition = D(material);
     float radius = Radius01(cell.y, _GridSize.y);
 
@@ -89,16 +70,16 @@ void SolarAndWind(uint3 id : SV_DispatchThreadID)
     float cooling = (state.x - _WeatherA.y) * _WeatherA.z * (1.0 - insolation) * exposure * 0.01;
     state.x += (heating - cooling) * _DeltaTime;
 
-    float pLeft = TotalP(cell + int2(-1, 0), S(cell + int2(-1, 0)));
-    float pRight = TotalP(cell + int2(1, 0), S(cell + int2(1, 0)));
-    float pBelow = cell.y > 0 ? TotalP(cell + int2(0, -1), S(cell + int2(0, -1))) : TotalP(cell, state);
-    float pAbove = cell.y < _GridSize.y - 1 ? TotalP(cell + int2(0, 1), S(cell + int2(0, 1))) : TotalP(cell, state);
-    float2 gradient = float2(pRight - pLeft, pAbove - pBelow) * 0.5;
+    float pressureLeft = S(cell + int2(-1, 0)).y;
+    float pressureRight = S(cell + int2(1, 0)).y;
+    float pressureBelow = S(cell + int2(0, -1)).y;
+    float pressureAbove = S(cell + int2(0, 1)).y;
+    float2 gradient = float2(pressureRight - pressureLeft, pressureAbove - pressureBelow) * 0.5;
     flow -= gradient * _WeatherA.w * _DeltaTime;
     flow *= saturate(1.0 - _WeatherB.x * _DeltaTime);
-    state.y = min(_Pressure.w, max(0.0, state.y + (water.w * _WeatherC.x - state.y * 0.005) * _DeltaTime));
+    state.y += (aux.x * _WeatherC.x - state.y * 0.005) * _DeltaTime;
 
-    WriteCell(cell, material, state, flow, aux, water);
+    Write(cell, material, state, flow, aux);
 }
 
 [numthreads(8, 8, 1)]
@@ -110,33 +91,46 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
-    float4 water = W(cell);
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
-    float totalP = TotalP(cell, state);
-    float boilT = PressureAdjustedBoil(100.0, totalP, _Phase.y);
-    float latent = max(0.1, D(9u).mechanics.y);
-    float heatCapacity = max(0.001, D(material).transport.y);
 
-    if (water.x > 0.0 && state.x > 5.0 && !atmosphere)
+    if (state.z > 0.0 && state.x > 5.0 && !atmosphere)
     {
-        float evaporation = min(water.x, _WeatherB.y * saturate((state.x - 5.0) / max(8.0, boilT)) * _DeltaTime);
-        water.x -= evaporation;
-        water.w += evaporation;
-        state.x -= evaporation * latent / heatCapacity * 0.15;
-        state.y = min(_Pressure.w, state.y + evaporation * _WeatherC.x * 0.25);
+        float evaporation = min(state.z, _WeatherB.y * saturate((state.x - 5.0) / 80.0) * _DeltaTime);
+        state.z -= evaporation;
+        aux.x += evaporation;
+        state.x -= evaporation * 0.25;
     }
+    else if (material == 9u && state.x > 5.0)
+    {
+        float evaporation = min(state.z, _WeatherB.y * 0.75 * saturate((state.x - 5.0) / 80.0) * _DeltaTime);
+        state.z -= evaporation;
+        aux.x += evaporation;
+    }
+
+    int2 sourceOffset = int2(clamp((int)round(-flow.x), -1, 1), clamp((int)round(-flow.y), -1, 1));
+    float sourceVapor = A(cell + sourceOffset).x;
+    aux.x = lerp(aux.x, sourceVapor, saturate(length(flow) * 0.1 * _DeltaTime));
 
     float altitudeCooling = saturate((radius - _AtmosphereStartRadius) / max(0.01, 1.0 - _AtmosphereStartRadius)) * 25.0;
-    float dewPoint = min(boilT - 4.0, 18.0 - altitudeCooling);
-    if (atmosphere && state.x < dewPoint && water.w > 0.02)
+    float dewPoint = 18.0 - altitudeCooling;
+    if (atmosphere && state.x < dewPoint && aux.x > 0.02)
     {
-        float condensation = min(water.w, _WeatherB.z * (dewPoint - state.x + 1.0) * 0.01 * _DeltaTime);
-        water.w -= condensation;
-        water.x += condensation;
+        float condensation = min(aux.x, _WeatherB.z * (dewPoint - state.x + 1.0) * 0.01 * _DeltaTime);
+        aux.x -= condensation;
+        state.z += condensation;
         state.y = max(0.0, state.y - condensation * _WeatherC.x);
-        state.x += condensation * latent / heatCapacity * 0.1;
     }
 
-    WriteCell(cell, material, state, flow, aux, water);
+    if (state.z > 0.05 && atmosphere)
+    {
+        float rain = min(state.z, _WeatherB.w * _DeltaTime);
+        state.z -= rain;
+        flow.y -= rain * 2.0;
+    }
+
+    if (material == 9u && state.x < 0.0) material = 10u;
+    else if (material == 10u && state.x > 1.0) material = 9u;
+
+    Write(cell, material, state, flow, aux);
 }

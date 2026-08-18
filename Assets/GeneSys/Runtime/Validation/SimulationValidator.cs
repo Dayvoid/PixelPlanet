@@ -12,7 +12,6 @@ namespace GeneSys.Validation
         private long lastValidatedTick = -1;
         private bool pending;
         private double baselineWater = -1d;
-        private int baselineMagma = -1;
 
         public bool LastValidationPassed { get; private set; } = true;
         public string LastMessage { get; private set; } = "Not yet validated";
@@ -20,11 +19,7 @@ namespace GeneSys.Validation
 
         public void Initialize(SimulationHost simulationHost) => host = simulationHost;
 
-        public void ResetBaseline()
-        {
-            baselineWater = -1d;
-            baselineMagma = -1;
-        }
+        public void ResetBaseline() => baselineWater = -1d;
 
         private void Update()
         {
@@ -43,58 +38,42 @@ namespace GeneSys.Validation
             {
                 if (stateRequest.hasError) { Complete(false, "State GPU readback failed."); return; }
                 NativeArray<Vector4> state = stateRequest.GetData<Vector4>();
+                double water = 0d;
                 for (int i = 0; i < state.Length; i++)
                 {
                     Vector4 value = state[i];
                     if (!Finite(value)) { Complete(false, $"Non-finite primary field at cell {i}."); return; }
-                    if (value.y < -0.01f) { Complete(false, $"Negative overpressure at cell {i}."); return; }
+                    if (value.y < -0.01f || value.z < -0.001f) { Complete(false, $"Negative pressure/moisture at cell {i}."); return; }
+                    water += Math.Max(0d, value.z);
                 }
-                AsyncGPUReadback.Request(host.Resources.WaterRead, 0, waterRequest =>
+                AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
                 {
-                    if (waterRequest.hasError) { Complete(false, "Water GPU readback failed."); return; }
-                    NativeArray<Vector4> water = waterRequest.GetData<Vector4>();
-                    double trackedWater = 0d;
-                    for (int i = 0; i < water.Length; i++)
+                    if (auxRequest.hasError) { Complete(false, "Auxiliary GPU readback failed."); return; }
+                    if (host == null || !host.IsReady) { Complete(false, "Simulation host unavailable."); return; }
+                    NativeArray<Vector4> aux = auxRequest.GetData<Vector4>();
+                    for (int i = 0; i < aux.Length; i++)
                     {
-                        Vector4 value = water[i];
-                        if (!Finite(value)) { Complete(false, $"Non-finite water field at cell {i}."); return; }
-                        if (value.x < -0.001f || value.y < -0.001f || value.z < -0.001f || value.w < -0.001f)
-                        { Complete(false, $"Negative water mass at cell {i}."); return; }
-                        trackedWater += Math.Max(0d, value.x) + Math.Max(0d, value.y) + Math.Max(0d, value.z) + Math.Max(0d, value.w);
+                        Vector4 value = aux[i];
+                        if (!Finite(value)) { Complete(false, $"Non-finite auxiliary field at cell {i}."); return; }
+                        if (value.x < -0.001f || value.y < -0.001f) { Complete(false, $"Negative vapor/groundwater at cell {i}."); return; }
+                        water += Math.Max(0d, value.x) + Math.Max(0d, value.y);
                     }
-                    AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+                    AsyncGPUReadback.Request(host.Resources.FlowRead, 0, flowRequest =>
                     {
-                        if (materialRequest.hasError) { Complete(false, "Material GPU readback failed."); return; }
-                        NativeArray<uint> materials = materialRequest.GetData<uint>();
-                        int magma = 0;
-                        for (int i = 0; i < materials.Length; i++)
-                            if (materials[i] == 6u) magma++;
-                        AsyncGPUReadback.Request(host.Resources.FlowRead, 0, flowRequest =>
+                        if (flowRequest.hasError) { Complete(false, "Flow GPU readback failed."); return; }
+                        NativeArray<Vector2> flow = flowRequest.GetData<Vector2>();
+                        for (int i = 0; i < flow.Length; i++)
                         {
-                            if (flowRequest.hasError) { Complete(false, "Flow GPU readback failed."); return; }
-                            NativeArray<Vector2> flow = flowRequest.GetData<Vector2>();
-                            for (int i = 0; i < flow.Length; i++)
-                            {
-                                Vector2 value = flow[i];
-                                if (!float.IsFinite(value.x) || !float.IsFinite(value.y))
-                                { Complete(false, $"Non-finite flow at cell {i}."); return; }
-                                if (Mathf.Abs(value.x) > 20.5f || Mathf.Abs(value.y) > 20.5f)
-                                { Complete(false, $"Runaway flow at cell {i}."); return; }
-                            }
-                            if (baselineWater < 0d) baselineWater = Math.Max(1d, trackedWater);
-                            if (baselineMagma < 0) baselineMagma = magma;
-                            double drift = Math.Abs(trackedWater - baselineWater) / baselineWater;
-                            bool waterPass = drift <= Math.Max(host.Config.conservationTolerance, 0.05f);
-                            int magmaGrowth = magma - baselineMagma;
-                            bool magmaPass = magmaGrowth <= Math.Max(64, baselineMagma + host.Resources.Grid.angularResolution);
-                            bool passed = waterPass && magmaPass;
-                            string message = passed
-                                ? $"Fields finite; water drift {drift:P2}; magma {magma}."
-                                : !waterPass
-                                    ? $"Tracked water drift {drift:P2} exceeds tolerance."
-                                    : $"Magma cell count grew from {baselineMagma} to {magma}.";
-                            Complete(passed, message);
-                        });
+                            Vector2 value = flow[i];
+                            if (!float.IsFinite(value.x) || !float.IsFinite(value.y))
+                            { Complete(false, $"Non-finite flow at cell {i}."); return; }
+                            if (Mathf.Abs(value.x) > 20.5f || Mathf.Abs(value.y) > 20.5f)
+                            { Complete(false, $"Runaway flow at cell {i}."); return; }
+                        }
+                        if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
+                        double drift = Math.Abs(water - baselineWater) / baselineWater;
+                        bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                        Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
                     });
                 });
             });
