@@ -10,6 +10,11 @@ Texture2D<float2> _FlowRead;
 RWTexture2D<float2> _FlowWrite;
 Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
+Texture2D<float4> _WaterRead;
+RWTexture2D<float4> _WaterWrite;
+RWTexture2D<float4> _Hydrostatic;
+RWTexture2D<int> _MotionIntent;
+RWTexture2D<float4> _WaterFlux;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -27,9 +32,23 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _Phase;
+float4 _Pressure;
 
 int2 Cell(int2 value) { return ClampCell(value, _GridSize); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 water)
+{
+    state.z = 0.0;
+    aux.x = 0.0;
+    aux.y = 0.0;
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _WaterWrite[cell] = SafeFinite4(max(water, 0.0), 0.0);
+}
 
 [numthreads(8, 8, 1)]
 void Volcanism(uint3 id : SV_DispatchThreadID)
@@ -40,65 +59,38 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     float4 state = _StateRead.Load(int3(cell, 0));
     float2 flow = _FlowRead.Load(int3(cell, 0));
     float4 aux = _AuxRead.Load(int3(cell, 0));
+    float4 water = _WaterRead.Load(int3(cell, 0));
     float radius = Radius01(cell.y, _GridSize.y);
-
     bool mantle = material == 3u;
     bool magma = material == 6u;
-    bool crust = material == 4u || material == 5u || material == 7u || material == 8u;
     float fault = saturate(aux.w);
+    float hydro = _Hydrostatic[Cell(cell)].x;
 
     if (mantle || magma)
-        state.y += _Geology.x * (1.0 - radius) * _DeltaTime;
+        state.y = min(_Pressure.w, state.y + _Geology.x * (1.0 - radius) * _DeltaTime * 0.35);
 
-    float pressureAbove = _StateRead.Load(int3(Cell(cell + int2(0, 1)), 0)).y;
-    float pressureGradient = max(0.0, state.y - pressureAbove);
-    aux.w = saturate(fault + pressureGradient * _Geology.y * _DeltaTime);
-
-    if (mantle && fault > 0.45 && state.y > 0.35)
+    float pressureAbove = 0.0;
+    int2 above = NeighborCell(cell, int2(0, 1), _GridSize);
+    if (InRadialBounds(above.y, _GridSize.y))
     {
-        material = 6u;
-        state.x = max(state.x, 950.0);
-        state.y = max(0.0, state.y - _Geology.z * _DeltaTime);
-        flow.y += _Geology.z * (1.0 - _WeatherC.w * 0.35) * _DeltaTime;
+        float4 aboveState = _StateRead.Load(int3(above, 0));
+        pressureAbove = _Hydrostatic[above].x + max(0.0, aboveState.y);
     }
-    else if (crust && fault > 0.65 && pressureGradient > 0.25)
-    {
-        uint below = _MaterialRead.Load(int3(Cell(cell + int2(0, -1)), 0));
-        if (below == 6u || below == 3u)
-        {
-            material = 6u;
-            state.x = max(state.x, 900.0);
-            state.y += _Geology.z * 0.25;
-        }
-    }
+    float totalP = hydro + max(0.0, state.y);
+    float pressureGradient = max(0.0, totalP - pressureAbove);
+    aux.w = saturate(fault + pressureGradient * _Geology.y * _DeltaTime - _GeologyB.z * _DeltaTime);
 
     if (magma)
     {
-        state.x -= _Geology.w * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
-        if (state.x < 780.0)
+        float cooling = _Geology.w * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
+        if (InRadialBounds(above.y, _GridSize.y))
         {
-            material = 5u;
-            state.y *= 0.5;
-            flow *= 0.25;
+            float4 aboveWater = _WaterRead.Load(int3(above, 0));
+            cooling += min(WaterTotal(aboveWater), _GeologyB.x * _DeltaTime) * 12.0;
         }
+        state.x = max(200.0, state.x - cooling);
+        flow.y += _Geology.z * max(0.0, state.y) * (1.0 - _WeatherC.w * 0.35) * _DeltaTime;
     }
 
-    uint aboveMat = _MaterialRead.Load(int3(Cell(cell + int2(0, 1)), 0));
-    if (magma && (aboveMat == 9u || aboveMat == 10u))
-    {
-        float4 aboveState = _StateRead.Load(int3(Cell(cell + int2(0, 1)), 0));
-        float4 aboveAux = _AuxRead.Load(int3(Cell(cell + int2(0, 1)), 0));
-        float heatTransfer = min(aboveState.z, _GeologyB.x * _DeltaTime);
-        aboveState.x += heatTransfer * 60.0;
-        aboveAux.x += heatTransfer * 0.25;
-        aboveAux.z += heatTransfer * _GeologyB.y;
-        flow.y += heatTransfer;
-        _StateWrite[Cell(cell + int2(0, 1))] = SafeFinite4(aboveState, float4(15, 0, 0, 0));
-        _AuxWrite[Cell(cell + int2(0, 1))] = SafeFinite4(max(aboveAux, 0.0), 0.0);
-    }
-
-    _MaterialWrite[cell] = material;
-    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
-    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
-    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    WriteCell(cell, material, state, flow, aux, water);
 }

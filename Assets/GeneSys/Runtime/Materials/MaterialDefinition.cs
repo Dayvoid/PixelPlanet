@@ -18,6 +18,7 @@ namespace GeneSys.Materials
         [Range(0f, 89f)] public float angleOfRepose = 30f;
         [Min(0.01f)] public float grainSize = 1f;
         [Range(-2f, 2f)] public float buoyancyBias;
+        [Range(0f, 1f)] public float yieldStrength = 0.5f;
 
         [Header("Transport")]
         [Min(0f)] public float thermalConductivity = 0.1f;
@@ -25,12 +26,15 @@ namespace GeneSys.Materials
         [Min(0f)] public float electricalConductivity;
         [Range(0f, 1f)] public float absorbency;
         [Range(0f, 1f)] public float porosity;
+        [Range(0f, 1f)] public float permeability = 0.1f;
 
         [Header("Phase and expansion")]
         public float meltingTemperature = 1000f;
         public float boilingTemperature = 2000f;
         public float thermalExpansion;
         public float electricalExpansion;
+        [Min(0f)] public float latentHeatFusion = 40f;
+        [Min(0f)] public float latentHeatVapor = 80f;
         [Min(0)] public int solidPhaseId;
         [Min(0)] public int liquidPhaseId;
         [Min(0)] public int gasPhaseId;
@@ -50,7 +54,8 @@ namespace GeneSys.Materials
                 transport = new Vector4(thermalConductivity, heatCapacity, electricalConductivity, absorbency),
                 phase = new Vector4(meltingTemperature, boilingTemperature, thermalExpansion, electricalExpansion),
                 biology = new Vector4(toxicity, caloricContent, porosity, buoyancyBias),
-                metadata = new Vector4((float)category, phaseIds, bioModifiable ? 1f : 0f, stableId)
+                metadata = new Vector4((float)category, phaseIds, bioModifiable ? 1f : 0f, stableId),
+                mechanics = new Vector4(latentHeatFusion, latentHeatVapor, permeability, yieldStrength)
             };
         }
     }
@@ -64,6 +69,7 @@ namespace GeneSys.Materials
         public Vector4 phase;
         public Vector4 biology;
         public Vector4 metadata;
-        public const int Stride = 96;
+        public Vector4 mechanics;
+        public const int Stride = 112;
     }
 }

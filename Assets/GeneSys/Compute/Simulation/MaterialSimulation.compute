@@ -1,8 +1,11 @@
 #pragma kernel ApplyEdits
 #pragma kernel ThermalAndPressure
 #pragma kernel PhaseChange
-#pragma kernel MaterialMotion
+#pragma kernel MaterialMotionIntent
+#pragma kernel MaterialMotionCommit
 #pragma kernel Electrical
+#pragma kernel HydrostaticPressure
+#pragma kernel MigrateLegacyWater
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -14,6 +17,11 @@ Texture2D<float2> _FlowRead;
 RWTexture2D<float2> _FlowWrite;
 Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
+Texture2D<float4> _WaterRead;
+RWTexture2D<float4> _WaterWrite;
+RWTexture2D<float4> _Hydrostatic;
+RWTexture2D<int> _MotionIntent;
+RWTexture2D<float4> _WaterFlux;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 StructuredBuffer<BrushCommand> _BrushCommands;
 
@@ -25,32 +33,139 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _Mechanics;
 float4 _Geology;
+float4 _GeologyB;
 float4 _Hydrology;
+float4 _HydrologyB;
+float4 _HydrologyC;
 float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _Phase;
+float4 _Pressure;
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
 float2 ReadFlow(int2 cell) { cell = ClampCell(cell, _GridSize); return _FlowRead.Load(int3(cell, 0)); }
 float4 ReadAux(int2 cell) { cell = ClampCell(cell, _GridSize); return _AuxRead.Load(int3(cell, 0)); }
+float4 ReadWater(int2 cell) { cell = ClampCell(cell, _GridSize); return _WaterRead.Load(int3(cell, 0)); }
+float ReadHydro(int2 cell) { cell = ClampCell(cell, _GridSize); return _Hydrostatic[cell].x; }
 MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
 
-void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux)
+float TotalPressure(int2 cell, float4 state)
 {
-    material = ReadMaterial(cell);
-    state = ReadState(cell);
-    flow = ReadFlow(cell);
-    aux = ReadAux(cell);
+    return max(0.0, ReadHydro(cell)) + max(0.0, state.y);
 }
 
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux)
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 water)
 {
+    state.z = 0.0;
+    aux.x = 0.0;
+    aux.y = 0.0;
     _MaterialWrite[cell] = material;
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _WaterWrite[cell] = SafeFinite4(max(water, 0.0), 0.0);
+}
+
+bool IsOpenId(uint material)
+{
+    return IsOpenMaterial(material, Mat(material));
+}
+
+bool IsMovableId(uint material)
+{
+    float category = Mat(material).metadata.x;
+    return category == 2.0 || category == 3.0 || category == 5.0;
+}
+
+bool CanDisplace(uint mover, uint host, float4 moverState, float4 hostAux, int2 hostCell)
+{
+    if (host == 2u) return false;
+    if (IsOpenId(host)) return true;
+    MaterialGpuData moverDef = Mat(mover);
+    MaterialGpuData hostDef = Mat(host);
+    if (!IsMagmaCategory(moverDef)) return false;
+    float overpressure = max(0.0, moverState.y);
+    float buoyancy = saturate(moverDef.biology.w);
+    float drive = overpressure + buoyancy * 0.65 + _Geology.z * 0.25;
+    float yield = max(0.02, hostDef.mechanics.w);
+    float fault = saturate(hostAux.w);
+    if (hostDef.metadata.x == 2.0) return true;
+    if (IsGranularCategory(hostDef))
+        return drive > max(_GeologyB.w, yield * 0.35);
+    if (IsSolidCategory(hostDef))
+        return fault > 0.7 && overpressure > yield + 0.35;
+    return false;
+}
+
+int2 ChooseDestination(int2 source)
+{
+    uint sourceMaterial = ReadMaterial(source);
+    if (!IsMovableId(sourceMaterial) || source.y <= 0) return source;
+    MaterialGpuData definition = Mat(sourceMaterial);
+    float4 state = ReadState(source);
+    bool magma = IsMagmaCategory(definition);
+    bool rise = magma;
+    int2 above = NeighborCell(source, int2(0, 1), _GridSize);
+    int2 below = NeighborCell(source, int2(0, -1), _GridSize);
+    int direction = ((source.x + _Tick) & 1) == 0 ? -1 : 1;
+    int2 aboveDiag = NeighborCell(source, int2(direction, 1), _GridSize);
+    int2 belowDiag = NeighborCell(source, int2(direction, -1), _GridSize);
+
+    if (rise && InRadialBounds(above.y, _GridSize.y))
+    {
+        uint aboveMat = ReadMaterial(above);
+        if (CanDisplace(sourceMaterial, aboveMat, state, ReadAux(above), above))
+            return above;
+        if (InRadialBounds(aboveDiag.y, _GridSize.y) &&
+            CanDisplace(sourceMaterial, ReadMaterial(aboveDiag), state, ReadAux(aboveDiag), aboveDiag))
+            return aboveDiag;
+    }
+
+    if (InRadialBounds(below.y, _GridSize.y) && !magma)
+    {
+        uint belowMat = ReadMaterial(below);
+        if (IsOpenId(belowMat))
+            return below;
+        if (definition.physical.y < 0.9 && InRadialBounds(belowDiag.y, _GridSize.y) && IsOpenId(ReadMaterial(belowDiag)))
+            return belowDiag;
+    }
+
+    if (magma && InRadialBounds(below.y, _GridSize.y) && IsOpenId(ReadMaterial(below)) && definition.biology.w < 0.15)
+        return below;
+
+    int2 lateral = NeighborCell(source, int2(direction, 0), _GridSize);
+    if (magma && CanDisplace(sourceMaterial, ReadMaterial(lateral), state, ReadAux(lateral), lateral))
+        return lateral;
+    return source;
+}
+
+int WinnerAt(int2 dest)
+{
+    int destPack = PackCell(dest, _GridSize.x);
+    if (_MotionIntent[dest] != destPack) return destPack;
+    int winner = destPack;
+    uint best = 0xffffffffu;
+    int2 offsets[8] = {
+        int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1),
+        int2(-1, -1), int2(1, -1), int2(-1, 1), int2(1, 1)
+    };
+    [unroll]
+    for (int i = 0; i < 8; i++)
+    {
+        int2 n = NeighborCell(dest, offsets[i], _GridSize);
+        if (!InRadialBounds(n.y, _GridSize.y)) continue;
+        if (_MotionIntent[n] != destPack) continue;
+        uint pri = HashCell(n, _Tick);
+        if (pri < best)
+        {
+            best = pri;
+            winner = PackCell(n, _GridSize.x);
+        }
+    }
+    return winner;
 }
 
 [numthreads(8, 8, 1)]
@@ -58,8 +173,11 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    float4 water = ReadWater(cell);
 
     for (int i = 0; i < _BrushCount; i++)
     {
@@ -70,13 +188,19 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         if (dx * dx + dy * dy > command.radius * command.radius) continue;
         int mode = (int)round(command.values.x);
         float falloff = 1.0 - saturate(sqrt((float)(dx * dx + dy * dy)) / max(1.0, (float)command.radius));
-        if (mode == 0) material = command.materialId;
+        if (mode == 0)
+        {
+            material = command.materialId;
+            if (material == 6u) state.x = max(state.x, 950.0);
+            if (material == 9u) water.x = max(water.x, 0.35);
+            if (material == 10u) water.z = max(water.z, 0.35);
+        }
         else if (mode == 1) state.x += command.values.y * max(0.1, falloff);
-        else if (mode == 2) state.z += command.values.y * max(0.1, falloff);
+        else if (mode == 2) water.x += command.values.y * max(0.1, falloff);
         else if (mode == 3) state.y += command.values.y * max(0.1, falloff);
         else if (mode == 4) aux.z += command.values.y * max(0.1, falloff);
     }
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, water);
 }
 
 [numthreads(8, 8, 1)]
@@ -84,21 +208,40 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    float4 water = ReadWater(cell);
     MaterialGpuData definition = Mat(material);
 
-    float neighborTemperature = ReadState(cell + int2(-1, 0)).x + ReadState(cell + int2(1, 0)).x
-        + ReadState(cell + int2(0, -1)).x + ReadState(cell + int2(0, 1)).x;
-    neighborTemperature *= 0.25;
+    float temperatureSum = 0.0;
+    float overpressureSum = 0.0;
+    int count = 0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = NeighborCell(cell, offsets[i], _GridSize);
+        if (!InRadialBounds(n.y, _GridSize.y)) continue;
+        float4 ns = ReadState(n);
+        temperatureSum += ns.x;
+        overpressureSum += max(0.0, ns.y);
+        count++;
+    }
+    count = max(1, count);
+    float neighborTemperature = temperatureSum / count;
     float conductivity = definition.transport.x;
     float heatCapacity = max(0.001, definition.transport.y);
     float deltaTemperature = (neighborTemperature - state.x) * conductivity * _Mechanics.y * _DeltaTime / heatCapacity;
-    state.x += clamp(deltaTemperature, -25.0, 25.0);
+    state.x += clamp(deltaTemperature, -18.0, 18.0);
 
+    float neighborOverpressure = overpressureSum / count;
     float expansion = abs(deltaTemperature) * definition.phase.z;
-    state.y = max(0.0, state.y + expansion - state.y * _Mechanics.w * 0.01 * _DeltaTime);
-    WriteCell(cell, material, state, flow, aux);
+    float diffusion = (neighborOverpressure - state.y) * _Pressure.x * _DeltaTime;
+    float decay = state.y * _Mechanics.w * 0.01 * _DeltaTime;
+    state.y = clamp(state.y + expansion + diffusion - decay, 0.0, _Pressure.w);
+    WriteCell(cell, material, state, flow, aux, water);
 }
 
 [numthreads(8, 8, 1)]
@@ -106,102 +249,128 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    float4 water = ReadWater(cell);
     MaterialGpuData definition = Mat(material);
     uint packed = (uint)round(definition.metadata.y);
     uint solidId = packed & 1023u;
     uint liquidId = (packed >> 10) & 1023u;
-    uint gasId = (packed >> 20) & 1023u;
     float hysteresis = max(0.001, _WeatherC.z);
+    float totalP = TotalPressure(cell, state);
+    float heatCapacity = max(0.001, definition.transport.y);
+    float latentFusion = max(0.001, definition.mechanics.x);
 
-    if (definition.metadata.x == 1.0)
+    if (material != 2u && !IsGasCategory(definition) && (liquidId == 6u || material == 6u || material == 3u || material == 4u || material == 5u))
     {
-        WriteCell(cell, material, state, flow, aux);
-        return;
+        float meltT = PressureAdjustedMelt(definition, totalP, _Phase.x);
+        if (liquidId > 0u && liquidId != material && state.x > meltT + hysteresis + latentFusion / heatCapacity)
+        {
+            material = liquidId;
+            state.x -= latentFusion / heatCapacity;
+        }
+        else if (solidId > 0u && solidId != material && material == 6u && state.x < meltT - hysteresis - latentFusion / heatCapacity)
+        {
+            material = solidId;
+            state.x += latentFusion / heatCapacity;
+        }
     }
-    if (gasId > 0u && state.x > definition.phase.y + hysteresis)
+
+    float boilT = PressureAdjustedBoil(100.0, totalP, _Phase.y);
+    float latentVapor = max(0.001, Mat(9u).mechanics.y);
+    float available = max(0.0, water.x + water.y + water.z);
+    if (available > 0.0 && state.x > boilT)
     {
-        material = gasId;
-        aux.x += max(0.0, state.z) + 0.02;
-        state.z = 0.0;
-        state.y += _WeatherC.x * 0.1;
+        float energy = (state.x - boilT) * heatCapacity;
+        float mass = min(available, energy / latentVapor * saturate(_DeltaTime * 8.0));
+        float fromIce = min(water.z, mass);
+        water.z -= fromIce;
+        mass -= fromIce;
+        float fromGround = min(water.y, mass);
+        water.y -= fromGround;
+        mass -= fromGround;
+        float fromLiquid = min(water.x, mass);
+        water.x -= fromLiquid;
+        float boiled = fromIce + fromGround + fromLiquid;
+        water.w += boiled;
+        state.x -= boiled * latentVapor / heatCapacity;
+        state.y = min(_Pressure.w, state.y + boiled * _WeatherC.x);
     }
-    else if (liquidId > 0u && state.x > definition.phase.x + hysteresis)
+    else if (water.w > 0.0 && state.x < boilT - 8.0)
     {
-        material = liquidId;
+        float mass = min(water.w, (boilT - 8.0 - state.x) * heatCapacity / latentVapor * saturate(_DeltaTime * 4.0));
+        water.w -= mass;
+        if (state.x < 0.0) water.z += mass;
+        else water.x += mass;
+        state.x += mass * latentVapor / heatCapacity * 0.35;
+        state.y = max(0.0, state.y - mass * _WeatherC.x * 0.5);
     }
-    else if (solidId > 0u && state.x < definition.phase.x - hysteresis)
+
+    if (water.z > 0.0 && state.x > 1.0)
     {
-        material = solidId;
+        float melt = min(water.z, saturate((state.x - 1.0) / 40.0) * _DeltaTime * 2.0);
+        water.z -= melt;
+        water.x += melt;
+        state.x -= melt * 8.0 / heatCapacity;
     }
-    WriteCell(cell, material, state, flow, aux);
-}
+    else if (water.x > 0.0 && state.x < 0.0)
+    {
+        float freeze = min(water.x, saturate(-state.x / 20.0) * _DeltaTime * 2.0);
+        water.x -= freeze;
+        water.z += freeze;
+        state.x += freeze * 8.0 / heatCapacity;
+    }
 
-bool IsMovable(uint material)
-{
-    float category = Mat(material).metadata.x;
-    return category == 2.0 || category == 3.0 || category == 5.0;
-}
-
-bool IsOpen(uint material)
-{
-    float category = Mat(material).metadata.x;
-    return material == 0u || category == 1.0;
-}
-
-int2 MovementDestination(int2 source)
-{
-    uint sourceMaterial = ReadMaterial(source);
-    if (!IsMovable(sourceMaterial) || source.y <= 0) return source;
-    int2 below = ClampCell(source + int2(0, -1), _GridSize);
-    if (IsOpen(ReadMaterial(below))) return below;
-
-    MaterialGpuData definition = Mat(sourceMaterial);
-    if (definition.physical.y >= 0.9) return source;
-    int direction = ((source.x + _Tick) & 1) == 0 ? -1 : 1;
-    int2 diagonal = ClampCell(source + int2(direction, -1), _GridSize);
-    if (IsOpen(ReadMaterial(diagonal))) return diagonal;
-    return source;
+    WriteCell(cell, material, state, flow, aux, water);
 }
 
 [numthreads(8, 8, 1)]
-void MaterialMotion(uint3 id : SV_DispatchThreadID)
+void MaterialMotionIntent(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    int2 dest = ChooseDestination(cell);
+    _MotionIntent[cell] = PackCell(dest, _GridSize.x);
+}
 
-    int2 destination = MovementDestination(cell);
-    if (IsMovable(material) && !all(destination == cell))
+[numthreads(8, 8, 1)]
+void MaterialMotionCommit(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    int myPack = PackCell(cell, _GridSize.x);
+    int destPack = _MotionIntent[cell];
+    int2 readFrom = cell;
+
+    if (destPack != myPack)
     {
-        material = ReadMaterial(destination);
-        state = ReadState(destination);
-        flow = ReadFlow(destination);
-        aux = ReadAux(destination);
-    }
-    else if (IsOpen(material) && cell.y < _GridSize.y - 1)
-    {
-        int2 source = ClampCell(cell + int2(0, 1), _GridSize);
-        if (!all(MovementDestination(source) == cell))
+        int2 dest = UnpackCell(destPack, _GridSize.x);
+        int destIntent = _MotionIntent[dest];
+        if (destIntent == destPack)
         {
-            int2 leftSource = ClampCell(cell + int2(-1, 1), _GridSize);
-            int2 rightSource = ClampCell(cell + int2(1, 1), _GridSize);
-            if (all(MovementDestination(leftSource) == cell)) source = leftSource;
-            else if (all(MovementDestination(rightSource) == cell)) source = rightSource;
-            else source = cell;
+            if (WinnerAt(dest) == myPack) readFrom = dest;
         }
-        if (!all(source == cell))
+        else if (destIntent == myPack)
         {
-            material = ReadMaterial(source);
-            state = ReadState(source);
-            flow = ReadFlow(source);
-            aux = ReadAux(source);
-            flow.y -= _Mechanics.x * _DeltaTime;
+            readFrom = dest;
         }
     }
-    WriteCell(cell, material, state, flow, aux);
+    else
+    {
+        int winner = WinnerAt(cell);
+        if (winner != myPack) readFrom = UnpackCell(winner, _GridSize.x);
+    }
+
+    uint material = ReadMaterial(readFrom);
+    float4 state = ReadState(readFrom);
+    float2 flow = ReadFlow(readFrom);
+    float4 aux = ReadAux(readFrom);
+    float4 water = ReadWater(readFrom);
+    if (!all(readFrom == cell) && IsMagmaCategory(Mat(material)))
+        flow.y += _Geology.z * (1.0 - _WeatherC.w * 0.35) * _DeltaTime;
+    WriteCell(cell, material, state, flow, aux, water);
 }
 
 [numthreads(8, 8, 1)]
@@ -209,14 +378,68 @@ void Electrical(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    float4 water = ReadWater(cell);
     MaterialGpuData definition = Mat(material);
-    float neighborCharge = ReadState(cell + int2(-1, 0)).w + ReadState(cell + int2(1, 0)).w
-        + ReadState(cell + int2(0, -1)).w + ReadState(cell + int2(0, 1)).w;
-    neighborCharge *= 0.25;
+    float neighborCharge = 0.0;
+    int count = 0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = NeighborCell(cell, offsets[i], _GridSize);
+        if (!InRadialBounds(n.y, _GridSize.y)) continue;
+        neighborCharge += ReadState(n).w;
+        count++;
+    }
+    neighborCharge /= max(1, count);
     float oldCharge = state.w;
     state.w += (neighborCharge - state.w) * definition.transport.z * _Mechanics.z * _DeltaTime;
-    state.y += abs(state.w - oldCharge) * definition.phase.w;
-    WriteCell(cell, material, state, flow, aux);
+    state.y = min(_Pressure.w, state.y + abs(state.w - oldCharge) * definition.phase.w);
+    WriteCell(cell, material, state, flow, aux, water);
+}
+
+[numthreads(64, 1, 1)]
+void HydrostaticPressure(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    float pressure = max(0.0, _Phase.w);
+    for (int y = _GridSize.y - 1; y >= 0; y--)
+    {
+        int2 cell = int2((int)id.x, y);
+        _Hydrostatic[cell] = float4(pressure, 0.0, 0.0, 0.0);
+        uint material = _MaterialRead.Load(int3(cell, 0));
+        float4 water = _WaterRead.Load(int3(cell, 0));
+        MaterialGpuData definition = Mat(material);
+        float density = max(0.0, definition.physical.x) + water.x + water.y + water.z * 0.92;
+        float radius = Radius01(y, _GridSize.y);
+        float gravity = _Mechanics.x * max(0.05, _Pressure.z) * lerp(1.55, 0.65, radius);
+        float dr = 1.0 / max(1.0, (float)_GridSize.y);
+        pressure += density * gravity * dr;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void MigrateLegacyWater(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    float liquid = max(0.0, state.z);
+    float groundwater = max(0.0, aux.y);
+    float vapor = max(0.0, aux.x);
+    float ice = 0.0;
+    if (material == 10u)
+    {
+        ice = liquid;
+        liquid = 0.0;
+    }
+    float4 water = float4(liquid, groundwater, ice, vapor);
+    WriteCell(cell, material, state, flow, aux, water);
 }

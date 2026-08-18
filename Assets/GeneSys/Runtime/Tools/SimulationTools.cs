@@ -73,16 +73,32 @@ namespace GeneSys.Tools
                         NativeArray<Vector4> data = stateRequest.GetData<Vector4>();
                         if (data.Length > 0) inspection.state = data[0];
                     }
-                    AsyncGPUReadback.Request(host.Resources.AuxRead, 0, cell.x, 1, cell.y, 1, 0, 1, auxRequest =>
-                    {
-                        if (!auxRequest.hasError)
+                        AsyncGPUReadback.Request(host.Resources.AuxRead, 0, cell.x, 1, cell.y, 1, 0, 1, auxRequest =>
                         {
-                            NativeArray<Vector4> data = auxRequest.GetData<Vector4>();
-                            if (data.Length > 0) inspection.aux = data[0];
-                        }
-                        readbackPending = false;
-                        Inspected?.Invoke(inspection);
-                    });
+                            if (!auxRequest.hasError)
+                            {
+                                NativeArray<Vector4> data = auxRequest.GetData<Vector4>();
+                                if (data.Length > 0) inspection.aux = data[0];
+                            }
+                            AsyncGPUReadback.Request(host.Resources.WaterRead, 0, cell.x, 1, cell.y, 1, 0, 1, waterRequest =>
+                            {
+                                if (!waterRequest.hasError)
+                                {
+                                    NativeArray<Vector4> data = waterRequest.GetData<Vector4>();
+                                    if (data.Length > 0) inspection.water = data[0];
+                                }
+                                AsyncGPUReadback.Request(host.Resources.Hydrostatic, 0, cell.x, 1, cell.y, 1, 0, 1, hydroRequest =>
+                                {
+                                    if (!hydroRequest.hasError)
+                                    {
+                                        NativeArray<Vector4> data = hydroRequest.GetData<Vector4>();
+                                        if (data.Length > 0) inspection.hydrostatic = data[0].x;
+                                    }
+                                    readbackPending = false;
+                                    Inspected?.Invoke(inspection);
+                                });
+                            });
+                        });
                 });
             });
         }
@@ -95,5 +111,7 @@ namespace GeneSys.Tools
         public uint materialId;
         public Vector4 state;
         public Vector4 aux;
+        public Vector4 water;
+        public float hydrostatic;
     }
 }

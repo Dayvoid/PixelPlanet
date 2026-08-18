@@ -26,13 +26,17 @@ MonoBehaviour:
   electricalConductivity: 0.7
   absorbency: 0
   porosity: 0
-  meltingTemperature: 1200
+  meltingTemperature: 1800
   boilingTemperature: 3000
   thermalExpansion: 0.02
   electricalExpansion: 0.01
   solidPhaseId: 2
-  liquidPhaseId: 3
-  gasPhaseId: 11
+  liquidPhaseId: 2
+  gasPhaseId: 2
   toxicity: 0
   caloricContent: 0
   bioModifiable: 0
+  yieldStrength: 1
+  permeability: 0
+  latentHeatFusion: 120
+  latentHeatVapor: 40

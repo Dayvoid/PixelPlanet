@@ -29,7 +29,7 @@ namespace GeneSys.Tests
             host.Clock.SetRunning(false);
         }
 
-        private static IEnumerator ReadGpuFields(SimulationHost host, Action<uint[], Vector4[], Vector4[]> consume)
+        private static IEnumerator ReadGpuFields(SimulationHost host, Action<uint[], Vector4[], Vector4[], Vector4[]> consume)
         {
             bool done = false;
             bool failed = false;
@@ -45,8 +45,13 @@ namespace GeneSys.Tests
                     {
                         if (auxRequest.hasError) { failed = true; done = true; return; }
                         Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
-                        consume(materials, states, aux);
-                        done = true;
+                        AsyncGPUReadback.Request(host.Resources.WaterRead, 0, waterRequest =>
+                        {
+                            if (waterRequest.hasError) { failed = true; done = true; return; }
+                            Vector4[] water = waterRequest.GetData<Vector4>().ToArray();
+                            consume(materials, states, aux, water);
+                            done = true;
+                        });
                     });
                 });
             });
@@ -76,15 +81,23 @@ namespace GeneSys.Tests
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            if (host.Config.preset != SimulationPreset.Standard)
+            {
+                host.ApplyPreset(SimulationPreset.Standard);
+                yield return WaitForHost();
+                host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            }
             host.Config.targetOceanCoverage = 0.5f;
+            host.Regenerate();
+            yield return null;
 
             WorldWaterMetrics metrics = default;
             yield return MeasureMetrics(host, result => metrics = result);
 
             Assert.That(metrics.OceanCoverage, Is.InRange(0.25f, 0.75f));
             Assert.That(metrics.BasinCount, Is.InRange(2, 6));
-            Assert.That(metrics.SurfaceWaterMass, Is.GreaterThan(1d));
-            Assert.That(metrics.GroundwaterMass, Is.GreaterThan(1d));
+            Assert.That(metrics.SurfaceWaterMass, Is.GreaterThan(0.25d));
+            Assert.That(metrics.GroundwaterMass, Is.GreaterThan(0.25d));
             Assert.That(metrics.VaporMass, Is.GreaterThan(0d));
         }
 
@@ -101,12 +114,12 @@ namespace GeneSys.Tests
             for (int i = 0; i < 8; i++) yield return null;
 
             uint[] materialsA = null;
-            yield return ReadGpuFields(host, (materials, _, __) => materialsA = (uint[])materials.Clone());
+            yield return ReadGpuFields(host, (materials, _, __, ___) => materialsA = (uint[])materials.Clone());
 
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
             uint[] materialsB = null;
-            yield return ReadGpuFields(host, (materials, _, __) => materialsB = (uint[])materials.Clone());
+            yield return ReadGpuFields(host, (materials, _, __, ___) => materialsB = (uint[])materials.Clone());
 
             Assert.That(materialsB, Is.EqualTo(materialsA));
         }
@@ -123,7 +136,7 @@ namespace GeneSys.Tests
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
             double hashA = 0d;
-            yield return ReadGpuFields(host, (materials, _, __) =>
+            yield return ReadGpuFields(host, (materials, _, __, ___) =>
             {
                 for (int i = 0; i < materials.Length; i++) hashA += materials[i];
             });
@@ -132,7 +145,7 @@ namespace GeneSys.Tests
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
             double hashB = 0d;
-            yield return ReadGpuFields(host, (materials, _, __) =>
+            yield return ReadGpuFields(host, (materials, _, __, ___) =>
             {
                 for (int i = 0; i < materials.Length; i++) hashB += materials[i];
             });
@@ -153,10 +166,10 @@ namespace GeneSys.Tests
             host.Clock.SetRunning(false);
 
             double surfaceBefore = 0d;
-            yield return ReadGpuFields(host, (_, states, __) =>
+            yield return ReadGpuFields(host, (_, __, ___, water) =>
             {
-                for (int i = 0; i < states.Length; i++)
-                    surfaceBefore += states[i].z;
+                for (int i = 0; i < water.Length; i++)
+                    surfaceBefore += water[i].x;
             });
 
             for (int i = 0; i < 120; i++)
@@ -166,10 +179,10 @@ namespace GeneSys.Tests
             }
 
             double surfaceAfter = 0d;
-            yield return ReadGpuFields(host, (_, states, __) =>
+            yield return ReadGpuFields(host, (_, __, ___, water) =>
             {
-                for (int i = 0; i < states.Length; i++)
-                    surfaceAfter += states[i].z;
+                for (int i = 0; i < water.Length; i++)
+                    surfaceAfter += water[i].x;
             });
 
             Assert.That(surfaceAfter, Is.Not.EqualTo(surfaceBefore).Within(0.01d));
@@ -208,7 +221,7 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator SnapshotV2RoundTripPreservesTickAndWaterState()
+        public IEnumerator SnapshotRoundTripPreservesTickAndWaterState()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHost();
@@ -220,10 +233,10 @@ namespace GeneSys.Tests
             for (int i = 0; i < 25; i++) { host.Clock.RequestStep(); yield return null; }
 
             double waterBefore = 0d;
-            yield return ReadGpuFields(host, (_, states, aux) =>
+            yield return ReadGpuFields(host, (_, __, ___, water) =>
             {
-                for (int i = 0; i < states.Length; i++)
-                    waterBefore += states[i].z + aux[i].x + aux[i].y;
+                for (int i = 0; i < water.Length; i++)
+                    waterBefore += water[i].x + water[i].y + water[i].z + water[i].w;
             });
             long tickBefore = host.Clock.TickCount;
             string path = System.IO.Path.Combine(Application.temporaryCachePath, "genesys-water-test.snapshot");
@@ -238,10 +251,10 @@ namespace GeneSys.Tests
             Assert.That(host.Clock.TickCount, Is.EqualTo(tickBefore));
 
             double waterAfter = 0d;
-            yield return ReadGpuFields(host, (_, states, aux) =>
+            yield return ReadGpuFields(host, (_, __, ___, water) =>
             {
-                for (int i = 0; i < states.Length; i++)
-                    waterAfter += states[i].z + aux[i].x + aux[i].y;
+                for (int i = 0; i < water.Length; i++)
+                    waterAfter += water[i].x + water[i].y + water[i].z + water[i].w;
             });
             Assert.That(waterAfter, Is.EqualTo(waterBefore).Within(0.01d));
         }

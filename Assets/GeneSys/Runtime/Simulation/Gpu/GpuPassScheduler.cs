@@ -71,6 +71,7 @@ namespace GeneSys.Simulation.Gpu
             BindWorldgenOutputs(worldGeneration, kernel);
             Dispatch(worldGeneration, kernel);
             resources.CopyReadToWrite();
+            RecomputeHydrostatic();
         }
 
         public void QueueBrush(BrushCommand command)
@@ -81,6 +82,21 @@ namespace GeneSys.Simulation.Gpu
         public void RefreshMaterialDefinitions(MaterialRegistry registry)
         {
             materialBuffer.SetData(registry.BuildGpuData());
+        }
+
+        public void RecomputeHydrostatic()
+        {
+            int kernel = materialSimulation.FindKernel("HydrostaticPressure");
+            if (kernel < 0) return;
+            DispatchColumns(materialSimulation, kernel, 0f);
+        }
+
+        public void MigrateLegacyWater()
+        {
+            int kernel = materialSimulation.FindKernel("MigrateLegacyWater");
+            if (kernel < 0) return;
+            DispatchPass(materialSimulation, kernel, 0f);
+            RecomputeHydrostatic();
         }
 
         public void Step(float deltaTime)
@@ -101,9 +117,12 @@ namespace GeneSys.Simulation.Gpu
                 float subDt = deltaTime / config.materialSubsteps;
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("ThermalAndPressure"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), subDt);
-                DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotion"), subDt);
+                DispatchNoSwap(materialSimulation, materialSimulation.FindKernel("MaterialMotionIntent"), subDt);
+                DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotionCommit"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
             }
+
+            RecomputeHydrostatic();
 
             if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
             {
@@ -111,11 +130,15 @@ namespace GeneSys.Simulation.Gpu
                 DispatchPass(hydrology, hydrology.FindKernel("ErosionAndCollapse"), deltaTime * config.slowPassInterval);
             }
 
-            DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
+            DispatchNoSwap(hydrology, hydrology.FindKernel("GroundwaterFlux"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("GroundwaterApply"), deltaTime);
+            DispatchNoSwap(hydrology, hydrology.FindKernel("VaporFlux"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("VaporApply"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
             DispatchPass(weather, weather.FindKernel("SolarAndWind"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
-            DispatchPass(hydrology, hydrology.FindKernel("RunoffAndDeposition"), deltaTime);
+            DispatchNoSwap(hydrology, hydrology.FindKernel("RunoffFlux"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("RunoffApply"), deltaTime);
 
             tick++;
             stopwatch.Stop();
@@ -124,11 +147,37 @@ namespace GeneSys.Simulation.Gpu
 
         private void DispatchPass(ComputeShader shader, int kernel, float deltaTime)
         {
+            BindAndDispatch(shader, kernel, deltaTime);
+            resources.Swap();
+        }
+
+        private void DispatchNoSwap(ComputeShader shader, int kernel, float deltaTime)
+        {
+            BindAndDispatch(shader, kernel, deltaTime);
+        }
+
+        private void BindAndDispatch(ComputeShader shader, int kernel, float deltaTime)
+        {
+            if (shader == null || kernel < 0)
+            {
+                UnityEngine.Debug.LogError($"GeneSys: missing compute kernel on {shader}.");
+                return;
+            }
             SetCommon(shader, kernel, deltaTime);
             shader.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindPassTextures(shader, kernel);
             Dispatch(shader, kernel);
-            resources.Swap();
+        }
+
+        private void DispatchColumns(ComputeShader shader, int kernel, float deltaTime)
+        {
+            if (shader == null || kernel < 0) return;
+            SetCommon(shader, kernel, deltaTime);
+            shader.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            BindPassTextures(shader, kernel);
+            shader.GetKernelThreadGroupSizes(kernel, out uint x, out _, out _);
+            int groupsX = Mathf.CeilToInt(resources.Grid.angularResolution / (float)x);
+            shader.Dispatch(kernel, groupsX, 1, 1);
         }
 
         private void SetCommon(ComputeShader shader, int kernel, float deltaTime)
@@ -140,26 +189,39 @@ namespace GeneSys.Simulation.Gpu
             shader.SetFloat("_AtmosphereStartRadius", resources.Grid.atmosphereStartRadius);
             shader.SetVector("_Mechanics", new Vector4(config.gravityStrength, config.thermalRate, config.electricalRate, config.pressureRate));
             shader.SetVector("_Geology", new Vector4(config.mantlePressure, config.fractureRate, config.extrusionRate, config.volcanicCooling));
-            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalStrength, config.ventChemicalRate, 0f, 0f));
+            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalStrength, config.ventChemicalRate, config.faultRelaxation, config.magmaDisplacementThreshold));
             shader.SetVector("_Hydrology", new Vector4(config.infiltrationRate, config.groundwaterRate, config.dissolutionRate, config.collapseRate));
             shader.SetVector("_HydrologyB", new Vector4(config.springHeadThreshold, config.springDischargeRate, config.geyserHeatThreshold, config.geyserDischargeRate));
-            shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, 0f, config.geyserCooldownSeconds));
+            shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, config.vaporTransportRate, config.geyserCooldownSeconds));
             shader.SetVector("_Erosion", new Vector4(config.erosionRate, config.depositionRate, config.baseSoilCohesion, config.conservationTolerance));
             shader.SetVector("_WeatherA", new Vector4(config.solarIntensity, config.spaceTemperature, config.radiativeCooling, config.windStrength));
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));
             shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, config.magmaViscosity));
+            shader.SetVector("_Phase", new Vector4(config.meltPressureSlope, config.boilPressureSlope, 0f, config.atmosphericPressure));
+            shader.SetVector("_Pressure", new Vector4(config.overpressureDiffusion, config.pressureRate, config.hydrostaticGravity, config.maxOverpressure));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)
         {
-            shader.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
-            shader.SetTexture(kernel, "_MaterialWrite", resources.MaterialWrite);
-            shader.SetTexture(kernel, "_StateRead", resources.StateRead);
-            shader.SetTexture(kernel, "_StateWrite", resources.StateWrite);
-            shader.SetTexture(kernel, "_FlowRead", resources.FlowRead);
-            shader.SetTexture(kernel, "_FlowWrite", resources.FlowWrite);
-            shader.SetTexture(kernel, "_AuxRead", resources.AuxRead);
-            shader.SetTexture(kernel, "_AuxWrite", resources.AuxWrite);
+            TrySetTexture(shader, kernel, "_MaterialRead", resources.MaterialRead);
+            TrySetTexture(shader, kernel, "_MaterialWrite", resources.MaterialWrite);
+            TrySetTexture(shader, kernel, "_StateRead", resources.StateRead);
+            TrySetTexture(shader, kernel, "_StateWrite", resources.StateWrite);
+            TrySetTexture(shader, kernel, "_FlowRead", resources.FlowRead);
+            TrySetTexture(shader, kernel, "_FlowWrite", resources.FlowWrite);
+            TrySetTexture(shader, kernel, "_AuxRead", resources.AuxRead);
+            TrySetTexture(shader, kernel, "_AuxWrite", resources.AuxWrite);
+            TrySetTexture(shader, kernel, "_WaterRead", resources.WaterRead);
+            TrySetTexture(shader, kernel, "_WaterWrite", resources.WaterWrite);
+            TrySetTexture(shader, kernel, "_Hydrostatic", resources.Hydrostatic);
+            TrySetTexture(shader, kernel, "_MotionIntent", resources.MotionIntent);
+            TrySetTexture(shader, kernel, "_WaterFlux", resources.WaterFlux);
+        }
+
+        private static void TrySetTexture(ComputeShader shader, int kernel, string name, RenderTexture texture)
+        {
+            if (texture == null) return;
+            shader.SetTexture(kernel, name, texture);
         }
 
         private void BindWorldgenOutputs(ComputeShader shader, int kernel)
@@ -168,13 +230,15 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_StateWrite", resources.StateRead);
             shader.SetTexture(kernel, "_FlowWrite", resources.FlowRead);
             shader.SetTexture(kernel, "_AuxWrite", resources.AuxRead);
+            shader.SetTexture(kernel, "_WaterWrite", resources.WaterRead);
         }
 
         private void Dispatch(ComputeShader shader, int kernel)
         {
+            if (kernel < 0) return;
             shader.GetKernelThreadGroupSizes(kernel, out uint x, out uint y, out _);
             int groupsX = Mathf.CeilToInt(resources.Grid.angularResolution / (float)x);
-            int groupsY = Mathf.CeilToInt(resources.Grid.radialResolution / (float)y);
+            int groupsY = Mathf.Max(1, Mathf.CeilToInt(resources.Grid.radialResolution / (float)y));
             shader.Dispatch(kernel, groupsX, groupsY, 1);
         }
 

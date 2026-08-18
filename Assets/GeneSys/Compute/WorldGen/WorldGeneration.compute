@@ -6,6 +6,7 @@ RWTexture2D<uint> _MaterialWrite;
 RWTexture2D<float4> _StateWrite;
 RWTexture2D<float2> _FlowWrite;
 RWTexture2D<float4> _AuxWrite;
+RWTexture2D<float4> _WaterWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -103,15 +104,22 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, terrainSurface + 0.02);
     fault = max(fault, ocean * 0.15 * step(crustEdge, radius));
 
-    float temperature = lerp(1500.0, 15.0, saturate(radius));
+    float temperature = lerp(1180.0, 12.0, pow(saturate(radius), 0.72));
+    if (material == 2u) temperature = lerp(1320.0, 1100.0, saturate(radius / max(0.01, coreEdge)));
     if (material == 9u) temperature = lerp(4.0, 18.0, saturate((seaLevel - radius) / max(0.01, seaLevel - terrainSurface)));
-    float pressure = saturate((terrainSurface - radius) * 8.0) * 2.0;
 
     float surfaceWater = 0.0;
+    float ice = 0.0;
     if (material == 9u)
     {
         float column = saturate((seaLevel - radius) / max(0.01, seaLevel - max(terrainSurface, crustEdge)));
         surfaceWater = lerp(0.35, 1.0, column);
+        if (temperature < 0.0)
+        {
+            ice = surfaceWater;
+            surfaceWater = 0.0;
+            material = 10u;
+        }
     }
     else if (material == 7u && radius > terrainSurface - 0.008)
         surfaceWater = ocean * 0.05;
@@ -131,7 +139,8 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
         vapor = _WorldWaterC.x * lerp(0.4, 1.0, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
 
     _MaterialWrite[id.xy] = material;
-    _StateWrite[id.xy] = float4(temperature, pressure, surfaceWater, 0.0);
+    _StateWrite[id.xy] = float4(temperature, 0.0, 0.0, 0.0);
     _FlowWrite[id.xy] = 0.0;
-    _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
+    _AuxWrite[id.xy] = float4(0.0, 0.0, 0.0, fault);
+    _WaterWrite[id.xy] = float4(surfaceWater, groundwater, ice, vapor);
 }

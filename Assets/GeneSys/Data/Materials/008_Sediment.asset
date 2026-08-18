@@ -36,3 +36,7 @@ MonoBehaviour:
   toxicity: 0.01
   caloricContent: 0.4
   bioModifiable: 1
+  yieldStrength: 0.08
+  permeability: 0.7
+  latentHeatFusion: 15
+  latentHeatVapor: 40
