@@ -1,11 +1,16 @@
 using System.Reflection;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace GeneSys.Configuration
 {
     public enum SimulationPreset { Validation, Standard, Stress }
 
+    /// <summary>
+    /// Canonical water mass contract: state.z = surface liquid/ice mass, aux.x = vapor, aux.y = groundwater.
+    /// Material IDs describe phase/appearance only; every transfer subtracts from one reservoir before adding to another.
+    /// </summary>
     [CreateAssetMenu(menuName = "GeneSys/Simulation Config", fileName = "SimulationConfig")]
     public sealed class SimulationConfig : ScriptableObject
     {
@@ -25,8 +30,18 @@ namespace GeneSys.Configuration
         [Range(0.001f, 0.1f)] public float soilRatio = 0.025f;
         [Range(0f, 0.2f)] public float borderNoise = 0.035f;
         [Range(0f, 1f)] public float protrusionChance = 0.12f;
-        [Range(0f, 1f)] public float initialWaterTable = 0.55f;
+        [FormerlySerializedAs("initialWaterTable")]
+        [Range(0f, 1f)] public float groundwaterDepth = 0.55f;
         [Range(0, 64)] public int faultCount = 12;
+        [Range(0.2f, 0.8f)] public float targetOceanCoverage = 0.5f;
+        [Range(2, 3)] public int minOceanBasins = 2;
+        [Range(2, 3)] public int maxOceanBasins = 3;
+        [Range(0f, 1f)] public float seaLevelRadius = 0f;
+        [Range(0.01f, 0.2f)] public float basinDepth = 0.08f;
+        [Range(0f, 0.15f)] public float terrainRelief = 0.045f;
+        [Range(0f, 0.08f)] public float coastRoughness = 0.025f;
+        [Range(0f, 1f)] public float initialGroundwaterSaturation = 0.65f;
+        [Range(0f, 0.5f)] public float initialAtmosphericHumidity = 0.08f;
 
         [Header("Material mechanics")]
         [Range(0f, 5f)] public float gravityStrength = 1f;
@@ -41,6 +56,8 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float extrusionRate = 0.3f;
         [Range(0f, 2f)] public float volcanicCooling = 0.15f;
         [Range(0f, 2f)] public float magmaViscosity = 0.5f;
+        [Range(0f, 4f)] public float hydrothermalStrength = 0.35f;
+        [Range(0f, 4f)] public float ventChemicalRate = 0.12f;
 
         [Header("Hydrology and erosion")]
         [Range(0f, 4f)] public float infiltrationRate = 0.3f;
@@ -50,6 +67,13 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float erosionRate = 0.06f;
         [Range(0f, 2f)] public float depositionRate = 0.08f;
         [Range(0f, 2f)] public float baseSoilCohesion = 0.45f;
+        [Range(0f, 4f)] public float runoffRate = 0.45f;
+        [Range(0f, 4f)] public float pondingRate = 0.25f;
+        [Range(0f, 1f)] public float springHeadThreshold = 0.55f;
+        [Range(0f, 4f)] public float springDischargeRate = 0.35f;
+        [Range(0f, 4f)] public float geyserHeatThreshold = 120f;
+        [Range(0f, 4f)] public float geyserDischargeRate = 0.5f;
+        [Range(0f, 8f)] public float geyserCooldownSeconds = 2.5f;
 
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
@@ -95,6 +119,8 @@ namespace GeneSys.Configuration
             grid.Validate();
             ticksPerSecond = Mathf.Max(1f, ticksPerSecond);
             dayLengthSeconds = Mathf.Max(1f, dayLengthSeconds);
+            minOceanBasins = Mathf.Clamp(minOceanBasins, 2, 3);
+            maxOceanBasins = Mathf.Clamp(maxOceanBasins, minOceanBasins, 3);
         }
     }
 }

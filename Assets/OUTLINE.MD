@@ -48,6 +48,9 @@ in order to achieve a 'living world' we can't start with uniform concentric laye
 - orbital 'solar' body drive day/night temperature differential
 - differing materials warm/cool at different rates creating wind/weather systems
 - water cycle: surface materials soak/diffuse moisture to/from underground reserves - water vapor evaporates(allowing for tunable expansion/steam pressure) and collects at atmospheric boundary, shifted by wind/air pressure - water cools and condenses falling as rain
+- canonical water mass contract: `state.z` surface liquid/ice, `aux.x` vapor, `aux.y` groundwater; material IDs never create mass implicitly
+- worldgen seeds 2-3 separated ocean basins targeting ~50% angular coastline coverage, aquifers, and initial atmospheric humidity
+- runtime hydrology adds rain deposition, runoff/waterfalls, aquifer springs, geysers, and hydrothermal ocean vents coupled to geology
 
 ### UI
 

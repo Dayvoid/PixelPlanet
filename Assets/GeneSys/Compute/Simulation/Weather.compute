@@ -20,7 +20,10 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _Mechanics;
 float4 _Geology;
+float4 _GeologyB;
 float4 _Hydrology;
+float4 _HydrologyB;
+float4 _HydrologyC;
 float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
@@ -32,6 +35,12 @@ float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
 float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+bool IsAtmosphereCell(int2 cell, uint material)
+{
+    float radius = Radius01(cell.y, _GridSize.y);
+    return radius >= _AtmosphereStartRadius || D(material).metadata.x == 1.0;
+}
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
 {
@@ -83,14 +92,20 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float radius = Radius01(cell.y, _GridSize.y);
-    bool atmosphere = radius >= _AtmosphereStartRadius || D(material).metadata.x == 1.0;
+    bool atmosphere = IsAtmosphereCell(cell, material);
 
-    if (state.z > 0.0 && state.x > 5.0)
+    if (state.z > 0.0 && state.x > 5.0 && !atmosphere)
     {
         float evaporation = min(state.z, _WeatherB.y * saturate((state.x - 5.0) / 80.0) * _DeltaTime);
         state.z -= evaporation;
         aux.x += evaporation;
         state.x -= evaporation * 0.25;
+    }
+    else if (material == 9u && state.x > 5.0)
+    {
+        float evaporation = min(state.z, _WeatherB.y * 0.75 * saturate((state.x - 5.0) / 80.0) * _DeltaTime);
+        state.z -= evaporation;
+        aux.x += evaporation;
     }
 
     int2 sourceOffset = int2(clamp((int)round(-flow.x), -1, 1), clamp((int)round(-flow.y), -1, 1));
@@ -107,18 +122,15 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
         state.y = max(0.0, state.y - condensation * _WeatherC.x);
     }
 
-    if (state.z > 0.1 && atmosphere)
+    if (state.z > 0.05 && atmosphere)
     {
         float rain = min(state.z, _WeatherB.w * _DeltaTime);
+        state.z -= rain;
         flow.y -= rain * 2.0;
-        if (state.z > 0.6 && material == 1u)
-        {
-            material = state.x < 0.0 ? 10u : 9u;
-            state.z = min(state.z, 1.0);
-        }
     }
 
     if (material == 9u && state.x < 0.0) material = 10u;
     else if (material == 10u && state.x > 1.0) material = 9u;
+
     Write(cell, material, state, flow, aux);
 }

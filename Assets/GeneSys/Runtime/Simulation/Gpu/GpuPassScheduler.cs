@@ -32,6 +32,7 @@ namespace GeneSys.Simulation.Gpu
         private int tick;
 
         public int TickIndex => tick;
+        public void SetTickIndex(int value) => tick = Math.Max(0, value);
         public double LastTickMilliseconds { get; private set; }
         public float SolarAngle01 => Mathf.Repeat(tick / Mathf.Max(1f, config.ticksPerSecond * config.dayLengthSeconds), 1f);
 
@@ -54,10 +55,18 @@ namespace GeneSys.Simulation.Gpu
         {
             tick = 0;
             int kernel = worldGeneration.FindKernel("GenerateWorld");
+            if (kernel < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: GenerateWorld kernel missing. Reimport WorldGeneration.compute and fix shader compile errors.");
+                return;
+            }
             SetCommon(worldGeneration, kernel, 0f);
             worldGeneration.SetInt("_Seed", config.seed);
             worldGeneration.SetVector("_LayerRatios", new Vector4(config.coreRatio, config.mantleRatio, config.crustRatio, config.soilRatio));
-            worldGeneration.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, config.initialWaterTable, config.faultCount));
+            worldGeneration.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, config.groundwaterDepth, config.faultCount));
+            worldGeneration.SetVector("_WorldWaterA", new Vector4(config.targetOceanCoverage, config.minOceanBasins, config.maxOceanBasins, config.seaLevelRadius));
+            worldGeneration.SetVector("_WorldWaterB", new Vector4(config.basinDepth, config.terrainRelief, config.coastRoughness, config.initialGroundwaterSaturation));
+            worldGeneration.SetVector("_WorldWaterC", new Vector4(config.initialAtmosphericHumidity, config.groundwaterDepth, 0f, 0f));
             worldGeneration.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindWorldgenOutputs(worldGeneration, kernel);
             Dispatch(worldGeneration, kernel);
@@ -103,8 +112,10 @@ namespace GeneSys.Simulation.Gpu
             }
 
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
             DispatchPass(weather, weather.FindKernel("SolarAndWind"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("RunoffAndDeposition"), deltaTime);
 
             tick++;
             stopwatch.Stop();
@@ -129,7 +140,10 @@ namespace GeneSys.Simulation.Gpu
             shader.SetFloat("_AtmosphereStartRadius", resources.Grid.atmosphereStartRadius);
             shader.SetVector("_Mechanics", new Vector4(config.gravityStrength, config.thermalRate, config.electricalRate, config.pressureRate));
             shader.SetVector("_Geology", new Vector4(config.mantlePressure, config.fractureRate, config.extrusionRate, config.volcanicCooling));
+            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalStrength, config.ventChemicalRate, 0f, 0f));
             shader.SetVector("_Hydrology", new Vector4(config.infiltrationRate, config.groundwaterRate, config.dissolutionRate, config.collapseRate));
+            shader.SetVector("_HydrologyB", new Vector4(config.springHeadThreshold, config.springDischargeRate, config.geyserHeatThreshold, config.geyserDischargeRate));
+            shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, 0f, config.geyserCooldownSeconds));
             shader.SetVector("_Erosion", new Vector4(config.erosionRate, config.depositionRate, config.baseSoilCohesion, config.conservationTolerance));
             shader.SetVector("_WeatherA", new Vector4(config.solarIntensity, config.spaceTemperature, config.radiativeCooling, config.windStrength));
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));

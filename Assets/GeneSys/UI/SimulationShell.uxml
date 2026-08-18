@@ -52,6 +52,7 @@
 
                 <ui:VisualElement name="page-world" class="settings-page">
                     <ui:Label text="World" class="section-title" />
+                    <ui:Label name="world-metrics" text="Ocean coverage -- | Basins --" class="help" />
                     <ui:ScrollView name="settings-container" class="settings-scroll" />
                 </ui:VisualElement>
 

@@ -18,6 +18,7 @@ namespace GeneSys.Simulation
         public void RequestStep() { stepRequested = true; IsRunning = false; }
         public void SetSpeed(float speed) => Speed = Mathf.Clamp(speed, 0.05f, 16f);
         public void Reset() { accumulator = 0f; stepRequested = false; TickCount = 0; }
+        public void SetTickCount(long value) { TickCount = Math.Max(0L, value); accumulator = 0f; }
 
         public int Advance(float unscaledDeltaTime, float ticksPerSecond, Action<float> tick)
         {

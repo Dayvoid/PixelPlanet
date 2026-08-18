@@ -31,8 +31,17 @@ MonoBehaviour:
   soilRatio: 0.025
   borderNoise: 0.035
   protrusionChance: 0.12
-  initialWaterTable: 0.55
+  groundwaterDepth: 0.55
   faultCount: 12
+  targetOceanCoverage: 0.5
+  minOceanBasins: 2
+  maxOceanBasins: 3
+  seaLevelRadius: 0
+  basinDepth: 0.08
+  terrainRelief: 0.045
+  coastRoughness: 0.025
+  initialGroundwaterSaturation: 0.65
+  initialAtmosphericHumidity: 0.08
   gravityStrength: 1
   thermalRate: 0.35
   electricalRate: 0.3
@@ -43,6 +52,8 @@ MonoBehaviour:
   extrusionRate: 0.3
   volcanicCooling: 0.15
   magmaViscosity: 0.5
+  hydrothermalStrength: 0.35
+  ventChemicalRate: 0.12
   infiltrationRate: 0.3
   groundwaterRate: 0.18
   dissolutionRate: 0.03
@@ -50,6 +61,13 @@ MonoBehaviour:
   erosionRate: 0.06
   depositionRate: 0.08
   baseSoilCohesion: 0.45
+  runoffRate: 0.45
+  pondingRate: 0.25
+  springHeadThreshold: 0.55
+  springDischargeRate: 0.35
+  geyserHeatThreshold: 120
+  geyserDischargeRate: 0.5
+  geyserCooldownSeconds: 2.5
   dayLengthSeconds: 180
   solarIntensity: 0.8
   spaceTemperature: -25

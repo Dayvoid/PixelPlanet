@@ -19,13 +19,17 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _Mechanics;
 float4 _Geology;
+float4 _GeologyB;
 float4 _Hydrology;
+float4 _HydrologyB;
+float4 _HydrologyC;
 float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
 
 int2 Cell(int2 value) { return ClampCell(value, _GridSize); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 [numthreads(8, 8, 1)]
 void Volcanism(uint3 id : SV_DispatchThreadID)
@@ -77,6 +81,20 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
             state.y *= 0.5;
             flow *= 0.25;
         }
+    }
+
+    uint aboveMat = _MaterialRead.Load(int3(Cell(cell + int2(0, 1)), 0));
+    if (magma && (aboveMat == 9u || aboveMat == 10u))
+    {
+        float4 aboveState = _StateRead.Load(int3(Cell(cell + int2(0, 1)), 0));
+        float4 aboveAux = _AuxRead.Load(int3(Cell(cell + int2(0, 1)), 0));
+        float heatTransfer = min(aboveState.z, _GeologyB.x * _DeltaTime);
+        aboveState.x += heatTransfer * 60.0;
+        aboveAux.x += heatTransfer * 0.25;
+        aboveAux.z += heatTransfer * _GeologyB.y;
+        flow.y += heatTransfer;
+        _StateWrite[Cell(cell + int2(0, 1))] = SafeFinite4(aboveState, float4(15, 0, 0, 0));
+        _AuxWrite[Cell(cell + int2(0, 1))] = SafeFinite4(max(aboveAux, 0.0), 0.0);
     }
 
     _MaterialWrite[cell] = material;

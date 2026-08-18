@@ -34,6 +34,11 @@ namespace GeneSys.Editor
             config.ApplyPreset(SimulationPreset.Standard);
             config.seed = 12345;
             config.ticksPerSecond = 20f;
+            config.targetOceanCoverage = 0.5f;
+            config.minOceanBasins = 2;
+            config.maxOceanBasins = 3;
+            config.initialGroundwaterSaturation = 0.65f;
+            config.initialAtmosphericHumidity = 0.08f;
             EditorUtility.SetDirty(config);
 
             var definitions = new List<MaterialDefinition>

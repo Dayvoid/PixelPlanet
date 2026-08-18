@@ -41,6 +41,7 @@ namespace GeneSys.UI
         private readonly WorldSnapshotService snapshots = new();
         private Label statusLabel;
         private Label inspectLabel;
+        private Label worldMetricsLabel;
         private Button playButton;
         private Button toolsHeader;
         private Button settingsHeader;
@@ -69,11 +70,12 @@ namespace GeneSys.UI
             settingsBody = root.Q("settings-body");
             statusLabel = root.Q<Label>("status");
             inspectLabel = root.Q<Label>("inspection");
+            worldMetricsLabel = root.Q<Label>("world-metrics");
             playButton = root.Q<Button>("play");
 
             root.Q<Button>("play")?.RegisterCallback<ClickEvent>(_ => { host.Clock.Toggle(); RefreshPlayLabel(); });
             root.Q<Button>("step")?.RegisterCallback<ClickEvent>(_ => host.Clock.RequestStep());
-            root.Q<Button>("regenerate")?.RegisterCallback<ClickEvent>(_ => host.Regenerate());
+            root.Q<Button>("regenerate")?.RegisterCallback<ClickEvent>(_ => { host.Regenerate(); RefreshWorldMetrics(); });
             root.Q<Button>("save")?.RegisterCallback<ClickEvent>(_ => SaveSnapshot());
             root.Q<Button>("load")?.RegisterCallback<ClickEvent>(_ => LoadSnapshot());
             root.Q<Button>("validate")?.RegisterCallback<ClickEvent>(_ => validator?.ValidateNow());
@@ -94,6 +96,7 @@ namespace GeneSys.UI
             tools.Inspected += SetInspection;
             initialized = true;
             RefreshPlayLabel();
+            RefreshWorldMetrics();
         }
 
         private void SetupDrawers()
@@ -125,7 +128,7 @@ namespace GeneSys.UI
             var overlay = root.Q<DropdownField>("overlay");
             if (overlay != null)
             {
-                overlay.choices = new List<string> { "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor", "Groundwater", "Chemical/Bio", "Fault/Stress", "Toxicity/Calories" };
+                overlay.choices = new List<string> { "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor", "Groundwater", "Chemical/Bio", "Fault/Stress", "Toxicity/Calories", "Composite Water" };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
             }
@@ -193,6 +196,7 @@ namespace GeneSys.UI
             RefreshBoundControls(root);
             BuildSettings(root);
             RefreshPlayLabel();
+            RefreshWorldMetrics();
         }
 
         private void RefreshBoundControls(VisualElement root)
@@ -321,6 +325,18 @@ namespace GeneSys.UI
         private void RefreshPlayLabel()
         {
             if (playButton != null) playButton.text = host.Clock.IsRunning ? "Pause" : "Play";
+        }
+
+        private void RefreshWorldMetrics()
+        {
+            if (worldMetricsLabel == null || host == null || !host.IsReady) return;
+            SimulationMetrics.MeasureAsync(host, metrics =>
+            {
+                if (worldMetricsLabel == null) return;
+                worldMetricsLabel.text =
+                    $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
+                    $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
+            });
         }
 
         private string SnapshotPath => System.IO.Path.Combine(Application.persistentDataPath, "genesys-phase1.snapshot");

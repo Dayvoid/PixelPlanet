@@ -1,6 +1,12 @@
 #ifndef GENESYS_SIMULATION_STRUCTS_INCLUDED
 #define GENESYS_SIMULATION_STRUCTS_INCLUDED
 
+// Water mass contract:
+//   state.z  = canonical surface liquid/ice mass (never created implicitly by material ID alone)
+//   aux.x    = atmospheric vapor mass
+//   aux.y    = subsurface groundwater mass
+// Every transfer must subtract from a source reservoir before adding to a destination.
+
 struct MaterialGpuData
 {
     float4 color;
@@ -49,6 +55,27 @@ float4 SafeFinite4(float4 value, float4 fallback)
         SafeFinite(value.y, fallback.y),
         SafeFinite(value.z, fallback.z),
         SafeFinite(value.w, fallback.w));
+}
+
+float AngularDistance01(float a, float b)
+{
+    float d = abs(a - b);
+    return min(d, 1.0 - d);
+}
+
+uint Hash(uint value)
+{
+    value ^= value >> 16;
+    value *= 0x7feb352d;
+    value ^= value >> 15;
+    value *= 0x846ca68b;
+    value ^= value >> 16;
+    return value;
+}
+
+float Hash01(uint value)
+{
+    return (Hash(value) & 0x00ffffff) / 16777215.0;
 }
 
 #endif

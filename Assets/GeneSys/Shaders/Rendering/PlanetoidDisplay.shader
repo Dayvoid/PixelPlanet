@@ -98,6 +98,17 @@ Shader "GeneSys/Planetoid Display"
                 else if (_OverlayMode == 8) color = lerp(float3(0.0, 0.05, 0.0), float3(0.2, 1.0, 0.1), saturate(aux.z));
                 else if (_OverlayMode == 9) color = lerp(float3(0.0, 0.0, 0.0), float3(1.0, 0.4, 0.0), saturate(aux.w));
                 else if (_OverlayMode == 10) color = float3(saturate(materialProperties.x), saturate(materialProperties.y), 0.1);
+                else if (_OverlayMode == 11)
+                {
+                    float surface = saturate(state.z);
+                    float ground = saturate(aux.y) * 0.65;
+                    float vapor = saturate(aux.x) * 0.35;
+                    float thermal = saturate(aux.w) * 0.25 + saturate(aux.z) * 0.15;
+                    float waterSignal = saturate(surface + ground + vapor + thermal);
+                    color = lerp(float3(0.05, 0.04, 0.02), float3(0.0, 0.55, 1.0), waterSignal);
+                    if (material == 9u) color = lerp(color, float3(0.0, 0.35, 0.95), 0.65);
+                    if (thermal > 0.15) color = lerp(color, float3(1.0, 0.35, 0.05), thermal);
+                }
 
                 float radialGrid = frac(simulationRadius * height);
                 float angularGrid = frac(angle / 6.28318530718 * width);

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using GeneSys.Configuration;
 using GeneSys.Simulation;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -10,6 +11,8 @@ namespace GeneSys.Persistence
     public sealed class WorldSnapshotService
     {
         private const uint Magic = 0x47535953;
+        private const int Version1 = 1;
+        private const int Version2 = 2;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
@@ -36,12 +39,14 @@ namespace GeneSys.Persistence
                         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
                         using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
                         using var writer = new BinaryWriter(stream);
+                        SimulationConfig config = host.Config;
                         writer.Write(Magic);
-                        writer.Write(1);
+                        writer.Write(Version2);
                         writer.Write(host.Resources.Grid.angularResolution);
                         writer.Write(host.Resources.Grid.radialResolution);
-                        writer.Write(host.Config.seed);
+                        writer.Write(config.seed);
                         writer.Write(host.Clock.TickCount);
+                        WriteConfig(writer, config);
                         foreach (byte[] payload in payloads)
                         {
                             writer.Write(payload.Length);
@@ -58,13 +63,20 @@ namespace GeneSys.Persistence
             if (host == null || !host.IsReady || !File.Exists(path)) return false;
             using var stream = File.OpenRead(path);
             using var reader = new BinaryReader(stream);
-            if (reader.ReadUInt32() != Magic || reader.ReadInt32() != 1) return false;
+            if (reader.ReadUInt32() != Magic) return false;
+            int version = reader.ReadInt32();
+            if (version != Version1 && version != Version2) return false;
+
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
             int seed = reader.ReadInt32();
-            _ = reader.ReadInt64();
+            long tick = reader.ReadInt64();
             if (width != host.Resources.Grid.angularResolution || height != host.Resources.Grid.radialResolution) return false;
+
             host.Config.seed = seed;
+            if (version >= Version2)
+                ReadConfig(reader, host.Config);
+
             RenderTexture[] targets =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -74,14 +86,73 @@ namespace GeneSys.Persistence
             {
                 int length = reader.ReadInt32();
                 byte[] payload = reader.ReadBytes(length);
-                var texture = new Texture2D(width, height, target.graphicsFormat, TextureCreationFlags.None);
-                texture.LoadRawTextureData(payload);
-                texture.Apply(false, false);
-                Graphics.CopyTexture(texture, target);
-                UnityEngine.Object.Destroy(texture);
+                if (payload.Length != length) return false;
+                Texture2D staging = CreateStagingTexture(width, height, target.graphicsFormat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, target);
+                UnityEngine.Object.Destroy(staging);
             }
             host.Resources.CopyReadToWrite();
+            host.RestoreSimulationTick(tick);
             return true;
+        }
+
+        private static void WriteConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.targetOceanCoverage);
+            writer.Write(config.minOceanBasins);
+            writer.Write(config.maxOceanBasins);
+            writer.Write(config.seaLevelRadius);
+            writer.Write(config.basinDepth);
+            writer.Write(config.terrainRelief);
+            writer.Write(config.coastRoughness);
+            writer.Write(config.initialGroundwaterSaturation);
+            writer.Write(config.initialAtmosphericHumidity);
+            writer.Write(config.groundwaterDepth);
+            writer.Write(config.runoffRate);
+            writer.Write(config.pondingRate);
+            writer.Write(config.springHeadThreshold);
+            writer.Write(config.springDischargeRate);
+            writer.Write(config.geyserHeatThreshold);
+            writer.Write(config.geyserDischargeRate);
+            writer.Write(config.geyserCooldownSeconds);
+            writer.Write(config.hydrothermalStrength);
+            writer.Write(config.ventChemicalRate);
+        }
+
+        private static void ReadConfig(BinaryReader reader, SimulationConfig config)
+        {
+            config.targetOceanCoverage = reader.ReadSingle();
+            config.minOceanBasins = reader.ReadInt32();
+            config.maxOceanBasins = reader.ReadInt32();
+            config.seaLevelRadius = reader.ReadSingle();
+            config.basinDepth = reader.ReadSingle();
+            config.terrainRelief = reader.ReadSingle();
+            config.coastRoughness = reader.ReadSingle();
+            config.initialGroundwaterSaturation = reader.ReadSingle();
+            config.initialAtmosphericHumidity = reader.ReadSingle();
+            config.groundwaterDepth = reader.ReadSingle();
+            config.runoffRate = reader.ReadSingle();
+            config.pondingRate = reader.ReadSingle();
+            config.springHeadThreshold = reader.ReadSingle();
+            config.springDischargeRate = reader.ReadSingle();
+            config.geyserHeatThreshold = reader.ReadSingle();
+            config.geyserDischargeRate = reader.ReadSingle();
+            config.geyserCooldownSeconds = reader.ReadSingle();
+            config.hydrothermalStrength = reader.ReadSingle();
+            config.ventChemicalRate = reader.ReadSingle();
+        }
+
+        private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)
+        {
+            TextureFormat textureFormat = format switch
+            {
+                GraphicsFormat.R32_UInt => TextureFormat.RFloat,
+                GraphicsFormat.R32G32_SFloat => TextureFormat.RGFloat,
+                _ => TextureFormat.RGBAFloat
+            };
+            return new Texture2D(width, height, textureFormat, false, true);
         }
     }
 }

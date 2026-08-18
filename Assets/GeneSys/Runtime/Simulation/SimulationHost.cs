@@ -112,6 +112,14 @@ namespace GeneSys.Simulation
             if (!IsReady) return;
             scheduler.GenerateWorld();
             Clock.Reset();
+            validator?.ResetBaseline();
+        }
+
+        public void RestoreSimulationTick(long tick)
+        {
+            Clock.SetTickCount(tick);
+            scheduler?.SetTickIndex((int)Mathf.Min(int.MaxValue, tick));
+            validator?.ResetBaseline();
         }
 
         public void ApplyPreset(SimulationPreset preset)

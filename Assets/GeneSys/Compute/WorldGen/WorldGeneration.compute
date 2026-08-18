@@ -14,21 +14,9 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _LayerRatios;
 float4 _WorldGenParams;
-
-uint Hash(uint value)
-{
-    value ^= value >> 16;
-    value *= 0x7feb352d;
-    value ^= value >> 15;
-    value *= 0x846ca68b;
-    value ^= value >> 16;
-    return value;
-}
-
-float Hash01(uint value)
-{
-    return (Hash(value) & 0x00ffffff) / 16777215.0;
-}
+float4 _WorldWaterA;
+float4 _WorldWaterB;
+float4 _WorldWaterC;
 
 float AngularNoise(uint theta, uint salt)
 {
@@ -41,6 +29,37 @@ float AngularNoise(uint theta, uint salt)
     return lerp(a, b, t) * 2.0 - 1.0;
 }
 
+int GetBasinCount()
+{
+    int minB = max(2, (int)_WorldWaterA.y);
+    int maxB = max(minB, (int)_WorldWaterA.z);
+    return minB + (int)(Hash01((uint)_Seed * 6151u) * (maxB - minB + 1));
+}
+
+float OceanMask(uint theta)
+{
+    int basinCount = GetBasinCount();
+    float coverage = saturate(_WorldWaterA.x);
+    float halfWidth = coverage / max(1.0, 2.0 * basinCount);
+    halfWidth = max(halfWidth, 0.04);
+    float angular = (theta + 0.5) / max(1.0, (float)_GridSize.x);
+    float coastNoise = AngularNoise(theta, 911) * _WorldWaterB.z;
+    float phase = Hash01((uint)_Seed * 4177u);
+    float mask = 0.0;
+
+    for (int i = 0; i < 3; i++)
+    {
+        if (i >= basinCount) break;
+        float center = frac(phase + (float)i / basinCount + Hash01((uint)_Seed + i * 1301u) * 0.12);
+        float widthScale = lerp(0.85, 1.15, Hash01((uint)_Seed + i * 2707u));
+        float width = halfWidth * widthScale + coastNoise * halfWidth;
+        float dist = AngularDistance01(angular, center);
+        mask = max(mask, smoothstep(width, width * 0.35, dist));
+    }
+
+    return saturate(mask);
+}
+
 [numthreads(8, 8, 1)]
 void GenerateWorld(uint3 id : SV_DispatchThreadID)
 {
@@ -50,33 +69,69 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     float noise = AngularNoise(id.x, 17) * _WorldGenParams.x;
     float protrusionNoise = AngularNoise(id.x, 103);
     float protrusion = protrusionNoise > (1.0 - _WorldGenParams.y) ? _WorldGenParams.x * 2.0 : 0.0;
+    float ocean = OceanMask(id.x);
+    float ridge = max(0.0, AngularNoise(id.x, 313)) * _WorldWaterB.y;
+    float basinCarve = ocean * _WorldWaterB.x;
 
     float coreEdge = _LayerRatios.x + noise * 0.65;
     float mantleEdge = coreEdge + _LayerRatios.y + noise;
     float crustEdge = mantleEdge + _LayerRatios.z + noise * 0.4 + protrusion;
-    float soilEdge = min(_AtmosphereStartRadius, crustEdge + _LayerRatios.w + max(0.0, noise * 0.25));
+    float baseSoilEdge = crustEdge + _LayerRatios.w + max(0.0, noise * 0.25);
+    float terrainSurface = baseSoilEdge - basinCarve + (1.0 - ocean) * ridge;
+
+    float seaLevel = _WorldWaterA.w;
+    if (seaLevel <= 0.01)
+        seaLevel = lerp(crustEdge, _AtmosphereStartRadius, 0.72);
+    seaLevel = min(seaLevel, _AtmosphereStartRadius - 0.01);
+    terrainSurface = min(terrainSurface, _AtmosphereStartRadius - 0.015);
 
     uint material = 0;
     if (radius < coreEdge) material = 2;
     else if (radius < mantleEdge) material = 3;
     else if (radius < crustEdge) material = 4;
-    else if (radius < soilEdge) material = 7;
+    else if (ocean > 0.2 && radius < seaLevel)
+    {
+        if (radius < terrainSurface) material = 7;
+        else material = 9;
+    }
+    else if (radius < terrainSurface) material = 7;
     else material = 1;
 
     float faultCount = max(1.0, _WorldGenParams.w);
     float angular = (id.x + 0.5) / _GridSize.x;
     float faultWave = abs(frac(angular * faultCount + AngularNoise(id.y, 509) * 0.15) - 0.5);
-    float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, soilEdge);
+    float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, terrainSurface + 0.02);
+    fault = max(fault, ocean * 0.15 * step(crustEdge, radius));
 
     float temperature = lerp(1500.0, 15.0, saturate(radius));
-    float pressure = saturate((soilEdge - radius) * 8.0) * 2.0;
+    if (material == 9u) temperature = lerp(4.0, 18.0, saturate((seaLevel - radius) / max(0.01, seaLevel - terrainSurface)));
+    float pressure = saturate((terrainSurface - radius) * 8.0) * 2.0;
+
     float surfaceWater = 0.0;
+    if (material == 9u)
+    {
+        float column = saturate((seaLevel - radius) / max(0.01, seaLevel - max(terrainSurface, crustEdge)));
+        surfaceWater = lerp(0.35, 1.0, column);
+    }
+    else if (material == 7u && radius > terrainSurface - 0.008)
+        surfaceWater = ocean * 0.05;
+
+    float groundwaterDepth = saturate(_WorldWaterC.y);
     float groundwater = 0.0;
-    if ((material == 4 || material == 7) && radius > mantleEdge && radius < lerp(mantleEdge, soilEdge, _WorldGenParams.z))
-        groundwater = saturate(Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed) * 0.8 + 0.2);
+    if ((material == 4u || material == 7u) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
+    {
+        float base = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed);
+        groundwater = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
+        groundwater *= lerp(0.65, 1.25, ocean);
+        groundwater *= lerp(0.85, 1.15, fault);
+    }
+
+    float vapor = 0.0;
+    if (material == 1u && radius >= _AtmosphereStartRadius * 0.95)
+        vapor = _WorldWaterC.x * lerp(0.4, 1.0, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
 
     _MaterialWrite[id.xy] = material;
     _StateWrite[id.xy] = float4(temperature, pressure, surfaceWater, 0.0);
     _FlowWrite[id.xy] = 0.0;
-    _AuxWrite[id.xy] = float4(0.0, groundwater, 0.0, fault);
+    _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
 }
