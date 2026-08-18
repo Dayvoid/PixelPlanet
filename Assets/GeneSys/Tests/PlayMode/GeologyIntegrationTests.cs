@@ -118,6 +118,26 @@ namespace GeneSys.Tests
             });
         }
 
+        private static void PaintGroundwater(SimulationHost host, int x, int y, float amount)
+        {
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(x, y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(5f, amount, 0f, 0f)
+            });
+        }
+
+        private static void DriveWindErosion(SimulationHost host, int x, int y)
+        {
+            // Lateral pressure gradient → SolarAndWind flow. Keep soil dry.
+            PaintPressure(host, x - 1, y, 8f);
+            PaintPressure(host, x + 1, y, -2f);
+            PaintGroundwater(host, x, y, -100f);
+            PaintWater(host, x, y, -100f);
+        }
+
         private static IEnumerator Step(SimulationHost host, int ticks)
         {
             for (int i = 0; i < ticks; i++)
@@ -141,6 +161,10 @@ namespace GeneSys.Tests
             host.Config.ashFertilityStrength = 1f;
             host.Config.ashUpdraftStrength = 1f;
             host.Config.ashSettlingStrength = 1f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.pressureRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
         }
 
         private static void ConfigureStressIsolation(SimulationHost host)
@@ -157,9 +181,11 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.collapseRate = 0f;
             host.Config.erosionRate = 0f;
-            host.Config.depositionRate = 0f;
             host.Config.baseSoilCohesion = 0f;
             host.Config.stressDecayRate = 0.02f;
+            host.Config.dryMoistureThreshold = 0.08f;
+            host.Config.moistureCohesionStrength = 0.85f;
+            host.Config.capillaryEvaporationFraction = 0.35f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 0f;
@@ -173,6 +199,8 @@ namespace GeneSys.Tests
             host.Config.thermalRate = 0f;
             host.Config.electricalRate = 0f;
             host.Config.pressureRate = 0f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.vaporPressureScale = 0f;
         }
 
         private static void RestoreStressIsolation(SimulationHost host)
@@ -188,9 +216,11 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0.03f;
             host.Config.collapseRate = 0.03f;
             host.Config.erosionRate = 0.06f;
-            host.Config.depositionRate = 0.08f;
             host.Config.baseSoilCohesion = 0.45f;
             host.Config.stressDecayRate = 0.02f;
+            host.Config.dryMoistureThreshold = 0.08f;
+            host.Config.moistureCohesionStrength = 0.85f;
+            host.Config.capillaryEvaporationFraction = 0.35f;
             host.Config.infiltrationRate = 0.3f;
             host.Config.groundwaterRate = 0.18f;
             host.Config.runoffRate = 0.45f;
@@ -204,6 +234,8 @@ namespace GeneSys.Tests
             host.Config.thermalRate = 0.35f;
             host.Config.electricalRate = 0.3f;
             host.Config.pressureRate = 0.4f;
+            host.Config.pressureDiffusionRate = 0.5f;
+            host.Config.vaporPressureScale = 0.25f;
         }
 
         private static void PaintSupportedColumn(SimulationHost host, int x, int y, uint surfaceMaterial)
@@ -544,8 +576,13 @@ namespace GeneSys.Tests
 
             host.Config.stressDecayRate = 0.25f;
             host.Config.erosionRate = 0.02f;
-            PaintWater(host, x, y, 0.55f);
-            yield return Step(host, 60);
+            host.Config.windStrength = 0.15f;
+            host.Config.windDamping = 0.2f;
+            for (int i = 0; i < 60; i++)
+            {
+                DriveWindErosion(host, x, y);
+                yield return Step(host, 1);
+            }
 
             uint material = 0;
             float stress = -1f;
@@ -572,7 +609,10 @@ namespace GeneSys.Tests
             host.Config.erosionRate = 2f;
             host.Config.stressDecayRate = 0.02f;
             host.Config.baseSoilCohesion = 0f;
-            host.Config.depositionRate = 0f;
+            host.Config.dryMoistureThreshold = 0.08f;
+            host.Config.moistureCohesionStrength = 0.85f;
+            host.Config.windStrength = 3f;
+            host.Config.windDamping = 0.01f;
             host.Config.seed = 6161;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -584,9 +624,9 @@ namespace GeneSys.Tests
 
             bool converted = false;
             float stressAfterConvert = -1f;
-            for (int i = 0; i < 40 && !converted; i++)
+            for (int i = 0; i < 60 && !converted; i++)
             {
-                PaintWater(host, x, y, 1.5f);
+                DriveWindErosion(host, x, y);
                 yield return Step(host, 1);
                 yield return ReadMaterialsAndAux(host, (mats, aux) =>
                 {
@@ -599,7 +639,7 @@ namespace GeneSys.Tests
                 });
             }
 
-            Assert.That(converted, Is.True, "Expected soil to convert to sediment under sustained over-threshold erosion.");
+            Assert.That(converted, Is.True, "Expected dry exposed soil to convert under sustained wind-driven erosion.");
             Assert.That(stressAfterConvert, Is.EqualTo(0f).Within(0.001f));
 
             RestoreStressIsolation(host);
@@ -625,23 +665,31 @@ namespace GeneSys.Tests
             yield return Step(host, 40);
 
             host.Config.stressDecayRate = 0f;
-            host.Config.erosionRate = 0.4f;
-            PaintWater(host, x, y, 1.0f);
-            yield return Step(host, 18);
-
+            host.Config.erosionRate = 0.15f;
+            host.Config.windStrength = 1.2f;
+            host.Config.windDamping = 0.35f;
+            bool loaded = false;
             float stressLoaded = -1f;
             uint materialLoaded = 0;
-            yield return ReadMaterialsAndAux(host, (mats, aux) =>
+            for (int i = 0; i < 50 && !loaded; i++)
             {
-                int index = y * host.Grid.angularResolution + x;
-                materialLoaded = mats[index];
-                stressLoaded = aux[index].w;
-            });
+                DriveWindErosion(host, x, y);
+                yield return Step(host, 1);
+                yield return ReadMaterialsAndAux(host, (mats, aux) =>
+                {
+                    int index = y * host.Grid.angularResolution + x;
+                    materialLoaded = mats[index];
+                    stressLoaded = aux[index].w;
+                    if (materialLoaded == MaterialIds.Soil && stressLoaded >= 0.2f && stressLoaded <= 0.95f)
+                        loaded = true;
+                });
+            }
             Assert.That(materialLoaded, Is.EqualTo(MaterialIds.Soil));
-            Assert.That(stressLoaded, Is.InRange(0.2f, 0.95f));
+            Assert.That(loaded, Is.True, $"Expected partial dry-soil stress accumulation, got stress={stressLoaded}");
 
             // Remove erosional drive and hold decay at zero; stress must not recover.
             host.Config.erosionRate = 0f;
+            host.Config.windStrength = 0f;
             yield return Step(host, 30);
 
             float stressAfterIdle = -1f;
@@ -655,6 +703,229 @@ namespace GeneSys.Tests
 
             Assert.That(material, Is.EqualTo(MaterialIds.Soil));
             Assert.That(stressAfterIdle, Is.EqualTo(stressLoaded).Within(0.05f));
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator MoistExposedSoilResistsWindErosion()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.erosionRate = 2f;
+            host.Config.stressDecayRate = 0.02f;
+            host.Config.baseSoilCohesion = 0f;
+            host.Config.dryMoistureThreshold = 0.08f;
+            host.Config.moistureCohesionStrength = 0.85f;
+            host.Config.windStrength = 3f;
+            host.Config.windDamping = 0.01f;
+            host.Config.seed = 8181;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            PaintSupportedColumn(host, x, y, MaterialIds.Soil);
+            yield return Step(host, 1);
+
+            for (int i = 0; i < 50; i++)
+            {
+                PaintPressure(host, x - 1, y, 8f);
+                PaintPressure(host, x + 1, y, -2f);
+                PaintGroundwater(host, x, y, 0.6f);
+                yield return Step(host, 1);
+            }
+
+            uint material = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                material = mats[y * host.Grid.angularResolution + x];
+            });
+            Assert.That(material, Is.EqualTo(MaterialIds.Soil), "Moist exposed soil should resist ordinary wind erosion.");
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator BuriedSoilResistsOrdinaryWindErosion()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.erosionRate = 2f;
+            host.Config.stressDecayRate = 0.02f;
+            host.Config.baseSoilCohesion = 0f;
+            host.Config.windStrength = 3f;
+            host.Config.windDamping = 0.01f;
+            host.Config.seed = 9191;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                Paint(host, x + dx, y - 1, MaterialIds.Rock);
+                Paint(host, x + dx, y, MaterialIds.Soil);
+                Paint(host, x + dx, y + 1, MaterialIds.Rock);
+            }
+            yield return Step(host, 1);
+
+            for (int i = 0; i < 50; i++)
+            {
+                DriveWindErosion(host, x, y);
+                yield return Step(host, 1);
+            }
+
+            uint material = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                material = mats[y * host.Grid.angularResolution + x];
+            });
+            Assert.That(material, Is.EqualTo(MaterialIds.Soil), "Buried soil must not convert via ordinary wind/runoff erosion.");
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator RewettingHaltsDrySoilStressAccumulation()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.erosionRate = 0.2f;
+            host.Config.stressDecayRate = 0.08f;
+            host.Config.baseSoilCohesion = 0f;
+            host.Config.windStrength = 1.2f;
+            host.Config.windDamping = 0.35f;
+            host.Config.seed = 10101;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            PaintSupportedColumn(host, x, y, MaterialIds.Soil);
+            yield return Step(host, 1);
+
+            float stressDry = -1f;
+            uint materialDry = 0;
+            for (int i = 0; i < 40; i++)
+            {
+                DriveWindErosion(host, x, y);
+                yield return Step(host, 1);
+                yield return ReadMaterialsAndAux(host, (mats, aux) =>
+                {
+                    int index = y * host.Grid.angularResolution + x;
+                    materialDry = mats[index];
+                    stressDry = aux[index].w;
+                });
+                if (materialDry == MaterialIds.Soil && stressDry >= 0.15f)
+                    break;
+            }
+            Assert.That(materialDry, Is.EqualTo(MaterialIds.Soil), "Dry loading phase must stop before soil converts to sediment.");
+            Assert.That(stressDry, Is.GreaterThan(0.15f));
+
+            for (int i = 0; i < 40; i++)
+            {
+                PaintPressure(host, x - 1, y, 8f);
+                PaintPressure(host, x + 1, y, -2f);
+                PaintGroundwater(host, x, y, 0.6f);
+                yield return Step(host, 1);
+            }
+
+            float stressWet = -1f;
+            uint material = 0;
+            yield return ReadMaterialsAndAux(host, (mats, aux) =>
+            {
+                int index = y * host.Grid.angularResolution + x;
+                material = mats[index];
+                stressWet = aux[index].w;
+            });
+            Assert.That(material, Is.EqualTo(MaterialIds.Soil));
+            Assert.That(stressWet, Is.LessThan(stressDry));
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator CapillaryEvaporationDriesExposedSoilGroundwater()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.evaporationRate = 2f;
+            host.Config.capillaryEvaporationFraction = 1f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.seed = 11111;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            PaintSupportedColumn(host, x, y, MaterialIds.Soil);
+            PaintWater(host, x, y, -100f);
+            PaintGroundwater(host, x, y, -100f);
+            PaintGroundwater(host, x, y, 0.5f);
+            PaintHeat(host, x, y, 80f);
+            yield return Step(host, 1);
+
+            float groundBefore = -1f;
+            yield return ReadMaterialsAndAux(host, (mats, aux) =>
+            {
+                groundBefore = aux[y * host.Grid.angularResolution + x].y;
+            });
+            Assert.That(groundBefore, Is.GreaterThan(0.2f));
+
+            for (int i = 0; i < 80; i++)
+            {
+                PaintHeat(host, x, y, 40f);
+                yield return Step(host, 1);
+            }
+
+            float groundAfter = -1f;
+            float vapor = -1f;
+            yield return ReadMaterialsAndAux(host, (mats, aux) =>
+            {
+                int index = y * host.Grid.angularResolution + x;
+                groundAfter = aux[index].y;
+                vapor = aux[index].x;
+            });
+            Assert.That(groundAfter, Is.LessThan(groundBefore - 0.1f));
+            Assert.That(vapor, Is.GreaterThan(0.05f));
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator IdleSedimentDoesNotAutoConvertToSoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.seed = 12121;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            PaintSupportedColumn(host, x, y, MaterialIds.Sediment);
+            PaintGroundwater(host, x, y, 0.8f);
+            PaintWater(host, x, y, 0.4f);
+            yield return Step(host, 80);
+
+            uint material = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                material = mats[y * host.Grid.angularResolution + x];
+            });
+            Assert.That(material, Is.EqualTo(MaterialIds.Sediment), "Calm/wet sediment must not passively become soil.");
 
             RestoreStressIsolation(host);
         }

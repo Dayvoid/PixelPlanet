@@ -47,7 +47,6 @@ namespace GeneSys.Configuration
         [Range(0f, 5f)] public float gravityStrength = 1f;
         [Range(0f, 4f)] public float thermalRate = 0.35f;
         [Range(0f, 4f)] public float electricalRate = 0.3f;
-        [Range(0f, 4f)] public float pressureRate = 0.4f;
         [Range(0f, 1f)] public float phaseHysteresis = 0.02f;
 
         [Header("Geology")]
@@ -73,9 +72,11 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float dissolutionRate = 0.03f;
         [Range(0f, 2f)] public float collapseRate = 0.03f;
         [Range(0f, 2f)] public float erosionRate = 0.06f;
-        [Range(0f, 2f)] public float depositionRate = 0.08f;
         [Range(0f, 2f)] public float baseSoilCohesion = 0.45f;
         [Range(0f, 2f)] public float stressDecayRate = 0.02f;
+        [Range(0.01f, 1f)] public float dryMoistureThreshold = 0.08f;
+        [Range(0f, 2f)] public float moistureCohesionStrength = 0.85f;
+        [Range(0f, 1f)] public float capillaryEvaporationFraction = 0.35f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
         [Range(0f, 4f)] public float pondingRate = 0.25f;
         [Range(0f, 1f)] public float springHeadThreshold = 0.55f;
@@ -95,6 +96,14 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float condensationRate = 0.12f;
         [Range(0f, 4f)] public float precipitationRate = 0.2f;
         [Range(0f, 4f)] public float vaporPressureScale = 0.25f;
+        [Range(0f, 4f)] public float pressureRate = 0.4f;
+        [Range(0f, 4f)] public float pressureDiffusionRate = 0.5f;
+        [Range(0f, 4f)] public float gasPressureDiffusivity = 1f;
+        [Range(0f, 4f)] public float fluidPressureDiffusivity = 0.35f;
+        [Range(0f, 4f)] public float porousPressureDiffusivity = 0.12f;
+        [Range(0f, 4f)] public float rigidPressureDiffusivity = 0.02f;
+        [Range(0f, 8f)] public float pressureEquilibriumGradient = 2f;
+        [Range(0f, 8f)] public float pressureEquilibriumMaximum = 2f;
 
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;

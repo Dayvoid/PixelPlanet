@@ -45,7 +45,6 @@ MonoBehaviour:
   gravityStrength: 1
   thermalRate: 0.35
   electricalRate: 0.3
-  pressureRate: 0.4
   phaseHysteresis: 0.02
   mantlePressure: 0.7
   fractureRate: 0.2
@@ -67,9 +66,11 @@ MonoBehaviour:
   dissolutionRate: 0.03
   collapseRate: 0.03
   erosionRate: 0.06
-  depositionRate: 0.08
   baseSoilCohesion: 0.45
   stressDecayRate: 0.02
+  dryMoistureThreshold: 0.08
+  moistureCohesionStrength: 0.85
+  capillaryEvaporationFraction: 0.35
   runoffRate: 0.45
   pondingRate: 0.25
   springHeadThreshold: 0.55
@@ -87,6 +88,14 @@ MonoBehaviour:
   condensationRate: 0.12
   precipitationRate: 0.2
   vaporPressureScale: 0.25
+  pressureRate: 0.4
+  pressureDiffusionRate: 0.5
+  gasPressureDiffusivity: 1
+  fluidPressureDiffusivity: 0.35
+  porousPressureDiffusivity: 0.12
+  rigidPressureDiffusivity: 0.02
+  pressureEquilibriumGradient: 2
+  pressureEquilibriumMaximum: 2
   brushRadius: 5
   brushStrength: 1
   validationIntervalTicks: 1000

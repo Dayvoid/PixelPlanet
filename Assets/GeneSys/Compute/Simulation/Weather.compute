@@ -30,6 +30,7 @@ float4 _WeatherB;
 float4 _WeatherC;
 float4 _EruptionA;
 float4 _EruptionB;
+float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -42,6 +43,12 @@ bool IsAtmosphereCell(int2 cell, uint material)
 {
     float radius = Radius01(cell.y, _GridSize.y);
     return radius >= _AtmosphereStartRadius || D(material).metadata.x == 1.0;
+}
+
+bool IsExposedSurface(int2 cell, uint material)
+{
+    uint above = M(cell + int2(0, 1));
+    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
@@ -95,17 +102,32 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float4 aux = A(cell);
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
+    bool exposed = IsExposedSurface(cell, material);
+    MaterialGpuData definition = D(material);
+    float evaporativeDrive = saturate((state.x - 5.0) / 80.0);
+    float evaporationBudget = _WeatherB.y * evaporativeDrive * _DeltaTime;
 
-    if (state.z > 0.0 && state.x > 5.0 && !atmosphere)
+    if (state.x > 5.0 && !atmosphere)
     {
-        float evaporation = min(state.z, _WeatherB.y * saturate((state.x - 5.0) / 80.0) * _DeltaTime);
-        state.z -= evaporation;
-        aux.x += evaporation;
-        state.x -= evaporation * 0.25;
+        float surfaceEvap = min(max(0.0, state.z), evaporationBudget);
+        state.z -= surfaceEvap;
+        aux.x += surfaceEvap;
+        state.x -= surfaceEvap * 0.25;
+
+        // Exposed porous soil: after surface water is spent, pull a bounded capillary
+        // fraction from local groundwater into vapor so landlocked surfaces can dry.
+        float remainingBudget = max(0.0, evaporationBudget - surfaceEvap);
+        if (exposed && material == 7u && definition.biology.z > 0.05 && aux.y > 0.0 && remainingBudget > 0.0)
+        {
+            float capillary = min(aux.y, max(0.0, _MoistureErosion.z) * remainingBudget);
+            aux.y -= capillary;
+            aux.x += capillary;
+            state.x -= capillary * 0.15;
+        }
     }
     else if (material == 9u && state.x > 5.0)
     {
-        float evaporation = min(state.z, _WeatherB.y * 0.75 * saturate((state.x - 5.0) / 80.0) * _DeltaTime);
+        float evaporation = min(state.z, _WeatherB.y * 0.75 * evaporativeDrive * _DeltaTime);
         state.z -= evaporation;
         aux.x += evaporation;
     }

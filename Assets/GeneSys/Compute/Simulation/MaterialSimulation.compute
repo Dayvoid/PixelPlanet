@@ -3,6 +3,7 @@
 #pragma kernel PhaseChange
 #pragma kernel MaterialMotion
 #pragma kernel Electrical
+#pragma kernel PressureDiffusion
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -32,6 +33,8 @@ float4 _WeatherB;
 float4 _WeatherC;
 float4 _EruptionA;
 float4 _EruptionB;
+float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
+float4 _PressureB; // gas, fluid, porous, rigid diffusivities
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -74,9 +77,10 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         float falloff = 1.0 - saturate(sqrt((float)(dx * dx + dy * dy)) / max(1.0, (float)command.radius));
         if (mode == 0) material = command.materialId;
         else if (mode == 1) state.x += command.values.y * max(0.1, falloff);
-        else if (mode == 2) state.z += command.values.y * max(0.1, falloff);
+        else if (mode == 2) state.z = max(0.0, state.z + command.values.y * max(0.1, falloff));
         else if (mode == 3) state.y += command.values.y * max(0.1, falloff);
         else if (mode == 4) aux.z += command.values.y * max(0.1, falloff);
+        else if (mode == 5) aux.y = max(0.0, aux.y + command.values.y * max(0.1, falloff));
     }
     WriteCell(cell, material, state, flow, aux);
 }
@@ -221,5 +225,87 @@ void Electrical(uint3 id : SV_DispatchThreadID)
     float oldCharge = state.w;
     state.w += (neighborCharge - state.w) * definition.transport.z * _Mechanics.z * _DeltaTime;
     state.y += abs(state.w - oldCharge) * definition.phase.w;
+    WriteCell(cell, material, state, flow, aux);
+}
+
+float PressureEquilibrium(int radiusIndex)
+{
+    float radius = Radius01(radiusIndex, _GridSize.y);
+    return min(_PressureA.z, max(0.0, (1.0 - radius) * _PressureA.y));
+}
+
+float PressureConductance(uint material)
+{
+    MaterialGpuData definition = Mat(material);
+    float category = definition.metadata.x;
+    float porosity = saturate(definition.biology.z);
+    float rigidity = saturate(definition.physical.y);
+    float gas = max(0.0, _PressureB.x);
+    float fluid = max(0.0, _PressureB.y);
+    float porous = max(0.0, _PressureB.z);
+    float rigid = max(0.0, _PressureB.w);
+
+    // Empty/Gas → gas; Liquid/Magma → fluid; Granular/Biological → porosity blend;
+    // Solid → porosity * (1 - rigidity) blend toward porous from rigid.
+    if (category <= 1.0) return gas;
+    if (category == 2.0 || category == 5.0) return fluid;
+    if (category == 3.0 || category == 6.0) return lerp(rigid, porous, porosity);
+    return lerp(rigid, porous, porosity * (1.0 - rigidity));
+}
+
+float HarmonicMean(float a, float b)
+{
+    float sum = a + b;
+    if (sum <= 1e-8) return 0.0;
+    return 2.0 * a * b / sum;
+}
+
+[numthreads(8, 8, 1)]
+void PressureDiffusion(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material; float4 state; float2 flow; float4 aux;
+    CopyCell(cell, material, state, flow, aux);
+
+    float rate = max(0.0, _PressureA.x);
+    if (rate <= 1e-8)
+    {
+        WriteCell(cell, material, state, flow, aux);
+        return;
+    }
+
+    float alpha = 1.0 - exp(-rate * _DeltaTime);
+    float selfConductance = PressureConductance(material);
+    float selfEquilibrium = PressureEquilibrium(cell.y);
+    float selfAnomaly = state.y - selfEquilibrium;
+    float available = max(0.0, state.y);
+    float edgeBudget = available * 0.25;
+    float delta = 0.0;
+
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 offset = offsets[i];
+        // Radial edges are no-flux; angular neighbors wrap via ClampCell.
+        if (offset.y != 0)
+        {
+            int neighborY = cell.y + offset.y;
+            if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+        }
+
+        int2 neighbor = ClampCell(cell + offset, _GridSize);
+        uint neighborMaterial = ReadMaterial(neighbor);
+        float4 neighborState = ReadState(neighbor);
+        float edgeConductance = HarmonicMean(selfConductance, PressureConductance(neighborMaterial));
+        float neighborAnomaly = neighborState.y - PressureEquilibrium(neighbor.y);
+        float flux = edgeConductance * (neighborAnomaly - selfAnomaly) * alpha * 0.25;
+        if (flux < 0.0)
+            flux = max(flux, -edgeBudget);
+        delta += flux;
+    }
+
+    state.y = max(0.0, state.y + delta);
     WriteCell(cell, material, state, flow, aux);
 }

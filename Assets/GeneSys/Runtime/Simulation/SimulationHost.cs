@@ -155,7 +155,7 @@ namespace GeneSys.Simulation
                 center = cell,
                 radius = Mathf.Max(1, radius),
                 materialId = MaterialIds.Void,
-                values = new Vector4(Mathf.Clamp(channel, 1, 4), amount, 0f, 0f)
+                values = new Vector4(Mathf.Clamp(channel, 1, 5), amount, 0f, 0f)
             });
         }
 

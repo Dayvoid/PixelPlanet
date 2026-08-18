@@ -9,7 +9,18 @@
 //   aux.w    = shared fault / erosion stress
 //              Rock, Basalt, and Soil recover linearly via stressDecayRate (_Erosion.w)
 //              in ErosionAndCollapse; Mantle/Magma keep tectonic fault semantics without decay.
+// Moisture-aware soil erosion:
+//   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
+//   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.
+//   Sediment does not auto-revert to soil; ash fertilization remains the pedogenesis path.
 // Every transfer must subtract from a source reservoir before adding to a destination.
+//
+// Pressure (state.y):
+//   Local sources/sinks (thermal expansion, mantle feed, vapor, brushes) still write absolute
+//   pressure. PressureDiffusion transports the anomaly relative to a radial equilibrium
+//   profile min(pressureEquilibriumMaximum, (1 - radius) * pressureEquilibriumGradient).
+//   Edge conductance is category-weighted (gas / fluid / porous / rigid) so highs and lows
+//   persist for material-appropriate durations while fields eventually equilibrate.
 
 struct MaterialGpuData
 {

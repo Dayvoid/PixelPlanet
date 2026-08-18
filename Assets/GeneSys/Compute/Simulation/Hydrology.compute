@@ -33,6 +33,7 @@ float4 _WeatherB;
 float4 _WeatherC;
 float4 _EruptionA;
 float4 _EruptionB;
+float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -217,9 +218,17 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     MaterialGpuData definition = D(material);
-    float flowEnergy = length(flow) + state.z;
+    bool exposed = IsExposedSurface(cell, material);
+    float flowEnergy = length(flow);
     float soilQuality = saturate(aux.z);
-    float cohesion = saturate(_Erosion.z + definition.physical.y + soilQuality * 0.35 * max(0.0, _EruptionB.w));
+    float dryThreshold = max(0.01, _MoistureErosion.x);
+    float localMoisture = max(0.0, state.z) + max(0.0, aux.y);
+    float moistureProtection = saturate(localMoisture / dryThreshold);
+    float cohesion = saturate(
+        _Erosion.z
+        + definition.physical.y
+        + soilQuality * 0.35 * max(0.0, _EruptionB.w)
+        + moistureProtection * max(0.0, _MoistureErosion.y));
 
     // Continuous linear recovery for sediment-source solids. Sustained loading must
     // exceed stressDecayRate (_Erosion.w) on average to accumulate toward conversion.
@@ -239,7 +248,23 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    if ((material == 7u || material == 4u) && flowEnergy > cohesion + 0.25)
+    // Ordinary wind/runoff erosion: exposed soil only. Moisture raises cohesion and
+    // suppresses stress gain; dryness alone never converts without sustained flow.
+    if (material == 7u && exposed)
+    {
+        float erodibility = 1.0 - moistureProtection;
+        if (flowEnergy > cohesion + 0.25 && erodibility > 0.05)
+        {
+            float erode = _Erosion.x * flowEnergy * erodibility * _DeltaTime;
+            aux.w += erode;
+            if (aux.w > 1.0)
+            {
+                material = 8u;
+                aux.w = 0.0;
+            }
+        }
+    }
+    else if (material == 4u && flowEnergy > cohesion + 0.25)
     {
         float erode = _Erosion.x * flowEnergy * _DeltaTime;
         aux.w += erode;
@@ -248,11 +273,6 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             material = 8u;
             aux.w = 0.0;
         }
-    }
-    else if (material == 8u && flowEnergy < _Erosion.y)
-    {
-        material = 7u;
-        flow *= 0.5;
     }
 
     uint below = M(cell + int2(0, -1));

@@ -60,6 +60,16 @@ namespace GeneSys.Tests
             Assert.That(config.ashFertilityStrength, Is.GreaterThan(0f));
             Object.DestroyImmediate(config);
         }
+
+        [Test]
+        public void MoistureErosionDefaultsAreConfigured()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.dryMoistureThreshold, Is.GreaterThan(0f));
+            Assert.That(config.moistureCohesionStrength, Is.GreaterThan(0f));
+            Assert.That(config.capillaryEvaporationFraction, Is.InRange(0f, 1f));
+            Object.DestroyImmediate(config);
+        }
     }
 
     public sealed class BasinMetricsTests
