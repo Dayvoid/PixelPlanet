@@ -58,6 +58,14 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float magmaViscosity = 0.5f;
         [Range(0f, 4f)] public float hydrothermalStrength = 0.35f;
         [Range(0f, 4f)] public float ventChemicalRate = 0.12f;
+        [Range(0f, 1f)] public float magmaEruption = 0f;
+        [Range(0f, 4f)] public float eruptionPressureStrength = 1f;
+        [Range(0f, 4f)] public float eruptionFlowStrength = 1f;
+        [Range(1, 16)] public int eruptionBurdenDepth = 4;
+        [Range(0.05f, 4f)] public float eruptionBlastThreshold = 1.25f;
+        [Range(0f, 4f)] public float ashUpdraftStrength = 1f;
+        [Range(0f, 4f)] public float ashSettlingStrength = 1f;
+        [Range(0f, 4f)] public float ashFertilityStrength = 1f;
 
         [Header("Hydrology and erosion")]
         [Range(0f, 4f)] public float infiltrationRate = 0.3f;
@@ -67,6 +75,7 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float erosionRate = 0.06f;
         [Range(0f, 2f)] public float depositionRate = 0.08f;
         [Range(0f, 2f)] public float baseSoilCohesion = 0.45f;
+        [Range(0f, 2f)] public float stressDecayRate = 0.02f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
         [Range(0f, 4f)] public float pondingRate = 0.25f;
         [Range(0f, 1f)] public float springHeadThreshold = 0.55f;

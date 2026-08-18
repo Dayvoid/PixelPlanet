@@ -58,13 +58,13 @@
 
                 <ui:VisualElement name="page-geology" class="settings-page hidden">
                     <ui:Label text="Geology" class="section-title" />
-                    <ui:Label text="Select Fault/Stress or Pressure overlays to tune faults, extrusion, magma pressure, viscosity, and cooling." class="help" />
+                    <ui:Label text="Select Fault/Stress or Pressure overlays to tune faults, extrusion, magma pressure, viscosity, cooling, and Magma Eruption. Ash appears in the Material overlay." class="help" />
                     <ui:ScrollView name="settings-geology" class="settings-scroll" />
                 </ui:VisualElement>
 
                 <ui:VisualElement name="page-hydrology" class="settings-page hidden">
                     <ui:Label text="Hydrology" class="section-title" />
-                    <ui:Label text="Moisture, groundwater, chemical/bio, and flow overlays expose infiltration, aquifers, caves, erosion, and deposition." class="help" />
+                    <ui:Label text="Moisture, groundwater, nutrient/soil quality, and flow overlays expose infiltration, aquifers, caves, erosion, deposition, and ash fertilization." class="help" />
                     <ui:ScrollView name="settings-hydrology" class="settings-scroll" />
                 </ui:VisualElement>
 

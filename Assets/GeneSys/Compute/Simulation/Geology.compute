@@ -1,4 +1,6 @@
 #pragma kernel Volcanism
+#pragma kernel EruptionMotion
+#pragma kernel AshTransport
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -27,30 +29,79 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _EruptionA;
+float4 _EruptionB;
 
 int2 Cell(int2 value) { return ClampCell(value, _GridSize); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+uint ReadMaterial(int2 cell) { return _MaterialRead.Load(int3(Cell(cell), 0)); }
+float4 ReadState(int2 cell) { return _StateRead.Load(int3(Cell(cell), 0)); }
+float2 ReadFlow(int2 cell) { return _FlowRead.Load(int3(Cell(cell), 0)); }
+float4 ReadAux(int2 cell) { return _AuxRead.Load(int3(Cell(cell), 0)); }
+
+bool IsGranularBurden(uint material)
+{
+    return material == 7u || material == 8u;
+}
+
+bool IsOpenCell(uint material)
+{
+    float category = D(material).metadata.x;
+    return material == 0u || category == 1.0;
+}
+
+float CellBurden(uint material)
+{
+    MaterialGpuData definition = D(material);
+    return max(0.05, definition.physical.x) + definition.physical.y * 0.75 + _Erosion.z * 0.15;
+}
+
+float ColumnBurden(int2 magmaCell)
+{
+    float burden = 0.0;
+    int depth = max(1, (int)round(_EruptionA.w));
+    for (int i = 1; i <= depth; i++)
+    {
+        int2 probe = magmaCell + int2(0, i);
+        if (probe.y >= _GridSize.y) break;
+        uint above = ReadMaterial(probe);
+        if (!IsGranularBurden(above)) break;
+        burden += CellBurden(above);
+    }
+    return burden;
+}
+
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux)
+{
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+}
 
 [numthreads(8, 8, 1)]
 void Volcanism(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material = _MaterialRead.Load(int3(cell, 0));
-    float4 state = _StateRead.Load(int3(cell, 0));
-    float2 flow = _FlowRead.Load(int3(cell, 0));
-    float4 aux = _AuxRead.Load(int3(cell, 0));
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
     float radius = Radius01(cell.y, _GridSize.y);
 
     bool mantle = material == 3u;
     bool magma = material == 6u;
-    bool crust = material == 4u || material == 5u || material == 7u || material == 8u;
+    bool hardCrust = material == 4u || material == 5u;
+    bool softCrust = material == 7u || material == 8u;
+    bool crust = hardCrust || softCrust;
     float fault = saturate(aux.w);
+    float eruption = saturate(_EruptionA.x);
 
     if (mantle || magma)
         state.y += _Geology.x * (1.0 - radius) * _DeltaTime;
 
-    float pressureAbove = _StateRead.Load(int3(Cell(cell + int2(0, 1)), 0)).y;
+    float pressureAbove = ReadState(cell + int2(0, 1)).y;
     float pressureGradient = max(0.0, state.y - pressureAbove);
     aux.w = saturate(fault + pressureGradient * _Geology.y * _DeltaTime);
 
@@ -63,8 +114,10 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     }
     else if (crust && fault > 0.65 && pressureGradient > 0.25)
     {
-        uint below = _MaterialRead.Load(int3(Cell(cell + int2(0, -1)), 0));
-        if (below == 6u || below == 3u)
+        uint below = ReadMaterial(cell + int2(0, -1));
+        // Soft soil/sediment use EruptionMotion when magmaEruption > 0.
+        bool allowSoftIntrusion = softCrust && eruption <= 0.0001;
+        if ((below == 6u || below == 3u) && (hardCrust || allowSoftIntrusion))
         {
             material = 6u;
             state.x = max(state.x, 900.0);
@@ -83,22 +136,222 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    uint aboveMat = _MaterialRead.Load(int3(Cell(cell + int2(0, 1)), 0));
+    uint aboveMat = ReadMaterial(cell + int2(0, 1));
     if (magma && (aboveMat == 9u || aboveMat == 10u))
     {
-        float4 aboveState = _StateRead.Load(int3(Cell(cell + int2(0, 1)), 0));
-        float4 aboveAux = _AuxRead.Load(int3(Cell(cell + int2(0, 1)), 0));
+        float4 aboveState = ReadState(cell + int2(0, 1));
+        float4 aboveAux = ReadAux(cell + int2(0, 1));
         float heatTransfer = min(aboveState.z, _GeologyB.x * _DeltaTime);
         aboveState.x += heatTransfer * 60.0;
         aboveAux.x += heatTransfer * 0.25;
         aboveAux.z += heatTransfer * _GeologyB.y;
         flow.y += heatTransfer;
-        _StateWrite[Cell(cell + int2(0, 1))] = SafeFinite4(aboveState, float4(15, 0, 0, 0));
-        _AuxWrite[Cell(cell + int2(0, 1))] = SafeFinite4(max(aboveAux, 0.0), 0.0);
+        WriteCell(Cell(cell + int2(0, 1)), aboveMat, aboveState, ReadFlow(cell + int2(0, 1)), aboveAux);
     }
 
-    _MaterialWrite[cell] = material;
-    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
-    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
-    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    WriteCell(cell, material, state, flow, aux);
+}
+
+[numthreads(8, 8, 1)]
+void EruptionMotion(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+
+    float eruption = saturate(_EruptionA.x);
+    if (eruption <= 0.0001)
+    {
+        WriteCell(cell, material, state, flow, aux);
+        return;
+    }
+
+    // Destination side: granular cell claiming magma from below.
+    if (IsGranularBurden(material) && cell.y > 0)
+    {
+        int2 below = cell + int2(0, -1);
+        uint belowMat = ReadMaterial(below);
+        if (belowMat == 6u)
+        {
+            float4 belowState = ReadState(below);
+            float2 belowFlow = ReadFlow(below);
+            float pressureGradient = max(0.0, belowState.y - state.y);
+            float viscosityFactor = max(0.15, 1.0 - _WeatherC.w * 0.35);
+            float drive = (pressureGradient * _EruptionA.y + max(0.0, belowFlow.y) * _EruptionA.z + _Geology.z * 0.35)
+                * viscosityFactor * eruption;
+
+            float burden = ColumnBurden(below);
+            float resistance = max(0.02, burden * lerp(1.0, 0.02, eruption));
+            float overdrive = drive / max(0.02, resistance);
+
+            if (overdrive > 1.0)
+            {
+                float4 belowAux = ReadAux(below);
+                bool blast = overdrive >= max(0.05, _EruptionB.x);
+                material = 6u;
+                state = belowState;
+                flow = belowFlow;
+                aux = belowAux;
+                state.y = max(0.0, state.y - resistance * 0.35);
+                if (blast)
+                    flow.y += overdrive * 0.5 * _DeltaTime;
+                WriteCell(cell, material, state, flow, aux);
+                return;
+            }
+        }
+    }
+
+    // Source side: magma being displaced upward into soft overburden.
+    if (material == 6u && cell.y < _GridSize.y - 1)
+    {
+        int2 above = cell + int2(0, 1);
+        uint aboveMat = ReadMaterial(above);
+        if (IsGranularBurden(aboveMat))
+        {
+            float4 aboveState = ReadState(above);
+            float2 aboveFlow = ReadFlow(above);
+            float4 aboveAux = ReadAux(above);
+            float pressureGradient = max(0.0, state.y - aboveState.y);
+            float viscosityFactor = max(0.15, 1.0 - _WeatherC.w * 0.35);
+            float drive = (pressureGradient * _EruptionA.y + max(0.0, flow.y) * _EruptionA.z + _Geology.z * 0.35)
+                * viscosityFactor * eruption;
+            float burden = ColumnBurden(cell);
+            float resistance = max(0.02, burden * lerp(1.0, 0.02, eruption));
+            float overdrive = drive / max(0.02, resistance);
+
+            if (overdrive > 1.0)
+            {
+                bool blast = overdrive >= max(0.05, _EruptionB.x);
+                if (blast)
+                {
+                    material = 12u;
+                    state.x = max(state.x, aboveState.x * 0.35 + 250.0);
+                    state.y = aboveState.y * 0.35;
+                    state.z = aboveState.z;
+                    state.w = aboveState.w;
+                    flow = aboveFlow;
+                    flow.y += overdrive * 1.25;
+                    aux = aboveAux;
+                    aux.z = max(aux.z, 0.15 * _EruptionB.w);
+                }
+                else
+                {
+                    material = aboveMat;
+                    state = aboveState;
+                    flow = aboveFlow;
+                    aux = aboveAux;
+                }
+                WriteCell(cell, material, state, flow, aux);
+                return;
+            }
+        }
+    }
+
+    WriteCell(cell, material, state, flow, aux);
+}
+
+int2 AshDestination(int2 source)
+{
+    uint sourceMaterial = ReadMaterial(source);
+    if (sourceMaterial != 12u) return source;
+
+    float4 state = ReadState(source);
+    float2 flow = ReadFlow(source);
+    MaterialGpuData definition = D(sourceMaterial);
+    float buoyancy = saturate(definition.biology.w);
+    float density = max(0.05, definition.physical.x);
+    float lift = max(0.0, flow.y) * _EruptionB.y + max(0.0, state.x - 80.0) * 0.004 * buoyancy;
+    float settle = _EruptionB.z * density * (1.0 - buoyancy * 0.65);
+    float net = lift - settle;
+
+    int direction = ((source.x + _Tick) & 1) == 0 ? -1 : 1;
+    if (abs(flow.x) > 0.15)
+        direction = flow.x > 0.0 ? 1 : -1;
+
+    if (net > 0.08)
+    {
+        int2 up = ClampCell(source + int2(0, 1), _GridSize);
+        if (IsOpenCell(ReadMaterial(up))) return up;
+        int2 diagonalUp = ClampCell(source + int2(direction, 1), _GridSize);
+        if (IsOpenCell(ReadMaterial(diagonalUp))) return diagonalUp;
+        int2 side = ClampCell(source + int2(direction, 0), _GridSize);
+        if (IsOpenCell(ReadMaterial(side))) return side;
+        return source;
+    }
+
+    if (net < -0.02 || settle > lift + 0.001)
+    {
+        int2 below = ClampCell(source + int2(0, -1), _GridSize);
+        if (IsOpenCell(ReadMaterial(below))) return below;
+        int2 diagonal = ClampCell(source + int2(direction, -1), _GridSize);
+        if (IsOpenCell(ReadMaterial(diagonal))) return diagonal;
+        return source;
+    }
+
+    // Near equilibrium: only drift when wind is meaningful.
+    if (abs(flow.x) > 0.25)
+    {
+        int2 drift = ClampCell(source + int2(direction, 0), _GridSize);
+        if (IsOpenCell(ReadMaterial(drift))) return drift;
+    }
+    return source;
+}
+
+[numthreads(8, 8, 1)]
+void AshTransport(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+
+    int2 destination = AshDestination(cell);
+    if (material == 12u && !all(destination == cell))
+    {
+        material = ReadMaterial(destination);
+        state = ReadState(destination);
+        flow = ReadFlow(destination);
+        aux = ReadAux(destination);
+        WriteCell(cell, material, state, flow, aux);
+        return;
+    }
+
+    if (IsOpenCell(material))
+    {
+        int2 candidates[5];
+        candidates[0] = ClampCell(cell + int2(0, -1), _GridSize);
+        candidates[1] = ClampCell(cell + int2(-1, -1), _GridSize);
+        candidates[2] = ClampCell(cell + int2(1, -1), _GridSize);
+        candidates[3] = ClampCell(cell + int2(-1, 0), _GridSize);
+        candidates[4] = ClampCell(cell + int2(1, 0), _GridSize);
+
+        int2 source = cell;
+        [unroll]
+        for (int i = 0; i < 5; i++)
+        {
+            int2 candidate = candidates[i];
+            if (ReadMaterial(candidate) == 12u && all(AshDestination(candidate) == cell))
+            {
+                source = candidate;
+                break;
+            }
+        }
+
+        if (!all(source == cell))
+        {
+            material = ReadMaterial(source);
+            state = ReadState(source);
+            flow = ReadFlow(source);
+            aux = ReadAux(source);
+            WriteCell(cell, material, state, flow, aux);
+            return;
+        }
+    }
+
+    WriteCell(cell, material, state, flow, aux);
 }

@@ -2,7 +2,7 @@ using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Validation;
 using NUnit.Framework;
-using Unity.Collections;
+using UnityEditor;
 using UnityEngine;
 
 namespace GeneSys.Tests
@@ -24,6 +24,41 @@ namespace GeneSys.Tests
             Assert.That(registry.Validate(out string error), Is.True, error);
             Object.DestroyImmediate(water);
             Object.DestroyImmediate(registry);
+        }
+
+        [Test]
+        public void AshMaterialHasExpectedIdentityAndGpuPacking()
+        {
+            MaterialDefinition ash = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/012_Ash.asset");
+            Assert.That(ash, Is.Not.Null, "012_Ash.asset should exist.");
+            Assert.That(ash.stableId, Is.EqualTo((int)MaterialIds.Ash));
+            Assert.That(ash.category, Is.EqualTo(MaterialCategory.Granular));
+            Assert.That(ash.solidPhaseId, Is.EqualTo((int)MaterialIds.Ash));
+            Assert.That(ash.liquidPhaseId, Is.EqualTo((int)MaterialIds.Ash));
+            Assert.That(ash.gasPhaseId, Is.EqualTo((int)MaterialIds.Ash));
+            Assert.That(ash.buoyancyBias, Is.GreaterThan(0.5f));
+            Assert.That(ash.density, Is.LessThan(1f));
+
+            MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
+            Assert.That(registry, Is.Not.Null);
+            Assert.That(registry.Validate(out string error), Is.True, error);
+            Assert.That(registry.Get((int)MaterialIds.Ash), Is.Not.Null);
+
+            MaterialGpuData[] gpu = registry.BuildGpuData();
+            Assert.That(gpu[(int)MaterialIds.Ash].metadata.w, Is.EqualTo((float)MaterialIds.Ash).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Ash].metadata.x, Is.EqualTo((float)MaterialCategory.Granular).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Ash].biology.w, Is.GreaterThan(0.5f));
+        }
+
+        [Test]
+        public void MagmaEruptionDefaultsPreserveLegacyBehavior()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.magmaEruption, Is.EqualTo(0f));
+            Assert.That(config.eruptionBurdenDepth, Is.GreaterThanOrEqualTo(1));
+            Assert.That(config.eruptionBlastThreshold, Is.GreaterThan(0f));
+            Assert.That(config.ashFertilityStrength, Is.GreaterThan(0f));
+            Object.DestroyImmediate(config);
         }
     }
 

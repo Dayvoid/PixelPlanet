@@ -30,6 +30,8 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _EruptionA;
+float4 _EruptionB;
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -140,6 +142,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
 
 bool IsMovable(uint material)
 {
+    if (material == 12u) return false; // Ash uses dedicated AshTransport motion.
     float category = Mat(material).metadata.x;
     return category == 2.0 || category == 3.0 || category == 5.0;
 }

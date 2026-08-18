@@ -5,6 +5,10 @@
 //   state.z  = canonical surface liquid/ice mass (never created implicitly by material ID alone)
 //   aux.x    = atmospheric vapor mass
 //   aux.y    = subsurface groundwater mass
+//   aux.z    = nutrient / fertility
+//   aux.w    = shared fault / erosion stress
+//              Rock, Basalt, and Soil recover linearly via stressDecayRate (_Erosion.w)
+//              in ErosionAndCollapse; Mantle/Magma keep tectonic fault semantics without decay.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 
 struct MaterialGpuData

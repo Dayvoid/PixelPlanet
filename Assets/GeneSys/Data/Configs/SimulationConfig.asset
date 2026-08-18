@@ -54,6 +54,14 @@ MonoBehaviour:
   magmaViscosity: 0.5
   hydrothermalStrength: 0.35
   ventChemicalRate: 0.12
+  magmaEruption: 0
+  eruptionPressureStrength: 1
+  eruptionFlowStrength: 1
+  eruptionBurdenDepth: 4
+  eruptionBlastThreshold: 1.25
+  ashUpdraftStrength: 1
+  ashSettlingStrength: 1
+  ashFertilityStrength: 1
   infiltrationRate: 0.3
   groundwaterRate: 0.18
   dissolutionRate: 0.03
@@ -61,6 +69,7 @@ MonoBehaviour:
   erosionRate: 0.06
   depositionRate: 0.08
   baseSoilCohesion: 0.45
+  stressDecayRate: 0.02
   runoffRate: 0.45
   pondingRate: 0.25
   springHeadThreshold: 0.55

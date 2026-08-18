@@ -74,6 +74,7 @@ namespace GeneSys.Materials
         public const uint Water = 9;
         public const uint Ice = 10;
         public const uint Vapor = 11;
+        public const uint Ash = 12;
         public const uint BiologicalStart = 128;
     }
 }

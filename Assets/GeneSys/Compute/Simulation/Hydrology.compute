@@ -2,6 +2,7 @@
 #pragma kernel RunoffAndDeposition
 #pragma kernel GeothermalDischarge
 #pragma kernel ErosionAndCollapse
+#pragma kernel AshFertilization
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -30,6 +31,8 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _EruptionA;
+float4 _EruptionB;
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -215,8 +218,13 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     float4 aux = A(cell);
     MaterialGpuData definition = D(material);
     float flowEnergy = length(flow) + state.z;
-    float bioModifier = saturate(aux.z);
-    float cohesion = saturate(_Erosion.z + definition.physical.y - bioModifier * 0.25);
+    float soilQuality = saturate(aux.z);
+    float cohesion = saturate(_Erosion.z + definition.physical.y + soilQuality * 0.35 * max(0.0, _EruptionB.w));
+
+    // Continuous linear recovery for sediment-source solids. Sustained loading must
+    // exceed stressDecayRate (_Erosion.w) on average to accumulate toward conversion.
+    if (material == 4u || material == 5u || material == 7u)
+        aux.w = max(0.0, aux.w - max(0.0, _Erosion.w) * _DeltaTime);
 
     if ((material == 4u || material == 5u) && aux.y > 0.55 && definition.metadata.z > 0.5)
     {
@@ -250,6 +258,57 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     uint below = M(cell + int2(0, -1));
     if ((material == 4u || material == 7u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
         material = 8u;
+
+    Write(cell, material, state, flow, aux);
+}
+
+[numthreads(8, 8, 1)]
+void AshFertilization(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float fertility = max(0.0, _EruptionB.w);
+
+    if (material == 12u && cell.y > 0)
+    {
+        uint below = M(cell + int2(0, -1));
+        if (below == 8u)
+        {
+            // Consume ash resting on sediment into fertile soil at this cell.
+            material = 7u;
+            aux.z = saturate(aux.z + 0.45 * fertility);
+            state.x = min(state.x, 45.0);
+            flow *= 0.5;
+        }
+        else if (below == 7u)
+        {
+            // Transfer nutrients into soil below by dissolving ash into air.
+            material = 1u;
+            state.x = min(state.x, 25.0);
+            flow *= 0.25;
+            aux.z = 0.0;
+        }
+    }
+    else if (material == 8u)
+    {
+        uint above = M(cell + int2(0, 1));
+        if (above == 12u)
+        {
+            material = 7u;
+            aux.z = saturate(aux.z + 0.45 * fertility);
+            flow *= 0.5;
+        }
+    }
+    else if (material == 7u)
+    {
+        uint above = M(cell + int2(0, 1));
+        if (above == 12u)
+            aux.z = saturate(aux.z + 0.35 * fertility);
+    }
 
     Write(cell, material, state, flow, aux);
 }
