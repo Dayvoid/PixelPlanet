@@ -1,4 +1,5 @@
 #pragma kernel SolarAndWind
+#pragma kernel AtmosphericTransport
 #pragma kernel WaterCycle
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
@@ -28,6 +29,8 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, humidityBuoyancy
+float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, unused, unused
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
@@ -41,14 +44,22 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 
 bool IsAtmosphereCell(int2 cell, uint material)
 {
-    float radius = Radius01(cell.y, _GridSize.y);
-    return radius >= _AtmosphereStartRadius || D(material).metadata.x == 1.0;
+    // Atmosphere is the gas carrier (Air), not every cell in the outer radial band.
+    // Terrain that protrudes into the shell must still evaporate and receive rain.
+    float category = D(material).metadata.x;
+    if (category == 1.0 || material == 11u) return true;
+    return material == 0u && Radius01(cell.y, _GridSize.y) >= _AtmosphereStartRadius;
 }
 
 bool IsExposedSurface(int2 cell, uint material)
 {
     uint above = M(cell + int2(0, 1));
-    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u;
+    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
+}
+
+bool IsOpenCarrier(uint material)
+{
+    return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
@@ -57,6 +68,41 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+}
+
+float AtmosphericVaporCapacity(float temperature, float radius, float pressure)
+{
+    float altitudeCooling = saturate((radius - _AtmosphereStartRadius) / max(0.01, 1.0 - _AtmosphereStartRadius));
+    float thermal = saturate((temperature + 20.0) / 60.0);
+    float pressureBoost = 1.0 + saturate(pressure) * 0.25;
+    return max(0.01, _WeatherE.x * thermal * (1.0 - altitudeCooling * 0.65) * pressureBoost);
+}
+
+// Outgoing face fluxes for a donor cell. Returns left, right, down, up amounts (mass units).
+// validFaces masks which faces are allowed (1 = open, 0 = blocked).
+float4 DonorFaceFlux(float2 flow, float mass, float advectionRate, float4 validFaces)
+{
+    float speed = length(flow);
+    if (mass <= 1e-8 || advectionRate <= 1e-8)
+        return 0.0;
+
+    float left = max(0.0, -flow.x) * validFaces.x;
+    float right = max(0.0, flow.x) * validFaces.y;
+    float down = max(0.0, -flow.y) * validFaces.z;
+    float up = max(0.0, flow.y) * validFaces.w;
+    float weightSum = left + right + down + up;
+    if (weightSum <= 1e-8)
+        return 0.0;
+
+    float moveFraction = saturate(speed * advectionRate * _DeltaTime);
+    float movable = mass * moveFraction;
+    float inv = 1.0 / weightSum;
+    return float4(movable * left * inv, movable * right * inv, movable * down * inv, movable * up * inv);
+}
+
+float DiffusiveExchange(float selfMass, float neighborMass, float diffusionRate)
+{
+    return (neighborMass - selfMass) * saturate(diffusionRate * _DeltaTime) * 0.25;
 }
 
 [numthreads(8, 8, 1)]
@@ -70,6 +116,7 @@ void SolarAndWind(uint3 id : SV_DispatchThreadID)
     float4 aux = A(cell);
     MaterialGpuData definition = D(material);
     float radius = Radius01(cell.y, _GridSize.y);
+    bool atmosphere = IsAtmosphereCell(cell, material);
 
     float theta01 = (cell.x + 0.5) / _GridSize.x;
     float angle = (theta01 - _WeatherC.y) * 6.28318530718;
@@ -85,8 +132,118 @@ void SolarAndWind(uint3 id : SV_DispatchThreadID)
     float pressureAbove = S(cell + int2(0, 1)).y;
     float2 gradient = float2(pressureRight - pressureLeft, pressureAbove - pressureBelow) * 0.5;
     flow -= gradient * _WeatherA.w * _DeltaTime;
+
+    if (atmosphere)
+    {
+        float tempBelow = S(cell + int2(0, -1)).x;
+        float vaporBelow = A(cell + int2(0, -1)).x;
+        float buoyancy = (state.x - tempBelow) * _WeatherD.z + (aux.x - vaporBelow) * _WeatherD.w;
+        flow.y += clamp(buoyancy, -2.0, 2.0) * _DeltaTime;
+    }
+
     flow *= saturate(1.0 - _WeatherB.x * _DeltaTime);
     state.y += (aux.x * _WeatherC.x - state.y * 0.005) * _DeltaTime;
+
+    Write(cell, material, state, flow, aux);
+}
+
+[numthreads(8, 8, 1)]
+void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    bool atmosphere = IsAtmosphereCell(cell, material);
+    float advectionRate = max(0.0, _WeatherD.x);
+    float diffusionRate = max(0.0, _WeatherD.y);
+
+    if (atmosphere)
+    {
+        float vapor = max(0.0, aux.x);
+        float cloud = max(0.0, state.z);
+
+        int2 leftCell = C(cell + int2(-1, 0));
+        int2 rightCell = C(cell + int2(1, 0));
+        int2 downCell = C(cell + int2(0, -1));
+        int2 upCell = C(cell + int2(0, 1));
+        float4 validFaces = float4(
+            IsAtmosphereCell(leftCell, M(leftCell)) ? 1.0 : 0.0,
+            IsAtmosphereCell(rightCell, M(rightCell)) ? 1.0 : 0.0,
+            (cell.y > 0 && IsAtmosphereCell(downCell, M(downCell))) ? 1.0 : 0.0,
+            (cell.y < _GridSize.y - 1 && IsAtmosphereCell(upCell, M(upCell))) ? 1.0 : 0.0);
+
+        float4 outVapor = DonorFaceFlux(flow, vapor, advectionRate, validFaces);
+        float4 outCloud = DonorFaceFlux(flow, cloud, advectionRate, validFaces);
+        float vaporOut = outVapor.x + outVapor.y + outVapor.z + outVapor.w;
+        float cloudOut = outCloud.x + outCloud.y + outCloud.z + outCloud.w;
+
+        float vaporIn = 0.0;
+        float cloudIn = 0.0;
+        float vaporDiff = 0.0;
+        float cloudDiff = 0.0;
+
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+
+            int2 neighbor = C(cell + offset);
+            uint neighborMaterial = M(neighbor);
+            bool neighborAtmosphere = IsAtmosphereCell(neighbor, neighborMaterial);
+            float4 neighborAux = A(neighbor);
+            float4 neighborState = S(neighbor);
+
+            if (neighborAtmosphere)
+            {
+                int2 nLeft = C(neighbor + int2(-1, 0));
+                int2 nRight = C(neighbor + int2(1, 0));
+                int2 nDown = C(neighbor + int2(0, -1));
+                int2 nUp = C(neighbor + int2(0, 1));
+                float4 neighborValid = float4(
+                    IsAtmosphereCell(nLeft, M(nLeft)) ? 1.0 : 0.0,
+                    IsAtmosphereCell(nRight, M(nRight)) ? 1.0 : 0.0,
+                    (neighbor.y > 0 && IsAtmosphereCell(nDown, M(nDown))) ? 1.0 : 0.0,
+                    (neighbor.y < _GridSize.y - 1 && IsAtmosphereCell(nUp, M(nUp))) ? 1.0 : 0.0);
+                float4 neighborOutVapor = DonorFaceFlux(F(neighbor), max(0.0, neighborAux.x), advectionRate, neighborValid);
+                float4 neighborOutCloud = DonorFaceFlux(F(neighbor), max(0.0, neighborState.z), advectionRate, neighborValid);
+
+                if (offset.x == 1) { vaporIn += neighborOutVapor.x; cloudIn += neighborOutCloud.x; }
+                else if (offset.x == -1) { vaporIn += neighborOutVapor.y; cloudIn += neighborOutCloud.y; }
+                else if (offset.y == 1) { vaporIn += neighborOutVapor.z; cloudIn += neighborOutCloud.z; }
+                else if (offset.y == -1) { vaporIn += neighborOutVapor.w; cloudIn += neighborOutCloud.w; }
+
+                vaporDiff += DiffusiveExchange(vapor, max(0.0, neighborAux.x), diffusionRate);
+                cloudDiff += DiffusiveExchange(cloud, max(0.0, neighborState.z), diffusionRate);
+            }
+            else if (offset.y == -1 && IsExposedSurface(neighbor, neighborMaterial) && IsOpenCarrier(material))
+            {
+                float neighborVapor = max(0.0, neighborAux.x);
+                float vent = min(neighborVapor, neighborVapor * saturate(0.35 + advectionRate) * _DeltaTime);
+                vaporIn += vent;
+            }
+        }
+
+        aux.x = max(0.0, vapor - vaporOut + vaporIn + vaporDiff);
+        state.z = max(0.0, cloud - cloudOut + cloudIn + cloudDiff);
+    }
+    else if (IsExposedSurface(cell, material) && aux.x > 1e-6 && cell.y < _GridSize.y - 1)
+    {
+        uint aboveMaterial = M(cell + int2(0, 1));
+        if (IsOpenCarrier(aboveMaterial))
+        {
+            float vent = min(aux.x, aux.x * saturate(0.35 + advectionRate) * _DeltaTime);
+            aux.x = max(0.0, aux.x - vent);
+        }
+    }
 
     Write(cell, material, state, flow, aux);
 }
@@ -132,29 +289,57 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
         aux.x += evaporation;
     }
 
-    int2 sourceOffset = int2(clamp((int)round(-flow.x), -1, 1), clamp((int)round(-flow.y), -1, 1));
-    float sourceVapor = A(cell + sourceOffset).x;
-    aux.x = lerp(aux.x, sourceVapor, saturate(length(flow) * 0.1 * _DeltaTime));
-
-    float altitudeCooling = saturate((radius - _AtmosphereStartRadius) / max(0.01, 1.0 - _AtmosphereStartRadius)) * 25.0;
-    float dewPoint = 18.0 - altitudeCooling;
-    if (atmosphere && state.x < dewPoint && aux.x > 0.02)
+    if (atmosphere)
     {
-        float condensation = min(aux.x, _WeatherB.z * (dewPoint - state.x + 1.0) * 0.01 * _DeltaTime);
-        aux.x -= condensation;
-        state.z += condensation;
-        state.y = max(0.0, state.y - condensation * _WeatherC.x);
+        float capacity = AtmosphericVaporCapacity(state.x, radius, state.y);
+        if (aux.x > capacity)
+        {
+            float excess = aux.x - capacity;
+            float condensation = min(excess, _WeatherB.z * max(excess, 0.05) * _DeltaTime);
+            aux.x -= condensation;
+            state.z += condensation;
+            state.y = max(0.0, state.y - condensation * _WeatherC.x);
+        }
+
+        float rainThreshold = max(0.01, _WeatherE.y);
+        if (state.z > rainThreshold && cell.y > 0)
+        {
+            uint belowMaterial = M(cell + int2(0, -1));
+            if (!IsAtmosphereCell(cell + int2(0, -1), belowMaterial))
+            {
+                float rain = min(state.z - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
+                rain = max(0.0, rain);
+                float belowRoom = max(0.0, 1.0 - S(cell + int2(0, -1)).z);
+                rain = min(rain, belowRoom);
+                state.z -= rain;
+                flow.y -= rain;
+            }
+        }
     }
-
-    if (state.z > 0.05 && atmosphere)
+    else
     {
-        float rain = min(state.z, _WeatherB.w * _DeltaTime);
-        state.z -= rain;
-        flow.y -= rain * 2.0;
+        // Gather rain mass that the atmosphere cell above is shedding this tick.
+        int2 above = cell + int2(0, 1);
+        uint aboveMaterial = M(above);
+        if (IsAtmosphereCell(above, aboveMaterial))
+        {
+            float rainThreshold = max(0.01, _WeatherE.y);
+            float aboveCloud = S(above).z;
+            if (aboveCloud > rainThreshold)
+            {
+                float rain = min(aboveCloud - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
+                rain = max(0.0, rain);
+                rain = min(rain, max(0.0, 1.0 - state.z));
+                state.z += rain;
+                if ((material == 1u || material == 11u) && state.z > 0.15)
+                    material = state.x < 0.0 ? 10u : 9u;
+            }
+        }
     }
 
     if (material == 9u && state.x < 0.0) material = 10u;
     else if (material == 10u && state.x > 1.0) material = 9u;
+    else if (material == 11u) material = 1u;
 
     Write(cell, material, state, flow, aux);
 }

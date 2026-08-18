@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using GeneSys.Configuration;
+using GeneSys.Materials;
 using GeneSys.Persistence;
 using GeneSys.Simulation;
 using GeneSys.Validation;
@@ -149,14 +150,21 @@ namespace GeneSys.Tests
             host.Config.targetOceanCoverage = 0.5f;
             host.Config.evaporationRate = 0.5f;
             host.Config.precipitationRate = 0.6f;
+            host.Config.condensationRate = 0.4f;
+            host.Config.atmosphericAdvectionRate = 0.85f;
             host.Regenerate();
             host.Clock.SetRunning(false);
 
             double surfaceBefore = 0d;
-            yield return ReadGpuFields(host, (_, states, __) =>
+            double totalBefore = 0d;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
             {
                 for (int i = 0; i < states.Length; i++)
+                {
                     surfaceBefore += states[i].z;
+                    totalBefore += states[i].z + aux[i].x + aux[i].y;
+                    Assert.That(mats[i], Is.Not.EqualTo(MaterialIds.Vapor));
+                }
             });
 
             for (int i = 0; i < 120; i++)
@@ -166,13 +174,19 @@ namespace GeneSys.Tests
             }
 
             double surfaceAfter = 0d;
-            yield return ReadGpuFields(host, (_, states, __) =>
+            double totalAfter = 0d;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
             {
                 for (int i = 0; i < states.Length; i++)
+                {
                     surfaceAfter += states[i].z;
+                    totalAfter += states[i].z + aux[i].x + aux[i].y;
+                    Assert.That(mats[i], Is.Not.EqualTo(MaterialIds.Vapor));
+                }
             });
 
             Assert.That(surfaceAfter, Is.Not.EqualTo(surfaceBefore).Within(0.01d));
+            Assert.That(totalAfter, Is.EqualTo(totalBefore).Within(Math.Max(1d, totalBefore * 0.05d)));
         }
 
         [UnityTest]
@@ -183,6 +197,8 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.Config.targetOceanCoverage = 0.5f;
             host.Config.validationIntervalTicks = 100000;
+            host.Config.atmosphericAdvectionRate = 0.85f;
+            host.Config.vaporDiffusionRate = 0.08f;
             host.Regenerate();
             host.Clock.SetRunning(false);
 
@@ -191,7 +207,7 @@ namespace GeneSys.Tests
             validator.ResetBaseline();
             for (int i = 0; i < 5; i++) yield return null;
 
-            for (int i = 0; i < 60; i++)
+            for (int i = 0; i < 120; i++)
             {
                 host.Clock.RequestStep();
                 yield return null;
@@ -203,8 +219,15 @@ namespace GeneSys.Tests
             for (int i = 0; i < 240 && !validationDone; i++)
                 yield return null;
 
+            Assert.That(validator.LastValidationPassed, Is.True, validator.LastMessage);
             Assert.That(validator.LastMessage, Does.Not.Contain("Non-finite"));
             Assert.That(validator.LastMessage, Does.Not.Contain("Negative"));
+
+            yield return ReadGpuFields(host, (mats, _, __) =>
+            {
+                for (int i = 0; i < mats.Length; i++)
+                    Assert.That(mats[i], Is.Not.EqualTo(MaterialIds.Vapor));
+            });
         }
 
         [UnityTest]

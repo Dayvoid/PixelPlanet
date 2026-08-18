@@ -81,6 +81,7 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         else if (mode == 3) state.y += command.values.y * max(0.1, falloff);
         else if (mode == 4) aux.z += command.values.y * max(0.1, falloff);
         else if (mode == 5) aux.y = max(0.0, aux.y + command.values.y * max(0.1, falloff));
+        else if (mode == 6) aux.x = max(0.0, aux.x + command.values.y * max(0.1, falloff));
     }
     WriteCell(cell, material, state, flow, aux);
 }
@@ -121,6 +122,13 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     uint gasId = (packed >> 20) & 1023u;
     float hysteresis = max(0.001, _WeatherC.z);
 
+    // Legacy Vapor pixels migrate to Air while preserving vapor/cloud mass fields.
+    if (material == 11u)
+    {
+        material = 1u;
+        WriteCell(cell, material, state, flow, aux);
+        return;
+    }
     if (definition.metadata.x == 1.0)
     {
         WriteCell(cell, material, state, flow, aux);
@@ -128,10 +136,12 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     }
     if (gasId > 0u && state.x > definition.phase.y + hysteresis)
     {
-        material = gasId;
-        aux.x += max(0.0, state.z) + 0.02;
+        // Boiling vacates the cell to Air and moves only existing liquid/ice mass into aux.x.
+        float boiled = max(0.0, state.z);
+        aux.x += boiled;
         state.z = 0.0;
-        state.y += _WeatherC.x * 0.1;
+        state.y += boiled * _WeatherC.x;
+        material = 1u;
     }
     else if (liquidId > 0u && state.x > definition.phase.x + hysteresis)
     {

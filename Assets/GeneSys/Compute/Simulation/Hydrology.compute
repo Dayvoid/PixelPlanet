@@ -31,6 +31,8 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _WeatherD;
+float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, unused, unused
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
@@ -44,14 +46,15 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 
 bool IsAtmosphereCell(int2 cell, uint material)
 {
-    float radius = Radius01(cell.y, _GridSize.y);
-    return radius >= _AtmosphereStartRadius || D(material).metadata.x == 1.0;
+    float category = D(material).metadata.x;
+    if (category == 1.0 || material == 11u) return true;
+    return material == 0u && Radius01(cell.y, _GridSize.y) >= _AtmosphereStartRadius;
 }
 
 bool IsExposedSurface(int2 cell, uint material)
 {
     uint above = M(cell + int2(0, 1));
-    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u;
+    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
@@ -119,23 +122,6 @@ void RunoffAndDeposition(uint3 id : SV_DispatchThreadID)
     MaterialGpuData definition = D(material);
     bool atmosphere = IsAtmosphereCell(cell, material);
     bool exposed = IsExposedSurface(cell, material);
-
-    float rainFromAbove = 0.0;
-    int2 above = cell + int2(0, 1);
-    if (!atmosphere)
-    {
-        float aboveFlowY = F(above).y;
-        if (aboveFlowY < -0.001)
-            rainFromAbove = min(-aboveFlowY * _HydrologyC.x * _DeltaTime, 1.0 - state.z);
-    }
-
-    if (rainFromAbove > 0.0)
-    {
-        state.z += rainFromAbove;
-        flow.y += rainFromAbove;
-        if (material == 1u && state.z > 0.15)
-            material = state.x < 0.0 ? 10u : 9u;
-    }
 
     if (exposed && state.z > 0.02)
     {

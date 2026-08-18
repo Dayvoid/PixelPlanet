@@ -96,6 +96,12 @@ MonoBehaviour:
   rigidPressureDiffusivity: 0.02
   pressureEquilibriumGradient: 2
   pressureEquilibriumMaximum: 2
+  atmosphericAdvectionRate: 0.85
+  vaporDiffusionRate: 0.08
+  atmosphericBuoyancy: 0.25
+  humidityBuoyancy: 0.15
+  saturationCapacityScale: 0.35
+  cloudPrecipitationThreshold: 0.05
   brushRadius: 5
   brushStrength: 1
   validationIntervalTicks: 1000

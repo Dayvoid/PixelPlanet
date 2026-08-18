@@ -45,6 +45,7 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float4> _Properties;
             float _VisualCoreRadius;
             float _VisualCoreSquash;
+            float _AtmosphereStartRadius;
             int _OverlayMode;
 
             Varyings Vert(Attributes input)
@@ -87,8 +88,15 @@ Shader "GeneSys/Planetoid Display"
                 float4 baseColor = _Palette.Load(int3((int)material, 0, 0));
                 float4 materialProperties = _Properties.Load(int3((int)material, 0, 0));
                 float3 color = baseColor.rgb;
+                bool atmosphereCarrier = material == 1u || material == 11u || simulationRadius >= _AtmosphereStartRadius;
+                float cloud = atmosphereCarrier ? saturate(state.z * 2.5) : 0.0;
 
-                if (_OverlayMode == 1) color = HeatColor(state.x);
+                if (_OverlayMode == 0)
+                {
+                    if (cloud > 0.02)
+                        color = lerp(color, float3(0.92, 0.95, 1.0), saturate(cloud * 0.9));
+                }
+                else if (_OverlayMode == 1) color = HeatColor(state.x);
                 else if (_OverlayMode == 2) color = lerp(float3(0.02, 0.02, 0.08), float3(1.0, 0.1, 0.8), saturate(state.y));
                 else if (_OverlayMode == 3) color = lerp(float3(0.1, 0.05, 0.01), float3(0.0, 0.55, 1.0), saturate(state.z));
                 else if (_OverlayMode == 4) color = state.w >= 0.0 ? float3(saturate(abs(state.w)), 0.1, 0.05) : float3(0.05, 0.2, saturate(abs(state.w)));
@@ -100,13 +108,15 @@ Shader "GeneSys/Planetoid Display"
                 else if (_OverlayMode == 10) color = float3(saturate(materialProperties.x), saturate(materialProperties.y), 0.1);
                 else if (_OverlayMode == 11)
                 {
-                    float surface = saturate(state.z);
+                    float surface = atmosphereCarrier ? 0.0 : saturate(state.z);
                     float ground = saturate(aux.y) * 0.65;
                     float vapor = saturate(aux.x) * 0.35;
+                    float cloudSignal = cloud * 0.55;
                     float thermal = saturate(aux.w) * 0.25 + saturate(aux.z) * 0.15;
-                    float waterSignal = saturate(surface + ground + vapor + thermal);
+                    float waterSignal = saturate(surface + ground + vapor + cloudSignal + thermal);
                     color = lerp(float3(0.05, 0.04, 0.02), float3(0.0, 0.55, 1.0), waterSignal);
                     if (material == 9u) color = lerp(color, float3(0.0, 0.35, 0.95), 0.65);
+                    if (cloud > 0.05) color = lerp(color, float3(0.85, 0.9, 1.0), saturate(cloud));
                     if (thermal > 0.15) color = lerp(color, float3(1.0, 0.35, 0.05), thermal);
                 }
 

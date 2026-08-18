@@ -8,7 +8,8 @@ namespace GeneSys.Configuration
     public enum SimulationPreset { Validation, Standard, Stress }
 
     /// <summary>
-    /// Canonical water mass contract: state.z = surface liquid/ice mass, aux.x = vapor, aux.y = groundwater.
+    /// Canonical water mass contract: state.z = surface liquid/ice (or atmospheric cloud condensate on Air),
+    /// aux.x = vapor humidity on Air carriers, aux.y = groundwater.
     /// Material IDs describe phase/appearance only; every transfer subtracts from one reservoir before adding to another.
     /// </summary>
     [CreateAssetMenu(menuName = "GeneSys/Simulation Config", fileName = "SimulationConfig")]
@@ -104,6 +105,13 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float rigidPressureDiffusivity = 0.02f;
         [Range(0f, 8f)] public float pressureEquilibriumGradient = 2f;
         [Range(0f, 8f)] public float pressureEquilibriumMaximum = 2f;
+        [Range(0f, 4f)] public float atmosphericAdvectionRate = 0.85f;
+        [Range(0f, 2f)] public float vaporDiffusionRate = 0.08f;
+        [Range(0f, 4f)] public float atmosphericBuoyancy = 0.25f;
+        [Range(0f, 4f)] public float humidityBuoyancy = 0.15f;
+        [Range(0.01f, 2f)] public float saturationCapacityScale = 0.35f;
+        [Range(0.01f, 1f)] public float cloudPrecipitationThreshold = 0.05f;
+
 
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;
@@ -139,6 +147,12 @@ namespace GeneSys.Configuration
             dayLengthSeconds = Mathf.Max(1f, dayLengthSeconds);
             minOceanBasins = Mathf.Clamp(minOceanBasins, 2, 3);
             maxOceanBasins = Mathf.Clamp(maxOceanBasins, minOceanBasins, 3);
+            atmosphericAdvectionRate = Mathf.Max(0f, atmosphericAdvectionRate);
+            vaporDiffusionRate = Mathf.Max(0f, vaporDiffusionRate);
+            atmosphericBuoyancy = Mathf.Max(0f, atmosphericBuoyancy);
+            humidityBuoyancy = Mathf.Max(0f, humidityBuoyancy);
+            saturationCapacityScale = Mathf.Max(0.01f, saturationCapacityScale);
+            cloudPrecipitationThreshold = Mathf.Max(0.01f, cloudPrecipitationThreshold);
         }
     }
 }

@@ -27,6 +27,9 @@ namespace GeneSys.Integration
         RenderTexture FlowField { get; }
         RenderTexture ChemicalAndGroundwaterField { get; }
         SurfaceFrame GetSurfaceFrame(Vector2Int cell);
+        /// <summary>
+        /// Deposit into a field channel: 1 heat, 2 moisture/cloud, 3 pressure, 4 nutrients, 5 groundwater, 6 vapor.
+        /// </summary>
         void QueueFieldDeposit(Vector2Int cell, int radius, int channel, float amount);
     }
 }

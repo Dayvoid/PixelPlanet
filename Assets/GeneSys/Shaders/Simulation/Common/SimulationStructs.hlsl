@@ -2,13 +2,17 @@
 #define GENESYS_SIMULATION_STRUCTS_INCLUDED
 
 // Water mass contract:
-//   state.z  = canonical surface liquid/ice mass (never created implicitly by material ID alone)
-//   aux.x    = atmospheric vapor mass
+//   state.z  = surface liquid/ice mass on non-atmosphere cells; cloud condensate on atmosphere cells
+//   aux.x    = atmospheric vapor mass (humidity carried by Air cells; never a separate Gas pixel)
 //   aux.y    = subsurface groundwater mass
 //   aux.z    = nutrient / fertility
 //   aux.w    = shared fault / erosion stress
 //              Rock, Basalt, and Soil recover linearly via stressDecayRate (_Erosion.w)
 //              in ErosionAndCollapse; Mantle/Magma keep tectonic fault semantics without decay.
+// Atmosphere representation:
+//   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
+//   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
+//   Clouds are atmospheric state.z; rain drains that condensate into negative flow.y.
 // Moisture-aware soil erosion:
 //   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
 //   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.

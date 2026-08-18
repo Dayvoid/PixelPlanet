@@ -66,6 +66,7 @@ namespace GeneSys.Rendering
             displayMaterial.SetTexture("_Properties", properties);
             displayMaterial.SetFloat("_VisualCoreRadius", grid.visualCoreRadius);
             displayMaterial.SetFloat("_VisualCoreSquash", grid.visualCoreSquash);
+            displayMaterial.SetFloat("_AtmosphereStartRadius", grid.atmosphereStartRadius);
             meshRenderer.sharedMaterial = displayMaterial;
             RefreshTextures();
         }

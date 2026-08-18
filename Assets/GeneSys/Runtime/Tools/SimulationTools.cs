@@ -11,7 +11,7 @@ using UnityEngine.Rendering;
 
 namespace GeneSys.Tools
 {
-    public enum BrushMode { Material, Heat, Water, Pressure }
+    public enum BrushMode { Material, Heat, Water, Pressure, Vapor }
 
     public sealed class SimulationTools : MonoBehaviour
     {
@@ -40,6 +40,7 @@ namespace GeneSys.Tools
                     BrushMode.Heat => new Vector4(1f, Strength, 0f, 0f),
                     BrushMode.Water => new Vector4(2f, Strength, 0f, 0f),
                     BrushMode.Pressure => new Vector4(3f, Strength, 0f, 0f),
+                    BrushMode.Vapor => new Vector4(6f, Strength, 0f, 0f),
                     _ => Vector4.zero
                 };
                 host.QueueBrush(new GpuPassScheduler.BrushCommand
