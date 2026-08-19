@@ -71,6 +71,13 @@ namespace GeneSys.Tests
             host.Config.pressureDiffusionRate = 0.5f;
             host.Config.slowPassInterval = 4;
             host.Config.validationIntervalTicks = 100000;
+            host.Config.mycologyAirTransportRate = 0f;
+            host.Config.mycologyWaterTransportRate = 0f;
+            host.Config.mycologyDiffusionRate = 0f;
+            host.Config.mycologySettlingRate = 0f;
+            host.Config.mycologySporulationRate = 0f;
+            host.Config.mycologyGrowthRate = 0f;
+            host.Config.mycologyDecayRate = 0f;
         }
 
         [UnityTearDown]

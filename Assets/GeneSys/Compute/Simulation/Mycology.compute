@@ -1,0 +1,446 @@
+#pragma kernel SporeTransport
+#pragma kernel ColonyLifecycle
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+Texture2D<uint> _ShadeRead;
+RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _MycologyA; // initialSporeLoad, rareStrainChance, airTransport, waterTransport
+float4 _MycologyB; // diffusion, settling, sporulation, growth
+float4 _MycologyC; // decay, growthTempMin, growthTempMax, growthMoistureMin
+float4 _MycologyD; // growthMoistureMax, survivalTempMin, survivalTempMax, survivalMoistureMin
+float4 _MycologyE; // survivalMoistureMax, electricalTolerance, traitEffectStrength, unused
+float4 _WeatherF; // unused, unused, unused, atmosphericCflLimit
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 Eco(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
+{
+    uint oldMaterial = M(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(D(material).metadata.x, (uint2)cell, material, _Seed);
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
+}
+
+float4 SporeFaceFlux(float2 flow, float mass, float advectionRate, float4 validFaces, float tangentialWeight)
+{
+    if (mass <= 1e-8 || advectionRate <= 1e-8)
+        return 0.0;
+
+    float left = max(0.0, -flow.x) * validFaces.x * tangentialWeight;
+    float right = max(0.0, flow.x) * validFaces.y * tangentialWeight;
+    float down = max(0.0, -flow.y) * validFaces.z;
+    float up = max(0.0, flow.y) * validFaces.w;
+    float weightSum = left + right + down + up;
+    if (weightSum <= 1e-8)
+        return 0.0;
+
+    float cfl = saturate(_WeatherF.w);
+    if (cfl <= 1e-8) cfl = 0.4;
+    float moveFraction = min(cfl, weightSum * advectionRate * _DeltaTime);
+    float movable = mass * moveFraction;
+    float inv = 1.0 / weightSum;
+    return float4(movable * left * inv, movable * right * inv, movable * down * inv, movable * up * inv);
+}
+
+float DiffusiveExchange(float selfMass, float neighborMass, float diffusionRate)
+{
+    return (neighborMass - selfMass) * saturate(diffusionRate * _DeltaTime) * 0.25;
+}
+
+bool SameCarrierClass(uint a, uint b)
+{
+    return (IsSporeAirCarrier(a) && IsSporeAirCarrier(b)) || (IsSporeWaterCarrier(a) && IsSporeWaterCarrier(b));
+}
+
+bool IsDepositTargetFor(uint carrier, uint target)
+{
+    if (IsSporeAirCarrier(carrier))
+        return IsMycologySubstrate(target) || IsSporeWaterCarrier(target);
+    if (IsSporeWaterCarrier(carrier))
+        return IsMycologySubstrate(target);
+    return false;
+}
+
+int CountDepositTargets(int2 cell, uint material)
+{
+    int count = 0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 offset = offsets[i];
+        if (offset.y != 0)
+        {
+            int neighborY = cell.y + offset.y;
+            if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+        }
+        uint neighborMaterial = M(cell + offset);
+        if (IsDepositTargetFor(material, neighborMaterial)) count++;
+    }
+    return count;
+}
+
+int CountCarrierNeighbors(int2 cell)
+{
+    int count = 0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 offset = offsets[i];
+        if (offset.y != 0)
+        {
+            int neighborY = cell.y + offset.y;
+            if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+        }
+        if (IsSporeCarrier(M(cell + offset))) count++;
+    }
+    return count;
+}
+
+float4 CarrierFaceMask(int2 cell, uint material)
+{
+    int2 leftCell = C(cell + int2(-1, 0));
+    int2 rightCell = C(cell + int2(1, 0));
+    int2 downCell = C(cell + int2(0, -1));
+    int2 upCell = C(cell + int2(0, 1));
+    return float4(
+        SameCarrierClass(material, M(leftCell)) ? 1.0 : 0.0,
+        SameCarrierClass(material, M(rightCell)) ? 1.0 : 0.0,
+        (cell.y > 0 && SameCarrierClass(material, M(downCell))) ? 1.0 : 0.0,
+        (cell.y < _GridSize.y - 1 && SameCarrierClass(material, M(upCell))) ? 1.0 : 0.0);
+}
+
+float MoistureOf(float4 state, float4 aux)
+{
+    return max(0.0, state.z) + max(0.0, aux.y);
+}
+
+void ApplyTraitRanges(uint traits, inout float growTMin, inout float growTMax, inout float growMMin, inout float growMMax,
+    inout float survTMin, inout float survTMax, inout float survMMin, inout float survMMax, inout float elecTol)
+{
+    float effect = saturate(_MycologyE.z);
+    if ((traits & MYCO_HEAT_RESISTANT) != 0u)
+    {
+        growTMax += 18.0 * effect;
+        survTMax += 22.0 * effect;
+    }
+    if ((traits & MYCO_HEAT_PRONE) != 0u)
+    {
+        growTMax -= 12.0 * effect;
+        survTMax -= 14.0 * effect;
+    }
+    if ((traits & MYCO_DROUGHT_RESISTANT) != 0u)
+    {
+        growMMin *= max(0.05, 1.0 - 0.7 * effect);
+        survMMin *= max(0.05, 1.0 - 0.7 * effect);
+    }
+    if ((traits & MYCO_DROUGHT_PRONE) != 0u)
+    {
+        growMMin *= (1.0 + 0.8 * effect);
+        survMMin *= (1.0 + 0.8 * effect);
+    }
+    if ((traits & MYCO_ELECTRIC_RESISTANT) != 0u)
+        elecTol *= (1.0 + effect);
+    if ((traits & MYCO_ELECTRIC_PRONE) != 0u)
+        elecTol *= max(0.05, 1.0 - effect);
+}
+
+[numthreads(8, 8, 1)]
+void SporeTransport(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = Eco(cell);
+    float spores = max(0.0, ecology.x);
+    uint traits = DecodeMycologyTraits(ecology.z);
+    float myco = saturate(ecology.y);
+
+    float airRate = max(0.0, _MycologyA.z);
+    float waterRate = max(0.0, _MycologyA.w);
+    float diffusionRate = max(0.0, _MycologyB.x);
+    float settlingRate = max(0.0, _MycologyB.y);
+    float tanW = TangentialEdgeWeight(cell.y, _GridSize.y);
+
+    float remaining = spores;
+    float incoming = 0.0;
+    float bestMass = 0.0;
+    uint bestTraits = traits;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+
+    if (IsSporeCarrier(material))
+    {
+        float advectionRate = IsSporeWaterCarrier(material) ? waterRate : airRate;
+        float4 validFaces = CarrierFaceMask(cell, material);
+        float4 outFlux = SporeFaceFlux(flow, spores, advectionRate, validFaces, tanW);
+        float sporeOut = outFlux.x + outFlux.y + outFlux.z + outFlux.w;
+        remaining = max(0.0, spores - sporeOut);
+        ConsiderTraitContribution(bestMass, bestTraits, remaining, traits);
+
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+
+            int2 neighbor = C(cell + offset);
+            uint neighborMaterial = M(neighbor);
+            float4 neighborEcology = Eco(neighbor);
+            uint neighborTraits = DecodeMycologyTraits(neighborEcology.z);
+
+            if (SameCarrierClass(material, neighborMaterial))
+            {
+                float neighborTan = TangentialEdgeWeight(neighbor.y, _GridSize.y);
+                float4 neighborValid = CarrierFaceMask(neighbor, neighborMaterial);
+                float4 neighborOut = SporeFaceFlux(F(neighbor), max(0.0, neighborEcology.x), advectionRate, neighborValid, neighborTan);
+                float face = 0.0;
+                if (offset.x == 1) face = neighborOut.x;
+                else if (offset.x == -1) face = neighborOut.y;
+                else if (offset.y == 1) face = neighborOut.z;
+                else if (offset.y == -1) face = neighborOut.w;
+                incoming += face;
+                ConsiderTraitContribution(bestMass, bestTraits, face, neighborTraits);
+
+                float exchange = DiffusiveExchange(spores, max(0.0, neighborEcology.x), diffusionRate);
+                incoming += exchange;
+                if (exchange > 0.0)
+                    ConsiderTraitContribution(bestMass, bestTraits, exchange, neighborTraits);
+            }
+        }
+
+        int depositTargets = CountDepositTargets(cell, material);
+        if (depositTargets > 0 && settlingRate > 0.0)
+        {
+            float depositOut = remaining * saturate(settlingRate * _DeltaTime);
+            remaining = max(0.0, remaining - depositOut);
+        }
+
+        if (IsSporeWaterCarrier(material))
+        {
+            [unroll]
+            for (int i = 0; i < 4; i++)
+            {
+                int2 offset = offsets[i];
+                if (offset.y != 0)
+                {
+                    int neighborY = cell.y + offset.y;
+                    if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+                }
+                int2 neighbor = C(cell + offset);
+                uint neighborMaterial = M(neighbor);
+                if (!IsSporeAirCarrier(neighborMaterial)) continue;
+                int neighborTargets = CountDepositTargets(neighbor, neighborMaterial);
+                if (neighborTargets <= 0) continue;
+                float deposit = max(0.0, Eco(neighbor).x) * saturate(settlingRate * _DeltaTime) / (float)neighborTargets;
+                incoming += deposit;
+                ConsiderTraitContribution(bestMass, bestTraits, deposit, DecodeMycologyTraits(Eco(neighbor).z));
+            }
+        }
+    }
+    else if (IsMycologySubstrate(material))
+    {
+        ConsiderTraitContribution(bestMass, bestTraits, spores, traits);
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+
+            int2 neighbor = C(cell + offset);
+            uint neighborMaterial = M(neighbor);
+            if (!IsDepositTargetFor(neighborMaterial, material)) continue;
+            float4 neighborEcology = Eco(neighbor);
+            int neighborTargets = CountDepositTargets(neighbor, neighborMaterial);
+            if (neighborTargets <= 0) continue;
+            float neighborRemaining = max(0.0, neighborEcology.x);
+            // Approximate remaining after the neighbor's own advection by using current load.
+            float deposit = neighborRemaining * saturate(settlingRate * _DeltaTime) / (float)neighborTargets;
+            incoming += deposit;
+            ConsiderTraitContribution(bestMass, bestTraits, deposit, DecodeMycologyTraits(neighborEcology.z));
+        }
+    }
+    else
+    {
+        ConsiderTraitContribution(bestMass, bestTraits, spores, traits);
+    }
+
+    ecology.x = max(0.0, remaining + incoming);
+    if (ecology.x <= 1e-6 && myco <= 1e-6)
+        ecology.z = 0.0;
+    else if (myco > ecology.x)
+        ecology.z = (float)traits;
+    else
+        ecology.z = (float)bestTraits;
+
+    Write(cell, material, state, flow, aux, ecology);
+}
+
+[numthreads(8, 8, 1)]
+void ColonyLifecycle(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = Eco(cell);
+    float spores = max(0.0, ecology.x);
+    float myco = saturate(ecology.y);
+    uint traits = DecodeMycologyTraits(ecology.z);
+
+    float growthRate = max(0.0, _MycologyB.w);
+    float decayRate = max(0.0, _MycologyC.x);
+    float sporulationRate = max(0.0, _MycologyB.z);
+    float growTMin = _MycologyC.y;
+    float growTMax = _MycologyC.z;
+    float growMMin = _MycologyC.w;
+    float growMMax = _MycologyD.x;
+    float survTMin = _MycologyD.y;
+    float survTMax = _MycologyD.z;
+    float survMMin = _MycologyD.w;
+    float survMMax = _MycologyE.x;
+    float elecTol = max(0.0, _MycologyE.y);
+    ApplyTraitRanges(traits, growTMin, growTMax, growMMin, growMMax, survTMin, survTMax, survMMin, survMMax, elecTol);
+
+    float temperature = state.x;
+    float moisture = MoistureOf(state, aux);
+    float charge = abs(state.w);
+    bool substrate = IsMycologySubstrate(material);
+    bool inGrowth = temperature >= growTMin && temperature <= growTMax && moisture >= growMMin && moisture <= growMMax;
+    bool inSurvival = temperature >= survTMin && temperature <= survTMax && moisture >= survMMin && moisture <= survMMax;
+    bool electricallySafe = charge <= elecTol;
+
+    float incoming = 0.0;
+    float bestMass = spores;
+    uint bestTraits = traits;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+
+    if (IsSporeCarrier(material))
+    {
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+            int2 neighbor = C(cell + offset);
+            if (!IsMycologySubstrate(M(neighbor))) continue;
+            float4 neighborEcology = Eco(neighbor);
+            if (neighborEcology.y <= 0.05) continue;
+            int carriers = max(1, CountCarrierNeighbors(neighbor));
+            float emit = max(0.0, neighborEcology.y) * sporulationRate * _DeltaTime / (float)carriers;
+            incoming += emit;
+            ConsiderTraitContribution(bestMass, bestTraits, emit, DecodeMycologyTraits(neighborEcology.z));
+        }
+        ecology.x = max(0.0, spores + incoming);
+        if (myco > 0.0)
+            ecology.y = max(0.0, myco - decayRate * _DeltaTime);
+        if (ecology.y <= 1e-4)
+            ecology.y = 0.0;
+        if (ecology.x <= 1e-6 && ecology.y <= 1e-6)
+            ecology.z = 0.0;
+        else if (incoming > spores)
+            ecology.z = (float)bestTraits;
+        Write(cell, material, state, flow, aux, ecology);
+        return;
+    }
+
+    if (substrate)
+    {
+        float neighborMyco = 0.0;
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+            int2 neighbor = C(cell + offset);
+            if (!IsMycologySubstrate(M(neighbor))) continue;
+            float4 neighborEcology = Eco(neighbor);
+            neighborMyco = max(neighborMyco, saturate(neighborEcology.y));
+            if (neighborEcology.y > myco)
+                ConsiderTraitContribution(bestMass, bestTraits, neighborEcology.y, DecodeMycologyTraits(neighborEcology.z));
+        }
+
+        if (inGrowth && electricallySafe && (spores > 1e-5 || myco > 1e-5 || neighborMyco > 0.05))
+        {
+            float inoculum = saturate(spores) + myco * 0.25 + neighborMyco * 0.15;
+            ecology.y = saturate(myco + growthRate * inoculum * _DeltaTime);
+            if (ecology.y > 0.02 && traits == 0u && bestTraits != 0u)
+                traits = bestTraits;
+            ecology.z = (float)traits;
+        }
+        else if (!inSurvival || !electricallySafe)
+        {
+            ecology.y = max(0.0, myco - decayRate * _DeltaTime);
+            if (ecology.y <= 1e-4)
+            {
+                ecology.y = 0.0;
+                if (ecology.x <= 1e-6)
+                    ecology.z = 0.0;
+            }
+        }
+    }
+    else if (myco > 0.0)
+    {
+        ecology.y = max(0.0, myco - decayRate * _DeltaTime);
+        if (ecology.y <= 1e-4)
+        {
+            ecology.y = 0.0;
+            if (ecology.x <= 1e-6)
+                ecology.z = 0.0;
+        }
+    }
+
+    Write(cell, material, state, flow, aux, ecology);
+}

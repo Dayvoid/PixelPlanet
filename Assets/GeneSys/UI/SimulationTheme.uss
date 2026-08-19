@@ -185,6 +185,16 @@
     margin-bottom: 6px;
 }
 
+.tab-row-secondary {
+    margin-top: -2px;
+    margin-bottom: 8px;
+}
+
+.tab-row-secondary > .unity-button {
+    flex-grow: 0;
+    min-width: 72px;
+}
+
 .tab-row > .unity-button {
     flex-grow: 1;
     min-width: 45px;

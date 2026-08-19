@@ -120,6 +120,27 @@ namespace GeneSys.Configuration
         [Range(-20f, 40f)] public float surfaceAirTemperature = 18f;
         [Range(0f, 40f)] public float atmosphericLapseRate = 12f;
 
+        [Header("Ecology - Mycology")]
+        [Range(0f, 1f)] public float mycologyInitialSporeLoad = 0.08f;
+        [Range(0f, 1f)] public float mycologyRareStrainChance = 0.04f;
+        [Range(0f, 4f)] public float mycologyAirTransportRate = 0.55f;
+        [Range(0f, 4f)] public float mycologyWaterTransportRate = 0.7f;
+        [Range(0f, 2f)] public float mycologyDiffusionRate = 0.08f;
+        [Range(0f, 4f)] public float mycologySettlingRate = 0.35f;
+        [Range(0f, 4f)] public float mycologySporulationRate = 0.12f;
+        [Range(0f, 4f)] public float mycologyGrowthRate = 0.18f;
+        [Range(0f, 4f)] public float mycologyDecayRate = 0.22f;
+        [Range(-40f, 80f)] public float mycologyGrowthTempMin = 5f;
+        [Range(-40f, 120f)] public float mycologyGrowthTempMax = 32f;
+        [Range(0f, 2f)] public float mycologyGrowthMoistureMin = 0.08f;
+        [Range(0f, 2f)] public float mycologyGrowthMoistureMax = 0.85f;
+        [Range(-80f, 80f)] public float mycologySurvivalTempMin = -5f;
+        [Range(-40f, 160f)] public float mycologySurvivalTempMax = 45f;
+        [Range(0f, 2f)] public float mycologySurvivalMoistureMin = 0.02f;
+        [Range(0f, 2f)] public float mycologySurvivalMoistureMax = 1.2f;
+        [Range(0f, 8f)] public float mycologyElectricalTolerance = 0.65f;
+        [Range(0f, 1f)] public float mycologyTraitEffectStrength = 0.35f;
+
         [Header("Graphics")]
         [Range(0, 1)] public int enableStarfield = 1;
         [Range(32, 512)] public int starCount = 160;
@@ -183,6 +204,45 @@ namespace GeneSys.Configuration
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
             atmosphericCflLimit = Mathf.Clamp(atmosphericCflLimit, 0.05f, 1f);
             atmosphericLapseRate = Mathf.Max(0f, atmosphericLapseRate);
+            mycologyInitialSporeLoad = Mathf.Max(0f, mycologyInitialSporeLoad);
+            mycologyRareStrainChance = Mathf.Clamp01(mycologyRareStrainChance);
+            mycologyAirTransportRate = Mathf.Max(0f, mycologyAirTransportRate);
+            mycologyWaterTransportRate = Mathf.Max(0f, mycologyWaterTransportRate);
+            mycologyDiffusionRate = Mathf.Max(0f, mycologyDiffusionRate);
+            mycologySettlingRate = Mathf.Max(0f, mycologySettlingRate);
+            mycologySporulationRate = Mathf.Max(0f, mycologySporulationRate);
+            mycologyGrowthRate = Mathf.Max(0f, mycologyGrowthRate);
+            mycologyDecayRate = Mathf.Max(0f, mycologyDecayRate);
+            if (mycologyGrowthTempMax < mycologyGrowthTempMin)
+            {
+                float swap = mycologyGrowthTempMin;
+                mycologyGrowthTempMin = mycologyGrowthTempMax;
+                mycologyGrowthTempMax = swap;
+            }
+            if (mycologySurvivalTempMax < mycologySurvivalTempMin)
+            {
+                float swap = mycologySurvivalTempMin;
+                mycologySurvivalTempMin = mycologySurvivalTempMax;
+                mycologySurvivalTempMax = swap;
+            }
+            mycologySurvivalTempMin = Mathf.Min(mycologySurvivalTempMin, mycologyGrowthTempMin);
+            mycologySurvivalTempMax = Mathf.Max(mycologySurvivalTempMax, mycologyGrowthTempMax);
+            if (mycologyGrowthMoistureMax < mycologyGrowthMoistureMin)
+            {
+                float swap = mycologyGrowthMoistureMin;
+                mycologyGrowthMoistureMin = mycologyGrowthMoistureMax;
+                mycologyGrowthMoistureMax = swap;
+            }
+            if (mycologySurvivalMoistureMax < mycologySurvivalMoistureMin)
+            {
+                float swap = mycologySurvivalMoistureMin;
+                mycologySurvivalMoistureMin = mycologySurvivalMoistureMax;
+                mycologySurvivalMoistureMax = swap;
+            }
+            mycologySurvivalMoistureMin = Mathf.Min(mycologySurvivalMoistureMin, mycologyGrowthMoistureMin);
+            mycologySurvivalMoistureMax = Mathf.Max(mycologySurvivalMoistureMax, mycologyGrowthMoistureMax);
+            mycologyElectricalTolerance = Mathf.Max(0f, mycologyElectricalTolerance);
+            mycologyTraitEffectStrength = Mathf.Clamp01(mycologyTraitEffectStrength);
             enableStarfield = enableStarfield != 0 ? 1 : 0;
             starCount = Mathf.Clamp(starCount, 32, 512);
             starfieldStrength = Mathf.Max(0f, starfieldStrength);

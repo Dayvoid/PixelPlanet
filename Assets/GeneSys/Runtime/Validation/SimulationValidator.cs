@@ -32,9 +32,14 @@ namespace GeneSys.Validation
 
         public void ValidateNow()
         {
-            if (host == null || !host.IsReady || pending) return;
+            if (host == null || !host.IsReady || host.Resources == null || pending) return;
+            RenderTexture stateTex = host.Resources.StateRead;
+            RenderTexture auxTex = host.Resources.AuxRead;
+            RenderTexture flowTex = host.Resources.FlowRead;
+            RenderTexture ecologyTex = host.Resources.EcologyRead;
+            if (stateTex == null || auxTex == null || flowTex == null || ecologyTex == null) return;
             pending = true;
-            AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+            AsyncGPUReadback.Request(stateTex, 0, stateRequest =>
             {
                 if (stateRequest.hasError) { Complete(false, "State GPU readback failed."); return; }
                 NativeArray<Vector4> state = stateRequest.GetData<Vector4>();
@@ -46,10 +51,9 @@ namespace GeneSys.Validation
                     if (value.y < -0.01f || value.z < -0.001f) { Complete(false, $"Negative pressure/moisture at cell {i}."); return; }
                     water += Math.Max(0d, value.z);
                 }
-                AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
+                AsyncGPUReadback.Request(auxTex, 0, auxRequest =>
                 {
                     if (auxRequest.hasError) { Complete(false, "Auxiliary GPU readback failed."); return; }
-                    if (host == null || !host.IsReady) { Complete(false, "Simulation host unavailable."); return; }
                     NativeArray<Vector4> aux = auxRequest.GetData<Vector4>();
                     for (int i = 0; i < aux.Length; i++)
                     {
@@ -58,7 +62,7 @@ namespace GeneSys.Validation
                         if (value.x < -0.001f || value.y < -0.001f) { Complete(false, $"Negative vapor/groundwater at cell {i}."); return; }
                         water += Math.Max(0d, value.x) + Math.Max(0d, value.y);
                     }
-                    AsyncGPUReadback.Request(host.Resources.FlowRead, 0, flowRequest =>
+                    AsyncGPUReadback.Request(flowTex, 0, flowRequest =>
                     {
                         if (flowRequest.hasError) { Complete(false, "Flow GPU readback failed."); return; }
                         NativeArray<Vector2> flow = flowRequest.GetData<Vector2>();
@@ -70,10 +74,27 @@ namespace GeneSys.Validation
                             if (Mathf.Abs(value.x) > 20.5f || Mathf.Abs(value.y) > 20.5f)
                             { Complete(false, $"Runaway flow at cell {i}."); return; }
                         }
-                        if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
-                        double drift = Math.Abs(water - baselineWater) / baselineWater;
-                        bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
-                        Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                        AsyncGPUReadback.Request(ecologyTex, 0, ecologyRequest =>
+                        {
+                            if (ecologyRequest.hasError) { Complete(false, "Ecology GPU readback failed."); return; }
+                            NativeArray<Vector4> ecology = ecologyRequest.GetData<Vector4>();
+                            for (int i = 0; i < ecology.Length; i++)
+                            {
+                                Vector4 value = ecology[i];
+                                if (!Finite(value)) { Complete(false, $"Non-finite ecology field at cell {i}."); return; }
+                                if (value.x < -0.001f) { Complete(false, $"Negative spore load at cell {i}."); return; }
+                                if (value.y < -0.01f || value.y > 1.01f) { Complete(false, $"Myco value out of range at cell {i}."); return; }
+                                uint traits = (uint)Mathf.Round(Mathf.Max(0f, value.z));
+                                if (!MycologyTraits.IsValid(traits))
+                                { Complete(false, $"Invalid mycology traits {value.z} at cell {i}."); return; }
+                            }
+                            if (host == null || !host.IsReady || host.Config == null)
+                            { Complete(false, "Simulation host unavailable."); return; }
+                            if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
+                            double drift = Math.Abs(water - baselineWater) / baselineWater;
+                            bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                            Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                        });
                     });
                 });
             });

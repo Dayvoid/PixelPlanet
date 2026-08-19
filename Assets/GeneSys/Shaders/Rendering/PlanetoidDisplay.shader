@@ -45,6 +45,7 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float2> _FlowTex;
             Texture2D<float4> _AuxTex;
             Texture2D<uint> _ShadeTex;
+            Texture2D<float4> _EcologyTex;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
             Texture2D<float4> _Categories;
@@ -98,6 +99,7 @@ Shader "GeneSys/Planetoid Display"
                 float2 flow = _FlowTex.Load(int3(cell, 0));
                 float4 aux = _AuxTex.Load(int3(cell, 0));
                 uint shade = min(_ShadeTex.Load(int3(cell, 0)), 2u);
+                float4 ecology = _EcologyTex.Load(int3(cell, 0));
                 float category = _Categories.Load(int3((int)material, 0, 0)).x;
                 if (!IsMottledCategory(category)) shade = 0u;
                 float4 baseColor = _Palette.Load(int3((int)material, (int)shade, 0));
@@ -108,6 +110,12 @@ Shader "GeneSys/Planetoid Display"
 
                 if (_OverlayMode == 0)
                 {
+                    float myco = saturate(ecology.y);
+                    if (material == 7u && myco > 0.001)
+                        color = lerp(color, float3(0.10, 0.32, 0.11), myco);
+                    else if (material == 8u && myco > 0.001)
+                        color = lerp(color, float3(0.62, 0.68, 0.48), myco);
+
                     if (cloud > 0.02)
                         color = lerp(color, float3(0.92, 0.95, 1.0), saturate(cloud * 0.9));
 
@@ -174,6 +182,20 @@ Shader "GeneSys/Planetoid Display"
                 {
                     float cloudOnly = atmosphereCarrier ? saturate(state.z * 3.0) : 0.0;
                     color = lerp(float3(0.02, 0.03, 0.06), float3(0.92, 0.95, 1.0), cloudOnly);
+                }
+                else if (_OverlayMode == 16)
+                {
+                    float spores = saturate(ecology.x);
+                    float myco = saturate(ecology.y);
+                    uint traits = (uint)round(ecology.z);
+                    color = lerp(float3(0.04, 0.03, 0.02), float3(0.28, 0.72, 0.22), myco);
+                    color = lerp(color, float3(0.86, 0.8, 0.28), spores * 0.55);
+                    if ((traits & 16u) != 0u || (traits & 32u) != 0u)
+                        color = lerp(color, float3(1.0, 0.35, 0.12), 0.35);
+                    if ((traits & 1u) != 0u || (traits & 2u) != 0u)
+                        color = lerp(color, float3(0.85, 0.72, 0.2), 0.28);
+                    if ((traits & 4u) != 0u || (traits & 8u) != 0u)
+                        color = lerp(color, float3(0.25, 0.85, 1.0), 0.28);
                 }
 
                 float radialGrid = frac(simulationRadius * height);

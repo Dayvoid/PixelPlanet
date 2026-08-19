@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using GeneSys.Configuration;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Gpu;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
@@ -14,18 +15,19 @@ namespace GeneSys.Persistence
         private const int Version1 = 1;
         private const int Version2 = 2;
         private const int Version3 = 3;
+        private const int Version4 = 4;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            byte[][] payloads = new byte[5][];
-            int remaining = 5;
+            byte[][] payloads = new byte[6][];
+            int remaining = 6;
             bool failed = false;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
                 host.Resources.FlowRead, host.Resources.AuxRead,
-                host.Resources.ShadeRead
+                host.Resources.ShadeRead, host.Resources.EcologyRead
             };
             for (int i = 0; i < textures.Length; i++)
             {
@@ -43,12 +45,13 @@ namespace GeneSys.Persistence
                         using var writer = new BinaryWriter(stream);
                         SimulationConfig config = host.Config;
                         writer.Write(Magic);
-                        writer.Write(Version3);
+                        writer.Write(Version4);
                         writer.Write(host.Resources.Grid.angularResolution);
                         writer.Write(host.Resources.Grid.radialResolution);
                         writer.Write(config.seed);
                         writer.Write(host.Clock.TickCount);
                         WriteConfig(writer, config);
+                        WriteEcologyConfig(writer, config);
                         foreach (byte[] payload in payloads)
                         {
                             writer.Write(payload.Length);
@@ -67,7 +70,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -78,6 +81,8 @@ namespace GeneSys.Persistence
             host.Config.seed = seed;
             if (version >= Version2)
                 ReadConfig(reader, host.Config);
+            if (version >= Version4)
+                ReadEcologyConfig(reader, host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -112,9 +117,37 @@ namespace GeneSys.Persistence
                 host.FillShadesFromMaterials();
             }
 
+            if (version >= Version4)
+            {
+                int length = reader.ReadInt32();
+                byte[] payload = reader.ReadBytes(length);
+                if (payload.Length != length) return false;
+                Texture2D staging = CreateStagingTexture(width, height, host.Resources.EcologyRead.graphicsFormat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, host.Resources.EcologyRead);
+                UnityEngine.Object.Destroy(staging);
+            }
+            else
+            {
+                ClearEcology(host.Resources);
+            }
+
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
             return true;
+        }
+
+        private static void ClearEcology(SimulationResources resources)
+        {
+            int width = resources.Grid.angularResolution;
+            int height = resources.Grid.radialResolution;
+            var staging = new Texture2D(width, height, TextureFormat.RGBAFloat, false, true);
+            staging.SetPixels(new Color[width * height]);
+            staging.Apply(false, false);
+            Graphics.CopyTexture(staging, resources.EcologyRead);
+            Graphics.CopyTexture(staging, resources.EcologyWrite);
+            UnityEngine.Object.Destroy(staging);
         }
 
         private static void WriteConfig(BinaryWriter writer, SimulationConfig config)
@@ -161,6 +194,52 @@ namespace GeneSys.Persistence
             config.geyserCooldownSeconds = reader.ReadSingle();
             config.hydrothermalStrength = reader.ReadSingle();
             config.ventChemicalRate = reader.ReadSingle();
+        }
+
+        private static void WriteEcologyConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.mycologyInitialSporeLoad);
+            writer.Write(config.mycologyRareStrainChance);
+            writer.Write(config.mycologyAirTransportRate);
+            writer.Write(config.mycologyWaterTransportRate);
+            writer.Write(config.mycologyDiffusionRate);
+            writer.Write(config.mycologySettlingRate);
+            writer.Write(config.mycologySporulationRate);
+            writer.Write(config.mycologyGrowthRate);
+            writer.Write(config.mycologyDecayRate);
+            writer.Write(config.mycologyGrowthTempMin);
+            writer.Write(config.mycologyGrowthTempMax);
+            writer.Write(config.mycologyGrowthMoistureMin);
+            writer.Write(config.mycologyGrowthMoistureMax);
+            writer.Write(config.mycologySurvivalTempMin);
+            writer.Write(config.mycologySurvivalTempMax);
+            writer.Write(config.mycologySurvivalMoistureMin);
+            writer.Write(config.mycologySurvivalMoistureMax);
+            writer.Write(config.mycologyElectricalTolerance);
+            writer.Write(config.mycologyTraitEffectStrength);
+        }
+
+        private static void ReadEcologyConfig(BinaryReader reader, SimulationConfig config)
+        {
+            config.mycologyInitialSporeLoad = reader.ReadSingle();
+            config.mycologyRareStrainChance = reader.ReadSingle();
+            config.mycologyAirTransportRate = reader.ReadSingle();
+            config.mycologyWaterTransportRate = reader.ReadSingle();
+            config.mycologyDiffusionRate = reader.ReadSingle();
+            config.mycologySettlingRate = reader.ReadSingle();
+            config.mycologySporulationRate = reader.ReadSingle();
+            config.mycologyGrowthRate = reader.ReadSingle();
+            config.mycologyDecayRate = reader.ReadSingle();
+            config.mycologyGrowthTempMin = reader.ReadSingle();
+            config.mycologyGrowthTempMax = reader.ReadSingle();
+            config.mycologyGrowthMoistureMin = reader.ReadSingle();
+            config.mycologyGrowthMoistureMax = reader.ReadSingle();
+            config.mycologySurvivalTempMin = reader.ReadSingle();
+            config.mycologySurvivalTempMax = reader.ReadSingle();
+            config.mycologySurvivalMoistureMin = reader.ReadSingle();
+            config.mycologySurvivalMoistureMax = reader.ReadSingle();
+            config.mycologyElectricalTolerance = reader.ReadSingle();
+            config.mycologyTraitEffectStrength = reader.ReadSingle();
         }
 
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)

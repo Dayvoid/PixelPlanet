@@ -16,6 +16,8 @@ Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
 Texture2D<uint> _ShadeRead;
 RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -47,6 +49,7 @@ float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
 float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
 float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 E(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 bool IsAtmosphereCell(int2 cell, uint material)
@@ -67,7 +70,7 @@ bool IsOpenCarrier(uint material)
     return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
 }
 
-void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
 {
     uint oldMaterial = M(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -78,6 +81,7 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux)
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
     _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
 }
 
 float AtmosphericVaporCapacity(float temperature, float radius, float pressure)
@@ -137,6 +141,7 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
+    float4 ecology = E(cell);
     MaterialGpuData definition = D(material);
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
@@ -167,7 +172,7 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    Write(cell, material, state, flow, aux);
+    Write(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -179,6 +184,7 @@ void AtmosphericContinuity(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
+    float4 ecology = E(cell);
 
     if (IsAtmosphereCell(cell, material))
     {
@@ -203,7 +209,7 @@ void AtmosphericContinuity(uint3 id : SV_DispatchThreadID)
         state.y = max(0.0, state.y + dp);
     }
 
-    Write(cell, material, state, flow, aux);
+    Write(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -215,6 +221,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
+    float4 ecology = E(cell);
     bool atmosphere = IsAtmosphereCell(cell, material);
     float4 faces = AtmosphereFaceMask(cell);
     float cfl = saturate(_WeatherF.w);
@@ -272,7 +279,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
     }
 
     flow *= saturate(1.0 - _WeatherB.x * _DeltaTime);
-    Write(cell, material, state, flow, aux);
+    Write(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -284,6 +291,7 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
+    float4 ecology = E(cell);
     bool atmosphere = IsAtmosphereCell(cell, material);
     float advectionRate = max(0.0, _WeatherD.x);
     float diffusionRate = max(0.0, _WeatherD.y);
@@ -382,7 +390,7 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    Write(cell, material, state, flow, aux);
+    Write(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -394,6 +402,7 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float2 flow = F(cell);
     float4 aux = A(cell);
+    float4 ecology = E(cell);
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
     bool exposed = IsExposedSurface(cell, material);
@@ -475,5 +484,5 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     else if (material == 10u && state.x > 1.0) material = 9u;
     else if (material == 11u) material = 1u;
 
-    Write(cell, material, state, flow, aux);
+    Write(cell, material, state, flow, aux, ecology);
 }

@@ -46,28 +46,24 @@ namespace GeneSys.Validation
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
         {
-            if (host == null || !host.IsReady)
+            if (!TryCaptureFields(host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex))
             {
                 completed?.Invoke(default);
                 return;
             }
 
-            PolarGridDefinition grid = host.Grid;
-            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            Action fail = () => completed?.Invoke(default);
+            RequestField(materialTex, fail, materialRequest =>
             {
-                if (materialRequest.hasError) { completed?.Invoke(default); return; }
                 uint[] materials = materialRequest.GetData<uint>().ToArray();
-                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                RequestField(stateTex, fail, stateRequest =>
                 {
-                    if (stateRequest.hasError) { completed?.Invoke(default); return; }
                     Vector4[] states = stateRequest.GetData<Vector4>().ToArray();
-                    AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
+                    RequestField(auxTex, fail, auxRequest =>
                     {
-                        if (auxRequest.hasError) { completed?.Invoke(default); return; }
                         Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
-                        AsyncGPUReadback.Request(host.Resources.FlowRead, 0, flowRequest =>
+                        RequestField(flowTex, fail, flowRequest =>
                         {
-                            if (flowRequest.hasError) { completed?.Invoke(default); return; }
                             Vector2[] flow = flowRequest.GetData<Vector2>().ToArray();
                             completed?.Invoke(ComputeMetrics(grid, materials, states, aux, flow));
                         });
@@ -78,34 +74,67 @@ namespace GeneSys.Validation
 
         public static void MeasureAtmosphereAsync(SimulationHost host, float solarAngle01, Action<AtmosphericCirculationMetrics> completed)
         {
-            if (host == null || !host.IsReady)
+            if (!TryCaptureFields(host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex))
             {
                 completed?.Invoke(default);
                 return;
             }
 
-            PolarGridDefinition grid = host.Grid;
-            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            Action fail = () => completed?.Invoke(default);
+            RequestField(materialTex, fail, materialRequest =>
             {
-                if (materialRequest.hasError) { completed?.Invoke(default); return; }
                 uint[] materials = materialRequest.GetData<uint>().ToArray();
-                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                RequestField(stateTex, fail, stateRequest =>
                 {
-                    if (stateRequest.hasError) { completed?.Invoke(default); return; }
                     Vector4[] states = stateRequest.GetData<Vector4>().ToArray();
-                    AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
+                    RequestField(auxTex, fail, auxRequest =>
                     {
-                        if (auxRequest.hasError) { completed?.Invoke(default); return; }
                         Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
-                        AsyncGPUReadback.Request(host.Resources.FlowRead, 0, flowRequest =>
+                        RequestField(flowTex, fail, flowRequest =>
                         {
-                            if (flowRequest.hasError) { completed?.Invoke(default); return; }
                             Vector2[] flow = flowRequest.GetData<Vector2>().ToArray();
                             completed?.Invoke(ComputeAtmosphericMetrics(grid, materials, states, aux, flow, solarAngle01));
                         });
                     });
                 });
             });
+        }
+
+        private static bool TryCaptureFields(SimulationHost host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex)
+        {
+            grid = default;
+            materialTex = null;
+            stateTex = null;
+            auxTex = null;
+            flowTex = null;
+            if (host == null || !host.IsReady || host.Resources == null) return false;
+            grid = host.Grid;
+            materialTex = host.Resources.MaterialRead;
+            stateTex = host.Resources.StateRead;
+            auxTex = host.Resources.AuxRead;
+            flowTex = host.Resources.FlowRead;
+            return materialTex != null && stateTex != null && auxTex != null && flowTex != null;
+        }
+
+        private static void RequestField(RenderTexture texture, Action onFailed, Action<AsyncGPUReadbackRequest> onSuccess)
+        {
+            if (texture == null)
+            {
+                onFailed();
+                return;
+            }
+            try
+            {
+                AsyncGPUReadback.Request(texture, 0, request =>
+                {
+                    if (request.hasError) onFailed();
+                    else onSuccess(request);
+                });
+            }
+            catch (Exception)
+            {
+                onFailed();
+            }
         }
 
         public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux)

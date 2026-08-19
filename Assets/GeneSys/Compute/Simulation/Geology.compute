@@ -14,6 +14,8 @@ Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
 Texture2D<uint> _ShadeRead;
 RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -41,6 +43,7 @@ uint ReadMaterial(int2 cell) { return _MaterialRead.Load(int3(Cell(cell), 0)); }
 float4 ReadState(int2 cell) { return _StateRead.Load(int3(Cell(cell), 0)); }
 float2 ReadFlow(int2 cell) { return _FlowRead.Load(int3(Cell(cell), 0)); }
 float4 ReadAux(int2 cell) { return _AuxRead.Load(int3(Cell(cell), 0)); }
+float4 ReadEcology(int2 cell) { return _EcologyRead.Load(int3(Cell(cell), 0)); }
 
 bool IsGranularBurden(uint material)
 {
@@ -74,7 +77,7 @@ float ColumnBurden(int2 magmaCell)
     return burden;
 }
 
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux)
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
 {
     uint oldMaterial = ReadMaterial(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -85,6 +88,7 @@ void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux)
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
     _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -96,6 +100,7 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     float4 state = ReadState(cell);
     float2 flow = ReadFlow(cell);
     float4 aux = ReadAux(cell);
+    float4 ecology = ReadEcology(cell);
     float radius = Radius01(cell.y, _GridSize.y);
 
     bool mantle = material == 3u;
@@ -154,10 +159,10 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
         aboveAux.x += heatTransfer * 0.25;
         aboveAux.z += heatTransfer * _GeologyB.y;
         flow.y += heatTransfer;
-        WriteCell(Cell(cell + int2(0, 1)), aboveMat, aboveState, ReadFlow(cell + int2(0, 1)), aboveAux);
+        WriteCell(Cell(cell + int2(0, 1)), aboveMat, aboveState, ReadFlow(cell + int2(0, 1)), aboveAux, ReadEcology(cell + int2(0, 1)));
     }
 
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -169,11 +174,12 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
     float4 state = ReadState(cell);
     float2 flow = ReadFlow(cell);
     float4 aux = ReadAux(cell);
+    float4 ecology = ReadEcology(cell);
 
     float eruption = saturate(_EruptionA.x);
     if (eruption <= 0.0001)
     {
-        WriteCell(cell, material, state, flow, aux);
+        WriteCell(cell, material, state, flow, aux, ecology);
         return;
     }
 
@@ -198,15 +204,17 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
             if (overdrive > 1.0)
             {
                 float4 belowAux = ReadAux(below);
+                float4 belowEcology = ReadEcology(below);
                 bool blast = overdrive >= max(0.05, _EruptionB.x);
                 material = 6u;
                 state = belowState;
                 flow = belowFlow;
                 aux = belowAux;
+                ecology = belowEcology;
                 state.y = max(0.0, state.y - resistance * 0.35);
                 if (blast)
                     flow.y += overdrive * 0.5 * _DeltaTime;
-                WriteCell(cell, material, state, flow, aux);
+                WriteCell(cell, material, state, flow, aux, ecology);
                 return;
             }
         }
@@ -222,6 +230,7 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
             float4 aboveState = ReadState(above);
             float2 aboveFlow = ReadFlow(above);
             float4 aboveAux = ReadAux(above);
+            float4 aboveEcology = ReadEcology(above);
             float pressureGradient = max(0.0, state.y - aboveState.y);
             float viscosityFactor = max(0.15, 1.0 - _WeatherC.w * 0.35);
             float drive = (pressureGradient * _EruptionA.y + max(0.0, flow.y) * _EruptionA.z + _Geology.z * 0.35)
@@ -244,6 +253,7 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                     flow.y += overdrive * 1.25;
                     aux = aboveAux;
                     aux.z = max(aux.z, 0.15 * _EruptionB.w);
+                    ecology = aboveEcology;
                 }
                 else
                 {
@@ -251,14 +261,15 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                     state = aboveState;
                     flow = aboveFlow;
                     aux = aboveAux;
+                    ecology = aboveEcology;
                 }
-                WriteCell(cell, material, state, flow, aux);
+                WriteCell(cell, material, state, flow, aux, ecology);
                 return;
             }
         }
     }
 
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 int2 AshDestination(int2 source)
@@ -317,6 +328,7 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
     float4 state = ReadState(cell);
     float2 flow = ReadFlow(cell);
     float4 aux = ReadAux(cell);
+    float4 ecology = ReadEcology(cell);
 
     int2 destination = AshDestination(cell);
     if (material == 12u && !all(destination == cell))
@@ -325,7 +337,8 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
         state = ReadState(destination);
         flow = ReadFlow(destination);
         aux = ReadAux(destination);
-        WriteCell(cell, material, state, flow, aux);
+        ecology = ReadEcology(destination);
+        WriteCell(cell, material, state, flow, aux, ecology);
         return;
     }
 
@@ -356,10 +369,11 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
             state = ReadState(source);
             flow = ReadFlow(source);
             aux = ReadAux(source);
-            WriteCell(cell, material, state, flow, aux);
+            ecology = ReadEcology(source);
+            WriteCell(cell, material, state, flow, aux, ecology);
             return;
         }
     }
 
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }

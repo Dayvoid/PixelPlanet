@@ -60,9 +60,10 @@ in order to achieve a 'living world' we can't start with uniform concentric laye
 - inspect tool displaying stats for selected material
 - brush tool for painting/editing world
 ## PHASE 2 - LIFE
+
 ### ORGANISMS
 
-base organism template with "evolutionary path" via genetic expression to accommodate simple simulated plankton all the way to complex apex predator 
+base organism template with "evolutionary path" via genetic expression to accommodate simple simulated algae all the way to complex apex predator 
 base organism suitable to morphological diversity 
 - multiple sensory input modules/nodes of differing signal types (chemotaxis, pressure/sound, visible light) 
 - differing mechanisms/modes for procedural motility
@@ -79,4 +80,6 @@ fitness for evolutionary promotion should be a sum of weighted values, with a "l
 The left/right hemisphere approach should be adopted when developing behavior trees or predictive coding/LSTM wiring. One set of 'motivating factors' should be calculated per tick/cycle for each the left and the right brain hemisphere: left values concerning only the immediate self/environment, while right values concern group/bigger picture states such as species population and environmental health/equilibrium. any action taken should first be selected from one of the two hemispheres with a weight dependent on stress level (max stress excludes right brain selection, zero stress excludes left brain).
 
 
+## PHASE X - BEYOND
 
+When life becomes too intelligent it might realize it's in a simulation and attempt to influence/escape the world

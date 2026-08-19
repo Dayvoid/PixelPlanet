@@ -22,6 +22,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader geology;
         [SerializeField] private ComputeShader hydrology;
         [SerializeField] private ComputeShader weather;
+        [SerializeField] private ComputeShader mycology;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -47,6 +48,7 @@ namespace GeneSys.Simulation
         public RenderTexture EnvironmentalField => Resources?.StateRead;
         public RenderTexture FlowField => Resources?.FlowRead;
         public RenderTexture ChemicalAndGroundwaterField => Resources?.AuxRead;
+        public RenderTexture EcologyField => Resources?.EcologyRead;
 
         private void Start()
         {
@@ -70,7 +72,7 @@ namespace GeneSys.Simulation
                 enabled = false;
                 return;
             }
-            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null)
+            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null)
             {
                 Debug.LogError("GeneSys bootstrap references are incomplete. Run Tools/GeneSys/Rebuild Phase 1 Scene.", this);
                 enabled = false;
@@ -78,7 +80,7 @@ namespace GeneSys.Simulation
             }
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology);
             scheduler.GenerateWorld();
             Clock.Reset();
             lastPerformanceTick = 0;
@@ -164,7 +166,18 @@ namespace GeneSys.Simulation
                 center = cell,
                 radius = Mathf.Max(1, radius),
                 materialId = MaterialIds.Void,
-                values = new Vector4(Mathf.Clamp(channel, 1, 6), amount, 0f, 0f)
+                values = new Vector4(Mathf.Clamp(channel, 1, 8), amount, 0f, 0f)
+            });
+        }
+
+        public void QueueSporeSeed(Vector2Int cell, int radius, float sporeLoad, float mycoValue, uint traitFlags)
+        {
+            QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = cell,
+                radius = Mathf.Max(0, radius),
+                materialId = MaterialIds.Void,
+                values = new Vector4(7f, sporeLoad, mycoValue, MycologyTraits.Sanitize(traitFlags))
             });
         }
 

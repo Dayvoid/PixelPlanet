@@ -50,6 +50,9 @@
                         <ui:Button name="tab-weather" text="Weather" class="tab-button" />
                         <ui:Button name="tab-performance" text="Perf" class="tab-button" />
                     </ui:VisualElement>
+                    <ui:VisualElement class="tab-row tab-row-secondary">
+                        <ui:Button name="tab-ecology" text="Ecology" class="tab-button" />
+                    </ui:VisualElement>
 
                     <ui:VisualElement name="page-world" class="settings-page">
                         <ui:Label text="World" class="section-title" />
@@ -73,6 +76,12 @@
                         <ui:Label text="Weather" class="section-title" />
                         <ui:Label text="Temperature, pressure, wind, and vapor overlays show orbital heating and the complete water cycle." class="help" />
                         <ui:ScrollView name="settings-weather" class="settings-scroll" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement name="page-ecology" class="settings-page hidden">
+                        <ui:Label text="Ecology" class="section-title" />
+                        <ui:Label text="Mycology overlay shows spores and colony strength. Colonized soil tints forest green and sediment sage green in the Material view. Growth requires soil or sediment inside the temperature and moisture bands; survival is the wider outer range." class="help" />
+                        <ui:ScrollView name="settings-ecology" class="settings-scroll" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-performance" class="settings-page hidden">

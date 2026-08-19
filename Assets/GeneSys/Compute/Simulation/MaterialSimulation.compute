@@ -18,6 +18,8 @@ Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
 Texture2D<uint> _ShadeRead;
 RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 StructuredBuffer<BrushCommand> _BrushCommands;
 
@@ -45,17 +47,19 @@ uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _Materi
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
 float2 ReadFlow(int2 cell) { cell = ClampCell(cell, _GridSize); return _FlowRead.Load(int3(cell, 0)); }
 float4 ReadAux(int2 cell) { cell = ClampCell(cell, _GridSize); return _AuxRead.Load(int3(cell, 0)); }
+float4 ReadEcology(int2 cell) { cell = ClampCell(cell, _GridSize); return _EcologyRead.Load(int3(cell, 0)); }
 MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
 
-void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux)
+void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux, out float4 ecology)
 {
     material = ReadMaterial(cell);
     state = ReadState(cell);
     flow = ReadFlow(cell);
     aux = ReadAux(cell);
+    ecology = ReadEcology(cell);
 }
 
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux)
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
 {
     uint oldMaterial = ReadMaterial(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -66,6 +70,7 @@ void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux)
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
     _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -73,8 +78,8 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology;
+    CopyCell(cell, material, state, flow, aux, ecology);
 
     for (int i = 0; i < _BrushCount; i++)
     {
@@ -92,8 +97,15 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         else if (mode == 4) aux.z += command.values.y * max(0.1, falloff);
         else if (mode == 5) aux.y = max(0.0, aux.y + command.values.y * max(0.1, falloff));
         else if (mode == 6) aux.x = max(0.0, aux.x + command.values.y * max(0.1, falloff));
+        else if (mode == 7)
+        {
+            ecology.x = max(0.0, command.values.y);
+            ecology.y = saturate(command.values.z);
+            ecology.z = (float)SanitizeMycologyTraits((uint)round(command.values.w));
+        }
+        else if (mode == 8) state.w += command.values.y * max(0.1, falloff);
     }
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -101,8 +113,8 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology;
+    CopyCell(cell, material, state, flow, aux, ecology);
     MaterialGpuData definition = Mat(material);
 
     float neighborTemperature = ReadState(cell + int2(-1, 0)).x + ReadState(cell + int2(1, 0)).x
@@ -115,7 +127,7 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
 
     float expansion = abs(deltaTemperature) * definition.phase.z;
     state.y = max(0.0, state.y + expansion - state.y * _Mechanics.w * 0.01 * _DeltaTime);
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -123,8 +135,8 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology;
+    CopyCell(cell, material, state, flow, aux, ecology);
     MaterialGpuData definition = Mat(material);
     uint packed = (uint)round(definition.metadata.y);
     uint solidId = packed & 1023u;
@@ -136,12 +148,12 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     if (material == 11u)
     {
         material = 1u;
-        WriteCell(cell, material, state, flow, aux);
+        WriteCell(cell, material, state, flow, aux, ecology);
         return;
     }
     if (definition.metadata.x == 1.0)
     {
-        WriteCell(cell, material, state, flow, aux);
+        WriteCell(cell, material, state, flow, aux, ecology);
         return;
     }
     if (gasId > 0u && state.x > definition.phase.y + hysteresis)
@@ -161,7 +173,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     {
         material = solidId;
     }
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 bool IsMovable(uint material)
@@ -211,15 +223,15 @@ void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology;
+    CopyCell(cell, material, state, flow, aux, ecology);
 
     // Alternating disjoint radial pairs so both threads agree on the same swap.
     int parity = _Tick & 1;
     int lowerY = ((cell.y & 1) == parity) ? cell.y : cell.y - 1;
     if (lowerY < 0 || lowerY + 1 >= _GridSize.y)
     {
-        WriteCell(cell, material, state, flow, aux);
+        WriteCell(cell, material, state, flow, aux, ecology);
         return;
     }
 
@@ -233,6 +245,7 @@ void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
             state = ReadState(upperCell);
             flow = ReadFlow(upperCell);
             aux = ReadAux(upperCell);
+            ecology = ReadEcology(upperCell);
         }
         else
         {
@@ -240,10 +253,11 @@ void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
             state = ReadState(lowerCell);
             flow = ReadFlow(lowerCell);
             aux = ReadAux(lowerCell);
+            ecology = ReadEcology(lowerCell);
         }
     }
 
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 int2 MovementDestination(int2 source)
@@ -266,8 +280,8 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology;
+    CopyCell(cell, material, state, flow, aux, ecology);
 
     int2 destination = MovementDestination(cell);
     if (IsMovable(material) && !all(destination == cell))
@@ -276,6 +290,7 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
         state = ReadState(destination);
         flow = ReadFlow(destination);
         aux = ReadAux(destination);
+        ecology = ReadEcology(destination);
     }
     else if (IsOpen(material) && cell.y < _GridSize.y - 1)
     {
@@ -294,10 +309,11 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
             state = ReadState(source);
             flow = ReadFlow(source);
             aux = ReadAux(source);
+            ecology = ReadEcology(source);
             flow.y -= _Mechanics.x * _DeltaTime;
         }
     }
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 [numthreads(8, 8, 1)]
@@ -305,8 +321,8 @@ void Electrical(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology;
+    CopyCell(cell, material, state, flow, aux, ecology);
     MaterialGpuData definition = Mat(material);
     float neighborCharge = ReadState(cell + int2(-1, 0)).w + ReadState(cell + int2(1, 0)).w
         + ReadState(cell + int2(0, -1)).w + ReadState(cell + int2(0, 1)).w;
@@ -314,7 +330,7 @@ void Electrical(uint3 id : SV_DispatchThreadID)
     float oldCharge = state.w;
     state.w += (neighborCharge - state.w) * definition.transport.z * _Mechanics.z * _DeltaTime;
     state.y += abs(state.w - oldCharge) * definition.phase.w;
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }
 
 float PressureEquilibrium(int radiusIndex)
@@ -354,13 +370,13 @@ void PressureDiffusion(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux;
-    CopyCell(cell, material, state, flow, aux);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology;
+    CopyCell(cell, material, state, flow, aux, ecology);
 
     float rate = max(0.0, _PressureA.x);
     if (rate <= 1e-8)
     {
-        WriteCell(cell, material, state, flow, aux);
+        WriteCell(cell, material, state, flow, aux, ecology);
         return;
     }
 
@@ -396,5 +412,5 @@ void PressureDiffusion(uint3 id : SV_DispatchThreadID)
     }
 
     state.y = max(0.0, state.y + delta);
-    WriteCell(cell, material, state, flow, aux);
+    WriteCell(cell, material, state, flow, aux, ecology);
 }

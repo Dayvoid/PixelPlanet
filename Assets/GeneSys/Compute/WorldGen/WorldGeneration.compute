@@ -8,6 +8,7 @@ RWTexture2D<float4> _StateWrite;
 RWTexture2D<float2> _FlowWrite;
 RWTexture2D<float4> _AuxWrite;
 RWTexture2D<uint> _ShadeWrite;
+RWTexture2D<float4> _EcologyWrite;
 Texture2D<uint> _MaterialRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
@@ -22,6 +23,7 @@ float4 _WorldWaterB;
 float4 _WorldWaterC;
 float4 _WeatherA; // solarIntensity, spaceTemperature, radiativeCooling, windStrength
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, unused, unused
+float4 _MycologyA; // initialSporeLoad, rareStrainChance, unused, unused
 
 float AngularNoise(uint theta, uint salt)
 {
@@ -147,11 +149,22 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
     uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
 
+    float sporeLoad = 0.0;
+    uint traits = 0u;
+    if (IsSporeCarrier(material))
+    {
+        float patch = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed * 31337u);
+        sporeLoad = max(0.0, _MycologyA.x) * lerp(0.35, 1.0, patch);
+        if (Hash01(id.x * 19349663u + id.y * 83492791u + (uint)_Seed * 6151u) < saturate(_MycologyA.y))
+            traits = PickRareMycologyTraits(id.xy, _Seed);
+    }
+
     _MaterialWrite[id.xy] = material;
     _StateWrite[id.xy] = float4(temperature, pressure, surfaceWater, 0.0);
     _FlowWrite[id.xy] = 0.0;
     _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
     _ShadeWrite[id.xy] = shade;
+    _EcologyWrite[id.xy] = SanitizeEcology(float4(sporeLoad, 0.0, (float)traits, 0.0));
 }
 
 [numthreads(8, 8, 1)]

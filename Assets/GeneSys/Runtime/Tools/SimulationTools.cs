@@ -88,8 +88,16 @@ namespace GeneSys.Tools
                                 NativeArray<Vector2> data = flowRequest.GetData<Vector2>();
                                 if (data.Length > 0) inspection.flow = data[0];
                             }
-                            readbackPending = false;
-                            Inspected?.Invoke(inspection);
+                            AsyncGPUReadback.Request(host.Resources.EcologyRead, 0, cell.x, 1, cell.y, 1, 0, 1, ecologyRequest =>
+                            {
+                                if (!ecologyRequest.hasError)
+                                {
+                                    NativeArray<Vector4> data = ecologyRequest.GetData<Vector4>();
+                                    if (data.Length > 0) inspection.ecology = data[0];
+                                }
+                                readbackPending = false;
+                                Inspected?.Invoke(inspection);
+                            });
                         });
                     });
                 });
@@ -104,6 +112,7 @@ namespace GeneSys.Tools
         public uint materialId;
         public Vector4 state;
         public Vector4 aux;
+        public Vector4 ecology;
         public Vector2 flow;
     }
 }

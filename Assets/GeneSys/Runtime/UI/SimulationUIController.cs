@@ -24,6 +24,7 @@ namespace GeneSys.UI
             { "Geology", "geology" },
             { "Hydrology and erosion", "hydrology" },
             { "Solar and weather", "weather" },
+            { "Ecology - Mycology", "ecology" },
             { "Graphics", "performance" },
             { "Tools and validation", "performance" }
         };
@@ -155,7 +156,7 @@ namespace GeneSys.UI
                 {
                     "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor",
                     "Groundwater", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories", "Composite Water",
-                    "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only"
+                    "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only", "Mycology"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
@@ -196,7 +197,7 @@ namespace GeneSys.UI
 
         private static void SetupTabs(VisualElement root)
         {
-            string[] names = { "world", "geology", "hydrology", "weather", "performance" };
+            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology" };
             void Show(string name)
             {
                 foreach (string pageName in names)
@@ -252,7 +253,8 @@ namespace GeneSys.UI
                 { "geology", root.Q<ScrollView>("settings-geology") },
                 { "hydrology", root.Q<ScrollView>("settings-hydrology") },
                 { "weather", root.Q<ScrollView>("settings-weather") },
-                { "performance", root.Q<ScrollView>("settings-performance") }
+                { "performance", root.Q<ScrollView>("settings-performance") },
+                { "ecology", root.Q<ScrollView>("settings-ecology") }
             };
             foreach (ScrollView container in containers.Values)
                 container?.Clear();
@@ -362,7 +364,7 @@ namespace GeneSys.UI
         {
             if (inspectLabel == null) return;
             GeneSys.Materials.MaterialDefinition definition = host.MaterialRegistry.Get((int)inspection.materialId);
-            inspectLabel.text = $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\nMaterial: {(definition != null ? definition.displayName : inspection.materialId.ToString())}\nT {inspection.state.x:F2}  P {inspection.state.y:F3}\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\nVapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\nNutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\nWind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}";
+            inspectLabel.text = $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\nMaterial: {(definition != null ? definition.displayName : inspection.materialId.ToString())}\nT {inspection.state.x:F2}  P {inspection.state.y:F3}\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\nVapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\nNutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\nSpores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\nStrain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\nWind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}";
         }
 
         private void RefreshPlayLabel()

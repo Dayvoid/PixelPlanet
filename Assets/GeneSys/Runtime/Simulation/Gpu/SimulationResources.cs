@@ -17,6 +17,8 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture AuxWrite { get; private set; }
         public RenderTexture ShadeRead { get; private set; }
         public RenderTexture ShadeWrite { get; private set; }
+        public RenderTexture EcologyRead { get; private set; }
+        public RenderTexture EcologyWrite { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -38,6 +40,8 @@ namespace GeneSys.Simulation.Gpu
             AuxWrite = CreateTexture("GeneSys Aux B", GraphicsFormat.R32G32B32A32_SFloat);
             ShadeRead = CreateTexture("GeneSys Shade A", GraphicsFormat.R32_UInt);
             ShadeWrite = CreateTexture("GeneSys Shade B", GraphicsFormat.R32_UInt);
+            EcologyRead = CreateTexture("GeneSys Ecology A", GraphicsFormat.R32G32B32A32_SFloat);
+            EcologyWrite = CreateTexture("GeneSys Ecology B", GraphicsFormat.R32G32B32A32_SFloat);
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -71,6 +75,7 @@ namespace GeneSys.Simulation.Gpu
             (FlowRead, FlowWrite) = (FlowWrite, FlowRead);
             (AuxRead, AuxWrite) = (AuxWrite, AuxRead);
             (ShadeRead, ShadeWrite) = (ShadeWrite, ShadeRead);
+            (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
         }
 
         public void CopyReadToWrite()
@@ -80,6 +85,7 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(FlowRead, FlowWrite);
             Graphics.CopyTexture(AuxRead, AuxWrite);
             Graphics.CopyTexture(ShadeRead, ShadeWrite);
+            Graphics.CopyTexture(EcologyRead, EcologyWrite);
         }
 
         public void Dispose()
@@ -89,16 +95,21 @@ namespace GeneSys.Simulation.Gpu
             Release(FlowRead); Release(FlowWrite);
             Release(AuxRead); Release(AuxWrite);
             Release(ShadeRead); Release(ShadeWrite);
+            Release(EcologyRead); Release(EcologyWrite);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
+            EcologyRead = EcologyWrite = null;
         }
 
         private static void Release(RenderTexture texture)
         {
             if (texture == null) return;
             texture.Release();
-            UnityEngine.Object.Destroy(texture);
+            if (Application.isPlaying)
+                UnityEngine.Object.Destroy(texture);
+            else
+                UnityEngine.Object.DestroyImmediate(texture);
         }
     }
 }
