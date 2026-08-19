@@ -1,3 +1,4 @@
+using System;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation;
@@ -31,6 +32,8 @@ namespace GeneSys.Rendering
         public int OverlayMode { get; private set; }
         public Camera TargetCamera => targetCamera;
         public Material RuntimeMaterial => displayMaterial;
+        /// <summary>When set, returns true if world zoom/pan should ignore the pointer (e.g. over UI).</summary>
+        public Func<Vector2, bool> ShouldBlockWorldInput { get; set; }
 
         public void Initialize(SimulationResources state, MaterialRegistry registry, PolarGridDefinition definition)
             => Initialize(state, registry, definition, null, null);
@@ -119,7 +122,13 @@ namespace GeneSys.Rendering
         {
             if (targetCamera == null || Mouse.current == null) return;
             Vector2 pointer = Mouse.current.position.ReadValue();
-            if (Mouse.current.middleButton.wasPressedThisFrame) { dragging = true; lastPointer = pointer; }
+            bool overUi = ShouldBlockWorldInput != null && ShouldBlockWorldInput(pointer);
+
+            if (Mouse.current.middleButton.wasPressedThisFrame && !overUi)
+            {
+                dragging = true;
+                lastPointer = pointer;
+            }
             if (Mouse.current.middleButton.wasReleasedThisFrame) dragging = false;
             if (dragging)
             {
@@ -127,9 +136,14 @@ namespace GeneSys.Rendering
                 targetCamera.transform.position -= new Vector3(delta.x, delta.y, 0f) * (panSpeed * targetCamera.orthographicSize);
                 lastPointer = pointer;
             }
-            float scroll = Mouse.current.scroll.ReadValue().y;
-            if (Mathf.Abs(scroll) > 0.01f)
-                targetCamera.orthographicSize = Mathf.Clamp(targetCamera.orthographicSize * (1f - scroll * zoomSpeed), 0.75f, 20f);
+
+            if (!overUi)
+            {
+                float scroll = Mouse.current.scroll.ReadValue().y;
+                if (Mathf.Abs(scroll) > 0.01f)
+                    targetCamera.orthographicSize = Mathf.Clamp(targetCamera.orthographicSize * (1f - scroll * zoomSpeed), 0.75f, 20f);
+            }
+
             if (Keyboard.current != null)
             {
                 float rotation = 0f;

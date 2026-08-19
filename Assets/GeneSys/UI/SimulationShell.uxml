@@ -39,47 +39,56 @@
             </ui:VisualElement>
         </ui:VisualElement>
 
-        <ui:VisualElement name="settings-drawer" class="drawer settings-drawer collapsed">
-            <ui:Button name="settings-header" text="Simulation Settings ▸" class="drawer-header" />
-            <ui:VisualElement name="settings-body" class="drawer-body collapsed">
-                <ui:VisualElement class="tab-row">
-                    <ui:Button name="tab-world" text="World" class="tab-button tab-button--active" />
-                    <ui:Button name="tab-geology" text="Geo" class="tab-button" />
-                    <ui:Button name="tab-hydrology" text="Water" class="tab-button" />
-                    <ui:Button name="tab-weather" text="Weather" class="tab-button" />
-                    <ui:Button name="tab-performance" text="Perf" class="tab-button" />
-                </ui:VisualElement>
+        <ui:VisualElement name="right-column" class="right-column" picking-mode="Ignore">
+            <ui:VisualElement name="settings-drawer" class="drawer settings-drawer collapsed">
+                <ui:Button name="settings-header" text="Simulation Settings ▸" class="drawer-header" />
+                <ui:VisualElement name="settings-body" class="drawer-body collapsed">
+                    <ui:VisualElement class="tab-row">
+                        <ui:Button name="tab-world" text="World" class="tab-button tab-button--active" />
+                        <ui:Button name="tab-geology" text="Geo" class="tab-button" />
+                        <ui:Button name="tab-hydrology" text="Water" class="tab-button" />
+                        <ui:Button name="tab-weather" text="Weather" class="tab-button" />
+                        <ui:Button name="tab-performance" text="Perf" class="tab-button" />
+                    </ui:VisualElement>
 
-                <ui:VisualElement name="page-world" class="settings-page">
-                    <ui:Label text="World" class="section-title" />
-                    <ui:Label name="world-metrics" text="Ocean coverage -- | Basins --" class="help" />
-                    <ui:ScrollView name="settings-container" class="settings-scroll" />
-                </ui:VisualElement>
+                    <ui:VisualElement name="page-world" class="settings-page">
+                        <ui:Label text="World" class="section-title" />
+                        <ui:Label name="world-metrics" text="Ocean coverage -- | Basins --" class="help" />
+                        <ui:ScrollView name="settings-container" class="settings-scroll" />
+                    </ui:VisualElement>
 
-                <ui:VisualElement name="page-geology" class="settings-page hidden">
-                    <ui:Label text="Geology" class="section-title" />
-                    <ui:Label text="Select Fault/Stress or Pressure overlays to tune faults, extrusion, magma pressure, viscosity, cooling, and Magma Eruption. Ash appears in the Material overlay." class="help" />
-                    <ui:ScrollView name="settings-geology" class="settings-scroll" />
-                </ui:VisualElement>
+                    <ui:VisualElement name="page-geology" class="settings-page hidden">
+                        <ui:Label text="Geology" class="section-title" />
+                        <ui:Label text="Select Fault/Stress or Pressure overlays to tune faults, extrusion, magma pressure, viscosity, cooling, and Magma Eruption. Ash appears in the Material overlay." class="help" />
+                        <ui:ScrollView name="settings-geology" class="settings-scroll" />
+                    </ui:VisualElement>
 
-                <ui:VisualElement name="page-hydrology" class="settings-page hidden">
-                    <ui:Label text="Hydrology" class="section-title" />
-                    <ui:Label text="Moisture, groundwater, nutrient/soil quality, and flow overlays expose infiltration, aquifers, caves, erosion, deposition, and ash fertilization." class="help" />
-                    <ui:ScrollView name="settings-hydrology" class="settings-scroll" />
-                </ui:VisualElement>
+                    <ui:VisualElement name="page-hydrology" class="settings-page hidden">
+                        <ui:Label text="Hydrology" class="section-title" />
+                        <ui:Label text="Moisture, groundwater, nutrient/soil quality, and flow overlays expose infiltration, aquifers, caves, erosion, deposition, and ash fertilization." class="help" />
+                        <ui:ScrollView name="settings-hydrology" class="settings-scroll" />
+                    </ui:VisualElement>
 
-                <ui:VisualElement name="page-weather" class="settings-page hidden">
-                    <ui:Label text="Weather" class="section-title" />
-                    <ui:Label text="Temperature, pressure, wind, and vapor overlays show orbital heating and the complete water cycle." class="help" />
-                    <ui:ScrollView name="settings-weather" class="settings-scroll" />
-                </ui:VisualElement>
+                    <ui:VisualElement name="page-weather" class="settings-page hidden">
+                        <ui:Label text="Weather" class="section-title" />
+                        <ui:Label text="Temperature, pressure, wind, and vapor overlays show orbital heating and the complete water cycle." class="help" />
+                        <ui:ScrollView name="settings-weather" class="settings-scroll" />
+                    </ui:VisualElement>
 
-                <ui:VisualElement name="page-performance" class="settings-page hidden">
-                    <ui:Label text="Performance" class="section-title" />
-                    <ui:Label text="Graphics controls tune ambient space visuals without changing simulation physics. Validation settings remain below." class="help" />
-                    <ui:ScrollView name="settings-performance" class="settings-scroll" />
-                    <ui:Button name="restore-defaults" text="Restore Default Settings" />
-                    <ui:Label text="Restores all simulation settings to their initial values and regenerates the world. Use the Validation preset for fast iteration." class="help" />
+                    <ui:VisualElement name="page-performance" class="settings-page hidden">
+                        <ui:Label text="Performance" class="section-title" />
+                        <ui:Label text="Graphics controls tune ambient space visuals without changing simulation physics. Validation settings remain below." class="help" />
+                        <ui:ScrollView name="settings-performance" class="settings-scroll" />
+                        <ui:Button name="restore-defaults" text="Restore Default Settings" />
+                        <ui:Label text="Restores all simulation settings to their initial values and regenerates the world. Use the Validation preset for fast iteration." class="help" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <ui:VisualElement name="status-drawer" class="drawer status-drawer">
+                <ui:Button name="status-header" text="Simulation Status ▾" class="drawer-header" />
+                <ui:VisualElement name="status-body" class="drawer-body">
+                    <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>

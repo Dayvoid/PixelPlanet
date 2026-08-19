@@ -11,12 +11,19 @@ namespace GeneSys.Validation
 {
     public struct WorldWaterMetrics
     {
+        public int AngularResolution;
+        public int RadialResolution;
         public float OceanCoverage;
         public int BasinCount;
         public double SurfaceWaterMass;
         public double GroundwaterMass;
         public double VaporMass;
         public double TotalTrackedWaterMass;
+        public float MeanTemperature;
+        public float MeanPressure;
+        public float MeanMoisture;
+        public float MeanWindSpeed;
+        public int OrganismCount;
     }
 
     public struct AtmosphericCirculationMetrics
@@ -58,7 +65,12 @@ namespace GeneSys.Validation
                     {
                         if (auxRequest.hasError) { completed?.Invoke(default); return; }
                         Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
-                        completed?.Invoke(ComputeMetrics(grid, materials, states, aux));
+                        AsyncGPUReadback.Request(host.Resources.FlowRead, 0, flowRequest =>
+                        {
+                            if (flowRequest.hasError) { completed?.Invoke(default); return; }
+                            Vector2[] flow = flowRequest.GetData<Vector2>().ToArray();
+                            completed?.Invoke(ComputeMetrics(grid, materials, states, aux, flow));
+                        });
                     });
                 });
             });
@@ -97,13 +109,28 @@ namespace GeneSys.Validation
         }
 
         public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux)
+            => ComputeMetrics(grid, materials, states, aux, null);
+
+        public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux, Vector2[] flow)
         {
             int width = grid.angularResolution;
             int height = grid.radialResolution;
             int cellCount = Math.Min(materials.Length, Math.Min(states.Length, aux.Length));
-            var metrics = new WorldWaterMetrics();
+            if (flow != null) cellCount = Math.Min(cellCount, flow.Length);
+            var metrics = new WorldWaterMetrics
+            {
+                AngularResolution = width,
+                RadialResolution = height,
+                OrganismCount = 0
+            };
             bool[] oceanAngles = new bool[width];
             bool[] oceanMask = new bool[width * height];
+            double temperatureSum = 0d;
+            double pressureSum = 0d;
+            double moistureSum = 0d;
+            double windSpeedSum = 0d;
+            int sampleCount = 0;
+            int windSampleCount = 0;
 
             for (int x = 0; x < width; x++)
             {
@@ -135,6 +162,21 @@ namespace GeneSys.Validation
                     metrics.GroundwaterMass += Math.Max(0d, auxValue.y);
                     metrics.VaporMass += Math.Max(0d, auxValue.x);
 
+                    if (material != MaterialIds.Void)
+                    {
+                        temperatureSum += state.x;
+                        pressureSum += state.y;
+                        moistureSum += Math.Max(0f, state.z);
+                        sampleCount++;
+                    }
+
+                    if (flow != null && (material == MaterialIds.Air || material == MaterialIds.Vapor))
+                    {
+                        Vector2 cellFlow = flow[index];
+                        windSpeedSum += Math.Sqrt(cellFlow.x * cellFlow.x + cellFlow.y * cellFlow.y);
+                        windSampleCount++;
+                    }
+
                     if (material != MaterialIds.Water && material != MaterialIds.Ice) continue;
                     if (radius < grid.atmosphereStartRadius * 0.95f)
                         oceanMask[index] = true;
@@ -147,6 +189,14 @@ namespace GeneSys.Validation
             metrics.OceanCoverage = oceanAngleCount / (float)Math.Max(1, width);
             metrics.BasinCount = CountOceanAngleBasins(oceanAngles);
             metrics.TotalTrackedWaterMass = metrics.SurfaceWaterMass + metrics.GroundwaterMass + metrics.VaporMass;
+            if (sampleCount > 0)
+            {
+                metrics.MeanTemperature = (float)(temperatureSum / sampleCount);
+                metrics.MeanPressure = (float)(pressureSum / sampleCount);
+                metrics.MeanMoisture = (float)(moistureSum / sampleCount);
+            }
+            if (windSampleCount > 0)
+                metrics.MeanWindSpeed = (float)(windSpeedSum / windSampleCount);
             return metrics;
         }
 

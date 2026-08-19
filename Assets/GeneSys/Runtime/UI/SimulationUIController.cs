@@ -51,16 +51,20 @@ namespace GeneSys.UI
         private Label statusLabel;
         private Label inspectLabel;
         private Label worldMetricsLabel;
+        private Label simulationStatusLabel;
         private Button playButton;
         private Button toolsHeader;
         private Button settingsHeader;
-        private VisualElement clockPanel;
-        private VisualElement inspectorPanel;
+        private Button statusHeader;
         private VisualElement toolsDrawer;
         private VisualElement settingsDrawer;
+        private VisualElement statusDrawer;
         private VisualElement toolsBody;
         private VisualElement settingsBody;
+        private VisualElement statusBody;
         private bool initialized;
+        private bool metricsReadbackPending;
+        private float metricsRefreshTimer;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer renderer, SimulationTools simulationTools)
         {
@@ -68,23 +72,26 @@ namespace GeneSys.UI
             display = renderer;
             tools = simulationTools;
             if (document == null) document = GetComponent<UIDocument>();
+            if (display != null) display.ShouldBlockWorldInput = IsPointerOverUi;
             VisualElement root = document.rootVisualElement;
-            clockPanel = root.Q("clock-panel");
-            inspectorPanel = root.Q("inspector-panel");
             toolsDrawer = root.Q("tools-drawer");
             settingsDrawer = root.Q("settings-drawer");
+            statusDrawer = root.Q("status-drawer");
             toolsHeader = root.Q<Button>("tools-header");
             settingsHeader = root.Q<Button>("settings-header");
+            statusHeader = root.Q<Button>("status-header");
             toolsBody = root.Q("tools-body");
             settingsBody = root.Q("settings-body");
+            statusBody = root.Q("status-body");
             statusLabel = root.Q<Label>("status");
             inspectLabel = root.Q<Label>("inspection");
             worldMetricsLabel = root.Q<Label>("world-metrics");
+            simulationStatusLabel = root.Q<Label>("simulation-status");
             playButton = root.Q<Button>("play");
 
             root.Q<Button>("play")?.RegisterCallback<ClickEvent>(_ => { host.Clock.Toggle(); RefreshPlayLabel(); });
             root.Q<Button>("step")?.RegisterCallback<ClickEvent>(_ => host.Clock.RequestStep());
-            root.Q<Button>("regenerate")?.RegisterCallback<ClickEvent>(_ => { host.Regenerate(); RefreshWorldMetrics(); });
+            root.Q<Button>("regenerate")?.RegisterCallback<ClickEvent>(_ => { host.Regenerate(); RefreshWorldMetrics(force: true); });
             root.Q<Button>("save")?.RegisterCallback<ClickEvent>(_ => SaveSnapshot());
             root.Q<Button>("load")?.RegisterCallback<ClickEvent>(_ => LoadSnapshot());
             root.Q<Button>("validate")?.RegisterCallback<ClickEvent>(_ => validator?.ValidateNow());
@@ -104,14 +111,21 @@ namespace GeneSys.UI
             tools.Inspected -= SetInspection;
             tools.Inspected += SetInspection;
             initialized = true;
+            metricsRefreshTimer = 0f;
             RefreshPlayLabel();
-            RefreshWorldMetrics();
+            RefreshWorldMetrics(force: true);
         }
 
         private void SetupDrawers()
         {
             toolsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(toolsHeader, toolsBody, toolsDrawer, "Tools"));
             settingsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(settingsHeader, settingsBody, settingsDrawer, "Simulation Settings"));
+            statusHeader?.RegisterCallback<ClickEvent>(_ =>
+            {
+                ToggleDrawer(statusHeader, statusBody, statusDrawer, "Simulation Status");
+                if (statusBody != null && !statusBody.ClassListContains("collapsed"))
+                    RefreshWorldMetrics(force: true);
+            });
         }
 
         private static void ToggleDrawer(Button header, VisualElement body, VisualElement drawer, string title)
@@ -210,7 +224,7 @@ namespace GeneSys.UI
             RefreshBoundControls(root);
             BuildSettings(root);
             RefreshPlayLabel();
-            RefreshWorldMetrics();
+            RefreshWorldMetrics(force: true);
         }
 
         private void RefreshBoundControls(VisualElement root)
@@ -327,21 +341,21 @@ namespace GeneSys.UI
         {
             if (!initialized || host == null || statusLabel == null) return;
             statusLabel.text = $"Tick {host.Clock.TickCount:N0} | {(host.Clock.IsRunning ? "Running" : "Paused")} | {host.LastTickMilliseconds:F2} ms CPU dispatch";
+
+            if (statusBody == null || statusBody.ClassListContains("collapsed")) return;
+            metricsRefreshTimer -= Time.unscaledDeltaTime;
+            if (metricsRefreshTimer <= 0f)
+                RefreshWorldMetrics(force: false);
         }
 
         public bool IsPointerOverUi(Vector2 screenPosition)
         {
-            if (document == null || document.rootVisualElement.panel == null) return false;
-            Vector2 panelPoint = RuntimePanelUtils.ScreenToPanel(document.rootVisualElement.panel, screenPosition);
-            return Contains(clockPanel, panelPoint)
-                || Contains(inspectorPanel, panelPoint)
-                || Contains(toolsDrawer, panelPoint)
-                || Contains(settingsDrawer, panelPoint);
-        }
-
-        private static bool Contains(VisualElement element, Vector2 panelPoint)
-        {
-            return element != null && element.worldBound.Contains(panelPoint);
+            if (document == null || document.rootVisualElement == null || document.rootVisualElement.panel == null)
+                return false;
+            IPanel panel = document.rootVisualElement.panel;
+            Vector2 panelPoint = RuntimePanelUtils.ScreenToPanel(panel, screenPosition);
+            VisualElement picked = panel.Pick(panelPoint);
+            return picked != null && picked != document.rootVisualElement;
         }
 
         private void SetInspection(CellInspection inspection)
@@ -356,15 +370,43 @@ namespace GeneSys.UI
             if (playButton != null) playButton.text = host.Clock.IsRunning ? "Pause" : "Play";
         }
 
-        private void RefreshWorldMetrics()
+        private float MetricsRefreshIntervalSeconds()
         {
-            if (worldMetricsLabel == null || host == null || !host.IsReady) return;
+            if (host == null || !host.IsReady) return 1.5f;
+            int cells = host.Grid.CellCount;
+            if (cells >= 1_500_000) return 4f;
+            if (cells >= 400_000) return 2.5f;
+            return 1.5f;
+        }
+
+        private void RefreshWorldMetrics(bool force)
+        {
+            if (host == null || !host.IsReady) return;
+            if (!force && (statusBody == null || statusBody.ClassListContains("collapsed"))) return;
+            if (metricsReadbackPending) return;
+
+            metricsReadbackPending = true;
+            metricsRefreshTimer = MetricsRefreshIntervalSeconds();
             SimulationMetrics.MeasureAsync(host, metrics =>
             {
-                if (worldMetricsLabel == null) return;
-                worldMetricsLabel.text =
-                    $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
-                    $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
+                metricsReadbackPending = false;
+                if (worldMetricsLabel != null)
+                {
+                    worldMetricsLabel.text =
+                        $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
+                        $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
+                }
+                if (simulationStatusLabel != null)
+                {
+                    simulationStatusLabel.text =
+                        $"Grid {metrics.AngularResolution}×{metrics.RadialResolution}\n" +
+                        $"Ocean {metrics.OceanCoverage:P1}  |  Basins {metrics.BasinCount}\n" +
+                        $"Water  surface {metrics.SurfaceWaterMass:F1}  ground {metrics.GroundwaterMass:F1}  vapor {metrics.VaporMass:F1}\n" +
+                        $"Total tracked water {metrics.TotalTrackedWaterMass:F1}\n" +
+                        $"Mean T {metrics.MeanTemperature:F2}  P {metrics.MeanPressure:F3}  moisture {metrics.MeanMoisture:F3}\n" +
+                        $"Mean wind speed {metrics.MeanWindSpeed:F3}\n" +
+                        $"Organisms {metrics.OrganismCount}  (phase 2)";
+                }
             });
         }
 
