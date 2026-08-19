@@ -127,4 +127,21 @@ float Hash01(uint value)
     return (Hash(value) & 0x00ffffff) / 16777215.0;
 }
 
+// Liquid, Granular, Solid, Magma, Biological — not Empty/Gas.
+bool IsMottledCategory(float category)
+{
+    return category >= 2.0 && category <= 6.0;
+}
+
+uint HashMaterialShade(uint2 cell, uint materialId, int seed)
+{
+    return (uint)(Hash01(cell.x * 73856093u + cell.y * 19349663u + materialId * 83492791u + (uint)seed * 9137u) * 2.999);
+}
+
+uint PickMaterialShade(float category, uint2 cell, uint materialId, int seed)
+{
+    if (!IsMottledCategory(category)) return 0u;
+    return HashMaterialShade(cell, materialId, seed);
+}
+
 #endif

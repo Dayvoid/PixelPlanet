@@ -4,6 +4,7 @@ Shader "GeneSys/Planetoid Display"
     {
         _Palette ("Material Palette", 2D) = "white" {}
         _Properties ("Material Properties", 2D) = "black" {}
+        _Categories ("Material Categories", 2D) = "black" {}
         _VisualCoreRadius ("Visual Core Radius", Float) = 0.28
         _VisualCoreSquash ("Visual Core Squash", Float) = 0.45
         _OverlayMode ("Overlay Mode", Int) = 0
@@ -43,8 +44,10 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float4> _StateTex;
             Texture2D<float2> _FlowTex;
             Texture2D<float4> _AuxTex;
+            Texture2D<uint> _ShadeTex;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
+            Texture2D<float4> _Categories;
             float _VisualCoreRadius;
             float _VisualCoreSquash;
             float _AtmosphereStartRadius;
@@ -64,6 +67,11 @@ Shader "GeneSys/Planetoid Display"
             {
                 float t = saturate((value + 30.0) / 1100.0);
                 return lerp(float3(0.05, 0.15, 0.7), float3(1.0, 0.12, 0.01), t);
+            }
+
+            bool IsMottledCategory(float category)
+            {
+                return category >= 2.0 && category <= 6.0;
             }
 
             half4 Frag(Varyings input) : SV_Target
@@ -89,7 +97,10 @@ Shader "GeneSys/Planetoid Display"
                 float4 state = _StateTex.Load(int3(cell, 0));
                 float2 flow = _FlowTex.Load(int3(cell, 0));
                 float4 aux = _AuxTex.Load(int3(cell, 0));
-                float4 baseColor = _Palette.Load(int3((int)material, 0, 0));
+                uint shade = min(_ShadeTex.Load(int3(cell, 0)), 2u);
+                float category = _Categories.Load(int3((int)material, 0, 0)).x;
+                if (!IsMottledCategory(category)) shade = 0u;
+                float4 baseColor = _Palette.Load(int3((int)material, (int)shade, 0));
                 float4 materialProperties = _Properties.Load(int3((int)material, 0, 0));
                 float3 color = baseColor.rgb;
                 bool atmosphereCarrier = material == 1u || material == 11u || simulationRadius >= _AtmosphereStartRadius;

@@ -1,4 +1,5 @@
 #pragma kernel GenerateWorld
+#pragma kernel FillShades
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -6,6 +7,8 @@ RWTexture2D<uint> _MaterialWrite;
 RWTexture2D<float4> _StateWrite;
 RWTexture2D<float2> _FlowWrite;
 RWTexture2D<float4> _AuxWrite;
+RWTexture2D<uint> _ShadeWrite;
+Texture2D<uint> _MaterialRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -141,8 +144,21 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     if (material == 1u && radius >= _AtmosphereStartRadius * 0.95)
         vapor = _WorldWaterC.x * lerp(0.4, 1.0, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
 
+    MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
+    uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
+
     _MaterialWrite[id.xy] = material;
     _StateWrite[id.xy] = float4(temperature, pressure, surfaceWater, 0.0);
     _FlowWrite[id.xy] = 0.0;
     _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
+    _ShadeWrite[id.xy] = shade;
+}
+
+[numthreads(8, 8, 1)]
+void FillShades(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    uint material = _MaterialRead.Load(int3(id.xy, 0));
+    MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
+    _ShadeWrite[id.xy] = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
 }

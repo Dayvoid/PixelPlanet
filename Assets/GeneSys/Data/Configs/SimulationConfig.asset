@@ -119,6 +119,8 @@ MonoBehaviour:
   nebulaStrength: 0.45
   enableAtmosphereGlow: 1
   atmosphereGlowStrength: 0.7
+  atmosphereGlowPixelScale: 18
+  atmosphereGlowRayCount: 7
   enableSolarBody: 1
   solarBodyStrength: 1
   solarCoronaStrength: 0.85

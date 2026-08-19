@@ -125,6 +125,11 @@ namespace GeneSys.Simulation
             validator?.ResetBaseline();
         }
 
+        public void FillShadesFromMaterials()
+        {
+            if (IsReady) scheduler.FillShadesFromMaterials();
+        }
+
         public void ApplyPreset(SimulationPreset preset)
         {
             config.ApplyPreset(preset);

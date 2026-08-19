@@ -250,6 +250,8 @@ namespace GeneSys.Rendering
                     atmosphereMaterial.SetFloat("_OuterRadius", 1f);
                     atmosphereMaterial.SetFloat("_Intensity", config.atmosphereGlowStrength);
                     atmosphereMaterial.SetFloat("_Softness", 1.55f);
+                    atmosphereMaterial.SetFloat("_PixelScale", config.atmosphereGlowPixelScale);
+                    atmosphereMaterial.SetFloat("_RayCount", config.atmosphereGlowRayCount);
                 }
             }
 

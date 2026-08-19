@@ -11,6 +11,7 @@ namespace GeneSys.Materials
         public string displayName = "Material";
         public MaterialCategory category;
         public Color displayColor = Color.magenta;
+        [Range(0f, 0.5f)] public float shadeVariation = 0.18f;
 
         [Header("Physical")]
         [Min(0f)] public float density = 1f;

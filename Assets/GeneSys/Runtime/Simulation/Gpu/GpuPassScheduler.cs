@@ -153,6 +153,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetInts("_GridSize", resources.Grid.angularResolution, resources.Grid.radialResolution);
             shader.SetFloat("_DeltaTime", deltaTime);
             shader.SetInt("_Tick", tick);
+            shader.SetInt("_Seed", config.seed);
             shader.SetFloat("_PlayableInnerRadius", resources.Grid.playableInnerRadius);
             shader.SetFloat("_AtmosphereStartRadius", resources.Grid.atmosphereStartRadius);
             shader.SetVector("_Mechanics", new Vector4(config.gravityStrength, config.thermalRate, config.electricalRate, config.pressureRate));
@@ -187,6 +188,8 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_FlowWrite", resources.FlowWrite);
             shader.SetTexture(kernel, "_AuxRead", resources.AuxRead);
             shader.SetTexture(kernel, "_AuxWrite", resources.AuxWrite);
+            shader.SetTexture(kernel, "_ShadeRead", resources.ShadeRead);
+            shader.SetTexture(kernel, "_ShadeWrite", resources.ShadeWrite);
         }
 
         private void BindWorldgenOutputs(ComputeShader shader, int kernel)
@@ -195,6 +198,27 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_StateWrite", resources.StateRead);
             shader.SetTexture(kernel, "_FlowWrite", resources.FlowRead);
             shader.SetTexture(kernel, "_AuxWrite", resources.AuxRead);
+            shader.SetTexture(kernel, "_ShadeWrite", resources.ShadeRead);
+        }
+
+        /// <summary>
+        /// Rebuild per-cell shade indices from MaterialRead (used when loading pre-v3 snapshots).
+        /// </summary>
+        public void FillShadesFromMaterials()
+        {
+            int kernel = worldGeneration.FindKernel("FillShades");
+            if (kernel < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: FillShades kernel missing. Reimport WorldGeneration.compute.");
+                return;
+            }
+            worldGeneration.SetInts("_GridSize", resources.Grid.angularResolution, resources.Grid.radialResolution);
+            worldGeneration.SetInt("_Seed", config.seed);
+            worldGeneration.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            worldGeneration.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            worldGeneration.SetTexture(kernel, "_ShadeWrite", resources.ShadeRead);
+            Dispatch(worldGeneration, kernel);
+            Graphics.CopyTexture(resources.ShadeRead, resources.ShadeWrite);
         }
 
         private void Dispatch(ComputeShader shader, int kernel)

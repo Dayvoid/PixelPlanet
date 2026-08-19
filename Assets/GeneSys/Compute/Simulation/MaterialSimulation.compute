@@ -16,11 +16,14 @@ Texture2D<float2> _FlowRead;
 RWTexture2D<float2> _FlowWrite;
 Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
+Texture2D<uint> _ShadeRead;
+RWTexture2D<uint> _ShadeWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 StructuredBuffer<BrushCommand> _BrushCommands;
 
 int2 _GridSize;
 int _Tick;
+int _Seed;
 int _BrushCount;
 float _DeltaTime;
 float _PlayableInnerRadius;
@@ -54,10 +57,15 @@ void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, o
 
 void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux)
 {
+    uint oldMaterial = ReadMaterial(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(Mat(material).metadata.x, (uint2)cell, material, _Seed);
     _MaterialWrite[cell] = material;
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
     _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
 }
 
 [numthreads(8, 8, 1)]

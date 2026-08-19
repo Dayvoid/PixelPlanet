@@ -15,6 +15,8 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture FlowWrite { get; private set; }
         public RenderTexture AuxRead { get; private set; }
         public RenderTexture AuxWrite { get; private set; }
+        public RenderTexture ShadeRead { get; private set; }
+        public RenderTexture ShadeWrite { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -34,6 +36,8 @@ namespace GeneSys.Simulation.Gpu
             FlowWrite = CreateTexture("GeneSys Flow B", GraphicsFormat.R32G32_SFloat);
             AuxRead = CreateTexture("GeneSys Aux A", GraphicsFormat.R32G32B32A32_SFloat);
             AuxWrite = CreateTexture("GeneSys Aux B", GraphicsFormat.R32G32B32A32_SFloat);
+            ShadeRead = CreateTexture("GeneSys Shade A", GraphicsFormat.R32_UInt);
+            ShadeWrite = CreateTexture("GeneSys Shade B", GraphicsFormat.R32_UInt);
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -66,6 +70,7 @@ namespace GeneSys.Simulation.Gpu
             (StateRead, StateWrite) = (StateWrite, StateRead);
             (FlowRead, FlowWrite) = (FlowWrite, FlowRead);
             (AuxRead, AuxWrite) = (AuxWrite, AuxRead);
+            (ShadeRead, ShadeWrite) = (ShadeWrite, ShadeRead);
         }
 
         public void CopyReadToWrite()
@@ -74,6 +79,7 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(StateRead, StateWrite);
             Graphics.CopyTexture(FlowRead, FlowWrite);
             Graphics.CopyTexture(AuxRead, AuxWrite);
+            Graphics.CopyTexture(ShadeRead, ShadeWrite);
         }
 
         public void Dispose()
@@ -82,8 +88,10 @@ namespace GeneSys.Simulation.Gpu
             Release(StateRead); Release(StateWrite);
             Release(FlowRead); Release(FlowWrite);
             Release(AuxRead); Release(AuxWrite);
+            Release(ShadeRead); Release(ShadeWrite);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
+            ShadeRead = ShadeWrite = null;
         }
 
         private static void Release(RenderTexture texture)

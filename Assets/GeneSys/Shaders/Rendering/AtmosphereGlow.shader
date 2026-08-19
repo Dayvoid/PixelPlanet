@@ -7,6 +7,8 @@ Shader "GeneSys/Atmosphere Glow"
         _OuterRadius ("Outer Radius", Float) = 1.18
         _Intensity ("Intensity", Float) = 0.7
         _Softness ("Softness", Float) = 1.4
+        _PixelScale ("Pixel Scale", Float) = 18
+        _RayCount ("Ray Count", Float) = 7
     }
 
     SubShader
@@ -37,6 +39,8 @@ Shader "GeneSys/Atmosphere Glow"
                 float _OuterRadius;
                 float _Intensity;
                 float _Softness;
+                float _PixelScale;
+                float _RayCount;
             CBUFFER_END
 
             struct Attributes
@@ -50,6 +54,13 @@ Shader "GeneSys/Atmosphere Glow"
                 float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
             };
+
+            float Hash21(float2 p)
+            {
+                p = frac(p * float2(127.1, 311.7));
+                p += dot(p, p + 19.19);
+                return frac(p.x * p.y);
+            }
 
             Varyings Vert(Attributes input)
             {
@@ -70,8 +81,18 @@ Shader "GeneSys/Atmosphere Glow"
                 float t = saturate((r - inner) / (outer - inner));
                 float falloff = pow(1.0 - t, max(0.2, _Softness));
                 float edgeBoost = smoothstep(0.0, 0.2, t) * smoothstep(1.0, 0.55, t);
-                float alpha = falloff * edgeBoost * max(0.0, _Intensity);
-                return half4(_GlowColor.rgb, alpha * _GlowColor.a);
+
+                // Match solar corona: quantized hash dither + slow radial rays.
+                float angle = atan2(p.y, p.x);
+                float rays = max(1.0, _RayCount);
+                float ray = 0.55 + 0.45 * abs(sin(angle * rays + _Time.y * 0.4));
+                float pixelScale = max(4.0, _PixelScale);
+                float2 pixelCell = floor(float2(angle * rays * 2.8, r * pixelScale) + _Time.y * 0.25);
+                float pixelNoise = lerp(0.72, 1.0, Hash21(pixelCell));
+
+                float alpha = falloff * edgeBoost * ray * pixelNoise * max(0.0, _Intensity);
+                float3 color = _GlowColor.rgb * lerp(0.88, 1.08, pixelNoise);
+                return half4(color, alpha * _GlowColor.a);
             }
             ENDHLSL
         }

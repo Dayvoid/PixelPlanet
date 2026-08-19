@@ -22,6 +22,7 @@ namespace GeneSys.Rendering
         private Material displayMaterial;
         private Texture2D palette;
         private Texture2D properties;
+        private Texture2D categories;
         private SimulationResources resources;
         private PolarGridDefinition grid;
         private SimulationConfig config;
@@ -49,15 +50,29 @@ namespace GeneSys.Rendering
             meshRenderer = GetComponent<MeshRenderer>();
             if (targetCamera == null) targetCamera = Camera.main;
             displayMaterial = new Material(displayShader) { name = "GeneSys Planetoid Runtime" };
-            palette = new Texture2D(MaterialRegistry.MaxMaterials, 1, TextureFormat.RGBA32, false, true)
+            const int shadeRows = 3;
+            palette = new Texture2D(MaterialRegistry.MaxMaterials, shadeRows, TextureFormat.RGBA32, false, true)
             {
                 name = "GeneSys Runtime Palette",
                 filterMode = FilterMode.Point,
                 wrapMode = TextureWrapMode.Clamp
             };
-            var colors = new Color[MaterialRegistry.MaxMaterials];
+            var colors = new Color[MaterialRegistry.MaxMaterials * shadeRows];
             foreach (MaterialDefinition definitionAsset in registry.materials)
-                if (definitionAsset != null && definitionAsset.stableId < colors.Length) colors[definitionAsset.stableId] = definitionAsset.displayColor;
+            {
+                if (definitionAsset == null || definitionAsset.stableId >= MaterialRegistry.MaxMaterials) continue;
+                int id = definitionAsset.stableId;
+                float variation = Mathf.Clamp(definitionAsset.shadeVariation, 0f, 0.5f);
+                Color baseColor = definitionAsset.displayColor;
+                // Lighten less aggressively than darken — lerp-to-white reads harsher than scale-down.
+                Color light = Color.Lerp(baseColor, Color.white, variation * 0.1f);
+                light.a = baseColor.a;
+                Color dark = baseColor * (1f - variation);
+                dark.a = baseColor.a;
+                colors[id] = baseColor;
+                colors[id + MaterialRegistry.MaxMaterials] = light;
+                colors[id + MaterialRegistry.MaxMaterials * 2] = dark;
+            }
             palette.SetPixels(colors);
             palette.Apply(false, true);
             properties = new Texture2D(MaterialRegistry.MaxMaterials, 1, TextureFormat.RGBAFloat, false, true)
@@ -67,17 +82,30 @@ namespace GeneSys.Rendering
                 wrapMode = TextureWrapMode.Clamp
             };
             var propertyColors = new Color[MaterialRegistry.MaxMaterials];
+            categories = new Texture2D(MaterialRegistry.MaxMaterials, 1, TextureFormat.RGBAFloat, false, true)
+            {
+                name = "GeneSys Runtime Material Categories",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            var categoryColors = new Color[MaterialRegistry.MaxMaterials];
             foreach (MaterialDefinition definitionAsset in registry.materials)
-                if (definitionAsset != null && definitionAsset.stableId < propertyColors.Length)
-                    propertyColors[definitionAsset.stableId] = new Color(
-                        definitionAsset.toxicity,
-                        definitionAsset.caloricContent,
-                        definitionAsset.porosity,
-                        definitionAsset.density);
+            {
+                if (definitionAsset == null || definitionAsset.stableId >= MaterialRegistry.MaxMaterials) continue;
+                propertyColors[definitionAsset.stableId] = new Color(
+                    definitionAsset.toxicity,
+                    definitionAsset.caloricContent,
+                    definitionAsset.porosity,
+                    definitionAsset.density);
+                categoryColors[definitionAsset.stableId] = new Color((float)definitionAsset.category, 0f, 0f, 0f);
+            }
             properties.SetPixels(propertyColors);
             properties.Apply(false, true);
+            categories.SetPixels(categoryColors);
+            categories.Apply(false, true);
             displayMaterial.SetTexture("_Palette", palette);
             displayMaterial.SetTexture("_Properties", properties);
+            displayMaterial.SetTexture("_Categories", categories);
             displayMaterial.SetFloat("_VisualCoreRadius", grid.visualCoreRadius);
             displayMaterial.SetFloat("_VisualCoreSquash", grid.visualCoreSquash);
             displayMaterial.SetFloat("_AtmosphereStartRadius", grid.atmosphereStartRadius);
@@ -116,6 +144,7 @@ namespace GeneSys.Rendering
             displayMaterial.SetTexture("_StateTex", resources.StateRead);
             displayMaterial.SetTexture("_FlowTex", resources.FlowRead);
             displayMaterial.SetTexture("_AuxTex", resources.AuxRead);
+            displayMaterial.SetTexture("_ShadeTex", resources.ShadeRead);
         }
 
         private void HandleCamera()
@@ -175,9 +204,11 @@ namespace GeneSys.Rendering
             if (displayMaterial != null) Destroy(displayMaterial);
             if (palette != null) Destroy(palette);
             if (properties != null) Destroy(properties);
+            if (categories != null) Destroy(categories);
             displayMaterial = null;
             palette = null;
             properties = null;
+            categories = null;
         }
     }
 }

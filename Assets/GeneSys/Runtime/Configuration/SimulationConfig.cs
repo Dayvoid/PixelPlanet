@@ -130,6 +130,8 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float nebulaStrength = 0.45f;
         [Range(0, 1)] public int enableAtmosphereGlow = 1;
         [Range(0f, 2f)] public float atmosphereGlowStrength = 0.7f;
+        [Range(4f, 48f)] public float atmosphereGlowPixelScale = 18f;
+        [Range(1f, 24f)] public float atmosphereGlowRayCount = 7f;
         [Range(0, 1)] public int enableSolarBody = 1;
         [Range(0f, 2f)] public float solarBodyStrength = 1f;
         [Range(0f, 2f)] public float solarCoronaStrength = 0.85f;
@@ -190,6 +192,8 @@ namespace GeneSys.Configuration
             nebulaStrength = Mathf.Max(0f, nebulaStrength);
             enableAtmosphereGlow = enableAtmosphereGlow != 0 ? 1 : 0;
             atmosphereGlowStrength = Mathf.Max(0f, atmosphereGlowStrength);
+            atmosphereGlowPixelScale = Mathf.Clamp(atmosphereGlowPixelScale, 4f, 48f);
+            atmosphereGlowRayCount = Mathf.Clamp(atmosphereGlowRayCount, 1f, 24f);
             enableSolarBody = enableSolarBody != 0 ? 1 : 0;
             solarBodyStrength = Mathf.Max(0f, solarBodyStrength);
             solarCoronaStrength = Mathf.Max(0f, solarCoronaStrength);

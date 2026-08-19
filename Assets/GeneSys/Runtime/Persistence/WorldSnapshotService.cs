@@ -13,17 +13,19 @@ namespace GeneSys.Persistence
         private const uint Magic = 0x47535953;
         private const int Version1 = 1;
         private const int Version2 = 2;
+        private const int Version3 = 3;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            byte[][] payloads = new byte[4][];
-            int remaining = 4;
+            byte[][] payloads = new byte[5][];
+            int remaining = 5;
             bool failed = false;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
-                host.Resources.FlowRead, host.Resources.AuxRead
+                host.Resources.FlowRead, host.Resources.AuxRead,
+                host.Resources.ShadeRead
             };
             for (int i = 0; i < textures.Length; i++)
             {
@@ -41,7 +43,7 @@ namespace GeneSys.Persistence
                         using var writer = new BinaryWriter(stream);
                         SimulationConfig config = host.Config;
                         writer.Write(Magic);
-                        writer.Write(Version2);
+                        writer.Write(Version3);
                         writer.Write(host.Resources.Grid.angularResolution);
                         writer.Write(host.Resources.Grid.radialResolution);
                         writer.Write(config.seed);
@@ -65,7 +67,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2) return false;
+            if (version != Version1 && version != Version2 && version != Version3) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -77,12 +79,12 @@ namespace GeneSys.Persistence
             if (version >= Version2)
                 ReadConfig(reader, host.Config);
 
-            RenderTexture[] targets =
+            RenderTexture[] coreTargets =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
                 host.Resources.FlowRead, host.Resources.AuxRead
             };
-            foreach (RenderTexture target in targets)
+            foreach (RenderTexture target in coreTargets)
             {
                 int length = reader.ReadInt32();
                 byte[] payload = reader.ReadBytes(length);
@@ -93,6 +95,23 @@ namespace GeneSys.Persistence
                 Graphics.CopyTexture(staging, target);
                 UnityEngine.Object.Destroy(staging);
             }
+
+            if (version >= Version3)
+            {
+                int length = reader.ReadInt32();
+                byte[] payload = reader.ReadBytes(length);
+                if (payload.Length != length) return false;
+                Texture2D staging = CreateStagingTexture(width, height, host.Resources.ShadeRead.graphicsFormat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, host.Resources.ShadeRead);
+                UnityEngine.Object.Destroy(staging);
+            }
+            else
+            {
+                host.FillShadesFromMaterials();
+            }
+
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
             return true;
