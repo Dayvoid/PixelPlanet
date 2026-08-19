@@ -31,6 +31,12 @@
 //   flow.x = angular wind, flow.y = radial wind (positive = outward/up). Signed buoyancy from
 //   same-altitude temperature/humidity anomalies drives updrafts and downdrafts. Heat, vapor,
 //   and cloud condensate advect with flow under a CFL outbound-mass cap.
+// Liquid density exchange:
+//   LiquidDensityExchange swaps whole cells across liquid interfaces when both materials opt in
+//   via motion.x (densityDisplaceable). Density (physical.x) alone decides direction: a denser
+//   upper neighbor sinks / a lighter lower neighbor rises. buoyancyBias (biology.w) only scales
+//   exchange probability and cannot reverse float/sink. Equal densities within epsilon stay put.
+//   Foundational solids (Core/Mantle) and Ash remain opted out; Ash keeps AshTransport.
 
 struct MaterialGpuData
 {
@@ -40,6 +46,7 @@ struct MaterialGpuData
     float4 phase;      // melt point, boil point, thermal expansion, electric expansion
     float4 biology;    // toxicity, calories, porosity, buoyancy bias
     float4 metadata;   // category, packed phase IDs, bio-modifiable, stable ID
+    float4 motion;     // densityDisplaceable, reserved, reserved, reserved
 };
 
 struct BrushCommand

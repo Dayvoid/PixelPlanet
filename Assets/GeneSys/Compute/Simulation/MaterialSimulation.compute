@@ -1,6 +1,7 @@
 #pragma kernel ApplyEdits
 #pragma kernel ThermalAndPressure
 #pragma kernel PhaseChange
+#pragma kernel LiquidDensityExchange
 #pragma kernel MaterialMotion
 #pragma kernel Electrical
 #pragma kernel PressureDiffusion
@@ -35,6 +36,7 @@ float4 _EruptionA;
 float4 _EruptionB;
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _PressureB; // gas, fluid, porous, rigid diffusivities
+float4 _DensityExchange; // rate, epsilon, unused, unused
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -165,6 +167,75 @@ bool IsOpen(uint material)
 {
     float category = Mat(material).metadata.x;
     return material == 0u || category == 1.0;
+}
+
+bool IsLiquidCategory(uint material)
+{
+    return Mat(material).metadata.x == 2.0;
+}
+
+bool IsDensityDisplaceable(uint material)
+{
+    return Mat(material).motion.x > 0.5;
+}
+
+bool ShouldExchangeDensityPair(int2 lowerCell, int2 upperCell)
+{
+    uint lowerMat = ReadMaterial(lowerCell);
+    uint upperMat = ReadMaterial(upperCell);
+    if (!IsDensityDisplaceable(lowerMat) || !IsDensityDisplaceable(upperMat)) return false;
+    if (!IsLiquidCategory(lowerMat) && !IsLiquidCategory(upperMat)) return false;
+
+    MaterialGpuData lowerDef = Mat(lowerMat);
+    MaterialGpuData upperDef = Mat(upperMat);
+    float densityDelta = upperDef.physical.x - lowerDef.physical.x;
+    if (densityDelta <= _DensityExchange.y) return false;
+
+    // Density alone decides direction. buoyancyBias only scales response rate.
+    float bias = clamp(0.5 * (lowerDef.biology.w + upperDef.biology.w), -0.75, 0.75);
+    float chance = saturate(_DensityExchange.x * _DeltaTime * (1.0 + bias));
+    uint hashInput = (uint)(lowerCell.x * 73856093) ^ (uint)(lowerCell.y * 19349663) ^ ((uint)_Tick * 83492791u);
+    return Hash01(hashInput) < chance;
+}
+
+[numthreads(8, 8, 1)]
+void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material; float4 state; float2 flow; float4 aux;
+    CopyCell(cell, material, state, flow, aux);
+
+    // Alternating disjoint radial pairs so both threads agree on the same swap.
+    int parity = _Tick & 1;
+    int lowerY = ((cell.y & 1) == parity) ? cell.y : cell.y - 1;
+    if (lowerY < 0 || lowerY + 1 >= _GridSize.y)
+    {
+        WriteCell(cell, material, state, flow, aux);
+        return;
+    }
+
+    int2 lowerCell = int2(cell.x, lowerY);
+    int2 upperCell = int2(cell.x, lowerY + 1);
+    if (ShouldExchangeDensityPair(lowerCell, upperCell))
+    {
+        if (cell.y == lowerY)
+        {
+            material = ReadMaterial(upperCell);
+            state = ReadState(upperCell);
+            flow = ReadFlow(upperCell);
+            aux = ReadAux(upperCell);
+        }
+        else
+        {
+            material = ReadMaterial(lowerCell);
+            state = ReadState(lowerCell);
+            flow = ReadFlow(lowerCell);
+            aux = ReadAux(lowerCell);
+        }
+    }
+
+    WriteCell(cell, material, state, flow, aux);
 }
 
 int2 MovementDestination(int2 source)

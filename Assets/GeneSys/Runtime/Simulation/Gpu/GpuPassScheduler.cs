@@ -101,6 +101,7 @@ namespace GeneSys.Simulation.Gpu
                 float subDt = deltaTime / config.materialSubsteps;
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("ThermalAndPressure"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), subDt);
+                DispatchPass(materialSimulation, materialSimulation.FindKernel("LiquidDensityExchange"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotion"), subDt);
                 DispatchPass(geology, geology.FindKernel("EruptionMotion"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
@@ -173,6 +174,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_WeatherG", new Vector4(config.surfaceAirTemperature, config.atmosphericLapseRate, 0f, 0f));
             shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, 0f));
             shader.SetVector("_PressureB", new Vector4(config.gasPressureDiffusivity, config.fluidPressureDiffusivity, config.porousPressureDiffusivity, config.rigidPressureDiffusivity));
+            shader.SetVector("_DensityExchange", new Vector4(config.densityExchangeRate, config.densityExchangeEpsilon, 0f, 0f));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)

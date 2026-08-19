@@ -38,6 +38,7 @@ namespace GeneSys.Tests
             Assert.That(ash.gasPhaseId, Is.EqualTo((int)MaterialIds.Ash));
             Assert.That(ash.buoyancyBias, Is.GreaterThan(0.5f));
             Assert.That(ash.density, Is.LessThan(1f));
+            Assert.That(ash.densityDisplaceable, Is.False, "Ash uses AshTransport, not liquid density exchange.");
 
             MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
             Assert.That(registry, Is.Not.Null);
@@ -48,6 +49,58 @@ namespace GeneSys.Tests
             Assert.That(gpu[(int)MaterialIds.Ash].metadata.w, Is.EqualTo((float)MaterialIds.Ash).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Ash].metadata.x, Is.EqualTo((float)MaterialCategory.Granular).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Ash].biology.w, Is.GreaterThan(0.5f));
+            Assert.That(gpu[(int)MaterialIds.Ash].motion.x, Is.EqualTo(0f).Within(0.01f));
+        }
+
+        [Test]
+        public void DensityDisplaceableMaterialsPackMotionFlagAndOrdering()
+        {
+            Assert.That(MaterialGpuData.Stride, Is.EqualTo(112));
+
+            MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
+            Assert.That(registry, Is.Not.Null);
+            MaterialGpuData[] gpu = registry.BuildGpuData();
+
+            MaterialDefinition rock = registry.Get((int)MaterialIds.Rock);
+            MaterialDefinition soil = registry.Get((int)MaterialIds.Soil);
+            MaterialDefinition water = registry.Get((int)MaterialIds.Water);
+            MaterialDefinition ice = registry.Get((int)MaterialIds.Ice);
+            MaterialDefinition core = registry.Get((int)MaterialIds.Core);
+            MaterialDefinition mantle = registry.Get((int)MaterialIds.Mantle);
+            MaterialDefinition ash = registry.Get((int)MaterialIds.Ash);
+
+            Assert.That(rock.densityDisplaceable, Is.True);
+            Assert.That(soil.densityDisplaceable, Is.True);
+            Assert.That(water.densityDisplaceable, Is.True);
+            Assert.That(ice.densityDisplaceable, Is.True);
+            Assert.That(registry.Get((int)MaterialIds.Basalt).densityDisplaceable, Is.True);
+            Assert.That(registry.Get((int)MaterialIds.Sediment).densityDisplaceable, Is.True);
+            Assert.That(registry.Get((int)MaterialIds.Magma).densityDisplaceable, Is.True);
+
+            Assert.That(core.densityDisplaceable, Is.False);
+            Assert.That(mantle.densityDisplaceable, Is.False);
+            Assert.That(ash.densityDisplaceable, Is.False);
+            Assert.That(registry.Get((int)MaterialIds.Void).densityDisplaceable, Is.False);
+            Assert.That(registry.Get((int)MaterialIds.Air).densityDisplaceable, Is.False);
+
+            Assert.That(rock.density, Is.GreaterThan(water.density));
+            Assert.That(soil.density, Is.GreaterThan(water.density));
+            Assert.That(ice.density, Is.LessThan(water.density));
+
+            Assert.That(gpu[(int)MaterialIds.Rock].motion.x, Is.EqualTo(1f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Water].motion.x, Is.EqualTo(1f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Ice].motion.x, Is.EqualTo(1f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Core].motion.x, Is.EqualTo(0f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Rock].physical.x, Is.EqualTo(rock.density).Within(0.01f));
+        }
+
+        [Test]
+        public void DensityExchangeDefaultsAreConfigured()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.densityExchangeRate, Is.GreaterThan(0f));
+            Assert.That(config.densityExchangeEpsilon, Is.GreaterThan(0f));
+            Object.DestroyImmediate(config);
         }
 
         [Test]

@@ -18,6 +18,8 @@ namespace GeneSys.Materials
         [Range(0f, 89f)] public float angleOfRepose = 30f;
         [Min(0.01f)] public float grainSize = 1f;
         [Range(-2f, 2f)] public float buoyancyBias;
+        [Tooltip("When enabled, this material may density-sort against liquids. Density alone decides float vs sink; buoyancyBias only scales exchange rate.")]
+        public bool densityDisplaceable;
 
         [Header("Transport")]
         [Min(0f)] public float thermalConductivity = 0.1f;
@@ -50,7 +52,8 @@ namespace GeneSys.Materials
                 transport = new Vector4(thermalConductivity, heatCapacity, electricalConductivity, absorbency),
                 phase = new Vector4(meltingTemperature, boilingTemperature, thermalExpansion, electricalExpansion),
                 biology = new Vector4(toxicity, caloricContent, porosity, buoyancyBias),
-                metadata = new Vector4((float)category, phaseIds, bioModifiable ? 1f : 0f, stableId)
+                metadata = new Vector4((float)category, phaseIds, bioModifiable ? 1f : 0f, stableId),
+                motion = new Vector4(densityDisplaceable ? 1f : 0f, 0f, 0f, 0f)
             };
         }
     }
@@ -64,6 +67,7 @@ namespace GeneSys.Materials
         public Vector4 phase;
         public Vector4 biology;
         public Vector4 metadata;
-        public const int Stride = 96;
+        public Vector4 motion;
+        public const int Stride = 112;
     }
 }

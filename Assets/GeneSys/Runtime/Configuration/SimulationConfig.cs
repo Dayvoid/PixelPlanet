@@ -49,6 +49,8 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float thermalRate = 0.35f;
         [Range(0f, 4f)] public float electricalRate = 0.3f;
         [Range(0f, 1f)] public float phaseHysteresis = 0.02f;
+        [Range(0f, 64f)] public float densityExchangeRate = 4f;
+        [Range(0.001f, 0.25f)] public float densityExchangeEpsilon = 0.02f;
 
         [Header("Geology")]
         [Range(0f, 4f)] public float mantlePressure = 0.7f;
