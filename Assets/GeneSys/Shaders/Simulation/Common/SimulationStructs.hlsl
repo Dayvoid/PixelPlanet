@@ -21,10 +21,16 @@
 //
 // Pressure (state.y):
 //   Local sources/sinks (thermal expansion, mantle feed, vapor, brushes) still write absolute
-//   pressure. PressureDiffusion transports the anomaly relative to a radial equilibrium
-//   profile min(pressureEquilibriumMaximum, (1 - radius) * pressureEquilibriumGradient).
+//   pressure. AtmosphericContinuity adds divergence feedback so rising columns lower pressure
+//   and converging columns raise it, enabling return flow. PressureDiffusion then transports
+//   the anomaly relative to a radial equilibrium profile
+//   min(pressureEquilibriumMaximum, (1 - radius) * pressureEquilibriumGradient).
 //   Edge conductance is category-weighted (gas / fluid / porous / rigid) so highs and lows
 //   persist for material-appropriate durations while fields eventually equilibrate.
+// Atmosphere dynamics:
+//   flow.x = angular wind, flow.y = radial wind (positive = outward/up). Signed buoyancy from
+//   same-altitude temperature/humidity anomalies drives updrafts and downdrafts. Heat, vapor,
+//   and cloud condensate advect with flow under a CFL outbound-mass cap.
 
 struct MaterialGpuData
 {
@@ -60,6 +66,23 @@ int2 ClampCell(int2 cell, int2 size)
 float Radius01(int radiusIndex, int radialSize)
 {
     return (radiusIndex + 0.5) / max(1.0, (float)radialSize);
+}
+
+// Polar area weight increases outward (matches PolarGridDefinition.CellAreaWeight).
+float CellAreaWeight(int radiusIndex, int radialSize)
+{
+    return max(0.5 / max(1.0, (float)radialSize), Radius01(radiusIndex, radialSize));
+}
+
+// Tangential (angular) edge weight shrinks outward so θ transport respects arc length.
+float TangentialEdgeWeight(int radiusIndex, int radialSize)
+{
+    return 1.0 / max(CellAreaWeight(radiusIndex, radialSize), 1e-4);
+}
+
+float RadialDelta(int radialSize)
+{
+    return 1.0 / max(1.0, (float)radialSize);
 }
 
 float SafeFinite(float value, float fallback)

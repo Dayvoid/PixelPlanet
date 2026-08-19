@@ -131,7 +131,7 @@ namespace GeneSys.Tests
 
         private static void DriveWindErosion(SimulationHost host, int x, int y)
         {
-            // Lateral pressure gradient → SolarAndWind flow. Keep soil dry.
+            // Lateral pressure gradient → AtmosphericDynamics flow. Keep soil dry.
             PaintPressure(host, x - 1, y, 8f);
             PaintPressure(host, x + 1, y, -2f);
             PaintGroundwater(host, x, y, -100f);

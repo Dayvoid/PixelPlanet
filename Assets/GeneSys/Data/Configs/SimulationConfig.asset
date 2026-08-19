@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b71b550e423ed5c40b526469ad6d6e61, type: 3}
   m_Name: SimulationConfig
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Configuration.SimulationConfig
-  preset: 1
+  preset: 0
   grid:
-    angularResolution: 1024
-    radialResolution: 512
+    angularResolution: 256
+    radialResolution: 128
     playableInnerRadius: 0.22
     atmosphereStartRadius: 0.9
     visualCoreRadius: 0.22
@@ -83,7 +83,7 @@ MonoBehaviour:
   spaceTemperature: -25
   radiativeCooling: 0.2
   windStrength: 0.35
-  windDamping: 0.04
+  windDamping: 0.06
   evaporationRate: 0.1
   condensationRate: 0.12
   precipitationRate: 0.2
@@ -97,11 +97,17 @@ MonoBehaviour:
   pressureEquilibriumGradient: 2
   pressureEquilibriumMaximum: 2
   atmosphericAdvectionRate: 0.85
-  vaporDiffusionRate: 0.08
-  atmosphericBuoyancy: 0.25
-  humidityBuoyancy: 0.15
-  saturationCapacityScale: 0.35
+  vaporDiffusionRate: 0.05
+  atmosphericBuoyancy: 0.4
+  humidityBuoyancy: 0.25
+  saturationCapacityScale: 0.55
   cloudPrecipitationThreshold: 0.05
+  surfaceAirHeatExchange: 0.45
+  temperatureAdvectionRate: 0.55
+  pressureCompressibility: 0.45
+  atmosphericCflLimit: 0.4
+  surfaceAirTemperature: 18
+  atmosphericLapseRate: 12
   brushRadius: 5
   brushStrength: 1
   validationIntervalTicks: 1000

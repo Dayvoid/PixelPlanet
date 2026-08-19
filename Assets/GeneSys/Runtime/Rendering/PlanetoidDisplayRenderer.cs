@@ -73,7 +73,7 @@ namespace GeneSys.Rendering
 
         public void SetOverlay(int mode)
         {
-            OverlayMode = Mathf.Clamp(mode, 0, 11);
+            OverlayMode = Mathf.Clamp(mode, 0, 15);
             if (displayMaterial != null) displayMaterial.SetInt("_OverlayMode", OverlayMode);
         }
 

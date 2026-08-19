@@ -17,6 +17,8 @@ float4 _WorldGenParams;
 float4 _WorldWaterA;
 float4 _WorldWaterB;
 float4 _WorldWaterC;
+float4 _WeatherA; // solarIntensity, spaceTemperature, radiativeCooling, windStrength
+float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, unused, unused
 
 float AngularNoise(uint theta, uint salt)
 {
@@ -105,6 +107,15 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
 
     float temperature = lerp(1500.0, 15.0, saturate(radius));
     if (material == 9u) temperature = lerp(4.0, 18.0, saturate((seaLevel - radius) / max(0.01, seaLevel - terrainSurface)));
+    else if (material == 1u)
+    {
+        // Tropospheric Air profile: surface-air temperature cools toward space with altitude.
+        float heightFrac = saturate((radius - _AtmosphereStartRadius) / max(0.01, 1.0 - _AtmosphereStartRadius));
+        float surfaceAir = _WeatherG.x;
+        float lapse = max(0.0, _WeatherG.y);
+        float cooled = surfaceAir - lapse * heightFrac;
+        temperature = lerp(cooled, _WeatherA.y, heightFrac * heightFrac);
+    }
     float pressure = saturate((terrainSurface - radius) * 8.0) * 2.0;
 
     float surfaceWater = 0.0;

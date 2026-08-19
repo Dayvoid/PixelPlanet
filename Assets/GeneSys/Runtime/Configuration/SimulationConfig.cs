@@ -92,7 +92,7 @@ namespace GeneSys.Configuration
         [Range(-100f, 100f)] public float spaceTemperature = -25f;
         [Range(0f, 4f)] public float radiativeCooling = 0.2f;
         [Range(0f, 4f)] public float windStrength = 0.35f;
-        [Range(0f, 1f)] public float windDamping = 0.04f;
+        [Range(0f, 1f)] public float windDamping = 0.06f;
         [Range(0f, 4f)] public float evaporationRate = 0.1f;
         [Range(0f, 4f)] public float condensationRate = 0.12f;
         [Range(0f, 4f)] public float precipitationRate = 0.2f;
@@ -106,12 +106,17 @@ namespace GeneSys.Configuration
         [Range(0f, 8f)] public float pressureEquilibriumGradient = 2f;
         [Range(0f, 8f)] public float pressureEquilibriumMaximum = 2f;
         [Range(0f, 4f)] public float atmosphericAdvectionRate = 0.85f;
-        [Range(0f, 2f)] public float vaporDiffusionRate = 0.08f;
-        [Range(0f, 4f)] public float atmosphericBuoyancy = 0.25f;
-        [Range(0f, 4f)] public float humidityBuoyancy = 0.15f;
-        [Range(0.01f, 2f)] public float saturationCapacityScale = 0.35f;
+        [Range(0f, 2f)] public float vaporDiffusionRate = 0.05f;
+        [Range(0f, 4f)] public float atmosphericBuoyancy = 0.4f;
+        [Range(0f, 4f)] public float humidityBuoyancy = 0.25f;
+        [Range(0.01f, 2f)] public float saturationCapacityScale = 0.55f;
         [Range(0.01f, 1f)] public float cloudPrecipitationThreshold = 0.05f;
-
+        [Range(0f, 4f)] public float surfaceAirHeatExchange = 0.45f;
+        [Range(0f, 4f)] public float temperatureAdvectionRate = 0.55f;
+        [Range(0f, 4f)] public float pressureCompressibility = 0.45f;
+        [Range(0.05f, 1f)] public float atmosphericCflLimit = 0.4f;
+        [Range(-20f, 40f)] public float surfaceAirTemperature = 18f;
+        [Range(0f, 40f)] public float atmosphericLapseRate = 12f;
 
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;
@@ -153,6 +158,11 @@ namespace GeneSys.Configuration
             humidityBuoyancy = Mathf.Max(0f, humidityBuoyancy);
             saturationCapacityScale = Mathf.Max(0.01f, saturationCapacityScale);
             cloudPrecipitationThreshold = Mathf.Max(0.01f, cloudPrecipitationThreshold);
+            surfaceAirHeatExchange = Mathf.Max(0f, surfaceAirHeatExchange);
+            temperatureAdvectionRate = Mathf.Max(0f, temperatureAdvectionRate);
+            pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
+            atmosphericCflLimit = Mathf.Clamp(atmosphericCflLimit, 0.05f, 1f);
+            atmosphericLapseRate = Mathf.Max(0f, atmosphericLapseRate);
         }
     }
 }

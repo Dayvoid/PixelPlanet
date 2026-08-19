@@ -119,6 +119,36 @@ Shader "GeneSys/Planetoid Display"
                     if (cloud > 0.05) color = lerp(color, float3(0.85, 0.9, 1.0), saturate(cloud));
                     if (thermal > 0.15) color = lerp(color, float3(1.0, 0.35, 0.05), thermal);
                 }
+                else if (_OverlayMode == 12)
+                {
+                    // Vertical velocity: cyan updraft, amber downdraft.
+                    float v = clamp(flow.y * 0.35, -1.0, 1.0);
+                    color = v >= 0.0
+                        ? lerp(float3(0.05, 0.05, 0.08), float3(0.2, 0.95, 1.0), v)
+                        : lerp(float3(0.05, 0.05, 0.08), float3(1.0, 0.55, 0.05), -v);
+                }
+                else if (_OverlayMode == 13)
+                {
+                    float equilibrium = min(2.0, (1.0 - simulationRadius) * 2.0);
+                    float anomaly = clamp((state.y - equilibrium) * 0.75, -1.0, 1.0);
+                    color = anomaly >= 0.0
+                        ? lerp(float3(0.05, 0.05, 0.1), float3(1.0, 0.15, 0.45), anomaly)
+                        : lerp(float3(0.05, 0.05, 0.1), float3(0.15, 0.55, 1.0), -anomaly);
+                }
+                else if (_OverlayMode == 14)
+                {
+                    float altitudeCooling = saturate((simulationRadius - _AtmosphereStartRadius) / max(0.01, 1.0 - _AtmosphereStartRadius));
+                    float thermal = saturate((state.x + 20.0) / 60.0);
+                    float capacity = max(0.01, 0.55 * thermal * (1.0 - altitudeCooling * 0.65) * (1.0 + saturate(state.y) * 0.25));
+                    float saturation = atmosphereCarrier ? saturate(aux.x / capacity) : 0.0;
+                    color = lerp(float3(0.05, 0.08, 0.12), float3(0.95, 0.95, 1.0), saturation);
+                    if (saturation > 0.85) color = lerp(color, float3(0.55, 0.85, 1.0), (saturation - 0.85) / 0.15);
+                }
+                else if (_OverlayMode == 15)
+                {
+                    float cloudOnly = atmosphereCarrier ? saturate(state.z * 3.0) : 0.0;
+                    color = lerp(float3(0.02, 0.03, 0.06), float3(0.92, 0.95, 1.0), cloudOnly);
+                }
 
                 float radialGrid = frac(simulationRadius * height);
                 float angularGrid = frac(angle / 6.28318530718 * width);

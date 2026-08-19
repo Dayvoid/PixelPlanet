@@ -19,6 +19,22 @@ namespace GeneSys.Validation
         public double TotalTrackedWaterMass;
     }
 
+    public struct AtmosphericCirculationMetrics
+    {
+        public double CloudMass;
+        public double VaporMass;
+        public float VaporAltitudeMean;
+        public float VaporAltitudeVariance;
+        public float MeanVerticalFlow;
+        public float RmsVerticalFlow;
+        public float SignedMeanVerticalDrift;
+        public float PressureAnomalyRms;
+        public float DayNightSurfaceTemperatureDelta;
+        public float CirculationEnergy;
+        public int UpdraftCells;
+        public int DowndraftCells;
+    }
+
     public static class SimulationMetrics
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
@@ -43,6 +59,38 @@ namespace GeneSys.Validation
                         if (auxRequest.hasError) { completed?.Invoke(default); return; }
                         Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
                         completed?.Invoke(ComputeMetrics(grid, materials, states, aux));
+                    });
+                });
+            });
+        }
+
+        public static void MeasureAtmosphereAsync(SimulationHost host, float solarAngle01, Action<AtmosphericCirculationMetrics> completed)
+        {
+            if (host == null || !host.IsReady)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+
+            PolarGridDefinition grid = host.Grid;
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            {
+                if (materialRequest.hasError) { completed?.Invoke(default); return; }
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                {
+                    if (stateRequest.hasError) { completed?.Invoke(default); return; }
+                    Vector4[] states = stateRequest.GetData<Vector4>().ToArray();
+                    AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
+                    {
+                        if (auxRequest.hasError) { completed?.Invoke(default); return; }
+                        Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
+                        AsyncGPUReadback.Request(host.Resources.FlowRead, 0, flowRequest =>
+                        {
+                            if (flowRequest.hasError) { completed?.Invoke(default); return; }
+                            Vector2[] flow = flowRequest.GetData<Vector2>().ToArray();
+                            completed?.Invoke(ComputeAtmosphericMetrics(grid, materials, states, aux, flow, solarAngle01));
+                        });
                     });
                 });
             });
@@ -99,6 +147,106 @@ namespace GeneSys.Validation
             metrics.OceanCoverage = oceanAngleCount / (float)Math.Max(1, width);
             metrics.BasinCount = CountOceanAngleBasins(oceanAngles);
             metrics.TotalTrackedWaterMass = metrics.SurfaceWaterMass + metrics.GroundwaterMass + metrics.VaporMass;
+            return metrics;
+        }
+
+        public static AtmosphericCirculationMetrics ComputeAtmosphericMetrics(
+            PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux, Vector2[] flow, float solarAngle01)
+        {
+            int width = grid.angularResolution;
+            int height = grid.radialResolution;
+            int cellCount = Math.Min(materials.Length, Math.Min(states.Length, Math.Min(aux.Length, flow.Length)));
+            var metrics = new AtmosphericCirculationMetrics();
+
+            double vaporMass = 0d;
+            double vaporAltitudeMoment = 0d;
+            double vaporAltitudeSecond = 0d;
+            double verticalSum = 0d;
+            double verticalSq = 0d;
+            double pressureAnomalySq = 0d;
+            double circulationEnergy = 0d;
+            int atmosphereCells = 0;
+            double daySurfaceTemp = 0d;
+            double nightSurfaceTemp = 0d;
+            int daySurfaceCount = 0;
+            int nightSurfaceCount = 0;
+
+            for (int y = 0; y < height; y++)
+            {
+                float radius = grid.Radius01(y);
+                float equilibrium = Math.Min(grid.atmosphereStartRadius > 0f ? 2f : 2f, (1f - radius) * 2f);
+                for (int x = 0; x < width; x++)
+                {
+                    int index = y * width + x;
+                    if (index >= cellCount) continue;
+
+                    uint material = materials[index];
+                    Vector4 state = states[index];
+                    Vector4 auxValue = aux[index];
+                    Vector2 cellFlow = flow[index];
+                    bool atmosphere = material == MaterialIds.Air || material == MaterialIds.Vapor;
+
+                    if (atmosphere)
+                    {
+                        atmosphereCells++;
+                        float cloud = Math.Max(0f, state.z);
+                        float vapor = Math.Max(0f, auxValue.x);
+                        metrics.CloudMass += cloud;
+                        vaporMass += vapor;
+                        vaporAltitudeMoment += vapor * radius;
+                        vaporAltitudeSecond += vapor * radius * radius;
+
+                        verticalSum += cellFlow.y;
+                        verticalSq += cellFlow.y * cellFlow.y;
+                        if (cellFlow.y > 0.01f) metrics.UpdraftCells++;
+                        if (cellFlow.y < -0.01f) metrics.DowndraftCells++;
+
+                        float anomaly = state.y - equilibrium;
+                        pressureAnomalySq += anomaly * anomaly;
+                        circulationEnergy += cellFlow.x * cellFlow.x + cellFlow.y * cellFlow.y;
+                    }
+
+                    bool exposedSurface = !atmosphere && material != MaterialIds.Void && y < height - 1 &&
+                                          (materials[(y + 1) * width + x] == MaterialIds.Air ||
+                                           materials[(y + 1) * width + x] == MaterialIds.Void);
+                    if (exposedSurface)
+                    {
+                        float theta01 = (x + 0.5f) / width;
+                        float angle = (theta01 - solarAngle01) * (Mathf.PI * 2f);
+                        if (Mathf.Cos(angle) > 0f)
+                        {
+                            daySurfaceTemp += state.x;
+                            daySurfaceCount++;
+                        }
+                        else
+                        {
+                            nightSurfaceTemp += state.x;
+                            nightSurfaceCount++;
+                        }
+                    }
+                }
+            }
+
+            metrics.VaporMass = vaporMass;
+            if (vaporMass > 1e-6d)
+            {
+                metrics.VaporAltitudeMean = (float)(vaporAltitudeMoment / vaporMass);
+                float mean = metrics.VaporAltitudeMean;
+                metrics.VaporAltitudeVariance = Math.Max(0f, (float)(vaporAltitudeSecond / vaporMass) - mean * mean);
+            }
+
+            if (atmosphereCells > 0)
+            {
+                metrics.MeanVerticalFlow = (float)(verticalSum / atmosphereCells);
+                metrics.RmsVerticalFlow = Mathf.Sqrt((float)(verticalSq / atmosphereCells));
+                metrics.SignedMeanVerticalDrift = metrics.MeanVerticalFlow;
+                metrics.PressureAnomalyRms = Mathf.Sqrt((float)(pressureAnomalySq / atmosphereCells));
+                metrics.CirculationEnergy = (float)(circulationEnergy / atmosphereCells);
+            }
+
+            float dayMean = daySurfaceCount > 0 ? (float)(daySurfaceTemp / daySurfaceCount) : 0f;
+            float nightMean = nightSurfaceCount > 0 ? (float)(nightSurfaceTemp / nightSurfaceCount) : 0f;
+            metrics.DayNightSurfaceTemperatureDelta = dayMean - nightMean;
             return metrics;
         }
 
