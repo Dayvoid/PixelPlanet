@@ -118,6 +118,22 @@ namespace GeneSys.Configuration
         [Range(-20f, 40f)] public float surfaceAirTemperature = 18f;
         [Range(0f, 40f)] public float atmosphericLapseRate = 12f;
 
+        [Header("Graphics")]
+        [Range(0, 1)] public int enableStarfield = 1;
+        [Range(32, 512)] public int starCount = 160;
+        [Range(0f, 2f)] public float starfieldStrength = 0.85f;
+        [Range(0f, 2f)] public float starTwinkleStrength = 0.65f;
+        [Range(0, 1)] public int enableNebula = 1;
+        [Range(4, 48)] public int nebulaCount = 12;
+        [Range(0f, 2f)] public float nebulaStrength = 0.45f;
+        [Range(0, 1)] public int enableAtmosphereGlow = 1;
+        [Range(0f, 2f)] public float atmosphereGlowStrength = 0.7f;
+        [Range(0, 1)] public int enableSolarBody = 1;
+        [Range(0f, 2f)] public float solarBodyStrength = 1f;
+        [Range(0f, 2f)] public float solarCoronaStrength = 0.85f;
+        [Range(0.5f, 2f)] public float solarOrbitRadius = 1.35f;
+        [Range(0f, 2f)] public float dayNightLightingStrength = 0.85f;
+
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;
         [Range(0.01f, 10f)] public float brushStrength = 1f;
@@ -129,7 +145,7 @@ namespace GeneSys.Configuration
             SimulationConfig defaults = CreateInstance<SimulationConfig>();
             foreach (FieldInfo field in typeof(SimulationConfig).GetFields(BindingFlags.Instance | BindingFlags.Public))
                 field.SetValue(this, field.GetValue(defaults));
-            Destroy(defaults);
+            DestroyImmediate(defaults);
             ApplyPreset(preset);
         }
 
@@ -163,6 +179,20 @@ namespace GeneSys.Configuration
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
             atmosphericCflLimit = Mathf.Clamp(atmosphericCflLimit, 0.05f, 1f);
             atmosphericLapseRate = Mathf.Max(0f, atmosphericLapseRate);
+            enableStarfield = enableStarfield != 0 ? 1 : 0;
+            starCount = Mathf.Clamp(starCount, 32, 512);
+            starfieldStrength = Mathf.Max(0f, starfieldStrength);
+            starTwinkleStrength = Mathf.Max(0f, starTwinkleStrength);
+            enableNebula = enableNebula != 0 ? 1 : 0;
+            nebulaCount = Mathf.Clamp(nebulaCount, 4, 48);
+            nebulaStrength = Mathf.Max(0f, nebulaStrength);
+            enableAtmosphereGlow = enableAtmosphereGlow != 0 ? 1 : 0;
+            atmosphereGlowStrength = Mathf.Max(0f, atmosphereGlowStrength);
+            enableSolarBody = enableSolarBody != 0 ? 1 : 0;
+            solarBodyStrength = Mathf.Max(0f, solarBodyStrength);
+            solarCoronaStrength = Mathf.Max(0f, solarCoronaStrength);
+            solarOrbitRadius = Mathf.Clamp(solarOrbitRadius, 0.5f, 2f);
+            dayNightLightingStrength = Mathf.Max(0f, dayNightLightingStrength);
         }
     }
 }

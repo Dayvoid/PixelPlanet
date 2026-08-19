@@ -141,6 +141,7 @@ namespace GeneSys.Editor
 
             var root = new GameObject("GeneSys Simulation");
             SimulationHost host = root.AddComponent<SimulationHost>();
+            TerrariumVisualController visuals = root.AddComponent<TerrariumVisualController>();
             SimulationTools tools = root.AddComponent<SimulationTools>();
             SimulationValidator validator = root.AddComponent<SimulationValidator>();
             SetObject(host, "config", config);
@@ -151,9 +152,16 @@ namespace GeneSys.Editor
             SetObject(host, "hydrology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrology.compute"));
             SetObject(host, "weather", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Weather.compute"));
             SetObject(host, "display", display);
+            SetObject(host, "visuals", visuals);
             SetObject(host, "ui", ui);
             SetObject(host, "tools", tools);
             SetObject(host, "validator", validator);
+            SetObject(visuals, "host", host);
+            SetObject(visuals, "display", display);
+            SetObject(visuals, "targetCamera", camera);
+            SetObject(visuals, "spaceParticleShader", Shader.Find("GeneSys/Space Particle"));
+            SetObject(visuals, "atmosphereGlowShader", Shader.Find("GeneSys/Atmosphere Glow"));
+            SetObject(visuals, "solarBodyShader", Shader.Find("GeneSys/Solar Body"));
             SetObject(tools, "host", host);
             SetObject(tools, "display", display);
             SetObject(tools, "ui", ui);

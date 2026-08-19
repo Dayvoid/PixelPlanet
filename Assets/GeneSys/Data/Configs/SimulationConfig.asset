@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b71b550e423ed5c40b526469ad6d6e61, type: 3}
   m_Name: SimulationConfig
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Configuration.SimulationConfig
-  preset: 0
+  preset: 1
   grid:
-    angularResolution: 256
-    radialResolution: 128
+    angularResolution: 1024
+    radialResolution: 512
     playableInnerRadius: 0.22
     atmosphereStartRadius: 0.9
     visualCoreRadius: 0.22
@@ -108,6 +108,20 @@ MonoBehaviour:
   atmosphericCflLimit: 0.4
   surfaceAirTemperature: 18
   atmosphericLapseRate: 12
+  enableStarfield: 1
+  starCount: 160
+  starfieldStrength: 0.85
+  starTwinkleStrength: 0.65
+  enableNebula: 1
+  nebulaCount: 12
+  nebulaStrength: 0.45
+  enableAtmosphereGlow: 1
+  atmosphereGlowStrength: 0.7
+  enableSolarBody: 1
+  solarBodyStrength: 1
+  solarCoronaStrength: 0.85
+  solarOrbitRadius: 1.35
+  dayNightLightingStrength: 0.85
   brushRadius: 5
   brushStrength: 1
   validationIntervalTicks: 1000

@@ -24,7 +24,16 @@ namespace GeneSys.UI
             { "Geology", "geology" },
             { "Hydrology and erosion", "hydrology" },
             { "Solar and weather", "weather" },
+            { "Graphics", "performance" },
             { "Tools and validation", "performance" }
+        };
+
+        private static readonly HashSet<string> ToggleSettingsFields = new()
+        {
+            nameof(SimulationConfig.enableStarfield),
+            nameof(SimulationConfig.enableNebula),
+            nameof(SimulationConfig.enableAtmosphereGlow),
+            nameof(SimulationConfig.enableSolarBody)
         };
 
         private static readonly HashSet<string> SkipSettingsFields = new()
@@ -239,11 +248,26 @@ namespace GeneSys.UI
             {
                 HeaderAttribute header = field.GetCustomAttribute<HeaderAttribute>();
                 if (header != null && HeaderToTab.TryGetValue(header.header, out string tab))
+                {
                     currentTab = tab;
+                    if (containers.TryGetValue(currentTab, out ScrollView sectionContainer) && sectionContainer != null)
+                    {
+                        string title = header.header == "Tools and validation" ? "Validation" : header.header;
+                        var sectionLabel = new Label(title);
+                        sectionLabel.AddToClassList("section-title");
+                        sectionContainer.Add(sectionLabel);
+                    }
+                }
                 if (SkipSettingsFields.Contains(field.Name)) continue;
                 if (!containers.TryGetValue(currentTab, out ScrollView container) || container == null) continue;
 
-                if (field.FieldType == typeof(float))
+                if (ToggleSettingsFields.Contains(field.Name) && field.FieldType == typeof(int))
+                {
+                    var control = new Toggle(Humanize(field.Name)) { value = (int)field.GetValue(host.Config) != 0 };
+                    control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue ? 1 : 0));
+                    container.Add(control);
+                }
+                else if (field.FieldType == typeof(float))
                 {
                     var control = new FloatField(Humanize(field.Name)) { value = (float)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));

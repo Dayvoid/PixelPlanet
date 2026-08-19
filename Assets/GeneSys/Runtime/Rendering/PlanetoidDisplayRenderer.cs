@@ -1,4 +1,6 @@
+using GeneSys.Configuration;
 using GeneSys.Materials;
+using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
@@ -21,17 +23,26 @@ namespace GeneSys.Rendering
         private Texture2D properties;
         private SimulationResources resources;
         private PolarGridDefinition grid;
+        private SimulationConfig config;
+        private SimulationHost host;
         private Vector2 lastPointer;
         private bool dragging;
 
         public int OverlayMode { get; private set; }
         public Camera TargetCamera => targetCamera;
+        public Material RuntimeMaterial => displayMaterial;
 
         public void Initialize(SimulationResources state, MaterialRegistry registry, PolarGridDefinition definition)
+            => Initialize(state, registry, definition, null, null);
+
+        public void Initialize(SimulationResources state, MaterialRegistry registry, PolarGridDefinition definition,
+            SimulationConfig simulationConfig, SimulationHost simulationHost)
         {
             DestroyRuntimeAssets();
             resources = state;
             grid = definition;
+            config = simulationConfig;
+            host = simulationHost;
             meshRenderer = GetComponent<MeshRenderer>();
             if (targetCamera == null) targetCamera = Camera.main;
             displayMaterial = new Material(displayShader) { name = "GeneSys Planetoid Runtime" };
@@ -67,7 +78,10 @@ namespace GeneSys.Rendering
             displayMaterial.SetFloat("_VisualCoreRadius", grid.visualCoreRadius);
             displayMaterial.SetFloat("_VisualCoreSquash", grid.visualCoreSquash);
             displayMaterial.SetFloat("_AtmosphereStartRadius", grid.atmosphereStartRadius);
+            displayMaterial.SetInt("_OverlayMode", OverlayMode);
+            PushGraphicsUniforms();
             meshRenderer.sharedMaterial = displayMaterial;
+            meshRenderer.sortingOrder = 50;
             RefreshTextures();
         }
 
@@ -81,7 +95,16 @@ namespace GeneSys.Rendering
         {
             if (resources == null || displayMaterial == null) return;
             RefreshTextures();
+            PushGraphicsUniforms();
             HandleCamera();
+        }
+
+        private void PushGraphicsUniforms()
+        {
+            float solarAngle = host != null ? host.SolarAngle01 : 0f;
+            float lightingStrength = config != null ? config.dayNightLightingStrength : 0f;
+            displayMaterial.SetFloat("_SolarAngle01", solarAngle);
+            displayMaterial.SetFloat("_DayNightLightingStrength", lightingStrength);
         }
 
         private void RefreshTextures()

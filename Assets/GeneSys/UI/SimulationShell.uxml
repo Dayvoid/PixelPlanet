@@ -75,7 +75,8 @@
                 </ui:VisualElement>
 
                 <ui:VisualElement name="page-performance" class="settings-page hidden">
-                    <ui:Label text="Validation" class="section-title" />
+                    <ui:Label text="Performance" class="section-title" />
+                    <ui:Label text="Graphics controls tune ambient space visuals without changing simulation physics. Validation settings remain below." class="help" />
                     <ui:ScrollView name="settings-performance" class="settings-scroll" />
                     <ui:Button name="restore-defaults" text="Restore Default Settings" />
                     <ui:Label text="Restores all simulation settings to their initial values and regenerates the world. Use the Validation preset for fast iteration." class="help" />

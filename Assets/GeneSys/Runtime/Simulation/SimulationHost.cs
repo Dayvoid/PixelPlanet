@@ -24,6 +24,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader weather;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
+        [SerializeField] private TerrariumVisualController visuals;
         [SerializeField] private SimulationUIController ui;
         [SerializeField] private SimulationTools tools;
         [SerializeField] private SimulationValidator validator;
@@ -39,6 +40,7 @@ namespace GeneSys.Simulation
         public SimulationClock Clock { get; } = new();
         public bool IsReady => Resources != null && Resources.IsCreated && scheduler != null;
         public int TickIndex => scheduler?.TickIndex ?? 0;
+        public float SolarAngle01 => scheduler?.SolarAngle01 ?? 0f;
         public double LastTickMilliseconds => scheduler?.LastTickMilliseconds ?? 0d;
         public PolarGridDefinition Grid => Resources?.Grid ?? config.grid;
         public RenderTexture MaterialField => Resources?.MaterialRead;
@@ -83,7 +85,8 @@ namespace GeneSys.Simulation
             dispatchMilliseconds = 0d;
             dispatchSamples = 0;
             Clock.SetSpeed(config.simulationSpeed);
-            if (display != null) display.Initialize(Resources, materialRegistry, config.grid);
+            if (display != null) display.Initialize(Resources, materialRegistry, config.grid, config, this);
+            if (visuals != null) visuals.Initialize(this, display);
             if (tools != null) { tools.Radius = config.brushRadius; tools.Strength = config.brushStrength; }
             if (bindUi && ui != null) ui.Initialize(this, display, tools);
             if (validator != null) validator.Initialize(this);
@@ -137,7 +140,8 @@ namespace GeneSys.Simulation
         {
             if (!IsReady) return;
             scheduler.RefreshMaterialDefinitions(materialRegistry);
-            if (display != null) display.Initialize(Resources, materialRegistry, config.grid);
+            if (display != null) display.Initialize(Resources, materialRegistry, config.grid, config, this);
+            if (visuals != null) visuals.Initialize(this, display);
         }
 
         public SurfaceFrame GetSurfaceFrame(Vector2Int cell)

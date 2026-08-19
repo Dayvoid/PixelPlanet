@@ -7,6 +7,8 @@ Shader "GeneSys/Planetoid Display"
         _VisualCoreRadius ("Visual Core Radius", Float) = 0.28
         _VisualCoreSquash ("Visual Core Squash", Float) = 0.45
         _OverlayMode ("Overlay Mode", Int) = 0
+        _SolarAngle01 ("Solar Angle", Float) = 0
+        _DayNightLightingStrength ("Day Night Lighting Strength", Float) = 0.85
     }
 
     SubShader
@@ -47,6 +49,8 @@ Shader "GeneSys/Planetoid Display"
             float _VisualCoreSquash;
             float _AtmosphereStartRadius;
             int _OverlayMode;
+            float _SolarAngle01;
+            float _DayNightLightingStrength;
 
             Varyings Vert(Attributes input)
             {
@@ -95,6 +99,17 @@ Shader "GeneSys/Planetoid Display"
                 {
                     if (cloud > 0.02)
                         color = lerp(color, float3(0.92, 0.95, 1.0), saturate(cloud * 0.9));
+
+                    // Soft ambient + directional day/night, matching Weather AtmosphericForcing insolation.
+                    float strength = saturate(_DayNightLightingStrength);
+                    if (strength > 0.001)
+                    {
+                        float theta01 = angle / 6.28318530718;
+                        float insolation = max(0.0, cos((theta01 - _SolarAngle01) * 6.28318530718));
+                        float dayFactor = saturate(insolation * 0.75 + 0.25);
+                        float lighting = lerp(1.0 - 0.82 * strength, 1.0 + 0.12 * strength, dayFactor);
+                        color *= lighting;
+                    }
                 }
                 else if (_OverlayMode == 1) color = HeatColor(state.x);
                 else if (_OverlayMode == 2) color = lerp(float3(0.02, 0.02, 0.08), float3(1.0, 0.1, 0.8), saturate(state.y));
