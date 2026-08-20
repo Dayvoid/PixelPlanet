@@ -87,6 +87,10 @@
                         <ui:Label text="Performance" class="section-title" />
                         <ui:Label text="Graphics controls tune ambient space visuals without changing simulation physics. Validation settings remain below." class="help" />
                         <ui:ScrollView name="settings-performance" class="settings-scroll" />
+                        <ui:VisualElement class="command-row">
+                            <ui:Button name="save-preset" text="Save Preset" />
+                            <ui:Button name="load-preset" text="Load Preset" class="row-last" />
+                        </ui:VisualElement>
                         <ui:Button name="restore-defaults" text="Restore Default Settings" />
                         <ui:Label text="Restores all simulation settings to their initial values and regenerates the world. Use the Validation preset for fast iteration." class="help" />
                     </ui:VisualElement>
@@ -97,6 +101,26 @@
                 <ui:Button name="status-header" text="Simulation Status ▾" class="drawer-header" />
                 <ui:VisualElement name="status-body" class="drawer-body">
                     <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="preset-overlay" class="preset-overlay hidden" picking-mode="Position">
+            <ui:VisualElement name="preset-dialog" class="preset-dialog">
+                <ui:Label name="preset-dialog-title" text="Save Preset" class="section-title" />
+                <ui:VisualElement name="preset-save-group" class="preset-group">
+                    <ui:Label text="Enter a filename for the current simulation settings." class="help" />
+                    <ui:TextField name="preset-filename" label="Filename" />
+                    <ui:Label name="preset-error" text="" class="preset-error hidden" />
+                </ui:VisualElement>
+                <ui:VisualElement name="preset-load-group" class="preset-group hidden">
+                    <ui:Label text="Select a saved settings preset to load. The world will regenerate." class="help" />
+                    <ui:ListView name="preset-list" class="preset-list" />
+                    <ui:Label name="preset-empty" text="No presets found." class="help hidden" />
+                </ui:VisualElement>
+                <ui:VisualElement class="command-row">
+                    <ui:Button name="preset-cancel" text="Cancel" />
+                    <ui:Button name="preset-confirm" text="Save" class="row-last" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>

@@ -61,6 +61,13 @@ namespace GeneSys.Simulation
             Initialize(false);
         }
 
+        public void ApplyLoadedSettings()
+        {
+            if (config == null) return;
+            config.grid.Validate();
+            Initialize(false);
+        }
+
         public void Initialize() => Initialize(true);
 
         private void Initialize(bool bindUi)

@@ -50,6 +50,18 @@ namespace GeneSys.UI
         private PlanetoidDisplayRenderer display;
         private SimulationTools tools;
         private readonly WorldSnapshotService snapshots = new();
+        private readonly SettingsPresetService presets = new();
+        private VisualElement presetOverlay;
+        private VisualElement presetSaveGroup;
+        private VisualElement presetLoadGroup;
+        private Label presetDialogTitle;
+        private Label presetError;
+        private Label presetEmpty;
+        private TextField presetFilename;
+        private ListView presetList;
+        private Button presetConfirm;
+        private bool presetDialogIsSave;
+        private List<string> presetNames = new();
         private Label statusLabel;
         private Label inspectLabel;
         private Label worldMetricsLabel;
@@ -98,6 +110,9 @@ namespace GeneSys.UI
             root.Q<Button>("load")?.RegisterCallback<ClickEvent>(_ => LoadSnapshot());
             root.Q<Button>("validate")?.RegisterCallback<ClickEvent>(_ => validator?.ValidateNow());
             root.Q<Button>("restore-defaults")?.RegisterCallback<ClickEvent>(_ => RestoreDefaultSettings(root));
+            root.Q<Button>("save-preset")?.RegisterCallback<ClickEvent>(_ => ShowSavePresetDialog());
+            root.Q<Button>("load-preset")?.RegisterCallback<ClickEvent>(_ => ShowLoadPresetDialog());
+            SetupPresetDialog(root);
 
             var speed = root.Q<Slider>("speed");
             if (speed != null) { speed.value = host.Clock.Speed; speed.RegisterValueChangedCallback(evt => host.Clock.SetSpeed(evt.newValue)); }
@@ -222,6 +237,118 @@ namespace GeneSys.UI
             }
 
             Show("world");
+        }
+
+        private void SetupPresetDialog(VisualElement root)
+        {
+            presetOverlay = root.Q("preset-overlay");
+            presetSaveGroup = root.Q("preset-save-group");
+            presetLoadGroup = root.Q("preset-load-group");
+            presetDialogTitle = root.Q<Label>("preset-dialog-title");
+            presetError = root.Q<Label>("preset-error");
+            presetEmpty = root.Q<Label>("preset-empty");
+            presetFilename = root.Q<TextField>("preset-filename");
+            presetList = root.Q<ListView>("preset-list");
+            presetConfirm = root.Q<Button>("preset-confirm");
+            root.Q<Button>("preset-cancel")?.RegisterCallback<ClickEvent>(_ => HidePresetDialog());
+            presetConfirm?.RegisterCallback<ClickEvent>(_ => ConfirmPresetDialog(root));
+            if (presetList != null)
+            {
+                presetList.selectionType = SelectionType.Single;
+                presetList.fixedItemHeight = 22;
+                presetList.makeItem = () => new Label();
+                presetList.bindItem = (element, index) =>
+                {
+                    if (element is Label label && index >= 0 && index < presetNames.Count)
+                        label.text = presetNames[index];
+                };
+            }
+        }
+
+        private void ShowSavePresetDialog()
+        {
+            presetDialogIsSave = true;
+            if (presetDialogTitle != null) presetDialogTitle.text = "Save Preset";
+            if (presetConfirm != null) presetConfirm.text = "Save";
+            presetSaveGroup?.RemoveFromClassList("hidden");
+            presetLoadGroup?.AddToClassList("hidden");
+            if (presetFilename != null) presetFilename.value = string.Empty;
+            SetPresetError(null);
+            ShowPresetOverlay();
+        }
+
+        private void ShowLoadPresetDialog()
+        {
+            presetDialogIsSave = false;
+            if (presetDialogTitle != null) presetDialogTitle.text = "Load Preset";
+            if (presetConfirm != null) presetConfirm.text = "OK";
+            presetSaveGroup?.AddToClassList("hidden");
+            presetLoadGroup?.RemoveFromClassList("hidden");
+            SetPresetError(null);
+            presetNames = presets.ListPresets();
+            bool empty = presetNames.Count == 0;
+            presetEmpty?.EnableInClassList("hidden", !empty);
+            if (presetList != null)
+            {
+                presetList.itemsSource = presetNames;
+                presetList.Rebuild();
+                presetList.selectedIndex = empty ? -1 : 0;
+            }
+            if (presetConfirm != null) presetConfirm.SetEnabled(!empty);
+            ShowPresetOverlay();
+        }
+
+        private void ShowPresetOverlay()
+        {
+            presetOverlay?.RemoveFromClassList("hidden");
+        }
+
+        private void HidePresetDialog()
+        {
+            presetOverlay?.AddToClassList("hidden");
+            if (presetConfirm != null) presetConfirm.SetEnabled(true);
+        }
+
+        private void SetPresetError(string message)
+        {
+            if (presetError == null) return;
+            bool hasError = !string.IsNullOrEmpty(message);
+            presetError.text = message ?? string.Empty;
+            presetError.EnableInClassList("hidden", !hasError);
+        }
+
+        private void ConfirmPresetDialog(VisualElement root)
+        {
+            if (presetDialogIsSave)
+            {
+                if (!presets.Save(host.Config, presetFilename != null ? presetFilename.value : string.Empty, out string error))
+                {
+                    SetPresetError(error);
+                    return;
+                }
+                HidePresetDialog();
+                return;
+            }
+
+            int index = presetList != null ? presetList.selectedIndex : -1;
+            if (index < 0 || index >= presetNames.Count)
+            {
+                SetPresetError("Select a preset to load.");
+                return;
+            }
+
+            if (!presets.Load(host.Config, presetNames[index], out string loadError))
+            {
+                SetPresetError(loadError);
+                return;
+            }
+
+            host.ApplyLoadedSettings();
+            HidePresetDialog();
+            RefreshBoundControls(root);
+            BuildSettings(root);
+            RefreshPlayLabel();
+            RefreshWorldMetrics(force: true);
         }
 
         private void RestoreDefaultSettings(VisualElement root)

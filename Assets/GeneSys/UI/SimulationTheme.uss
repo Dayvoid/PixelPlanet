@@ -355,3 +355,47 @@
 .unity-base-dropdown__label {
     color: rgb(210, 228, 240);
 }
+
+.preset-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.55);
+    align-items: center;
+    justify-content: center;
+}
+
+.preset-overlay.hidden,
+.preset-group.hidden,
+.preset-error.hidden {
+    display: none;
+}
+
+.preset-dialog {
+    width: 320px;
+    padding: 12px;
+    background-color: rgba(8, 16, 32, 0.96);
+    border-width: 1px;
+    border-color: rgb(48, 140, 170);
+    border-radius: 12px;
+}
+
+.preset-error {
+    white-space: normal;
+    color: rgb(230, 120, 120);
+    margin-top: 6px;
+    margin-bottom: 4px;
+}
+
+.preset-list {
+    height: 180px;
+    min-height: 180px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    background-color: rgba(4, 10, 22, 0.9);
+    border-width: 1px;
+    border-color: rgb(40, 90, 140);
+    border-radius: 6px;
+}
