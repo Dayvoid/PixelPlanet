@@ -1,6 +1,7 @@
 #pragma kernel Volcanism
 #pragma kernel EruptionMotion
 #pragma kernel AshTransport
+#pragma kernel CoreReaction
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -374,6 +375,25 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
             return;
         }
     }
+
+    WriteCell(cell, material, state, flow, aux, ecology);
+}
+
+[numthreads(8, 8, 1)]
+void CoreReaction(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    float4 ecology = ReadEcology(cell);
+
+    int freq = max(0, (int)_GeologyB.z);
+    float magnitude = max(0.0, _GeologyB.w);
+    if (freq > 0 && magnitude > 0.0 && (_Tick % freq) == 0 && material == 2u)
+        state.x += magnitude;
 
     WriteCell(cell, material, state, flow, aux, ecology);
 }

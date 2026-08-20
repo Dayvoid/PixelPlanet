@@ -66,6 +66,27 @@ namespace GeneSys.Tests
             Assert.That(done, Is.True);
         }
 
+        private static IEnumerator ReadMaterialsAndState(SimulationHost host, Action<uint[], Vector4[]> consume)
+        {
+            bool done = false;
+            bool failed = false;
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            {
+                if (materialRequest.hasError) { failed = true; done = true; return; }
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                {
+                    if (stateRequest.hasError) { failed = true; done = true; return; }
+                    consume(materials, stateRequest.GetData<Vector4>().ToArray());
+                    done = true;
+                });
+            });
+            for (int i = 0; i < 240 && !done; i++)
+                yield return null;
+            Assert.That(failed, Is.False);
+            Assert.That(done, Is.True);
+        }
+
         private static int Count(uint[] materials, uint id)
         {
             int count = 0;
@@ -926,6 +947,49 @@ namespace GeneSys.Tests
                 material = mats[y * host.Grid.angularResolution + x];
             });
             Assert.That(material, Is.EqualTo(MaterialIds.Sediment), "Calm/wet sediment must not passively become soil.");
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator CoreReactionAddsHeatToCoreCells()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.coreReactionFrequency = 1;
+            host.Config.coreReactionMagnitude = 50f;
+            host.Config.seed = 13131;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int coreIndex = -1;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    if (materials[i] != MaterialIds.Core) continue;
+                    coreIndex = i;
+                    break;
+                }
+            });
+            Assert.That(coreIndex, Is.GreaterThanOrEqualTo(0), "Worldgen should place at least one Core cell.");
+
+            float before = -1f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                before = states[coreIndex].x;
+            });
+
+            yield return Step(host, 1);
+
+            float after = -1f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                after = states[coreIndex].x;
+            });
+            Assert.That(after, Is.EqualTo(before + 50f).Within(0.1f));
 
             RestoreStressIsolation(host);
         }

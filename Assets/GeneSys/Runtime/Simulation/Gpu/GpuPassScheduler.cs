@@ -119,6 +119,11 @@ namespace GeneSys.Simulation.Gpu
             if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
                 DispatchPass(geology, geology.FindKernel("Volcanism"), deltaTime * config.slowPassInterval);
 
+            if (config.coreReactionFrequency > 0
+                && config.coreReactionMagnitude > 0f
+                && tick % config.coreReactionFrequency == 0)
+                DispatchPass(geology, geology.FindKernel("CoreReaction"), deltaTime);
+
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
             // Atmospheric loop: forcing → continuity → pressure diffusion → dynamics → transport → water cycle.
@@ -174,7 +179,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetFloat("_AtmosphereStartRadius", resources.Grid.atmosphereStartRadius);
             shader.SetVector("_Mechanics", new Vector4(config.gravityStrength, config.thermalRate, config.electricalRate, config.pressureRate));
             shader.SetVector("_Geology", new Vector4(config.mantlePressure, config.fractureRate, config.extrusionRate, config.volcanicCooling));
-            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalStrength, config.ventChemicalRate, 0f, 0f));
+            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalStrength, config.ventChemicalRate, config.coreReactionFrequency, config.coreReactionMagnitude));
             shader.SetVector("_EruptionA", new Vector4(config.magmaEruption, config.eruptionPressureStrength, config.eruptionFlowStrength, config.eruptionBurdenDepth));
             shader.SetVector("_EruptionB", new Vector4(config.eruptionBlastThreshold, config.ashUpdraftStrength, config.ashSettlingStrength, config.ashFertilityStrength));
             shader.SetVector("_Hydrology", new Vector4(config.infiltrationRate, config.groundwaterRate, config.dissolutionRate, config.collapseRate));

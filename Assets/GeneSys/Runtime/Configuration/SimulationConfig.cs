@@ -78,6 +78,8 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float ashUpdraftStrength = 1f;
         [Range(0f, 4f)] public float ashSettlingStrength = 1f;
         [Range(0f, 4f)] public float ashFertilityStrength = 1f;
+        [Range(0, 10000)] public int coreReactionFrequency = 400;
+        [Range(0f, 500f)] public float coreReactionMagnitude = 8f;
 
         [Header("Hydrology and erosion")]
         [Range(0f, 4f)] public float infiltrationRate = 0.3f;
@@ -278,6 +280,8 @@ namespace GeneSys.Configuration
             solarCoronaStrength = Mathf.Max(0f, solarCoronaStrength);
             solarOrbitRadius = Mathf.Clamp(solarOrbitRadius, 0.5f, 2f);
             dayNightLightingStrength = Mathf.Max(0f, dayNightLightingStrength);
+            coreReactionFrequency = Mathf.Max(0, coreReactionFrequency);
+            coreReactionMagnitude = Mathf.Max(0f, coreReactionMagnitude);
         }
     }
 }
