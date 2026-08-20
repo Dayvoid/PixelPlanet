@@ -124,5 +124,10 @@
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
+
+        <ui:VisualElement name="setting-tooltip" class="setting-tooltip hidden" picking-mode="Ignore">
+            <ui:Label name="setting-tooltip-title" text="" class="setting-tooltip-title" />
+            <ui:Label name="setting-tooltip-label" text="" class="setting-tooltip-label" />
+        </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

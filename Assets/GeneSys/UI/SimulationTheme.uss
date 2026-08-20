@@ -235,6 +235,10 @@
     margin-bottom: 2px;
 }
 
+.settings-scroll .unity-base-field:hover > .unity-base-field__label {
+    color: rgb(72, 210, 230);
+}
+
 .help {
     white-space: normal;
     color: rgb(140, 165, 185);
@@ -398,4 +402,36 @@
     border-width: 1px;
     border-color: rgb(40, 90, 140);
     border-radius: 6px;
+}
+
+.setting-tooltip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 280px;
+    max-width: 280px;
+    padding: 8px 10px;
+    background-color: rgba(6, 14, 28, 0.97);
+    border-width: 1px;
+    border-color: rgb(72, 210, 230);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.setting-tooltip.hidden {
+    display: none;
+}
+
+.setting-tooltip-title {
+    margin-bottom: 4px;
+    -unity-font-style: bold;
+    color: rgb(72, 210, 230);
+    font-size: 12px;
+    white-space: normal;
+}
+
+.setting-tooltip-label {
+    white-space: normal;
+    color: rgb(210, 228, 240);
+    font-size: 11px;
 }

@@ -79,6 +79,12 @@ namespace GeneSys.UI
         private bool initialized;
         private bool metricsReadbackPending;
         private float metricsRefreshTimer;
+        private VisualElement settingTooltip;
+        private Label settingTooltipTitle;
+        private Label settingTooltipLabel;
+        private VisualElement tooltipAnchor;
+        private IVisualElementScheduledItem tooltipShow;
+        private EventCallback<GeometryChangedEvent> tooltipLaidOut;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer renderer, SimulationTools simulationTools)
         {
@@ -121,10 +127,12 @@ namespace GeneSys.UI
             var strength = root.Q<Slider>("brush-strength");
             if (strength != null) { strength.value = tools.Strength; strength.RegisterValueChangedCallback(evt => tools.Strength = evt.newValue); }
 
+            SetupSettingTooltip(root);
             SetupDrawers();
             SetupDropdowns(root);
             SetupTabs(root);
             BuildSettings(root);
+            AttachStaticSettingTooltips(root);
             tools.Inspected -= SetInspection;
             tools.Inspected += SetInspection;
             initialized = true;
@@ -145,8 +153,9 @@ namespace GeneSys.UI
             });
         }
 
-        private static void ToggleDrawer(Button header, VisualElement body, VisualElement drawer, string title)
+        private void ToggleDrawer(Button header, VisualElement body, VisualElement drawer, string title)
         {
+            HideSettingTooltip();
             if (header == null || body == null) return;
             bool collapsed = body.ClassListContains("collapsed");
             if (collapsed)
@@ -215,11 +224,12 @@ namespace GeneSys.UI
             }
         }
 
-        private static void SetupTabs(VisualElement root)
+        private void SetupTabs(VisualElement root)
         {
             string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology" };
             void Show(string name)
             {
+                HideSettingTooltip();
                 foreach (string pageName in names)
                 {
                     VisualElement page = root.Q($"page-{pageName}");
@@ -300,6 +310,7 @@ namespace GeneSys.UI
 
         private void ShowPresetOverlay()
         {
+            HideSettingTooltip();
             presetOverlay?.RemoveFromClassList("hidden");
         }
 
@@ -345,6 +356,7 @@ namespace GeneSys.UI
 
             host.ApplyLoadedSettings();
             HidePresetDialog();
+            HideSettingTooltip();
             RefreshBoundControls(root);
             BuildSettings(root);
             RefreshPlayLabel();
@@ -382,8 +394,14 @@ namespace GeneSys.UI
                 { "performance", root.Q<ScrollView>("settings-performance") },
                 { "ecology", root.Q<ScrollView>("settings-ecology") }
             };
+            HideSettingTooltip();
             foreach (ScrollView container in containers.Values)
-                container?.Clear();
+            {
+                if (container == null) continue;
+                container.Clear();
+                container.verticalScroller.valueChanged -= OnSettingsScrolled;
+                container.verticalScroller.valueChanged += OnSettingsScrolled;
+            }
 
             string currentTab = "world";
             foreach (FieldInfo field in typeof(SimulationConfig).GetFields(BindingFlags.Instance | BindingFlags.Public))
@@ -417,37 +435,37 @@ namespace GeneSys.UI
                         if (index >= 0) host.ApplyPreset((SimulationPreset)index);
                         RefreshPresetDropdown(root);
                     });
-                    container.Add(control);
+                    AddSettingControl(container, control, field.Name);
                 }
                 else if (field.Name == nameof(SimulationConfig.useOgWorldgen) && field.FieldType == typeof(bool))
                 {
                     var control = new Toggle("Use OG Worldgen") { value = (bool)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
-                    container.Add(control);
+                    AddSettingControl(container, control, field.Name);
                 }
                 else if (ToggleSettingsFields.Contains(field.Name) && field.FieldType == typeof(int))
                 {
                     var control = new Toggle(Humanize(field.Name)) { value = (int)field.GetValue(host.Config) != 0 };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue ? 1 : 0));
-                    container.Add(control);
+                    AddSettingControl(container, control, field.Name);
                 }
                 else if (field.FieldType == typeof(float))
                 {
                     var control = new FloatField(Humanize(field.Name)) { value = (float)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
-                    container.Add(control);
+                    AddSettingControl(container, control, field.Name);
                 }
                 else if (field.FieldType == typeof(int))
                 {
                     var control = new IntegerField(Humanize(field.Name)) { value = (int)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
-                    container.Add(control);
+                    AddSettingControl(container, control, field.Name);
                 }
                 else if (field.FieldType == typeof(bool))
                 {
                     var control = new Toggle(Humanize(field.Name)) { value = (bool)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
-                    container.Add(control);
+                    AddSettingControl(container, control, field.Name);
                 }
             }
         }
@@ -455,7 +473,10 @@ namespace GeneSys.UI
         private void BuildMaterialSettings(ScrollView container, GeneSys.Materials.MaterialDefinition definition)
         {
             if (container == null || definition == null) return;
+            HideSettingTooltip();
             container.Clear();
+            container.verticalScroller.valueChanged -= OnSettingsScrolled;
+            container.verticalScroller.valueChanged += OnSettingsScrolled;
             foreach (FieldInfo field in typeof(GeneSys.Materials.MaterialDefinition).GetFields(BindingFlags.Instance | BindingFlags.Public))
             {
                 if (field.Name == nameof(GeneSys.Materials.MaterialDefinition.stableId) || field.Name == nameof(GeneSys.Materials.MaterialDefinition.displayColor))
@@ -464,21 +485,161 @@ namespace GeneSys.UI
                 {
                     var control = new FloatField(Humanize(field.Name)) { value = (float)field.GetValue(definition) };
                     control.RegisterValueChangedCallback(evt => { field.SetValue(definition, evt.newValue); host.RefreshMaterialDefinitions(); });
+                    AttachMaterialTooltip(control, field);
                     container.Add(control);
                 }
                 else if (field.FieldType == typeof(int))
                 {
                     var control = new IntegerField(Humanize(field.Name)) { value = (int)field.GetValue(definition) };
                     control.RegisterValueChangedCallback(evt => { field.SetValue(definition, evt.newValue); host.RefreshMaterialDefinitions(); });
+                    AttachMaterialTooltip(control, field);
                     container.Add(control);
                 }
                 else if (field.FieldType == typeof(bool))
                 {
                     var control = new Toggle(Humanize(field.Name)) { value = (bool)field.GetValue(definition) };
                     control.RegisterValueChangedCallback(evt => { field.SetValue(definition, evt.newValue); host.RefreshMaterialDefinitions(); });
+                    AttachMaterialTooltip(control, field);
                     container.Add(control);
                 }
             }
+        }
+
+        private void SetupSettingTooltip(VisualElement root)
+        {
+            settingTooltip = root.Q("setting-tooltip");
+            settingTooltipTitle = root.Q<Label>("setting-tooltip-title");
+            settingTooltipLabel = root.Q<Label>("setting-tooltip-label");
+            if (settingTooltip != null)
+                settingTooltip.pickingMode = PickingMode.Ignore;
+            tooltipLaidOut = _ => PositionSettingTooltip();
+            settingsBody?.RegisterCallback<WheelEvent>(_ => HideSettingTooltip());
+            toolsBody?.RegisterCallback<WheelEvent>(_ => HideSettingTooltip());
+        }
+
+        private void AttachStaticSettingTooltips(VisualElement root)
+        {
+            AttachNamedSettingTooltip(root, "speed", nameof(SimulationConfig.simulationSpeed));
+            AttachNamedSettingTooltip(root, "overlay",
+                "Overlay",
+                "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Wind, Vapor, Groundwater, Mycology, and the others reveal the systems those settings drive.");
+            AttachNamedSettingTooltip(root, "brush-mode",
+                "Brush Mode",
+                "Selects what left-drag paints: material, heat, water, charge, or other cell fields. Right-click still inspects the cell under the cursor.");
+            AttachNamedSettingTooltip(root, "material",
+                "Material",
+                "Material the brush paints, and whose properties appear below. Changing density, conductivity, or absorbency immediately affects gravity, weather, hydrology, and phase changes for that pixel type.");
+            AttachNamedSettingTooltip(root, "brush-radius", nameof(SimulationConfig.brushRadius));
+            AttachNamedSettingTooltip(root, "brush-strength", nameof(SimulationConfig.brushStrength));
+        }
+
+        private void AttachNamedSettingTooltip(VisualElement root, string elementName, string fieldName)
+        {
+            VisualElement element = root.Q(elementName);
+            if (element == null || !SimulationSettingTooltips.TryGet(fieldName, out string tooltip)) return;
+            BindSettingTooltip(element, Humanize(fieldName), tooltip);
+        }
+
+        private void AttachNamedSettingTooltip(VisualElement root, string elementName, string title, string tooltip)
+        {
+            VisualElement element = root.Q(elementName);
+            if (element == null) return;
+            BindSettingTooltip(element, title, tooltip);
+        }
+
+        private void AddSettingControl(VisualElement container, VisualElement control, string fieldName)
+        {
+            if (SimulationSettingTooltips.TryGet(fieldName, out string tooltip))
+            {
+                string title = fieldName == nameof(SimulationConfig.useOgWorldgen) ? "Use OG Worldgen" : Humanize(fieldName);
+                BindSettingTooltip(control, title, tooltip);
+            }
+            container.Add(control);
+        }
+
+        private void AttachMaterialTooltip(VisualElement control, FieldInfo field)
+        {
+            if (SimulationSettingTooltips.TryGetMaterial(field.Name, out string tooltip))
+                BindSettingTooltip(control, Humanize(field.Name), tooltip);
+        }
+
+        private void BindSettingTooltip(VisualElement target, string title, string body)
+        {
+            if (target == null || string.IsNullOrEmpty(body)) return;
+            target.RegisterCallback<PointerEnterEvent>(_ => ScheduleSettingTooltip(target, title, body));
+            target.RegisterCallback<PointerLeaveEvent>(_ => HideSettingTooltip(target));
+        }
+
+        private void ScheduleSettingTooltip(VisualElement target, string title, string body)
+        {
+            HideSettingTooltip();
+            tooltipAnchor = target;
+            tooltipShow = target.schedule.Execute(() =>
+            {
+                if (tooltipAnchor == target)
+                    ShowSettingTooltip(target, title, body);
+            }).StartingIn(350);
+        }
+
+        private void ShowSettingTooltip(VisualElement target, string title, string body)
+        {
+            if (settingTooltip == null || settingTooltipLabel == null) return;
+            if (settingTooltipTitle != null) settingTooltipTitle.text = title ?? string.Empty;
+            settingTooltipLabel.text = body;
+            settingTooltip.style.visibility = Visibility.Hidden;
+            settingTooltip.RemoveFromClassList("hidden");
+            settingTooltip.BringToFront();
+            settingTooltip.RegisterCallback(tooltipLaidOut);
+            settingTooltip.schedule.Execute(PositionSettingTooltip);
+        }
+
+        private void OnSettingsScrolled(float _)
+        {
+            HideSettingTooltip();
+        }
+
+        private void PositionSettingTooltip()
+        {
+            if (settingTooltip == null || tooltipAnchor == null || document == null) return;
+            settingTooltip.UnregisterCallback(tooltipLaidOut);
+
+            VisualElement root = document.rootVisualElement;
+            if (root == null) return;
+
+            Rect targetBounds = tooltipAnchor.worldBound;
+            Rect rootBounds = root.worldBound;
+            float width = settingTooltip.resolvedStyle.width;
+            float height = settingTooltip.resolvedStyle.height;
+            if (float.IsNaN(width) || width < 8f) width = 280f;
+            if (float.IsNaN(height) || height < 8f) height = 80f;
+
+            float x = targetBounds.xMin - width - 12f;
+            if (x < rootBounds.xMin + 8f)
+                x = Mathf.Min(targetBounds.xMax + 12f, rootBounds.xMax - width - 8f);
+            float y = Mathf.Clamp(targetBounds.yMin, rootBounds.yMin + 8f, rootBounds.yMax - height - 8f);
+
+            Vector2 local = root.WorldToLocal(new Vector2(x, y));
+            settingTooltip.style.left = local.x;
+            settingTooltip.style.top = local.y;
+            settingTooltip.style.visibility = Visibility.Visible;
+        }
+
+        private void HideSettingTooltip(VisualElement target)
+        {
+            if (tooltipAnchor != null && tooltipAnchor != target) return;
+            HideSettingTooltip();
+        }
+
+        private void HideSettingTooltip()
+        {
+            tooltipShow?.Pause();
+            tooltipShow = null;
+            tooltipAnchor = null;
+            if (settingTooltip == null) return;
+            if (tooltipLaidOut != null)
+                settingTooltip.UnregisterCallback(tooltipLaidOut);
+            settingTooltip.AddToClassList("hidden");
+            settingTooltip.style.visibility = StyleKeyword.Null;
         }
 
         private static string Humanize(string value)
