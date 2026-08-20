@@ -53,6 +53,33 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void MetalMaterialHasExpectedIdentityAndGpuPacking()
+        {
+            MaterialDefinition metal = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/013_Metal.asset");
+            Assert.That(metal, Is.Not.Null, "013_Metal.asset should exist.");
+            Assert.That(metal.stableId, Is.EqualTo((int)MaterialIds.Metal));
+            Assert.That(metal.category, Is.EqualTo(MaterialCategory.Solid));
+            Assert.That(metal.solidPhaseId, Is.EqualTo((int)MaterialIds.Metal));
+            Assert.That(metal.liquidPhaseId, Is.EqualTo((int)MaterialIds.Metal));
+            Assert.That(metal.gasPhaseId, Is.EqualTo((int)MaterialIds.Vapor));
+            Assert.That(metal.densityDisplaceable, Is.True);
+            Assert.That(metal.bioModifiable, Is.False);
+            Assert.That(metal.thermalConductivity, Is.GreaterThan(7f));
+            Assert.That(metal.electricalConductivity, Is.GreaterThan(7f));
+
+            MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
+            Assert.That(registry, Is.Not.Null);
+            Assert.That(registry.Validate(out string error), Is.True, error);
+            Assert.That(registry.Get((int)MaterialIds.Metal), Is.Not.Null);
+
+            MaterialGpuData[] gpu = registry.BuildGpuData();
+            Assert.That(gpu[(int)MaterialIds.Metal].metadata.w, Is.EqualTo((float)MaterialIds.Metal).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Metal].transport.x, Is.EqualTo(metal.thermalConductivity).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Metal].transport.z, Is.EqualTo(metal.electricalConductivity).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Metal].motion.x, Is.EqualTo(1f).Within(0.01f));
+        }
+
+        [Test]
         public void DensityDisplaceableMaterialsPackMotionFlagAndOrdering()
         {
             Assert.That(MaterialGpuData.Stride, Is.EqualTo(112));
@@ -92,6 +119,18 @@ namespace GeneSys.Tests
             Assert.That(gpu[(int)MaterialIds.Ice].motion.x, Is.EqualTo(1f).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Core].motion.x, Is.EqualTo(0f).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Rock].physical.x, Is.EqualTo(rock.density).Within(0.01f));
+        }
+
+        [Test]
+        public void WorldGenDefaultsPreferNewPipeline()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.useOgWorldgen, Is.False);
+            Assert.That(config.metalVeinCount, Is.EqualTo(12));
+            Assert.That(config.metalVeinMinSize, Is.GreaterThan(0f));
+            Assert.That(config.iceCapRadius, Is.GreaterThan(0f));
+            Assert.That(config.iceCapHeight, Is.GreaterThan(0f));
+            Object.DestroyImmediate(config);
         }
 
         [Test]

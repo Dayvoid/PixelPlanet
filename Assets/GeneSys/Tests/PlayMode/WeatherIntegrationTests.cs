@@ -1240,6 +1240,7 @@ namespace GeneSys.Tests
             host.Clock.SetRunning(false);
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.validationIntervalTicks = 100000;
+            host.Config.useOgWorldgen = true;
             host.Config.seed = 4242;
             host.Config.targetOceanCoverage = 0.55f;
             host.Config.dayLengthSeconds = 60f;

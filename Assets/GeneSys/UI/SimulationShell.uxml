@@ -8,7 +8,6 @@
                     <ui:Button name="step" text="Step" />
                     <ui:Button name="regenerate" text="Regenerate" class="row-last" />
                 </ui:VisualElement>
-                <ui:DropdownField name="preset" label="Preset" />
                 <ui:Slider name="speed" label="Speed" low-value="0.05" high-value="8" show-input-field="true" />
                 <ui:DropdownField name="overlay" label="Overlay" />
                 <ui:Label name="status" text="Initializing GeneSys..." class="status" />

@@ -40,7 +40,8 @@ namespace GeneSys.UI
         private static readonly HashSet<string> SkipSettingsFields = new()
         {
             nameof(SimulationConfig.brushRadius),
-            nameof(SimulationConfig.brushStrength)
+            nameof(SimulationConfig.brushStrength),
+            nameof(SimulationConfig.grid)
         };
 
         [SerializeField] private UIDocument document;
@@ -186,12 +187,16 @@ namespace GeneSys.UI
                     }
                 });
             }
+        }
+
+        private void RefreshPresetDropdown(VisualElement root)
+        {
             var preset = root.Q<DropdownField>("preset");
-            if (preset != null)
+            if (preset != null && preset.choices != null)
             {
-                preset.choices = new List<string>(Enum.GetNames(typeof(SimulationPreset)));
-                preset.index = (int)host.Config.preset;
-                preset.RegisterValueChangedCallback(_ => host.ApplyPreset((SimulationPreset)preset.index));
+                int index = (int)host.Config.preset;
+                if (index >= 0 && index < preset.choices.Count)
+                    preset.SetValueWithoutNotify(preset.choices[index]);
             }
         }
 
@@ -236,13 +241,7 @@ namespace GeneSys.UI
             if (radius != null) radius.SetValueWithoutNotify(tools.Radius);
             var strength = root.Q<Slider>("brush-strength");
             if (strength != null) strength.SetValueWithoutNotify(tools.Strength);
-            var preset = root.Q<DropdownField>("preset");
-            if (preset != null && preset.choices != null)
-            {
-                int index = (int)host.Config.preset;
-                if (index >= 0 && index < preset.choices.Count)
-                    preset.SetValueWithoutNotify(preset.choices[index]);
-            }
+            RefreshPresetDropdown(root);
         }
 
         private void BuildSettings(VisualElement root)
@@ -277,7 +276,29 @@ namespace GeneSys.UI
                 if (SkipSettingsFields.Contains(field.Name)) continue;
                 if (!containers.TryGetValue(currentTab, out ScrollView container) || container == null) continue;
 
-                if (ToggleSettingsFields.Contains(field.Name) && field.FieldType == typeof(int))
+                if (field.FieldType == typeof(SimulationPreset))
+                {
+                    var control = new DropdownField(Humanize(field.Name))
+                    {
+                        name = field.Name,
+                        choices = new List<string>(Enum.GetNames(typeof(SimulationPreset))),
+                        index = (int)field.GetValue(host.Config)
+                    };
+                    control.RegisterValueChangedCallback(evt =>
+                    {
+                        int index = control.choices.IndexOf(evt.newValue);
+                        if (index >= 0) host.ApplyPreset((SimulationPreset)index);
+                        RefreshPresetDropdown(root);
+                    });
+                    container.Add(control);
+                }
+                else if (field.Name == nameof(SimulationConfig.useOgWorldgen) && field.FieldType == typeof(bool))
+                {
+                    var control = new Toggle("Use OG Worldgen") { value = (bool)field.GetValue(host.Config) };
+                    control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
+                    container.Add(control);
+                }
+                else if (ToggleSettingsFields.Contains(field.Name) && field.FieldType == typeof(int))
                 {
                     var control = new Toggle(Humanize(field.Name)) { value = (int)field.GetValue(host.Config) != 0 };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue ? 1 : 0));
@@ -292,6 +313,12 @@ namespace GeneSys.UI
                 else if (field.FieldType == typeof(int))
                 {
                     var control = new IntegerField(Humanize(field.Name)) { value = (int)field.GetValue(host.Config) };
+                    control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
+                    container.Add(control);
+                }
+                else if (field.FieldType == typeof(bool))
+                {
+                    var control = new Toggle(Humanize(field.Name)) { value = (bool)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
                     container.Add(control);
                 }

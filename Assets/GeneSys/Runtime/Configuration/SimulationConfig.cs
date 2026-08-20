@@ -23,6 +23,7 @@ namespace GeneSys.Configuration
         [Range(1, 8)] public int materialSubsteps = 1;
         [Range(1, 32)] public int slowPassInterval = 4;
         public int seed = 12345;
+        public bool useOgWorldgen = false;
 
         [Header("World generation")]
         [Range(0.05f, 0.5f)] public float coreRatio = 0.24f;
@@ -43,6 +44,15 @@ namespace GeneSys.Configuration
         [Range(0f, 0.08f)] public float coastRoughness = 0.025f;
         [Range(0f, 1f)] public float initialGroundwaterSaturation = 0.65f;
         [Range(0f, 0.5f)] public float initialAtmosphericHumidity = 0.08f;
+        [Range(0, 64)] public int metalVeinCount = 12;
+        [Range(0.005f, 0.08f)] public float metalVeinMinSize = 0.012f;
+        [Range(0.01f, 0.15f)] public float metalVeinMaxSize = 0.045f;
+        [Range(0f, 1f)] public float metalVeinProtrusionChance = 0.35f;
+        [Range(0f, 0.08f)] public float metalVeinProtrusionDistance = 0.025f;
+        [Range(0.02f, 0.25f)] public float iceCapRadius = 0.08f;
+        [Range(0.005f, 0.06f)] public float iceCapHeight = 0.018f;
+        [Range(0f, 0.5f)] public float iceCapRadiusVariation = 0.25f;
+        [Range(0f, 0.5f)] public float iceCapHeightVariation = 0.3f;
 
         [Header("Material mechanics")]
         [Range(0f, 5f)] public float gravityStrength = 1f;
@@ -193,6 +203,15 @@ namespace GeneSys.Configuration
             dayLengthSeconds = Mathf.Max(1f, dayLengthSeconds);
             minOceanBasins = Mathf.Clamp(minOceanBasins, 2, 3);
             maxOceanBasins = Mathf.Clamp(maxOceanBasins, minOceanBasins, 3);
+            metalVeinCount = Mathf.Clamp(metalVeinCount, 0, 64);
+            metalVeinMinSize = Mathf.Clamp(metalVeinMinSize, 0.001f, metalVeinMaxSize);
+            metalVeinMaxSize = Mathf.Max(metalVeinMinSize, metalVeinMaxSize);
+            metalVeinProtrusionChance = Mathf.Clamp01(metalVeinProtrusionChance);
+            metalVeinProtrusionDistance = Mathf.Max(0f, metalVeinProtrusionDistance);
+            iceCapRadius = Mathf.Clamp(iceCapRadius, 0.01f, 0.35f);
+            iceCapHeight = Mathf.Clamp(iceCapHeight, 0.001f, 0.1f);
+            iceCapRadiusVariation = Mathf.Clamp01(iceCapRadiusVariation);
+            iceCapHeightVariation = Mathf.Clamp01(iceCapHeightVariation);
             atmosphericAdvectionRate = Mathf.Max(0f, atmosphericAdvectionRate);
             vaporDiffusionRate = Mathf.Max(0f, vaporDiffusionRate);
             atmosphericBuoyancy = Mathf.Max(0f, atmosphericBuoyancy);

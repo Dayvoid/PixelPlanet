@@ -55,7 +55,8 @@ namespace GeneSys.Editor
                 Define(9, "Water", MaterialCategory.Liquid, new Color(0.02f,0.32f,0.9f,1), 1, 0, 0, 1, 0.5f, 0.55f, 4.2f, 0.05f, 1, 0, 0, 100, 0.02f, 0, 10, 9, 11, false, true),
                 Define(10, "Ice", MaterialCategory.Solid, new Color(0.55f,0.88f,1f,1), 0.92f, 0.65f, 45, 1, 0.3f, 0.35f, 2.1f, 0.01f, 0.1f, 0.05f, 0, 100, 0.02f, 0, 10, 9, 11, true, true),
                 Define(11, "Vapor", MaterialCategory.Gas, new Color(0.75f,0.82f,0.9f,1), 0.0006f, 0, 0, 1, 1, 0.025f, 1.9f, 0, 0, 0, 0, 100, 0.05f, 0, 10, 9, 11, false),
-                Define(12, "Ash", MaterialCategory.Granular, new Color(0.45f,0.42f,0.38f,1), 0.55f, 0.03f, 22, 0.15f, 0.95f, 0.08f, 0.9f, 0.02f, 0.55f, 0.7f, 1100, 2600, 0.01f, 0, 12, 12, 12, true, false, 0.08f, 0.55f)
+                Define(12, "Ash", MaterialCategory.Granular, new Color(0.45f,0.42f,0.38f,1), 0.55f, 0.03f, 22, 0.15f, 0.95f, 0.08f, 0.9f, 0.02f, 0.55f, 0.7f, 1100, 2600, 0.01f, 0, 12, 12, 12, true, false, 0.08f, 0.55f),
+                Define(13, "Metal", MaterialCategory.Solid, new Color(0.75f,0.78f,0.82f,1), 7.8f, 0.98f, 70, 1.5f, 0, 8f, 0.45f, 8f, 0, 0.01f, 1450, 2800, 0.008f, 0.015f, 13, 13, 11, false, true)
             };
 
             MaterialRegistry registry = LoadOrCreate<MaterialRegistry>(DataRoot + "/MaterialRegistry.asset");

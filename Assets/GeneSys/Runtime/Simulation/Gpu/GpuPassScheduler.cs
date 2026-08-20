@@ -56,10 +56,11 @@ namespace GeneSys.Simulation.Gpu
         public void GenerateWorld()
         {
             tick = 0;
-            int kernel = worldGeneration.FindKernel("GenerateWorld");
+            string kernelName = config.useOgWorldgen ? "GenerateWorld" : "GenerateWorldV2";
+            int kernel = worldGeneration.FindKernel(kernelName);
             if (kernel < 0)
             {
-                UnityEngine.Debug.LogError("GeneSys: GenerateWorld kernel missing. Reimport WorldGeneration.compute and fix shader compile errors.");
+                UnityEngine.Debug.LogError($"GeneSys: {kernelName} kernel missing. Reimport WorldGeneration.compute and fix shader compile errors.");
                 return;
             }
             SetCommon(worldGeneration, kernel, 0f);
@@ -69,6 +70,12 @@ namespace GeneSys.Simulation.Gpu
             worldGeneration.SetVector("_WorldWaterA", new Vector4(config.targetOceanCoverage, config.minOceanBasins, config.maxOceanBasins, config.seaLevelRadius));
             worldGeneration.SetVector("_WorldWaterB", new Vector4(config.basinDepth, config.terrainRelief, config.coastRoughness, config.initialGroundwaterSaturation));
             worldGeneration.SetVector("_WorldWaterC", new Vector4(config.initialAtmosphericHumidity, config.groundwaterDepth, 0f, 0f));
+            if (!config.useOgWorldgen)
+            {
+                worldGeneration.SetVector("_WorldGenV2A", new Vector4(config.metalVeinCount, config.metalVeinMinSize, config.metalVeinMaxSize, config.metalVeinProtrusionChance));
+                worldGeneration.SetVector("_WorldGenV2B", new Vector4(config.metalVeinProtrusionDistance, config.iceCapRadius, config.iceCapHeight, config.iceCapRadiusVariation));
+                worldGeneration.SetVector("_WorldGenV2C", new Vector4(config.iceCapHeightVariation, 0f, 0f, 0f));
+            }
             worldGeneration.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindWorldgenOutputs(worldGeneration, kernel);
             Dispatch(worldGeneration, kernel);
