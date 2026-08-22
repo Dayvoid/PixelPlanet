@@ -22,6 +22,9 @@
 //   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
 //   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.
 //   Sediment does not auto-revert to soil; ash fertilization remains the pedogenesis path.
+// Groundwater hosts (Soil/Sediment/porous Rock/Ash/Metal):
+//   Film soak and Water-pixel contact drain state.z into aux.y up to porosity capacity.
+//   Excess above field capacity percolates radially inward; lateral flow is host-only.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 //
 // Pressure (state.y):
@@ -200,6 +203,60 @@ bool IsSporeCarrier(uint material)
 bool IsMycologySubstrate(uint material)
 {
     return material == 7u || material == 8u;
+}
+
+bool IsGroundwaterHost(uint material, MaterialGpuData definition)
+{
+    if (material == 0u || material == 1u || material == 11u) return false;
+    if (material == 2u || material == 3u || material == 6u) return false;
+    if (material == 9u || material == 10u) return false;
+    return saturate(definition.biology.z) > 0.05;
+}
+
+float GroundwaterCapacity(MaterialGpuData definition)
+{
+    return saturate(definition.biology.z);
+}
+
+float InfiltrationAmount(float sourceMass, float remainingCapacity, float absorbency, float porosity, float infiltrationRate, float dt)
+{
+    float rate = saturate(absorbency) * saturate(porosity) * max(0.0, infiltrationRate) * max(0.0, dt);
+    return max(0.0, min(max(0.0, sourceMass), min(max(0.0, remainingCapacity), rate)));
+}
+
+float DrainableGroundwater(float groundwater, float capacity, float fieldCapacityFraction)
+{
+    float hold = max(0.0, capacity) * saturate(fieldCapacityFraction);
+    return max(0.0, groundwater - hold);
+}
+
+float PercolationAmount(float upperGroundwater, float upperCapacity, float lowerGroundwater, float lowerCapacity,
+    float upperPorosity, float lowerPorosity, float groundwaterRate, float fieldCapacityFraction, float dt)
+{
+    float drainable = DrainableGroundwater(upperGroundwater, upperCapacity, fieldCapacityFraction);
+    float remaining = max(0.0, lowerCapacity - lowerGroundwater);
+    float rate = max(0.0, groundwaterRate) * min(saturate(upperPorosity), saturate(lowerPorosity)) * max(0.0, dt);
+    return max(0.0, min(drainable, min(remaining, rate)));
+}
+
+float MixTemperature(float destTemp, float destHeatCapacity, float sourceTemp, float transferredMass, float waterHeatCapacity)
+{
+    float destMassHeat = max(0.001, destHeatCapacity);
+    float srcMassHeat = max(0.0, transferredMass) * max(0.001, waterHeatCapacity);
+    return (destTemp * destMassHeat + sourceTemp * srcMassHeat) / (destMassHeat + srcMassHeat);
+}
+
+// Signed receive for the current cell from one neighbor. Positive means this cell gains mass.
+float LateralGroundwaterReceive(float selfGroundwater, float neighborGroundwater, float selfCapacity, float neighborCapacity,
+    float selfPorosity, float neighborPorosity, float rate, float dt)
+{
+    float delta = neighborGroundwater - selfGroundwater;
+    float mag = abs(delta) * 0.5 * saturate(min(saturate(selfPorosity), saturate(neighborPorosity)) * max(0.0, rate) * max(0.0, dt));
+    if (delta > 0.0)
+        mag = min(mag, min(max(0.0, neighborGroundwater), max(0.0, selfCapacity - selfGroundwater)));
+    else
+        mag = min(mag, min(max(0.0, selfGroundwater), max(0.0, neighborCapacity - neighborGroundwater)));
+    return delta > 0.0 ? mag : -mag;
 }
 
 uint PickRareMycologyTraits(uint2 cell, int seed)

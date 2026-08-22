@@ -130,6 +130,8 @@ namespace GeneSys.UI
                 "How fast surface water soaks into absorbent, porous ground. Higher infiltration fills aquifers and wets soil for mycology; lower leaves more runoff and ponds.",
             [nameof(SimulationConfig.groundwaterRate)] =
                 "How quickly groundwater diffuses through porous crust. Faster aquifers equalize water tables, feed springs, and connect distant basins.",
+            [nameof(SimulationConfig.fieldCapacityFraction)] =
+                "Share of pore space soil keeps against gravity. Higher values hold rain near the surface for plants and evaporation; lower values let excess soak into deeper aquifers.",
             [nameof(SimulationConfig.dissolutionRate)] =
                 "How fast flowing water dissolves non-porous rock into porous cavities. Higher values carve caves, underground rivers, and collapse-prone voids.",
             [nameof(SimulationConfig.collapseRate)] =

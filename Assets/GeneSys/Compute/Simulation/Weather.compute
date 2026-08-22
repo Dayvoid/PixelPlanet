@@ -412,25 +412,20 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
 
     if (state.x > 5.0 && !atmosphere)
     {
-        float surfaceEvap = min(max(0.0, state.z), evaporationBudget);
+        float evapScale = material == 9u ? 0.75 : 1.0;
+        float surfaceEvap = min(max(0.0, state.z), evaporationBudget * evapScale);
         state.z -= surfaceEvap;
         aux.x += surfaceEvap;
         state.x -= surfaceEvap * 0.25;
 
         float remainingBudget = max(0.0, evaporationBudget - surfaceEvap);
-        if (exposed && material == 7u && definition.biology.z > 0.05 && aux.y > 0.0 && remainingBudget > 0.0)
+        if (exposed && IsGroundwaterHost(material, definition) && aux.y > 0.0 && remainingBudget > 0.0)
         {
             float capillary = min(aux.y, max(0.0, _MoistureErosion.z) * remainingBudget);
             aux.y -= capillary;
             aux.x += capillary;
             state.x -= capillary * 0.15;
         }
-    }
-    else if (material == 9u && state.x > 5.0)
-    {
-        float evaporation = min(state.z, _WeatherB.y * 0.75 * evaporativeDrive * _DeltaTime);
-        state.z -= evaporation;
-        aux.x += evaporation;
     }
 
     if (atmosphere)
@@ -473,7 +468,9 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
                 float rain = min(aboveCloud - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
                 rain = max(0.0, rain);
                 rain = min(rain, max(0.0, 1.0 - state.z));
+                float rainTemp = S(above).x;
                 state.z += rain;
+                state.x = MixTemperature(state.x, definition.transport.y, rainTemp, rain, max(0.001, D(9u).transport.y));
                 if ((material == 1u || material == 11u) && state.z > 0.15)
                     material = state.x < 0.0 ? 10u : 9u;
             }

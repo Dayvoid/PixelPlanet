@@ -31,7 +31,7 @@ float4 _Geology;
 float4 _GeologyB;
 float4 _Hydrology;
 float4 _HydrologyB;
-float4 _HydrologyC;
+float4 _HydrologyC; // runoffRate, pondingRate, fieldCapacityFraction, geyserCooldownSeconds
 float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
@@ -91,22 +91,109 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
     float porosity = saturate(definition.biology.z);
     float absorbency = saturate(definition.transport.w);
     bool exposed = IsExposedSurface(cell, material);
+    bool host = IsGroundwaterHost(material, definition);
+    float capacity = GroundwaterCapacity(definition);
+    float fieldCapacityFraction = saturate(_HydrologyC.z);
+    float waterHeatCapacity = max(0.001, D(9u).transport.y);
+    float infiltrationRate = _Hydrology.x;
+    float groundwaterRate = _Hydrology.y;
 
-    if (exposed && state.z > 0.01 && porosity > 0.05)
+    if (host)
     {
-        float infiltration = min(state.z, absorbency * porosity * _Hydrology.x * _DeltaTime);
-        state.z -= infiltration;
-        aux.y += infiltration;
+        float remaining = max(0.0, capacity - aux.y);
+        float film = InfiltrationAmount(state.z, remaining, absorbency, porosity, infiltrationRate, _DeltaTime);
+        state.z -= film;
+        aux.y += film;
+        remaining = max(0.0, capacity - aux.y);
+
+        if (cell.y < _GridSize.y - 1)
+        {
+            int2 above = cell + int2(0, 1);
+            uint aboveMaterial = M(above);
+            if (aboveMaterial == 9u)
+            {
+                float4 aboveState = S(above);
+                float soak = InfiltrationAmount(aboveState.z, remaining, absorbency, porosity, infiltrationRate, _DeltaTime);
+                aux.y += soak;
+                remaining = max(0.0, capacity - aux.y);
+                state.x = MixTemperature(state.x, definition.transport.y, aboveState.x, soak, waterHeatCapacity);
+            }
+        }
     }
 
-    float neighbors = A(cell + int2(-1, 0)).y + A(cell + int2(1, 0)).y
-        + A(cell + int2(0, -1)).y + A(cell + int2(0, 1)).y;
-    float groundwaterDelta = (neighbors * 0.25 - aux.y) * porosity * _Hydrology.y * _DeltaTime;
-    aux.y = max(0.0, aux.y + clamp(groundwaterDelta, -0.05, 0.05));
+    if (material == 9u && cell.y > 0)
+    {
+        int2 below = cell + int2(0, -1);
+        uint belowMaterial = M(below);
+        MaterialGpuData belowDef = D(belowMaterial);
+        if (IsGroundwaterHost(belowMaterial, belowDef))
+        {
+            float remaining = max(0.0, GroundwaterCapacity(belowDef) - A(below).y);
+            float soak = InfiltrationAmount(state.z, remaining, saturate(belowDef.transport.w),
+                saturate(belowDef.biology.z), infiltrationRate, _DeltaTime);
+            state.z -= soak;
+            if (state.z < 0.05)
+            {
+                aux.x += state.z;
+                state.z = 0.0;
+                material = 1u;
+            }
+        }
+    }
+
+    if (host)
+    {
+        if (cell.y < _GridSize.y - 1)
+        {
+            int2 above = cell + int2(0, 1);
+            uint aboveMaterial = M(above);
+            MaterialGpuData aboveDef = D(aboveMaterial);
+            if (IsGroundwaterHost(aboveMaterial, aboveDef))
+            {
+                float perc = PercolationAmount(A(above).y, GroundwaterCapacity(aboveDef), aux.y, capacity,
+                    saturate(aboveDef.biology.z), porosity, groundwaterRate, fieldCapacityFraction, _DeltaTime);
+                aux.y += perc;
+                state.x = MixTemperature(state.x, definition.transport.y, S(above).x, perc, waterHeatCapacity);
+            }
+        }
+        if (cell.y > 0)
+        {
+            int2 below = cell + int2(0, -1);
+            uint belowMaterial = M(below);
+            MaterialGpuData belowDef = D(belowMaterial);
+            if (IsGroundwaterHost(belowMaterial, belowDef))
+            {
+                float perc = PercolationAmount(aux.y, capacity, A(below).y, GroundwaterCapacity(belowDef),
+                    porosity, saturate(belowDef.biology.z), groundwaterRate, fieldCapacityFraction, _DeltaTime);
+                aux.y = max(0.0, aux.y - perc);
+            }
+        }
+
+        float lateralRate = groundwaterRate * 0.35;
+        int2 left = cell + int2(-1, 0);
+        int2 right = cell + int2(1, 0);
+        uint leftMaterial = M(left);
+        uint rightMaterial = M(right);
+        MaterialGpuData leftDef = D(leftMaterial);
+        MaterialGpuData rightDef = D(rightMaterial);
+        if (IsGroundwaterHost(leftMaterial, leftDef))
+        {
+            aux.y += LateralGroundwaterReceive(aux.y, A(left).y, capacity, GroundwaterCapacity(leftDef),
+                porosity, saturate(leftDef.biology.z), lateralRate, _DeltaTime);
+        }
+        if (IsGroundwaterHost(rightMaterial, rightDef))
+        {
+            aux.y += LateralGroundwaterReceive(aux.y, A(right).y, capacity, GroundwaterCapacity(rightDef),
+                porosity, saturate(rightDef.biology.z), lateralRate, _DeltaTime);
+        }
+        aux.y = max(0.0, aux.y);
+    }
+    else if (IsAtmosphereCell(cell, material) || material == 9u || material == 11u)
+        aux.y = 0.0;
 
     float springThreshold = _HydrologyB.x;
     float head = aux.y + state.y * 0.15 + aux.w * 0.25;
-    if (exposed && head > springThreshold)
+    if (host && exposed && head > springThreshold)
     {
         float discharge = min(aux.y, (head - springThreshold) * _HydrologyB.y * _DeltaTime);
         aux.y -= discharge;

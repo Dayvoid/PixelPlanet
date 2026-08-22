@@ -65,6 +65,7 @@ MonoBehaviour:
   ashFertilityStrength: 1
   infiltrationRate: 0.3
   groundwaterRate: 0.18
+  fieldCapacityFraction: 0.45
   dissolutionRate: 0.03
   collapseRate: 0.03
   erosionRate: 0.06

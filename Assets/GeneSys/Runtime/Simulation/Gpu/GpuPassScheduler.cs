@@ -124,8 +124,6 @@ namespace GeneSys.Simulation.Gpu
                 && tick % config.coreReactionFrequency == 0)
                 DispatchPass(geology, geology.FindKernel("CoreReaction"), deltaTime);
 
-            DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
-            DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
             // Atmospheric loop: forcing → continuity → pressure diffusion → dynamics → transport → water cycle.
             DispatchPass(weather, weather.FindKernel("AtmosphericForcing"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericContinuity"), deltaTime);
@@ -135,6 +133,9 @@ namespace GeneSys.Simulation.Gpu
             DispatchPass(weather, weather.FindKernel("AtmosphericTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("RunoffAndDeposition"), deltaTime);
+            // Soak this tick's rain/ponding, then springs/geysers see the updated water table.
+            DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
 
             // Erosion sees the current tick's moisture, exposure, and flow after weather/runoff.
             if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
@@ -184,7 +185,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_EruptionB", new Vector4(config.eruptionBlastThreshold, config.ashUpdraftStrength, config.ashSettlingStrength, config.ashFertilityStrength));
             shader.SetVector("_Hydrology", new Vector4(config.infiltrationRate, config.groundwaterRate, config.dissolutionRate, config.collapseRate));
             shader.SetVector("_HydrologyB", new Vector4(config.springHeadThreshold, config.springDischargeRate, config.geyserHeatThreshold, config.geyserDischargeRate));
-            shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, 0f, config.geyserCooldownSeconds));
+            shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, config.fieldCapacityFraction, config.geyserCooldownSeconds));
             shader.SetVector("_Erosion", new Vector4(config.erosionRate, 0f, config.baseSoilCohesion, config.stressDecayRate));
             shader.SetVector("_MoistureErosion", new Vector4(config.dryMoistureThreshold, config.moistureCohesionStrength, config.capillaryEvaporationFraction, 0f));
             shader.SetVector("_WeatherA", new Vector4(config.solarIntensity, config.spaceTemperature, config.radiativeCooling, config.windStrength));

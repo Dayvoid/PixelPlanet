@@ -84,6 +84,7 @@ namespace GeneSys.Configuration
         [Header("Hydrology and erosion")]
         [Range(0f, 4f)] public float infiltrationRate = 0.3f;
         [Range(0f, 4f)] public float groundwaterRate = 0.18f;
+        [Range(0f, 1f)] public float fieldCapacityFraction = 0.45f;
         [Range(0f, 2f)] public float dissolutionRate = 0.03f;
         [Range(0f, 2f)] public float collapseRate = 0.03f;
         [Range(0f, 2f)] public float erosionRate = 0.06f;
@@ -214,6 +215,7 @@ namespace GeneSys.Configuration
             iceCapHeight = Mathf.Clamp(iceCapHeight, 0.001f, 0.1f);
             iceCapRadiusVariation = Mathf.Clamp01(iceCapRadiusVariation);
             iceCapHeightVariation = Mathf.Clamp01(iceCapHeightVariation);
+            fieldCapacityFraction = Mathf.Clamp01(fieldCapacityFraction);
             atmosphericAdvectionRate = Mathf.Max(0f, atmosphericAdvectionRate);
             vaporDiffusionRate = Mathf.Max(0f, vaporDiffusionRate);
             atmosphericBuoyancy = Mathf.Max(0f, atmosphericBuoyancy);

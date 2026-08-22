@@ -121,7 +121,8 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
         + ReadState(cell + int2(0, -1)).x + ReadState(cell + int2(0, 1)).x;
     neighborTemperature *= 0.25;
     float conductivity = definition.transport.x;
-    float heatCapacity = max(0.001, definition.transport.y);
+    float wetCapacity = max(0.0, aux.y) * max(0.001, Mat(9u).transport.y) * 0.75;
+    float heatCapacity = max(0.001, definition.transport.y + wetCapacity);
     float deltaTemperature = (neighborTemperature - state.x) * conductivity * _Mechanics.y * _DeltaTime / heatCapacity;
     state.x += clamp(deltaTemperature, -25.0, 25.0);
 
