@@ -70,67 +70,6 @@ bool IsOpenCarrier(uint material)
     return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
 }
 
-float CellInsolation(int2 cell)
-{
-    float theta01 = (cell.x + 0.5) / _GridSize.x;
-    float angle = (theta01 - _WeatherC.y) * 6.28318530718;
-    return max(0.0, cos(angle));
-}
-
-float EvaporativeDrive(int2 cell, float temperature)
-{
-    float thermal = saturate((temperature - 5.0) / 80.0);
-    float solar = CellInsolation(cell) * saturate(_WeatherA.x);
-    // Sunlight evaporates near-surface moisture even before bulk temperature catches up.
-    // Zero solarIntensity keeps the original thermal-only curve for isolated tests.
-    float solarDrive = solar * saturate((temperature + 2.0) / 25.0);
-    return saturate(max(thermal, solarDrive * 0.65));
-}
-
-bool EvaporationVentTarget(int2 evaporatingCell)
-{
-    if (evaporatingCell.y >= _GridSize.y - 1) return false;
-    int2 above = evaporatingCell + int2(0, 1);
-    uint aboveMaterial = M(above);
-    return IsAtmosphereCell(above, aboveMaterial) && IsOpenCarrier(aboveMaterial);
-}
-
-// Pre-tick masses leaving a non-atmosphere cell: surface film, own groundwater, aquifer below.
-// Only cells with an atmosphere receiver evaporate, so the donor and the Air cell above
-// always exchange the same number.
-float3 SurfaceEvaporationMasses(int2 cell)
-{
-    uint material = M(cell);
-    if (IsAtmosphereCell(cell, material) || !EvaporationVentTarget(cell)) return 0.0;
-    float4 state = S(cell);
-    float drive = EvaporativeDrive(cell, state.x);
-    if (drive <= 1e-8) return 0.0;
-    float budget = max(0.0, _WeatherB.y) * drive * _DeltaTime;
-    if (budget <= 1e-8) return 0.0;
-
-    float evapScale = material == 9u ? 0.75 : 1.0;
-    float surfaceEvap = min(max(0.0, state.z), budget * evapScale);
-    float remaining = max(0.0, budget - surfaceEvap);
-    float ownCapillary = 0.0;
-    float drawn = 0.0;
-    if (remaining > 0.0)
-    {
-        float capillaryBudget = remaining * max(0.0, _MoistureErosion.z);
-        MaterialGpuData definition = D(material);
-        if (IsGroundwaterHost(material, definition))
-            ownCapillary = min(max(0.0, A(cell).y), capillaryBudget);
-        float leftover = max(0.0, capillaryBudget - ownCapillary);
-        if (leftover > 0.0 && cell.y > 0)
-        {
-            int2 below = cell + int2(0, -1);
-            uint belowMaterial = M(below);
-            if (IsGroundwaterHost(belowMaterial, D(belowMaterial)))
-                drawn = min(max(0.0, A(below).y), leftover);
-        }
-    }
-    return float3(surfaceEvap, ownCapillary, drawn);
-}
-
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
 {
     uint oldMaterial = M(cell);
@@ -207,7 +146,9 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
 
-    float insolation = CellInsolation(cell);
+    float theta01 = (cell.x + 0.5) / _GridSize.x;
+    float angle = (theta01 - _WeatherC.y) * 6.28318530718;
+    float insolation = max(0.0, cos(angle));
     float exposure = smoothstep(_PlayableInnerRadius, _AtmosphereStartRadius, radius);
     float heating = insolation * _WeatherA.x * exposure / max(0.05, definition.transport.y);
     float cooling = (state.x - _WeatherA.y) * _WeatherA.z * (1.0 - insolation) * exposure * 0.01;
@@ -467,43 +408,34 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float4 ecology = E(cell);
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
+    bool exposed = IsExposedSurface(cell, material);
     MaterialGpuData definition = D(material);
-    // Rain is sized from pre-tick cloud and pre-tick surface film. Evaporation amounts are
-    // derived only from pre-tick fields so the donor solid and receiver air agree.
+    float evaporativeDrive = saturate((state.x - 5.0) / 80.0);
+    float evaporationBudget = _WeatherB.y * evaporativeDrive * _DeltaTime;
+    // Rain is sized from pre-tick cloud and pre-tick surface film. Evaporation and condensation
+    // below only move mass within this cell, and a raining pair must agree on one number.
     float filmRead = max(0.0, state.z);
-    float3 evap = SurfaceEvaporationMasses(cell);
 
-    if (!atmosphere)
+    if (state.x > 5.0 && !atmosphere)
     {
-        state.z = max(0.0, state.z - evap.x);
-        aux.y = max(0.0, aux.y - evap.y);
-        state.x -= evap.x * 0.25 + evap.y * 0.15;
+        float evapScale = material == 9u ? 0.75 : 1.0;
+        float surfaceEvap = min(max(0.0, state.z), evaporationBudget * evapScale);
+        state.z -= surfaceEvap;
+        aux.x += surfaceEvap;
+        state.x -= surfaceEvap * 0.25;
 
-        // Buried aquifer: the exposed cell above may draw leftover capillary budget from here.
-        if (cell.y < _GridSize.y - 1)
+        float remainingBudget = max(0.0, evaporationBudget - surfaceEvap);
+        if (exposed && IsGroundwaterHost(material, definition) && aux.y > 0.0 && remainingBudget > 0.0)
         {
-            int2 above = cell + int2(0, 1);
-            float3 aboveEvap = SurfaceEvaporationMasses(above);
-            if (aboveEvap.z > 0.0 && IsGroundwaterHost(material, definition))
-            {
-                aux.y = max(0.0, aux.y - aboveEvap.z);
-                state.x -= aboveEvap.z * 0.15;
-            }
+            float capillary = min(aux.y, max(0.0, _MoistureErosion.z) * remainingBudget);
+            aux.y -= capillary;
+            aux.x += capillary;
+            state.x -= capillary * 0.15;
         }
     }
 
     if (atmosphere)
     {
-        if (cell.y > 0)
-        {
-            int2 below = cell + int2(0, -1);
-            if (EvaporationVentTarget(below))
-            {
-                float3 belowEvap = SurfaceEvaporationMasses(below);
-                aux.x += belowEvap.x + belowEvap.y + belowEvap.z;
-            }
-        }
-
         float capacity = AtmosphericVaporCapacity(state.x, radius, state.y);
         if (aux.x > capacity)
         {
