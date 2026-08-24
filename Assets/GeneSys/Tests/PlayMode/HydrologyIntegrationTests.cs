@@ -333,6 +333,9 @@ namespace GeneSys.Tests
             host.Config.mycologyDecayRate = 0f;
             host.Config.mycologySettlingRate = 0f;
             host.Config.fieldCapacityFraction = 0.45f;
+            host.Config.densityExchangeRate = 0f;
+            host.Config.rainPixelFormationThreshold = 0f;
+            host.Config.surfaceWaterPixelThreshold = 0f;
         }
 
         private static void PaintSoakColumn(SimulationHost host, int x, int y)
@@ -668,6 +671,99 @@ namespace GeneSys.Tests
                 Assert.That(states[y * width + x].z, Is.LessThan(waterBefore));
                 float vapor = aux[y * width + x].x + aux[(y + 1) * width + x].x;
                 Assert.That(vapor, Is.GreaterThan(0.02f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator SustainedSurfaceFilmSpawnsStandingWaterPixelAboveSoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.densityExchangeRate = 0f;
+            host.Config.rainPixelFormationThreshold = 0f;
+            host.Config.surfaceWaterPixelThreshold = 0.5f;
+            host.Config.seed = 4242;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            int width = host.Grid.angularResolution;
+            PaintSoakColumn(host, x, y);
+            PaintField(host, x, y, 1f, 20f);
+            PaintField(host, x, y + 1, 1f, 20f);
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 5f, -100f);
+            PaintField(host, x, y, 2f, 0.3f);
+            yield return Step(host, 1);
+
+            float waterBefore = 0f;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil));
+                Assert.That(mats[(y + 1) * width + x], Is.EqualTo(MaterialIds.Air));
+                Assert.That(states[y * width + x].z, Is.GreaterThan(0.2f).And.LessThan(0.45f));
+                waterBefore = states[y * width + x].z + states[(y + 1) * width + x].z + aux[y * width + x].x + aux[y * width + x].y
+                    + aux[(y + 1) * width + x].x + aux[(y + 1) * width + x].y;
+            });
+
+            yield return Step(host, 4);
+            yield return ReadGpuFields(host, (mats, _, __) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil), "Sub-threshold film must stay on soil.");
+                Assert.That(mats[(y + 1) * width + x], Is.EqualTo(MaterialIds.Air));
+            });
+
+            PaintField(host, x, y, 2f, 0.6f);
+            yield return Step(host, 1);
+
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil));
+                uint above = mats[(y + 1) * width + x];
+                Assert.That(above == MaterialIds.Water || above == MaterialIds.Ice, Is.True,
+                    "Sustained film should spawn a standing water pixel in the open cell above.");
+                Assert.That(states[y * width + x].z, Is.LessThan(0.45f));
+                Assert.That(states[(y + 1) * width + x].z, Is.GreaterThan(0.45f));
+                float waterAfter = states[y * width + x].z + states[(y + 1) * width + x].z + aux[y * width + x].x + aux[y * width + x].y
+                    + aux[(y + 1) * width + x].x + aux[(y + 1) * width + x].y;
+                Assert.That(waterAfter, Is.EqualTo(waterBefore + 0.6f).Within(0.08f));
+                for (int i = 0; i < mats.Length; i++)
+                    Assert.That(mats[i], Is.Not.EqualTo(MaterialIds.Vapor));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator ZeroSurfacePixelThresholdKeepsFilmOnSoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.surfaceWaterPixelThreshold = 0f;
+            host.Config.rainPixelFormationThreshold = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            int width = host.Grid.angularResolution;
+            PaintSoakColumn(host, x, y);
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 2f, 0.8f);
+            yield return Step(host, 6);
+
+            yield return ReadGpuFields(host, (mats, states, _) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil));
+                Assert.That(mats[(y + 1) * width + x], Is.EqualTo(MaterialIds.Air));
+                Assert.That(states[y * width + x].z, Is.GreaterThan(0.5f));
             });
         }
     }

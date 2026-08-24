@@ -152,6 +152,8 @@ namespace GeneSys.UI
                 "How fast excess surface water flows downhill. Higher runoff builds streams and waterfalls; lower runoff ponds in place and soaks in.",
             [nameof(SimulationConfig.pondingRate)] =
                 "How readily water collects in depressions. Higher ponding creates lakes and wetlands that buffer the water cycle and mycology moisture.",
+            [nameof(SimulationConfig.surfaceWaterPixelThreshold)] =
+                "Surface liquid film required before standing Water or Ice pixels spawn above wet ground. Zero keeps moisture as a field on soil; higher values delay visible pooling until rain has accumulated.",
             [nameof(SimulationConfig.springHeadThreshold)] =
                 "Groundwater saturation needed before a spring discharges. Lower thresholds weep widely; higher ones concentrate flow into fewer, stronger springs.",
             [nameof(SimulationConfig.springDischargeRate)] =
@@ -211,6 +213,8 @@ namespace GeneSys.UI
                 "How much vapor air can hold before condensing. Higher capacity delays clouds in warm air; lower capacity rains out easily and dries the column.",
             [nameof(SimulationConfig.cloudPrecipitationThreshold)] =
                 "Cloud condensate needed before rain starts. Higher thresholds build thicker clouds; lower thresholds produce light, frequent precipitation.",
+            [nameof(SimulationConfig.rainPixelFormationThreshold)] =
+                "Cloud condensate required before an Air cell becomes a falling Water or Ice pixel. Zero keeps rain as a field flux onto terrain; lower values make dense clouds rain out as discrete drops.",
             [nameof(SimulationConfig.surfaceAirHeatExchange)] =
                 "Heat flow between ground and the air above it. Stronger coupling lets soil, water, and lava drive local weather more directly.",
             [nameof(SimulationConfig.temperatureAdvectionRate)] =

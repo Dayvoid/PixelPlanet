@@ -136,6 +136,7 @@ namespace GeneSys.Simulation.Gpu
             // Soak this tick's rain/ponding, then springs/geysers see the updated water table.
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("WaterMaterialization"), deltaTime);
 
             // Erosion sees the current tick's moisture, exposure, and flow after weather/runoff.
             if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
@@ -192,7 +193,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));
             shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, config.magmaViscosity));
             shader.SetVector("_WeatherD", new Vector4(config.atmosphericAdvectionRate, config.vaporDiffusionRate, config.atmosphericBuoyancy, config.humidityBuoyancy));
-            shader.SetVector("_WeatherE", new Vector4(config.saturationCapacityScale, config.cloudPrecipitationThreshold, 0f, 0f));
+            shader.SetVector("_WeatherE", new Vector4(config.saturationCapacityScale, config.cloudPrecipitationThreshold, config.rainPixelFormationThreshold, config.surfaceWaterPixelThreshold));
             shader.SetVector("_WeatherF", new Vector4(config.surfaceAirHeatExchange, config.temperatureAdvectionRate, config.pressureCompressibility, config.atmosphericCflLimit));
             shader.SetVector("_WeatherG", new Vector4(config.surfaceAirTemperature, config.atmosphericLapseRate, 0f, 0f));
             shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, 0f));

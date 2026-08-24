@@ -76,6 +76,7 @@ MonoBehaviour:
   capillaryEvaporationFraction: 0.35
   runoffRate: 0.45
   pondingRate: 0.25
+  surfaceWaterPixelThreshold: 0.55
   springHeadThreshold: 0.55
   springDischargeRate: 0.35
   geyserHeatThreshold: 120
@@ -105,6 +106,7 @@ MonoBehaviour:
   humidityBuoyancy: 0.25
   saturationCapacityScale: 0.55
   cloudPrecipitationThreshold: 0.05
+  rainPixelFormationThreshold: 0.35
   surfaceAirHeatExchange: 0.45
   temperatureAdvectionRate: 0.55
   pressureCompressibility: 0.45

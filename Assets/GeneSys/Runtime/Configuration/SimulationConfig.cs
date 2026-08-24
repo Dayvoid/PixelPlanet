@@ -95,6 +95,7 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float capillaryEvaporationFraction = 0.35f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
         [Range(0f, 4f)] public float pondingRate = 0.25f;
+        [Range(0f, 1f)] public float surfaceWaterPixelThreshold = 0.55f;
         [Range(0f, 1f)] public float springHeadThreshold = 0.55f;
         [Range(0f, 4f)] public float springDischargeRate = 0.35f;
         [Range(0f, 4f)] public float geyserHeatThreshold = 120f;
@@ -126,6 +127,7 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float humidityBuoyancy = 0.25f;
         [Range(0.01f, 2f)] public float saturationCapacityScale = 0.55f;
         [Range(0.01f, 1f)] public float cloudPrecipitationThreshold = 0.05f;
+        [Range(0f, 1f)] public float rainPixelFormationThreshold = 0.35f;
         [Range(0f, 4f)] public float surfaceAirHeatExchange = 0.45f;
         [Range(0f, 4f)] public float temperatureAdvectionRate = 0.55f;
         [Range(0f, 4f)] public float pressureCompressibility = 0.45f;
@@ -222,6 +224,8 @@ namespace GeneSys.Configuration
             humidityBuoyancy = Mathf.Max(0f, humidityBuoyancy);
             saturationCapacityScale = Mathf.Max(0.01f, saturationCapacityScale);
             cloudPrecipitationThreshold = Mathf.Max(0.01f, cloudPrecipitationThreshold);
+            rainPixelFormationThreshold = Mathf.Clamp01(rainPixelFormationThreshold);
+            surfaceWaterPixelThreshold = Mathf.Clamp01(surfaceWaterPixelThreshold);
             surfaceAirHeatExchange = Mathf.Max(0f, surfaceAirHeatExchange);
             temperatureAdvectionRate = Mathf.Max(0f, temperatureAdvectionRate);
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);

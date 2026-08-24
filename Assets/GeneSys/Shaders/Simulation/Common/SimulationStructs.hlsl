@@ -17,7 +17,9 @@
 // Atmosphere representation:
 //   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
 //   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
-//   Clouds are atmospheric state.z; rain drains that condensate into negative flow.y.
+//   Clouds are atmospheric state.z; rain drains that condensate onto the surface below.
+//   WaterMaterialization converts dense cloud (rainPixelFormationThreshold) or pooled
+//   surface film (surfaceWaterPixelThreshold) into Water/Ice pixels. Zero disables.
 // Moisture-aware soil erosion:
 //   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
 //   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.

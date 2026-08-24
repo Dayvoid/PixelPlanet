@@ -3,6 +3,7 @@
 #pragma kernel GeothermalDischarge
 #pragma kernel ErosionAndCollapse
 #pragma kernel AshFertilization
+#pragma kernel WaterMaterialization
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -37,7 +38,7 @@ float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
 float4 _WeatherD;
-float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, unused, unused
+float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, rainPixelFormationThreshold, surfaceWaterPixelThreshold
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
@@ -61,6 +62,16 @@ bool IsExposedSurface(int2 cell, uint material)
 {
     uint above = M(cell + int2(0, 1));
     return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
+}
+
+bool IsOpenCarrier(uint material)
+{
+    return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
+}
+
+uint LiquidPixelId(float temperature)
+{
+    return temperature < 0.0 ? 10u : 9u;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
@@ -418,6 +429,72 @@ void AshFertilization(uint3 id : SV_DispatchThreadID)
         uint above = M(cell + int2(0, 1));
         if (above == 12u)
             aux.z = saturate(aux.z + 0.35 * fertility);
+    }
+
+    Write(cell, material, state, flow, aux, ecology);
+}
+
+[numthreads(8, 8, 1)]
+void WaterMaterialization(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = E(cell);
+    float rainThreshold = _WeatherE.z;
+    float surfaceThreshold = _WeatherE.w;
+    bool precipitationEnabled = _WeatherB.w > 1e-6;
+    bool open = IsOpenCarrier(material);
+
+    bool surfaceSpawn = false;
+    float transfer = 0.0;
+    if (open && cell.y > 0 && surfaceThreshold > 1e-6)
+    {
+        int2 below = cell + int2(0, -1);
+        uint belowMat = M(below);
+        bool belowSubstrate = !IsAtmosphereCell(below, belowMat) && belowMat != 9u && belowMat != 10u
+            && belowMat != 0u && belowMat != 1u && belowMat != 11u;
+        float belowWater = S(below).z;
+        if (belowSubstrate && belowWater >= surfaceThreshold)
+        {
+            transfer = min(belowWater, 1.0);
+            surfaceSpawn = transfer >= surfaceThreshold;
+        }
+    }
+
+    if (surfaceSpawn)
+    {
+        float vapor = max(0.0, aux.x);
+        aux.x = 0.0;
+        state.z += transfer + vapor;
+        state.y = max(0.0, state.y - vapor * _WeatherC.x);
+        float4 belowState = S(cell + int2(0, -1));
+        MaterialGpuData selfDef = D(material);
+        state.x = MixTemperature(state.x, max(0.001, selfDef.transport.y), belowState.x, transfer, max(0.001, D(9u).transport.y));
+        material = LiquidPixelId(state.x);
+    }
+    else if (IsAtmosphereCell(cell, material) && precipitationEnabled && rainThreshold > 1e-6 && state.z >= rainThreshold)
+    {
+        float vapor = max(0.0, aux.x);
+        aux.x = 0.0;
+        state.z += vapor;
+        state.y = max(0.0, state.y - vapor * _WeatherC.x);
+        material = LiquidPixelId(state.x);
+    }
+
+    if (!IsAtmosphereCell(cell, material) && material != 9u && material != 10u
+        && surfaceThreshold > 1e-6 && state.z >= surfaceThreshold && cell.y < _GridSize.y - 1)
+    {
+        uint aboveMat = M(cell + int2(0, 1));
+        if (IsOpenCarrier(aboveMat))
+        {
+            float moved = min(state.z, 1.0);
+            if (moved >= surfaceThreshold)
+                state.z -= moved;
+        }
     }
 
     Write(cell, material, state, flow, aux, ecology);

@@ -61,6 +61,8 @@ namespace GeneSys.Tests
             host.Config.humidityBuoyancy = 0.25f;
             host.Config.saturationCapacityScale = 0.55f;
             host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.rainPixelFormationThreshold = 0f;
+            host.Config.surfaceWaterPixelThreshold = 0f;
             host.Config.surfaceAirHeatExchange = 0.45f;
             host.Config.temperatureAdvectionRate = 0.55f;
             host.Config.pressureCompressibility = 0.45f;
@@ -181,6 +183,8 @@ namespace GeneSys.Tests
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.pressureCompressibility = 0f;
+            host.Config.rainPixelFormationThreshold = 0f;
+            host.Config.surfaceWaterPixelThreshold = 0f;
         }
 
         private static int AtmosphereY(SimulationHost host) =>
@@ -1283,6 +1287,143 @@ namespace GeneSys.Tests
             Assert.That(Mathf.Abs(metrics.SignedMeanVerticalDrift), Is.LessThan(metrics.RmsVerticalFlow * 0.85f + 0.05f));
             Assert.That(Mathf.Abs(metrics.DayNightSurfaceTemperatureDelta), Is.GreaterThan(0.05f));
             Assert.That(waterAfter, Is.EqualTo(waterBefore).Within(Math.Max(1d, waterBefore * 0.08d)));
+        }
+
+        [UnityTest]
+        public IEnumerator DenseColdCloudBecomesFallingWaterOrIcePixel()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 2f;
+            host.Config.precipitationRate = 1f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.humidityBuoyancy = 0f;
+            host.Config.densityExchangeRate = 0f;
+            host.Config.gravityStrength = 0f;
+            host.Config.saturationCapacityScale = 0.05f;
+            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.rainPixelFormationThreshold = 0.2f;
+            host.Config.surfaceWaterPixelThreshold = 0f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int cloudY = AtmosphereY(host);
+            int floorY = cloudY - 4;
+            PaintAirChamber(host, x - 1, x + 1, floorY + 1, cloudY);
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (_, __, aux, ___) =>
+            {
+                for (int dy = 0; dy <= 4; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    float vapor = aux[(floorY + dy) * width + (x + dx)].x;
+                    if (vapor > 0f) PaintField(host, x + dx, floorY + dy, 6f, -vapor);
+                }
+            });
+            yield return Step(host, 1);
+
+            PaintField(host, x, cloudY, 1f, 40f);
+            PaintField(host, x, cloudY, 2f, 0.55f);
+            PaintField(host, x, cloudY, 6f, 0.4f);
+            yield return Step(host, 1);
+
+            float waterBefore = 0f;
+            yield return ReadFields(host, (_, states, aux, __) => waterBefore = SumWaterBox(states, aux, width, x - 2, x + 2, floorY, cloudY + 1));
+
+            int formedY = -1;
+            uint formedId = 0;
+            for (int i = 0; i < 12 && formedY < 0; i++)
+            {
+                yield return Step(host, 1);
+                yield return ReadFields(host, (mats, states, aux, _) =>
+                {
+                    Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
+                    for (int y = floorY + 1; y <= cloudY; y++)
+                    {
+                        uint id = mats[y * width + x];
+                        if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                        {
+                            formedY = y;
+                            formedId = id;
+                            break;
+                        }
+                    }
+                    float waterAfter = SumWaterBox(states, aux, width, x - 2, x + 2, floorY, cloudY + 1);
+                    Assert.That(waterAfter, Is.EqualTo(waterBefore).Within(0.08f));
+                });
+            }
+            Assert.That(formedY, Is.GreaterThan(0), "Dense cloud should materialize into a Water or Ice pixel.");
+            Assert.That(formedId, Is.EqualTo(MaterialIds.Water), "Warm condensate should become Water so existing material gravity can move it.");
+
+            host.Config.precipitationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.rainPixelFormationThreshold = 0f;
+            host.Config.gravityStrength = 1f;
+            yield return Step(host, 8);
+
+            yield return ReadFields(host, (mats, _, __, ___) =>
+            {
+                int laterY = -1;
+                for (int y = floorY; y <= cloudY; y++)
+                {
+                    uint id = mats[y * width + x];
+                    if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                    {
+                        laterY = y;
+                        break;
+                    }
+                }
+                Assert.That(laterY, Is.GreaterThan(0));
+                Assert.That(laterY, Is.LessThan(formedY), "Materialized rain should fall under gravity.");
+                Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator ZeroRainPixelThresholdKeepsCloudAsAirField()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.rainPixelFormationThreshold = 0f;
+            host.Config.surfaceWaterPixelThreshold = 0f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+            PaintAirChamber(host, x - 1, x + 1, y, y);
+            yield return Step(host, 1);
+            PaintField(host, x, y, 2f, 0.8f);
+            yield return Step(host, 12);
+
+            yield return ReadFields(host, (mats, states, _, __) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Air),
+                    "Zero rain-pixel threshold must keep cloud as an Air field.");
+                Assert.That(states[y * width + x].z, Is.GreaterThan(0.4f));
+                Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
+            });
         }
 
         private sealed class SimulationConfigSnapshot
