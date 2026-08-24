@@ -378,10 +378,81 @@ namespace GeneSys.Tests
             {
                 Assert.That(mats[surfaceY * width + x], Is.EqualTo(MaterialIds.Soil));
                 float surfaceWaterAfter = states[surfaceY * width + x].z;
-                float columnVaporAfter = aux[surfaceY * width + x].x + aux[airY * width + x].x;
+                float airVaporAfter = aux[airY * width + x].x;
+                float columnVaporAfter = aux[surfaceY * width + x].x + airVaporAfter;
                 Assert.That(surfaceWaterAfter, Is.LessThan(surfaceWaterBefore - 0.01f));
                 Assert.That(columnVaporAfter, Is.GreaterThan(columnVaporBefore + 0.01f));
+                Assert.That(airVaporAfter, Is.GreaterThan(0.01f), "Evaporated film must appear as atmospheric humidity above the soil.");
                 Assert.That(mats[airY * width + x], Is.EqualTo(MaterialIds.Air));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator SolarCapillaryEvaporationLoadsDaySideAir()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.capillaryEvaporationFraction = 1f;
+            host.Config.solarIntensity = 2f;
+            host.Config.dayLengthSeconds = 100000f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.saturationCapacityScale = 2f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int xDay = 0;
+            int surfaceY = SurfaceY(host);
+            int aquiferY = surfaceY - 1;
+            int airY = surfaceY + 1;
+
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                Paint(host, xDay + dx, aquiferY - 1, MaterialIds.Rock);
+                Paint(host, xDay + dx, aquiferY, MaterialIds.Soil);
+                Paint(host, xDay + dx, surfaceY, MaterialIds.Soil);
+                Paint(host, xDay + dx, airY, MaterialIds.Air);
+                Paint(host, xDay + dx, airY + 1, MaterialIds.Rock);
+            }
+            PaintField(host, xDay, surfaceY, 2f, -100f);
+            PaintField(host, xDay, surfaceY, 5f, -100f);
+            PaintField(host, xDay, aquiferY, 5f, -100f);
+            PaintField(host, xDay, aquiferY, 5f, 0.5f);
+            PaintField(host, xDay, airY, 6f, -100f);
+            yield return Step(host, 1);
+
+            float dayTemp = 0f;
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                dayTemp = states[surfaceY * width + xDay].x;
+            });
+            PaintField(host, xDay, surfaceY, 1f, 8f - dayTemp);
+            yield return Step(host, 1);
+
+            float dayAirBefore = 0f;
+            float dayAquiferBefore = 0f;
+            yield return ReadFields(host, (_, __, aux, ___) =>
+            {
+                dayAirBefore = aux[airY * width + xDay].x;
+                dayAquiferBefore = aux[aquiferY * width + xDay].y;
+            });
+            Assert.That(dayAquiferBefore, Is.GreaterThan(0.3f));
+
+            host.Config.evaporationRate = 4f;
+            yield return Step(host, 30);
+
+            yield return ReadFields(host, (mats, _, aux, __) =>
+            {
+                Assert.That(mats[airY * width + xDay], Is.EqualTo(MaterialIds.Air));
+                float dayAir = aux[airY * width + xDay].x;
+                float dayAquifer = aux[aquiferY * width + xDay].y;
+                Assert.That(dayAir, Is.GreaterThan(dayAirBefore + 0.04f));
+                Assert.That(dayAquifer, Is.LessThan(dayAquiferBefore - 0.04f));
             });
         }
 

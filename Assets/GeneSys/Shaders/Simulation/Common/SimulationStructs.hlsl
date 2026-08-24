@@ -3,7 +3,10 @@
 
 // Water mass contract:
 //   state.z  = surface liquid/ice mass on non-atmosphere cells; cloud condensate on atmosphere cells
-//   aux.x    = atmospheric vapor mass (humidity carried by Air cells; never a separate Gas pixel)
+//   aux.x    = atmospheric vapor mass (humidity carried by Air cells; never a separate Gas pixel).
+//              Evaporation from solids must deposit into the open atmosphere cell above rather than
+//              stockpiling humidity inside rock/soil. Residual solid-hosted vapor (geysers, boiling)
+//              vents through AtmosphericTransport.
 //   aux.y    = subsurface groundwater mass
 //   aux.z    = nutrient / fertility
 //   aux.w    = shared fault / erosion stress
@@ -27,6 +30,8 @@
 // Groundwater hosts (Soil/Sediment/porous Rock/Ash/Metal):
 //   Film soak and Water-pixel contact drain state.z into aux.y up to porosity capacity.
 //   Excess above field capacity percolates radially inward; lateral flow is host-only.
+//   Exposed hosts evaporate own pore water and may draw one cell of aquifer below;
+//   that vapor deposits into the Air cell above.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 // Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
 // each writes only its own cell. So both sides must derive the transferred mass from the same

@@ -147,7 +147,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.moistureCohesionStrength)] =
                 "How much pore water binds soil. Stronger capillary cohesion resists erosion when damp, then fails suddenly if the ground dries past the threshold.",
             [nameof(SimulationConfig.capillaryEvaporationFraction)] =
-                "Share of near-surface groundwater that can evaporate into air. Higher values couple aquifers to the weather cycle and dry soils from below.",
+                "Share of the leftover evaporation budget that can pull near-surface groundwater into air, including one cell of aquifer below dry soil. Higher values couple aquifers to weather and dry soils from below.",
             [nameof(SimulationConfig.runoffRate)] =
                 "How fast excess surface water flows downhill. Higher runoff builds streams and waterfalls; lower runoff ponds in place and soaks in.",
             [nameof(SimulationConfig.pondingRate)] =

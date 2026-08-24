@@ -883,6 +883,10 @@ namespace GeneSys.Tests
             host.Config.capillaryEvaporationFraction = 1f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
             host.Config.seed = 11111;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -910,15 +914,18 @@ namespace GeneSys.Tests
             }
 
             float groundAfter = -1f;
-            float vapor = -1f;
+            float soilVapor = -1f;
+            float airVapor = -1f;
             yield return ReadMaterialsAndAux(host, (mats, aux) =>
             {
                 int index = y * host.Grid.angularResolution + x;
                 groundAfter = aux[index].y;
-                vapor = aux[index].x;
+                soilVapor = aux[index].x;
+                airVapor = aux[(y + 1) * host.Grid.angularResolution + x].x;
             });
             Assert.That(groundAfter, Is.LessThan(groundBefore - 0.1f));
-            Assert.That(vapor, Is.GreaterThan(0.05f));
+            Assert.That(airVapor + soilVapor, Is.GreaterThan(0.05f));
+            Assert.That(airVapor, Is.GreaterThan(0.04f), "Capillary evaporation must deposit humidity into the Air cell above, not park it in soil.");
 
             RestoreStressIsolation(host);
         }
