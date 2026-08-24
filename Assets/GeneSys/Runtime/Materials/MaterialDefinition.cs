@@ -43,6 +43,12 @@ namespace GeneSys.Materials
         [Min(0f)] public float caloricContent;
         public bool bioModifiable = true;
 
+        [Header("Combustion")]
+        public float ignitionTemperature = 10000f;
+        public float flashPoint = 10000f;
+        [Min(0f)] public float oxygenDemand;
+        [Min(0f)] public float smokeYield;
+
         public MaterialGpuData ToGpuData()
         {
             uint phaseIds = (uint)(solidPhaseId & 1023) | ((uint)(liquidPhaseId & 1023) << 10) | ((uint)(gasPhaseId & 1023) << 20);
@@ -54,7 +60,8 @@ namespace GeneSys.Materials
                 phase = new Vector4(meltingTemperature, boilingTemperature, thermalExpansion, electricalExpansion),
                 biology = new Vector4(toxicity, caloricContent, porosity, buoyancyBias),
                 metadata = new Vector4((float)category, phaseIds, bioModifiable ? 1f : 0f, stableId),
-                motion = new Vector4(densityDisplaceable ? 1f : 0f, 0f, 0f, 0f)
+                motion = new Vector4(densityDisplaceable ? 1f : 0f, 0f, 0f, 0f),
+                combustion = new Vector4(ignitionTemperature, flashPoint, oxygenDemand, smokeYield)
             };
         }
     }
@@ -69,6 +76,7 @@ namespace GeneSys.Materials
         public Vector4 biology;
         public Vector4 metadata;
         public Vector4 motion;
-        public const int Stride = 112;
+        public Vector4 combustion;
+        public const int Stride = 128;
     }
 }

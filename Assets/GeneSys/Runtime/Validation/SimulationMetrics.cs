@@ -23,6 +23,10 @@ namespace GeneSys.Validation
         public float MeanPressure;
         public float MeanMoisture;
         public float MeanWindSpeed;
+        public int BurningCellCount;
+        public float TotalFireIntensity;
+        public float MeanOxygen;
+        public double SootMass;
         public int OrganismCount;
     }
 
@@ -46,7 +50,7 @@ namespace GeneSys.Validation
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
         {
-            if (!TryCaptureFields(host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex))
+            if (!TryCaptureFields(host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex, out RenderTexture combustionTex))
             {
                 completed?.Invoke(default);
                 return;
@@ -65,7 +69,11 @@ namespace GeneSys.Validation
                         RequestField(flowTex, fail, flowRequest =>
                         {
                             Vector2[] flow = flowRequest.GetData<Vector2>().ToArray();
-                            completed?.Invoke(ComputeMetrics(grid, materials, states, aux, flow));
+                            RequestField(combustionTex, fail, combustionRequest =>
+                            {
+                                Vector4[] combustion = combustionRequest.GetData<Vector4>().ToArray();
+                                completed?.Invoke(ComputeMetrics(grid, materials, states, aux, flow, combustion));
+                            });
                         });
                     });
                 });
@@ -74,7 +82,7 @@ namespace GeneSys.Validation
 
         public static void MeasureAtmosphereAsync(SimulationHost host, float solarAngle01, Action<AtmosphericCirculationMetrics> completed)
         {
-            if (!TryCaptureFields(host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex))
+            if (!TryCaptureFields(host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex, out _))
             {
                 completed?.Invoke(default);
                 return;
@@ -100,19 +108,21 @@ namespace GeneSys.Validation
             });
         }
 
-        private static bool TryCaptureFields(SimulationHost host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex)
+        private static bool TryCaptureFields(SimulationHost host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex, out RenderTexture combustionTex)
         {
             grid = default;
             materialTex = null;
             stateTex = null;
             auxTex = null;
             flowTex = null;
+            combustionTex = null;
             if (host == null || !host.IsReady || host.Resources == null) return false;
             grid = host.Grid;
             materialTex = host.Resources.MaterialRead;
             stateTex = host.Resources.StateRead;
             auxTex = host.Resources.AuxRead;
             flowTex = host.Resources.FlowRead;
+            combustionTex = host.Resources.CombustionRead;
             return materialTex != null && stateTex != null && auxTex != null && flowTex != null;
         }
 
@@ -138,14 +148,18 @@ namespace GeneSys.Validation
         }
 
         public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux)
-            => ComputeMetrics(grid, materials, states, aux, null);
+            => ComputeMetrics(grid, materials, states, aux, null, null);
 
         public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux, Vector2[] flow)
+            => ComputeMetrics(grid, materials, states, aux, flow, null);
+
+        public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux, Vector2[] flow, Vector4[] combustion)
         {
             int width = grid.angularResolution;
             int height = grid.radialResolution;
             int cellCount = Math.Min(materials.Length, Math.Min(states.Length, aux.Length));
             if (flow != null) cellCount = Math.Min(cellCount, flow.Length);
+            if (combustion != null) cellCount = Math.Min(cellCount, combustion.Length);
             var metrics = new WorldWaterMetrics
             {
                 AngularResolution = width,
@@ -158,8 +172,10 @@ namespace GeneSys.Validation
             double pressureSum = 0d;
             double moistureSum = 0d;
             double windSpeedSum = 0d;
+            double oxygenSum = 0d;
             int sampleCount = 0;
             int windSampleCount = 0;
+            int oxygenSampleCount = 0;
 
             for (int x = 0; x < width; x++)
             {
@@ -206,6 +222,19 @@ namespace GeneSys.Validation
                         windSampleCount++;
                     }
 
+                    if (combustion != null)
+                    {
+                        Vector4 fire = combustion[index];
+                        if (fire.y > 0.02f)
+                        {
+                            metrics.BurningCellCount++;
+                            metrics.TotalFireIntensity += fire.y;
+                        }
+                        metrics.SootMass += Math.Max(0d, fire.z);
+                        oxygenSum += Math.Max(0f, fire.x);
+                        oxygenSampleCount++;
+                    }
+
                     if (material != MaterialIds.Water && material != MaterialIds.Ice) continue;
                     if (radius < grid.atmosphereStartRadius * 0.95f)
                         oceanMask[index] = true;
@@ -226,6 +255,8 @@ namespace GeneSys.Validation
             }
             if (windSampleCount > 0)
                 metrics.MeanWindSpeed = (float)(windSpeedSum / windSampleCount);
+            if (oxygenSampleCount > 0)
+                metrics.MeanOxygen = (float)(oxygenSum / oxygenSampleCount);
             return metrics;
         }
 

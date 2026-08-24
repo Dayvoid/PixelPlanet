@@ -267,6 +267,47 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.mycologyTraitEffectStrength)] =
                 "How strongly rare strain traits shift growth, decay, and transport. 0 ignores genetics; higher values make strain overlays matter more.",
 
+            [nameof(SimulationConfig.combustionAmbientOxygen)] =
+                "Target oxygen fill as a fraction of each cell's capacity. Atmosphere and porous ground relax toward this level; lowering it starves fire and favors smolder.",
+            [nameof(SimulationConfig.combustionOxygenReplenishRate)] =
+                "How quickly oxygen recovers toward the ambient target. High values keep open air fires burning; low values let sealed pockets suffocate after a short burn.",
+            [nameof(SimulationConfig.combustionOxygenDiffusionRate)] =
+                "How fast oxygen mixes between neighboring air cells. Higher diffusion feeds fire from surrounding atmosphere and prevents sharp oxygen holes.",
+            [nameof(SimulationConfig.combustionIgnitionAccumulationRate)] =
+                "How quickly a hot, fueled, oxygenated cell soaks toward ignition. Higher values light faster; lower values add delay so a single hot tick cannot flicker a flame.",
+            [nameof(SimulationConfig.combustionIgnitionDecayRate)] =
+                "How quickly the ignition accumulator cools when temperature, fuel, or oxygen drop below the threshold. Higher decay makes failed sparks fade immediately.",
+            [nameof(SimulationConfig.combustionSeedIntensity)] =
+                "Flame intensity written when the ignition accumulator fills. Higher seeds start a hotter, faster burn; lower seeds produce a weaker initial fire.",
+            [nameof(SimulationConfig.combustionBurnRate)] =
+                "How quickly mycology biomass is consumed once a cell is burning. Higher rates eat fuel faster, dump more heat, and leave less colony behind.",
+            [nameof(SimulationConfig.combustionHeatYield)] =
+                "Heat released per unit of burned fuel, scaled by the material's caloric content. Higher yield drives stronger updrafts, steam flashes, and neighbor ignition.",
+            [nameof(SimulationConfig.combustionPressureScale)] =
+                "Pressure added by burning mass. The existing continuity and diffusion passes turn this into a blast wave and return flow around the fire.",
+            [nameof(SimulationConfig.combustionUpdraftStrength)] =
+                "Direct radial kick applied while a cell burns. Weather buoyancy then sustains the hot column, creating visible atmospheric turbulation.",
+            [nameof(SimulationConfig.combustionSmokeYield)] =
+                "Global scale on soot emitted per burn, multiplied by each material's smoke yield. Smoke advects with wind and later settles as fertility.",
+            [nameof(SimulationConfig.combustionSootSettlingRate)] =
+                "How quickly airborne soot falls from air onto the exposed surface below and fertilizes aux nutrients. Higher settling darkens ground near fires sooner.",
+            [nameof(SimulationConfig.combustionPyroFertilityYield)] =
+                "Nutrient added locally as fuel burns, mirroring ash fertilization. Higher values leave richer soil after a fire front passes.",
+            [nameof(SimulationConfig.combustionMoistureIgnitionPenalty)] =
+                "How much local water, groundwater, and steam raise the ignition temperature. Wet ground is harder to light and easier to keep from catching.",
+            [nameof(SimulationConfig.combustionSteamSuppression)] =
+                "How strongly airborne vapor counts as extinguishing moisture and displaces oxygen during a flash. Higher values make steam plumes smother fire.",
+            [nameof(SimulationConfig.combustionFlameDecay)] =
+                "How quickly flame intensity fades each tick. Higher decay needs continuous fuel and oxygen; lower decay lets embers linger after the front moves on.",
+            [nameof(SimulationConfig.combustionFlashVaporizationRate)] =
+                "How fast surface liquid near flame converts to vapor once temperature exceeds the material flash point. Pays latent heat and can drown the fire in steam.",
+            [nameof(SimulationConfig.combustionMinFuel)] =
+                "Minimum mycology biomass required to ignite or keep burning. Below this floor a hot, oxygenated cell still cannot sustain flame.",
+            [nameof(SimulationConfig.combustionMinOxygen)] =
+                "Minimum oxygen required to ignite. Burning can continue at a lower floor until the pocket is starved, producing a short smolder.",
+            [nameof(SimulationConfig.combustionSuppressionMoisture)] =
+                "Local water plus steam above this amount forces the flame to decay rapidly. Use it with flash vaporization to make dousing extinguish fire.",
+
             [nameof(SimulationConfig.enableStarfield)] =
                 "Toggles background stars. Visual only; does not change solar heating, weather, or ecology.",
             [nameof(SimulationConfig.starCount)] =
@@ -379,7 +420,15 @@ namespace GeneSys.UI
             [nameof(MaterialDefinition.toxicity)] =
                 "Harm factor reserved for phase-2 organisms. Stored on the pixel for future ecology and feeding rules.",
             [nameof(MaterialDefinition.caloricContent)] =
-                "Energy available to future organisms feeding on this material. Currently stored for phase-2 metabolism.",
+                "Energy released when this material burns and later available to organisms feeding on it. Soil calories currently scale combustion heat yield.",
+            [nameof(MaterialDefinition.ignitionTemperature)] =
+                "Base temperature where this material can ignite if fuel and oxygen are present. Mycology heat traits shift the threshold on colonized soil.",
+            [nameof(MaterialDefinition.flashPoint)] =
+                "Temperature where nearby flame begins converting this cell's surface liquid into vapor. Water flashes below its boiling point so fire can steam itself out.",
+            [nameof(MaterialDefinition.oxygenDemand)] =
+                "Oxygen consumed per unit of burned fuel. Higher demand starves a sealed fire faster and favors smolder over open flame.",
+            [nameof(MaterialDefinition.smokeYield)] =
+                "Soot produced per unit of burned fuel, scaled by the global smoke yield. Higher values make thicker plumes that later settle as fertility.",
             [nameof(MaterialDefinition.bioModifiable)] =
                 "Whether biology may alter this material (roots, bioerosion, nutrient conversion). Required for mycology and later life to rewrite the pixel.",
         };

@@ -19,6 +19,8 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture ShadeWrite { get; private set; }
         public RenderTexture EcologyRead { get; private set; }
         public RenderTexture EcologyWrite { get; private set; }
+        public RenderTexture CombustionRead { get; private set; }
+        public RenderTexture CombustionWrite { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -42,6 +44,8 @@ namespace GeneSys.Simulation.Gpu
             ShadeWrite = CreateTexture("GeneSys Shade B", GraphicsFormat.R32_UInt);
             EcologyRead = CreateTexture("GeneSys Ecology A", GraphicsFormat.R32G32B32A32_SFloat);
             EcologyWrite = CreateTexture("GeneSys Ecology B", GraphicsFormat.R32G32B32A32_SFloat);
+            CombustionRead = CreateTexture("GeneSys Combustion A", GraphicsFormat.R32G32B32A32_SFloat);
+            CombustionWrite = CreateTexture("GeneSys Combustion B", GraphicsFormat.R32G32B32A32_SFloat);
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -76,6 +80,7 @@ namespace GeneSys.Simulation.Gpu
             (AuxRead, AuxWrite) = (AuxWrite, AuxRead);
             (ShadeRead, ShadeWrite) = (ShadeWrite, ShadeRead);
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
+            (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
         }
 
         public void CopyReadToWrite()
@@ -86,6 +91,7 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(AuxRead, AuxWrite);
             Graphics.CopyTexture(ShadeRead, ShadeWrite);
             Graphics.CopyTexture(EcologyRead, EcologyWrite);
+            Graphics.CopyTexture(CombustionRead, CombustionWrite);
         }
 
         public void Dispose()
@@ -96,10 +102,12 @@ namespace GeneSys.Simulation.Gpu
             Release(AuxRead); Release(AuxWrite);
             Release(ShadeRead); Release(ShadeWrite);
             Release(EcologyRead); Release(EcologyWrite);
+            Release(CombustionRead); Release(CombustionWrite);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
             EcologyRead = EcologyWrite = null;
+            CombustionRead = CombustionWrite = null;
         }
 
         private static void Release(RenderTexture texture)

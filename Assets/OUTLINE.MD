@@ -52,6 +52,13 @@ in order to achieve a 'living world' we can't start with uniform concentric laye
 - worldgen seeds 2-3 separated ocean basins targeting ~50% angular coastline coverage, aquifers, and initial atmospheric humidity
 - runtime hydrology adds rain deposition, runoff/waterfalls, aquifer springs, geysers, and hydrothermal ocean vents coupled to geology
 
+#### COMBUSTION
+- fire requires temperature, oxygen, and fuel (milestone 1 fuel is mycology biomass on soil/sediment)
+- dedicated combustion field: oxygen, flame intensity, soot, ignition accumulator
+- oxygen capacity is full in air and limited by porosity in solids; sealed fires smolder then suffocate
+- burning dumps heat, pressure, and updraft into the existing weather chain for atmospheric turbulation
+- flashpoint vaporization converts nearby surface liquid to steam without inventing water mass; steam suppresses further ignition
+
 ### UI
 
 - pause/play, step, sim speed controls

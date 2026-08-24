@@ -156,10 +156,32 @@ namespace GeneSys.Configuration
         [Range(0f, 8f)] public float mycologyElectricalTolerance = 0.65f;
         [Range(0f, 1f)] public float mycologyTraitEffectStrength = 0.35f;
 
+        [Header("Combustion")]
+        [Range(0f, 2f)] public float combustionAmbientOxygen = 1f;
+        [Range(0f, 4f)] public float combustionOxygenReplenishRate = 0.15f;
+        [Range(0f, 4f)] public float combustionOxygenDiffusionRate = 0.35f;
+        [Range(0f, 8f)] public float combustionIgnitionAccumulationRate = 2.5f;
+        [Range(0f, 8f)] public float combustionIgnitionDecayRate = 1.2f;
+        [Range(0f, 1f)] public float combustionSeedIntensity = 0.55f;
+        [Range(0f, 4f)] public float combustionBurnRate = 0.45f;
+        [Range(0f, 8f)] public float combustionHeatYield = 2.8f;
+        [Range(0f, 8f)] public float combustionPressureScale = 2.5f;
+        [Range(0f, 12f)] public float combustionUpdraftStrength = 6f;
+        [Range(0f, 4f)] public float combustionSmokeYield = 0.55f;
+        [Range(0f, 4f)] public float combustionSootSettlingRate = 0.2f;
+        [Range(0f, 4f)] public float combustionPyroFertilityYield = 0.18f;
+        [Range(0f, 8f)] public float combustionMoistureIgnitionPenalty = 2.5f;
+        [Range(0f, 4f)] public float combustionSteamSuppression = 0.85f;
+        [Range(0f, 4f)] public float combustionFlameDecay = 0.35f;
+        [Range(0f, 4f)] public float combustionFlashVaporizationRate = 0.55f;
+        [Range(0f, 1f)] public float combustionMinFuel = 0.02f;
+        [Range(0f, 1f)] public float combustionMinOxygen = 0.05f;
+        [Range(0f, 2f)] public float combustionSuppressionMoisture = 0.55f;
+
         [Header("Graphics")]
         [Range(0, 1)] public int enableStarfield = 1;
-        [Range(32, 512)] public int starCount = 160;
-        [Range(0f, 2f)] public float starfieldStrength = 0.85f;
+        [Range(32, 512)] public int starCount = 300;
+        [Range(0f, 2f)] public float starfieldStrength = 0.15f;
         [Range(0f, 2f)] public float starTwinkleStrength = 0.65f;
         [Range(0, 1)] public int enableNebula = 1;
         [Range(4, 48)] public int nebulaCount = 12;
@@ -270,6 +292,26 @@ namespace GeneSys.Configuration
             mycologySurvivalMoistureMax = Mathf.Max(mycologySurvivalMoistureMax, mycologyGrowthMoistureMax);
             mycologyElectricalTolerance = Mathf.Max(0f, mycologyElectricalTolerance);
             mycologyTraitEffectStrength = Mathf.Clamp01(mycologyTraitEffectStrength);
+            combustionAmbientOxygen = Mathf.Max(0f, combustionAmbientOxygen);
+            combustionOxygenReplenishRate = Mathf.Max(0f, combustionOxygenReplenishRate);
+            combustionOxygenDiffusionRate = Mathf.Max(0f, combustionOxygenDiffusionRate);
+            combustionIgnitionAccumulationRate = Mathf.Max(0f, combustionIgnitionAccumulationRate);
+            combustionIgnitionDecayRate = Mathf.Max(0f, combustionIgnitionDecayRate);
+            combustionSeedIntensity = Mathf.Clamp01(combustionSeedIntensity);
+            combustionBurnRate = Mathf.Max(0f, combustionBurnRate);
+            combustionHeatYield = Mathf.Max(0f, combustionHeatYield);
+            combustionPressureScale = Mathf.Max(0f, combustionPressureScale);
+            combustionUpdraftStrength = Mathf.Max(0f, combustionUpdraftStrength);
+            combustionSmokeYield = Mathf.Max(0f, combustionSmokeYield);
+            combustionSootSettlingRate = Mathf.Max(0f, combustionSootSettlingRate);
+            combustionPyroFertilityYield = Mathf.Max(0f, combustionPyroFertilityYield);
+            combustionMoistureIgnitionPenalty = Mathf.Max(0f, combustionMoistureIgnitionPenalty);
+            combustionSteamSuppression = Mathf.Max(0f, combustionSteamSuppression);
+            combustionFlameDecay = Mathf.Max(0f, combustionFlameDecay);
+            combustionFlashVaporizationRate = Mathf.Max(0f, combustionFlashVaporizationRate);
+            combustionMinFuel = Mathf.Clamp01(combustionMinFuel);
+            combustionMinOxygen = Mathf.Clamp01(combustionMinOxygen);
+            combustionSuppressionMoisture = Mathf.Max(0f, combustionSuppressionMoisture);
             enableStarfield = enableStarfield != 0 ? 1 : 0;
             starCount = Mathf.Clamp(starCount, 32, 512);
             starfieldStrength = Mathf.Max(0f, starfieldStrength);

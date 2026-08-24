@@ -14,6 +14,16 @@
 //   ecology.y = myco value in [0, 1] on Soil/Sediment (flora fertility threshold)
 //   ecology.z = dominant-strain trait flags (see MYCO_* below); exact integer codes
 //   ecology.w = reserved
+// Combustion (dedicated RGBA32F field, not packed into aux):
+//   combustion.x = oxygen mass. Capacity is 1.0 in Empty/Gas cells and
+//                  saturate(biology.z) porosity in solids/liquids, so soil holds
+//                  trapped air and dense rock does not.
+//   combustion.y = flame intensity in [0, 1]
+//   combustion.z = soot / smoke mass (airborne tracer; settles into aux.z)
+//   combustion.w = ignition accumulator in [0, 1]
+// Milestone 1 fuel is ecology.y on Soil/Sediment. Burning consumes that biomass
+// locally and writes heat/pressure/updraft/steam into the existing weather chain.
+// Combustion never invents water: flashpoint vaporization only moves state.z -> aux.x.
 // Atmosphere representation:
 //   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
 //   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
@@ -62,6 +72,7 @@ struct MaterialGpuData
     float4 biology;    // toxicity, calories, porosity, buoyancy bias
     float4 metadata;   // category, packed phase IDs, bio-modifiable, stable ID
     float4 motion;     // densityDisplaceable, reserved, reserved, reserved
+    float4 combustion; // ignitionTemperature, flashPoint, oxygenDemand, smokeYield
 };
 
 struct BrushCommand
@@ -223,6 +234,43 @@ bool IsGroundwaterHost(uint material, MaterialGpuData definition)
 float GroundwaterCapacity(MaterialGpuData definition)
 {
     return saturate(definition.biology.z);
+}
+
+float OxygenCapacity(uint material, MaterialGpuData definition)
+{
+    float category = definition.metadata.x;
+    if (material == 0u || material == 1u || material == 11u || category == 1.0)
+        return 1.0;
+    return saturate(definition.biology.z);
+}
+
+float4 SanitizeCombustion(float4 combustion)
+{
+    float4 value = max(SafeFinite4(combustion, 0.0), 0.0);
+    value.y = saturate(value.y);
+    value.w = saturate(value.w);
+    return value;
+}
+
+float4 SeedCombustion(uint material, MaterialGpuData definition)
+{
+    return SanitizeCombustion(float4(OxygenCapacity(material, definition), 0.0, 0.0, 0.0));
+}
+
+float MycologyFuel(uint material, float4 ecology)
+{
+    return IsMycologySubstrate(material) ? saturate(ecology.y) : 0.0;
+}
+
+float TraitModulatedIgnition(float ignitionTemperature, uint traits, float traitEffect)
+{
+    float threshold = ignitionTemperature;
+    float effect = saturate(traitEffect);
+    if ((traits & MYCO_HEAT_RESISTANT) != 0u)
+        threshold += 28.0 * effect;
+    if ((traits & MYCO_HEAT_PRONE) != 0u)
+        threshold -= 22.0 * effect;
+    return threshold;
 }
 
 float InfiltrationAmount(float sourceMass, float remainingCapacity, float absorbency, float porosity, float infiltrationRate, float dt)

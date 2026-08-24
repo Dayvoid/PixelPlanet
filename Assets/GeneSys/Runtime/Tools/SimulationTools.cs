@@ -11,7 +11,7 @@ using UnityEngine.Rendering;
 
 namespace GeneSys.Tools
 {
-    public enum BrushMode { Material, Heat, Water, Pressure, Vapor }
+    public enum BrushMode { Material, Heat, Water, Pressure, Vapor, Ignite }
 
     public sealed class SimulationTools : MonoBehaviour
     {
@@ -41,6 +41,7 @@ namespace GeneSys.Tools
                     BrushMode.Water => new Vector4(2f, Strength, 0f, 0f),
                     BrushMode.Pressure => new Vector4(3f, Strength, 0f, 0f),
                     BrushMode.Vapor => new Vector4(6f, Strength, 0f, 0f),
+                    BrushMode.Ignite => new Vector4(9f, Strength, 0f, 0f),
                     _ => Vector4.zero
                 };
                 host.QueueBrush(new GpuPassScheduler.BrushCommand
@@ -95,8 +96,16 @@ namespace GeneSys.Tools
                                     NativeArray<Vector4> data = ecologyRequest.GetData<Vector4>();
                                     if (data.Length > 0) inspection.ecology = data[0];
                                 }
-                                readbackPending = false;
-                                Inspected?.Invoke(inspection);
+                                AsyncGPUReadback.Request(host.Resources.CombustionRead, 0, cell.x, 1, cell.y, 1, 0, 1, combustionRequest =>
+                                {
+                                    if (!combustionRequest.hasError)
+                                    {
+                                        NativeArray<Vector4> data = combustionRequest.GetData<Vector4>();
+                                        if (data.Length > 0) inspection.combustion = data[0];
+                                    }
+                                    readbackPending = false;
+                                    Inspected?.Invoke(inspection);
+                                });
                             });
                         });
                     });
@@ -113,6 +122,7 @@ namespace GeneSys.Tools
         public Vector4 state;
         public Vector4 aux;
         public Vector4 ecology;
+        public Vector4 combustion;
         public Vector2 flow;
     }
 }

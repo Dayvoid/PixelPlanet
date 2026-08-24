@@ -114,8 +114,8 @@ MonoBehaviour:
   surfaceAirTemperature: 18
   atmosphericLapseRate: 12
   enableStarfield: 1
-  starCount: 160
-  starfieldStrength: 0.85
+  starCount: 300
+  starfieldStrength: 0.15
   starTwinkleStrength: 0.65
   enableNebula: 1
   nebulaCount: 12

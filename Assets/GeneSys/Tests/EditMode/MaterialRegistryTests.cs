@@ -82,7 +82,7 @@ namespace GeneSys.Tests
         [Test]
         public void DensityDisplaceableMaterialsPackMotionFlagAndOrdering()
         {
-            Assert.That(MaterialGpuData.Stride, Is.EqualTo(112));
+            Assert.That(MaterialGpuData.Stride, Is.EqualTo(128));
 
             MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
             Assert.That(registry, Is.Not.Null);
@@ -151,6 +151,30 @@ namespace GeneSys.Tests
             Assert.That(config.eruptionBlastThreshold, Is.GreaterThan(0f));
             Assert.That(config.ashFertilityStrength, Is.GreaterThan(0f));
             Object.DestroyImmediate(config);
+        }
+
+        [Test]
+        public void CombustionDefaultsAndMaterialPackingAreConfigured()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.combustionAmbientOxygen, Is.GreaterThan(0f));
+            Assert.That(config.combustionBurnRate, Is.GreaterThan(0f));
+            Assert.That(config.combustionHeatYield, Is.GreaterThan(0f));
+            Assert.That(config.combustionMinFuel, Is.InRange(0f, 1f));
+            Object.DestroyImmediate(config);
+
+            MaterialDefinition soil = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/007_Soil.asset");
+            MaterialDefinition water = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/009_Water.asset");
+            Assert.That(soil, Is.Not.Null);
+            Assert.That(soil.ignitionTemperature, Is.EqualTo(180f).Within(0.01f));
+            Assert.That(soil.oxygenDemand, Is.GreaterThan(0f));
+            Assert.That(water.flashPoint, Is.EqualTo(80f).Within(0.01f));
+            Assert.That(water.flashPoint, Is.LessThan(water.boilingTemperature));
+
+            MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
+            MaterialGpuData[] gpu = registry.BuildGpuData();
+            Assert.That(gpu[(int)MaterialIds.Soil].combustion.x, Is.EqualTo(180f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Water].combustion.y, Is.EqualTo(80f).Within(0.01f));
         }
 
         [Test]

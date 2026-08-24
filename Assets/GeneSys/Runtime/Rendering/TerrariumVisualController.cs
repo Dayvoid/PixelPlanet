@@ -52,7 +52,13 @@ namespace GeneSys.Rendering
         private readonly List<ParticleSystemVertexStream> starStreams = new(8);
         private int lastStarCount = -1;
         private int lastNebulaCount = -1;
+        private Vector2 starSpawnExtents;
+        private float starfieldReferenceOrtho = -1f;
         private bool built;
+
+        // 0 = screen-locked backdrop, 1 = stars zoom 1:1 with the camera.
+        private const float StarfieldZoomFollow = 0.12f;
+        private const float StarfieldSpawnMargin = 2.75f;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer planetoidDisplay)
         {
@@ -276,12 +282,15 @@ namespace GeneSys.Rendering
             count = Mathf.Clamp(count, 32, 512);
             var particles = new ParticleSystem.Particle[count];
             Vector2 extents = GetViewExtents();
+            starSpawnExtents = new Vector2(extents.x * (1f + StarfieldSpawnMargin), extents.y * (1f + StarfieldSpawnMargin));
+            if (targetCamera != null && targetCamera.orthographic)
+                starfieldReferenceOrtho = targetCamera.orthographicSize;
             customDataScratch.Clear();
             for (int i = 0; i < count; i++)
             {
                 Color tint = StarPalette[i % StarPalette.Length];
                 float size = Random.Range(0.02f, 0.075f);
-                particles[i].position = RandomPointInView(extents, 0.15f);
+                particles[i].position = RandomPointInView(extents, StarfieldSpawnMargin);
                 particles[i].startSize3D = new Vector3(size, size, size);
                 particles[i].startColor = Color.Lerp(tint, Color.white, Random.Range(0f, 0.35f));
                 particles[i].remainingLifetime = float.PositiveInfinity;
@@ -294,6 +303,7 @@ namespace GeneSys.Rendering
             starSystem.SetParticles(particles, count);
             starSystem.SetCustomParticleData(customDataScratch, ParticleSystemCustomData.Custom1);
             starSystem.Play(true);
+            UpdateStarfieldZoom();
         }
 
         private void RebuildNebula(int count)
@@ -344,10 +354,24 @@ namespace GeneSys.Rendering
             visualsRoot.position = new Vector3(cam.position.x, cam.position.y, backdropZ);
             visualsRoot.rotation = Quaternion.identity;
 
-            if (starSystem != null && starSystem.gameObject.activeSelf)
-                ClampParticlesToView(starSystem, 0.2f);
+            UpdateStarfieldZoom();
             if (nebulaSystem != null && nebulaSystem.gameObject.activeSelf)
                 ClampParticlesToView(nebulaSystem, 0.65f);
+        }
+
+        private void UpdateStarfieldZoom()
+        {
+            if (starSystem == null || !starSystem.gameObject.activeSelf) return;
+            if (targetCamera == null || !targetCamera.orthographic) return;
+            if (starSpawnExtents.y <= 0.001f) return;
+
+            float ortho = targetCamera.orthographicSize;
+            if (starfieldReferenceOrtho <= 0.001f)
+                starfieldReferenceOrtho = ortho;
+
+            float follow = Mathf.Pow(ortho / starfieldReferenceOrtho, StarfieldZoomFollow);
+            float cover = ortho / starSpawnExtents.y;
+            starSystem.transform.localScale = Vector3.one * Mathf.Max(follow, cover);
         }
 
         private void ClampParticlesToView(ParticleSystem system, float margin)

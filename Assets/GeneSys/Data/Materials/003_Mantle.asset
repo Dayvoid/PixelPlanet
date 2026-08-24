@@ -36,4 +36,8 @@ MonoBehaviour:
   gasPhaseId: 11
   toxicity: 0
   caloricContent: 0
+  ignitionTemperature: 10000
+  flashPoint: 10000
+  oxygenDemand: 0.2
+  smokeYield: 0
   bioModifiable: 0

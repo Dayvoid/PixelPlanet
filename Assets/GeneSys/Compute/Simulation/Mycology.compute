@@ -15,6 +15,8 @@ Texture2D<uint> _ShadeRead;
 RWTexture2D<uint> _ShadeWrite;
 Texture2D<float4> _EcologyRead;
 RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -36,9 +38,10 @@ float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
 float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
 float4 Eco(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
+float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
-void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
 {
     uint oldMaterial = M(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -50,6 +53,7 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
 }
 
 float4 SporeFaceFlux(float2 flow, float mass, float advectionRate, float4 validFaces, float tangentialWeight)
@@ -187,6 +191,7 @@ void SporeTransport(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = Eco(cell);
+    float4 combustion = Comb(cell);
     float spores = max(0.0, ecology.x);
     uint traits = DecodeMycologyTraits(ecology.z);
     float myco = saturate(ecology.y);
@@ -315,7 +320,7 @@ void SporeTransport(uint3 id : SV_DispatchThreadID)
     else
         ecology.z = (float)bestTraits;
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -328,6 +333,7 @@ void ColonyLifecycle(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = Eco(cell);
+    float4 combustion = Comb(cell);
     float spores = max(0.0, ecology.x);
     float myco = saturate(ecology.y);
     uint traits = DecodeMycologyTraits(ecology.z);
@@ -388,7 +394,7 @@ void ColonyLifecycle(uint3 id : SV_DispatchThreadID)
             ecology.z = 0.0;
         else if (incoming > spores)
             ecology.z = (float)bestTraits;
-        Write(cell, material, state, flow, aux, ecology);
+        Write(cell, material, state, flow, aux, ecology, combustion);
         return;
     }
 
@@ -442,5 +448,5 @@ void ColonyLifecycle(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }

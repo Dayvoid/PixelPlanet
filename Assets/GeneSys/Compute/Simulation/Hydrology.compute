@@ -19,6 +19,8 @@ Texture2D<uint> _ShadeRead;
 RWTexture2D<uint> _ShadeWrite;
 Texture2D<float4> _EcologyRead;
 RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -49,6 +51,7 @@ float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
 float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
 float4 E(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
+float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 bool IsAtmosphereCell(int2 cell, uint material)
@@ -110,7 +113,7 @@ float2 LateralRunoffFaces(int2 cell)
     return faces;
 }
 
-void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
 {
     uint oldMaterial = M(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -122,6 +125,7 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -134,6 +138,7 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     MaterialGpuData definition = D(material);
     float porosity = saturate(definition.biology.z);
     float absorbency = saturate(definition.transport.w);
@@ -268,7 +273,7 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
     if (material == 9u || state.z > 0.05)
         flow.y -= state.z * _Mechanics.x * 0.1 * _DeltaTime;
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -281,6 +286,7 @@ void RunoffAndDeposition(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     MaterialGpuData definition = D(material);
     bool atmosphere = IsAtmosphereCell(cell, material);
 
@@ -306,7 +312,7 @@ void RunoffAndDeposition(uint3 id : SV_DispatchThreadID)
             flow.y -= state.z * _Mechanics.x * 0.35 * _DeltaTime;
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -319,6 +325,7 @@ void GeothermalDischarge(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     bool exposed = IsExposedSurface(cell, material);
 
     float hotBelow = S(cell + int2(0, -1)).x;
@@ -353,7 +360,7 @@ void GeothermalDischarge(uint3 id : SV_DispatchThreadID)
         state.y += vent * 0.1;
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -366,6 +373,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     MaterialGpuData definition = D(material);
     bool exposed = IsExposedSurface(cell, material);
     float flowEnergy = length(flow);
@@ -428,7 +436,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     if ((material == 4u || material == 7u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
         material = 8u;
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -441,6 +449,7 @@ void AshFertilization(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     float fertility = max(0.0, _EruptionB.w);
 
     if (material == 12u && cell.y > 0)
@@ -480,7 +489,7 @@ void AshFertilization(uint3 id : SV_DispatchThreadID)
             aux.z = saturate(aux.z + 0.35 * fertility);
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -493,6 +502,7 @@ void WaterMaterialization(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     float rainThreshold = _WeatherE.z;
     float surfaceThreshold = _WeatherE.w;
     bool precipitationEnabled = _WeatherB.w > 1e-6;
@@ -545,5 +555,5 @@ void WaterMaterialization(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }

@@ -16,18 +16,20 @@ namespace GeneSys.Persistence
         private const int Version2 = 2;
         private const int Version3 = 3;
         private const int Version4 = 4;
+        private const int Version5 = 5;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            byte[][] payloads = new byte[6][];
-            int remaining = 6;
+            byte[][] payloads = new byte[7][];
+            int remaining = 7;
             bool failed = false;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
                 host.Resources.FlowRead, host.Resources.AuxRead,
-                host.Resources.ShadeRead, host.Resources.EcologyRead
+                host.Resources.ShadeRead, host.Resources.EcologyRead,
+                host.Resources.CombustionRead
             };
             for (int i = 0; i < textures.Length; i++)
             {
@@ -45,7 +47,7 @@ namespace GeneSys.Persistence
                         using var writer = new BinaryWriter(stream);
                         SimulationConfig config = host.Config;
                         writer.Write(Magic);
-                        writer.Write(Version4);
+                        writer.Write(Version5);
                         writer.Write(host.Resources.Grid.angularResolution);
                         writer.Write(host.Resources.Grid.radialResolution);
                         writer.Write(config.seed);
@@ -70,7 +72,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -133,6 +135,22 @@ namespace GeneSys.Persistence
                 ClearEcology(host.Resources);
             }
 
+            if (version >= Version5)
+            {
+                int length = reader.ReadInt32();
+                byte[] payload = reader.ReadBytes(length);
+                if (payload.Length != length) return false;
+                Texture2D staging = CreateStagingTexture(width, height, host.Resources.CombustionRead.graphicsFormat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, host.Resources.CombustionRead);
+                UnityEngine.Object.Destroy(staging);
+            }
+            else
+            {
+                ClearCombustion(host.Resources);
+            }
+
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
             return true;
@@ -147,6 +165,21 @@ namespace GeneSys.Persistence
             staging.Apply(false, false);
             Graphics.CopyTexture(staging, resources.EcologyRead);
             Graphics.CopyTexture(staging, resources.EcologyWrite);
+            UnityEngine.Object.Destroy(staging);
+        }
+
+        private static void ClearCombustion(SimulationResources resources)
+        {
+            int width = resources.Grid.angularResolution;
+            int height = resources.Grid.radialResolution;
+            var pixels = new Color[width * height];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = new Color(1f, 0f, 0f, 0f);
+            var staging = new Texture2D(width, height, TextureFormat.RGBAFloat, false, true);
+            staging.SetPixels(pixels);
+            staging.Apply(false, false);
+            Graphics.CopyTexture(staging, resources.CombustionRead);
+            Graphics.CopyTexture(staging, resources.CombustionWrite);
             UnityEngine.Object.Destroy(staging);
         }
 

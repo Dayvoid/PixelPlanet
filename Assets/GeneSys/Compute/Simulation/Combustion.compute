@@ -1,0 +1,169 @@
+#pragma kernel Combustion
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+Texture2D<uint> _ShadeRead;
+RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _CombustionA; // ambientOxygen, oxygenReplenish, oxygenDiffusion, ignitionAccumulation
+float4 _CombustionB; // ignitionDecay, seedIntensity, burnRate, heatYield
+float4 _CombustionC; // pressureScale, updraftStrength, smokeYield, sootSettling
+float4 _CombustionD; // pyroFertility, moisturePenalty, steamSuppression, flameDecay
+float4 _CombustionE; // flashVaporization, minFuel, minOxygen, suppressionMoisture
+float4 _MycologyE;   // unused, unused, traitEffectStrength, unused
+
+uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
+float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
+float2 ReadFlow(int2 cell) { cell = ClampCell(cell, _GridSize); return _FlowRead.Load(int3(cell, 0)); }
+float4 ReadAux(int2 cell) { cell = ClampCell(cell, _GridSize); return _AuxRead.Load(int3(cell, 0)); }
+float4 ReadEcology(int2 cell) { cell = ClampCell(cell, _GridSize); return _EcologyRead.Load(int3(cell, 0)); }
+float4 ReadCombustion(int2 cell) { cell = ClampCell(cell, _GridSize); return _CombustionRead.Load(int3(cell, 0)); }
+MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
+
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
+{
+    uint oldMaterial = ReadMaterial(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(Mat(material).metadata.x, (uint2)cell, material, _Seed);
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
+}
+
+[numthreads(8, 8, 1)]
+void Combustion(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    float4 ecology = ReadEcology(cell);
+    float4 combustion = ReadCombustion(cell);
+    MaterialGpuData definition = Mat(material);
+
+    float igniteAccRate = max(0.0, _CombustionA.w);
+    float igniteDecay = max(0.0, _CombustionB.x);
+    float seedIntensity = saturate(_CombustionB.y);
+    float burnRate = max(0.0, _CombustionB.z);
+    float heatYield = max(0.0, _CombustionB.w);
+    float pressureScale = max(0.0, _CombustionC.x);
+    float updraft = max(0.0, _CombustionC.y);
+    float smokeScale = max(0.0, _CombustionC.z);
+    float pyroFertility = max(0.0, _CombustionD.x);
+    float moisturePenalty = max(0.0, _CombustionD.y);
+    float steamSuppression = max(0.0, _CombustionD.z);
+    float flameDecay = max(0.0, _CombustionD.w);
+    float flashRate = max(0.0, _CombustionE.x);
+    float minFuel = max(0.0, _CombustionE.y);
+    float minOxygen = max(0.0, _CombustionE.z);
+    float suppressMoisture = max(0.0, _CombustionE.w);
+
+    float capacity = OxygenCapacity(material, definition);
+    combustion.x = min(max(0.0, combustion.x), capacity);
+
+    float fuel = MycologyFuel(material, ecology);
+    float wetness = max(0.0, state.z) + max(0.0, aux.y) + max(0.0, aux.x) * steamSuppression;
+    uint traits = DecodeMycologyTraits(ecology.z);
+    float threshold = TraitModulatedIgnition(definition.combustion.x, traits, _MycologyE.z) + wetness * moisturePenalty;
+
+    bool canIgnite = fuel > minFuel && combustion.x > minOxygen && state.x > threshold;
+    if (canIgnite)
+        combustion.w = saturate(combustion.w + igniteAccRate * _DeltaTime);
+    else
+        combustion.w = max(0.0, combustion.w - igniteDecay * _DeltaTime);
+
+    if (combustion.w >= 1.0)
+    {
+        combustion.y = max(combustion.y, seedIntensity);
+        combustion.w = 0.0;
+    }
+
+    bool suppressed = wetness > suppressMoisture;
+    if (combustion.y > 0.0)
+    {
+        if (fuel <= minFuel || combustion.x <= minOxygen * 0.25 || suppressed)
+            combustion.y = max(0.0, combustion.y - flameDecay * 2.0 * _DeltaTime);
+        else
+            combustion.y = saturate(combustion.y - flameDecay * 0.15 * _DeltaTime);
+
+        float oxygenDemand = max(0.05, definition.combustion.z);
+        float calories = max(0.0, definition.biology.y);
+        float burn = min(fuel * burnRate, combustion.x / oxygenDemand) * combustion.y * _DeltaTime;
+        burn = max(0.0, min(burn, fuel));
+
+        ecology.y = saturate(ecology.y - burn);
+        combustion.x = max(0.0, combustion.x - burn * oxygenDemand);
+        state.x += burn * calories * heatYield * 60.0;
+        state.y += burn * pressureScale;
+        flow.y += burn * updraft;
+        combustion.z += burn * max(0.0, definition.combustion.w) * smokeScale;
+        aux.z += burn * pyroFertility;
+    }
+
+    bool nearFlame = combustion.y > 0.05;
+    if (!nearFlame)
+    {
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+            if (ReadCombustion(cell + offset).y > 0.05)
+            {
+                nearFlame = true;
+                break;
+            }
+        }
+    }
+
+    float flashPoint = definition.combustion.y;
+    if (nearFlame && state.z > 1e-5 && flashPoint < 9000.0 && state.x >= flashPoint)
+    {
+        float over = saturate((state.x - flashPoint) / 40.0 + 0.25);
+        float steam = min(state.z, flashRate * max(0.05, combustion.y) * over * _DeltaTime);
+        state.z -= steam;
+        aux.x += steam;
+        state.x -= steam * 0.25;
+        combustion.x = max(0.0, combustion.x - steam * steamSuppression);
+        state.y += steam * 0.15;
+        flow.y += steam * 0.8;
+    }
+
+    if (combustion.y < 1e-4)
+        combustion.y = 0.0;
+    if (ecology.y <= 1e-4)
+        ecology.y = 0.0;
+
+    WriteCell(cell, material, state, flow, aux, ecology, combustion);
+}

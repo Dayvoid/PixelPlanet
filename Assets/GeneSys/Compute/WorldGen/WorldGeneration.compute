@@ -10,6 +10,7 @@ RWTexture2D<float2> _FlowWrite;
 RWTexture2D<float4> _AuxWrite;
 RWTexture2D<uint> _ShadeWrite;
 RWTexture2D<float4> _EcologyWrite;
+RWTexture2D<float4> _CombustionWrite;
 Texture2D<uint> _MaterialRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
@@ -246,6 +247,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
     _ShadeWrite[id.xy] = shade;
     _EcologyWrite[id.xy] = SanitizeEcology(float4(sporeLoad, 0.0, (float)traits, 0.0));
+    _CombustionWrite[id.xy] = SeedCombustion(material, definition);
 }
 
 [numthreads(8, 8, 1)]
@@ -372,6 +374,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
     _ShadeWrite[id.xy] = shade;
     _EcologyWrite[id.xy] = SanitizeEcology(float4(sporeLoad, 0.0, (float)traits, 0.0));
+    _CombustionWrite[id.xy] = SeedCombustion(material, definition);
 }
 
 [numthreads(8, 8, 1)]

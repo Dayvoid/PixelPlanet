@@ -25,6 +25,7 @@ namespace GeneSys.UI
             { "Hydrology and erosion", "hydrology" },
             { "Solar and weather", "weather" },
             { "Ecology - Mycology", "ecology" },
+            { "Combustion", "combustion" },
             { "Graphics", "performance" },
             { "Tools and validation", "performance" }
         };
@@ -181,7 +182,8 @@ namespace GeneSys.UI
                 {
                     "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor",
                     "Groundwater", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories", "Composite Water",
-                    "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only", "Mycology"
+                    "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only", "Mycology",
+                    "Fire", "Oxygen"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
@@ -226,7 +228,7 @@ namespace GeneSys.UI
 
         private void SetupTabs(VisualElement root)
         {
-            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology" };
+            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology", "combustion" };
             void Show(string name)
             {
                 HideSettingTooltip();
@@ -392,7 +394,8 @@ namespace GeneSys.UI
                 { "hydrology", root.Q<ScrollView>("settings-hydrology") },
                 { "weather", root.Q<ScrollView>("settings-weather") },
                 { "performance", root.Q<ScrollView>("settings-performance") },
-                { "ecology", root.Q<ScrollView>("settings-ecology") }
+                { "ecology", root.Q<ScrollView>("settings-ecology") },
+                { "combustion", root.Q<ScrollView>("settings-combustion") }
             };
             HideSettingTooltip();
             foreach (ScrollView container in containers.Values)
@@ -522,10 +525,10 @@ namespace GeneSys.UI
             AttachNamedSettingTooltip(root, "speed", nameof(SimulationConfig.simulationSpeed));
             AttachNamedSettingTooltip(root, "overlay",
                 "Overlay",
-                "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Wind, Vapor, Groundwater, Mycology, and the others reveal the systems those settings drive.");
+                "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Wind, Vapor, Groundwater, Mycology, Fire, Oxygen, and the others reveal the systems those settings drive.");
             AttachNamedSettingTooltip(root, "brush-mode",
                 "Brush Mode",
-                "Selects what left-drag paints: material, heat, water, charge, or other cell fields. Right-click still inspects the cell under the cursor.");
+                "Selects what left-drag paints: material, heat, water, pressure, vapor, or ignition. Right-click still inspects the cell under the cursor.");
             AttachNamedSettingTooltip(root, "material",
                 "Material",
                 "Material the brush paints, and whose properties appear below. Changing density, conductivity, or absorbency immediately affects gravity, weather, hydrology, and phase changes for that pixel type.");
@@ -679,7 +682,7 @@ namespace GeneSys.UI
         {
             if (inspectLabel == null) return;
             GeneSys.Materials.MaterialDefinition definition = host.MaterialRegistry.Get((int)inspection.materialId);
-            inspectLabel.text = $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\nMaterial: {(definition != null ? definition.displayName : inspection.materialId.ToString())}\nT {inspection.state.x:F2}  P {inspection.state.y:F3}\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\nVapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\nNutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\nSpores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\nStrain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\nWind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}";
+            inspectLabel.text = $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\nMaterial: {(definition != null ? definition.displayName : inspection.materialId.ToString())}\nT {inspection.state.x:F2}  P {inspection.state.y:F3}\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\nVapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\nNutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\nSpores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\nStrain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\nO2 {inspection.combustion.x:F3}  Flame {inspection.combustion.y:F3}\nSoot {inspection.combustion.z:F3}  Ignite {inspection.combustion.w:F3}\nWind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}";
         }
 
         private void RefreshPlayLabel()
@@ -722,6 +725,7 @@ namespace GeneSys.UI
                         $"Total tracked water {metrics.TotalTrackedWaterMass:F1}\n" +
                         $"Mean T {metrics.MeanTemperature:F2}  P {metrics.MeanPressure:F3}  moisture {metrics.MeanMoisture:F3}\n" +
                         $"Mean wind speed {metrics.MeanWindSpeed:F3}\n" +
+                        $"Fire cells {metrics.BurningCellCount}  intensity {metrics.TotalFireIntensity:F2}  O2 {metrics.MeanOxygen:F2}  soot {metrics.SootMass:F2}\n" +
                         $"Organisms {metrics.OrganismCount}  (phase 2)";
                 }
             });

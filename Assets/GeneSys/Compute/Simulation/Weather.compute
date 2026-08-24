@@ -18,6 +18,8 @@ Texture2D<uint> _ShadeRead;
 RWTexture2D<uint> _ShadeWrite;
 Texture2D<float4> _EcologyRead;
 RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -43,6 +45,8 @@ float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, unused, unused
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
+float4 _CombustionA; // ambientOxygen, oxygenReplenish, oxygenDiffusion, unused
+float4 _CombustionC; // unused, unused, unused, sootSettling
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -50,6 +54,7 @@ float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
 float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
 float4 E(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
+float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 bool IsAtmosphereCell(int2 cell, uint material)
@@ -70,7 +75,7 @@ bool IsOpenCarrier(uint material)
     return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
 }
 
-void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
 {
     uint oldMaterial = M(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -82,6 +87,7 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
 }
 
 float AtmosphericVaporCapacity(float temperature, float radius, float pressure)
@@ -142,6 +148,7 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     MaterialGpuData definition = D(material);
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
@@ -172,7 +179,7 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -185,6 +192,7 @@ void AtmosphericContinuity(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
 
     if (IsAtmosphereCell(cell, material))
     {
@@ -209,7 +217,7 @@ void AtmosphericContinuity(uint3 id : SV_DispatchThreadID)
         state.y = max(0.0, state.y + dp);
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -222,6 +230,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     bool atmosphere = IsAtmosphereCell(cell, material);
     float4 faces = AtmosphereFaceMask(cell);
     float cfl = saturate(_WeatherF.w);
@@ -279,7 +288,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
     }
 
     flow *= saturate(1.0 - _WeatherB.x * _DeltaTime);
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -292,24 +301,37 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     bool atmosphere = IsAtmosphereCell(cell, material);
     float advectionRate = max(0.0, _WeatherD.x);
     float diffusionRate = max(0.0, _WeatherD.y);
     float tempAdvRate = max(0.0, _WeatherF.y);
     float tanW = TangentialEdgeWeight(cell.y, _GridSize.y);
 
+    float oxygenDiffRate = max(0.0, _CombustionA.z);
+    float oxygenReplenish = max(0.0, _CombustionA.y);
+    float sootSettle = max(0.0, _CombustionC.w);
+    float capacity = OxygenCapacity(material, D(material));
+    float ambient = saturate(_CombustionA.x) * capacity;
+
     if (atmosphere)
     {
         float vapor = max(0.0, aux.x);
         float cloud = max(0.0, state.z);
+        float oxygen = max(0.0, combustion.x);
+        float soot = max(0.0, combustion.z);
         float4 validFaces = AtmosphereFaceMask(cell);
 
         float4 outVapor = DonorFaceFlux(flow, vapor, advectionRate, validFaces, tanW);
         float4 outCloud = DonorFaceFlux(flow, cloud, advectionRate, validFaces, tanW);
         float4 outHeatUnit = DonorFaceFlux(flow, 1.0, tempAdvRate, validFaces, tanW);
+        float4 outOxygen = DonorFaceFlux(flow, oxygen, advectionRate, validFaces, tanW);
+        float4 outSoot = DonorFaceFlux(flow, soot, advectionRate, validFaces, tanW);
         float vaporOut = outVapor.x + outVapor.y + outVapor.z + outVapor.w;
         float cloudOut = outCloud.x + outCloud.y + outCloud.z + outCloud.w;
         float heatOutFrac = outHeatUnit.x + outHeatUnit.y + outHeatUnit.z + outHeatUnit.w;
+        float oxygenOut = outOxygen.x + outOxygen.y + outOxygen.z + outOxygen.w;
+        float sootOut = outSoot.x + outSoot.y + outSoot.z + outSoot.w;
 
         float vaporIn = 0.0;
         float cloudIn = 0.0;
@@ -317,6 +339,10 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
         float heatInFrac = 0.0;
         float vaporDiff = 0.0;
         float cloudDiff = 0.0;
+        float oxygenIn = 0.0;
+        float sootIn = 0.0;
+        float oxygenDiff = 0.0;
+        float sootSettled = 0.0;
 
         int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
         [unroll]
@@ -334,6 +360,7 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
             bool neighborAtmosphere = IsAtmosphereCell(neighbor, neighborMaterial);
             float4 neighborAux = A(neighbor);
             float4 neighborState = S(neighbor);
+            float4 neighborCombustion = Comb(neighbor);
 
             if (neighborAtmosphere)
             {
@@ -343,22 +370,29 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
                 float4 neighborOutVapor = DonorFaceFlux(neighborFlow, max(0.0, neighborAux.x), advectionRate, neighborValid, neighborTan);
                 float4 neighborOutCloud = DonorFaceFlux(neighborFlow, max(0.0, neighborState.z), advectionRate, neighborValid, neighborTan);
                 float4 neighborOutHeat = DonorFaceFlux(neighborFlow, 1.0, tempAdvRate, neighborValid, neighborTan);
+                float4 neighborOutOxygen = DonorFaceFlux(neighborFlow, max(0.0, neighborCombustion.x), advectionRate, neighborValid, neighborTan);
+                float4 neighborOutSoot = DonorFaceFlux(neighborFlow, max(0.0, neighborCombustion.z), advectionRate, neighborValid, neighborTan);
 
                 float faceVapor = 0.0;
                 float faceCloud = 0.0;
                 float faceHeatFrac = 0.0;
-                if (offset.x == 1) { faceVapor = neighborOutVapor.x; faceCloud = neighborOutCloud.x; faceHeatFrac = neighborOutHeat.x; }
-                else if (offset.x == -1) { faceVapor = neighborOutVapor.y; faceCloud = neighborOutCloud.y; faceHeatFrac = neighborOutHeat.y; }
-                else if (offset.y == 1) { faceVapor = neighborOutVapor.z; faceCloud = neighborOutCloud.z; faceHeatFrac = neighborOutHeat.z; }
-                else if (offset.y == -1) { faceVapor = neighborOutVapor.w; faceCloud = neighborOutCloud.w; faceHeatFrac = neighborOutHeat.w; }
+                float faceOxygen = 0.0;
+                float faceSoot = 0.0;
+                if (offset.x == 1) { faceVapor = neighborOutVapor.x; faceCloud = neighborOutCloud.x; faceHeatFrac = neighborOutHeat.x; faceOxygen = neighborOutOxygen.x; faceSoot = neighborOutSoot.x; }
+                else if (offset.x == -1) { faceVapor = neighborOutVapor.y; faceCloud = neighborOutCloud.y; faceHeatFrac = neighborOutHeat.y; faceOxygen = neighborOutOxygen.y; faceSoot = neighborOutSoot.y; }
+                else if (offset.y == 1) { faceVapor = neighborOutVapor.z; faceCloud = neighborOutCloud.z; faceHeatFrac = neighborOutHeat.z; faceOxygen = neighborOutOxygen.z; faceSoot = neighborOutSoot.z; }
+                else if (offset.y == -1) { faceVapor = neighborOutVapor.w; faceCloud = neighborOutCloud.w; faceHeatFrac = neighborOutHeat.w; faceOxygen = neighborOutOxygen.w; faceSoot = neighborOutSoot.w; }
 
                 vaporIn += faceVapor;
                 cloudIn += faceCloud;
                 heatIn += neighborState.x * faceHeatFrac;
                 heatInFrac += faceHeatFrac;
+                oxygenIn += faceOxygen;
+                sootIn += faceSoot;
 
                 vaporDiff += DiffusiveExchange(vapor, max(0.0, neighborAux.x), diffusionRate);
                 cloudDiff += DiffusiveExchange(cloud, max(0.0, neighborState.z), diffusionRate);
+                oxygenDiff += DiffusiveExchange(oxygen, max(0.0, neighborCombustion.x), oxygenDiffRate);
             }
             else if (offset.y == -1 && IsExposedSurface(neighbor, neighborMaterial) && IsOpenCarrier(material))
             {
@@ -370,11 +404,15 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
                 float surfaceTemp = neighborState.x;
                 float plumeMix = saturate(_WeatherF.x * 0.5 * _DeltaTime);
                 state.x = lerp(state.x, surfaceTemp, plumeMix);
+
+                sootSettled += min(soot, soot * sootSettle * _DeltaTime);
             }
         }
 
         aux.x = max(0.0, vapor - vaporOut + vaporIn + vaporDiff);
         state.z = max(0.0, cloud - cloudOut + cloudIn + cloudDiff);
+        combustion.x = saturate(oxygen - oxygenOut + oxygenIn + oxygenDiff);
+        combustion.z = max(0.0, soot - sootOut + sootIn - sootSettled);
 
         float remain = max(0.0, 1.0 - heatOutFrac);
         float denom = max(1e-5, remain + heatInFrac);
@@ -390,10 +428,17 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
             float vapor = max(0.0, aux.x);
             float vent = min(vapor, vapor * saturate(0.35 + advectionRate) * _DeltaTime);
             aux.x = max(0.0, vapor - vent);
+
+            float aboveSoot = max(0.0, Comb(above).z);
+            float settle = min(aboveSoot, aboveSoot * sootSettle * _DeltaTime);
+            aux.z += settle;
         }
     }
 
-    Write(cell, material, state, flow, aux, ecology);
+    combustion.x = lerp(combustion.x, ambient, saturate(oxygenReplenish * _DeltaTime));
+    combustion.x = min(max(0.0, combustion.x), capacity);
+
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
 [numthreads(8, 8, 1)]
@@ -406,6 +451,7 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float2 flow = F(cell);
     float4 aux = A(cell);
     float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
     float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
     bool exposed = IsExposedSurface(cell, material);
@@ -487,5 +533,5 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     else if (material == 10u && state.x > 1.0) material = 9u;
     else if (material == 11u) material = 1u;
 
-    Write(cell, material, state, flow, aux, ecology);
+    Write(cell, material, state, flow, aux, ecology, combustion);
 }

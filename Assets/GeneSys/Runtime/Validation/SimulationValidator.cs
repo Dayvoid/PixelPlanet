@@ -37,7 +37,8 @@ namespace GeneSys.Validation
             RenderTexture auxTex = host.Resources.AuxRead;
             RenderTexture flowTex = host.Resources.FlowRead;
             RenderTexture ecologyTex = host.Resources.EcologyRead;
-            if (stateTex == null || auxTex == null || flowTex == null || ecologyTex == null) return;
+            RenderTexture combustionTex = host.Resources.CombustionRead;
+            if (stateTex == null || auxTex == null || flowTex == null || ecologyTex == null || combustionTex == null) return;
             pending = true;
             AsyncGPUReadback.Request(stateTex, 0, stateRequest =>
             {
@@ -88,12 +89,26 @@ namespace GeneSys.Validation
                                 if (!MycologyTraits.IsValid(traits))
                                 { Complete(false, $"Invalid mycology traits {value.z} at cell {i}."); return; }
                             }
-                            if (host == null || !host.IsReady || host.Config == null)
-                            { Complete(false, "Simulation host unavailable."); return; }
-                            if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
-                            double drift = Math.Abs(water - baselineWater) / baselineWater;
-                            bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
-                            Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                            AsyncGPUReadback.Request(combustionTex, 0, combustionRequest =>
+                            {
+                                if (combustionRequest.hasError) { Complete(false, "Combustion GPU readback failed."); return; }
+                                NativeArray<Vector4> combustion = combustionRequest.GetData<Vector4>();
+                                for (int i = 0; i < combustion.Length; i++)
+                                {
+                                    Vector4 value = combustion[i];
+                                    if (!Finite(value)) { Complete(false, $"Non-finite combustion field at cell {i}."); return; }
+                                    if (value.x < -0.001f || value.x > 1.01f) { Complete(false, $"Oxygen out of range at cell {i}."); return; }
+                                    if (value.y < -0.01f || value.y > 1.01f) { Complete(false, $"Flame intensity out of range at cell {i}."); return; }
+                                    if (value.z < -0.001f) { Complete(false, $"Negative soot at cell {i}."); return; }
+                                    if (value.w < -0.01f || value.w > 1.01f) { Complete(false, $"Ignition accumulator out of range at cell {i}."); return; }
+                                }
+                                if (host == null || !host.IsReady || host.Config == null)
+                                { Complete(false, "Simulation host unavailable."); return; }
+                                if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
+                                double drift = Math.Abs(water - baselineWater) / baselineWater;
+                                bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                                Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                            });
                         });
                     });
                 });

@@ -43,8 +43,8 @@ namespace GeneSys.Tests
             config.dayNightLightingStrength = 0f;
             config.RestoreDefaults();
             Assert.That(config.enableStarfield, Is.EqualTo(1));
-            Assert.That(config.starCount, Is.EqualTo(160));
-            Assert.That(config.starfieldStrength, Is.EqualTo(0.85f).Within(0.001f));
+            Assert.That(config.starCount, Is.EqualTo(300));
+            Assert.That(config.starfieldStrength, Is.EqualTo(0.15f).Within(0.001f));
             Assert.That(config.nebulaStrength, Is.EqualTo(0.45f).Within(0.001f));
             Assert.That(config.atmosphereGlowStrength, Is.EqualTo(0.7f).Within(0.001f));
             Assert.That(config.atmosphereGlowPixelScale, Is.EqualTo(18f).Within(0.001f));

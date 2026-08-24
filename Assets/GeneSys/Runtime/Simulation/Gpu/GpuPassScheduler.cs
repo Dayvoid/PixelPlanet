@@ -30,6 +30,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader hydrology;
         private readonly ComputeShader weather;
         private readonly ComputeShader mycology;
+        private readonly ComputeShader combustion;
         private int tick;
 
         public int TickIndex => tick;
@@ -39,7 +40,7 @@ namespace GeneSys.Simulation.Gpu
 
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
-            ComputeShader hydrology, ComputeShader weather, ComputeShader mycology)
+            ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader combustion)
         {
             this.config = config;
             this.resources = resources;
@@ -49,6 +50,7 @@ namespace GeneSys.Simulation.Gpu
             this.hydrology = hydrology;
             this.weather = weather;
             this.mycology = mycology;
+            this.combustion = combustion;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 128, BrushCommand.Stride);
         }
@@ -123,6 +125,9 @@ namespace GeneSys.Simulation.Gpu
                 && config.coreReactionMagnitude > 0f
                 && tick % config.coreReactionFrequency == 0)
                 DispatchPass(geology, geology.FindKernel("CoreReaction"), deltaTime);
+
+            if (combustion != null)
+                DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
 
             // Atmospheric loop: forcing → continuity → pressure diffusion → dynamics → transport → water cycle.
             DispatchPass(weather, weather.FindKernel("AtmosphericForcing"), deltaTime);
@@ -204,6 +209,11 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_MycologyC", new Vector4(config.mycologyDecayRate, config.mycologyGrowthTempMin, config.mycologyGrowthTempMax, config.mycologyGrowthMoistureMin));
             shader.SetVector("_MycologyD", new Vector4(config.mycologyGrowthMoistureMax, config.mycologySurvivalTempMin, config.mycologySurvivalTempMax, config.mycologySurvivalMoistureMin));
             shader.SetVector("_MycologyE", new Vector4(config.mycologySurvivalMoistureMax, config.mycologyElectricalTolerance, config.mycologyTraitEffectStrength, 0f));
+            shader.SetVector("_CombustionA", new Vector4(config.combustionAmbientOxygen, config.combustionOxygenReplenishRate, config.combustionOxygenDiffusionRate, config.combustionIgnitionAccumulationRate));
+            shader.SetVector("_CombustionB", new Vector4(config.combustionIgnitionDecayRate, config.combustionSeedIntensity, config.combustionBurnRate, config.combustionHeatYield));
+            shader.SetVector("_CombustionC", new Vector4(config.combustionPressureScale, config.combustionUpdraftStrength, config.combustionSmokeYield, config.combustionSootSettlingRate));
+            shader.SetVector("_CombustionD", new Vector4(config.combustionPyroFertilityYield, config.combustionMoistureIgnitionPenalty, config.combustionSteamSuppression, config.combustionFlameDecay));
+            shader.SetVector("_CombustionE", new Vector4(config.combustionFlashVaporizationRate, config.combustionMinFuel, config.combustionMinOxygen, config.combustionSuppressionMoisture));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)
@@ -220,6 +230,8 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_ShadeWrite", resources.ShadeWrite);
             shader.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
             shader.SetTexture(kernel, "_EcologyWrite", resources.EcologyWrite);
+            shader.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            shader.SetTexture(kernel, "_CombustionWrite", resources.CombustionWrite);
         }
 
         private void BindWorldgenOutputs(ComputeShader shader, int kernel)
@@ -230,6 +242,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_AuxWrite", resources.AuxRead);
             shader.SetTexture(kernel, "_ShadeWrite", resources.ShadeRead);
             shader.SetTexture(kernel, "_EcologyWrite", resources.EcologyRead);
+            shader.SetTexture(kernel, "_CombustionWrite", resources.CombustionRead);
         }
 
         /// <summary>

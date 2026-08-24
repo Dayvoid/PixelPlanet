@@ -51,6 +51,7 @@
                     </ui:VisualElement>
                     <ui:VisualElement class="tab-row tab-row-secondary">
                         <ui:Button name="tab-ecology" text="Ecology" class="tab-button" />
+                        <ui:Button name="tab-combustion" text="Fire" class="tab-button" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-world" class="settings-page">
@@ -81,6 +82,12 @@
                         <ui:Label text="Ecology" class="section-title" />
                         <ui:Label text="Mycology overlay shows spores and colony strength. Colonized soil tints forest green and sediment sage green in the Material view. Growth requires soil or sediment inside the temperature and moisture bands; survival is the wider outer range." class="help" />
                         <ui:ScrollView name="settings-ecology" class="settings-scroll" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement name="page-combustion" class="settings-page hidden">
+                        <ui:Label text="Combustion" class="section-title" />
+                        <ui:Label text="Fire needs heat, oxygen, and mycology fuel. Burning dumps heat and pressure into weather, flashes nearby water into steam, and can smother itself. Use the Fire and Oxygen overlays, or the Ignite brush." class="help" />
+                        <ui:ScrollView name="settings-combustion" class="settings-scroll" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-performance" class="settings-page hidden">

@@ -37,3 +37,7 @@ MonoBehaviour:
   toxicity: 0.01
   caloricContent: 0.4
   bioModifiable: 1
+  ignitionTemperature: 170
+  flashPoint: 150
+  oxygenDemand: 0.8
+  smokeYield: 0.5

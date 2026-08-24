@@ -91,6 +91,9 @@ namespace GeneSys.Tests
             Assert.That(resources.EcologyRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.EcologyWrite.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.EcologyRead.width, Is.EqualTo(PolarGridDefinition.Validation.angularResolution));
+            Assert.That(resources.CombustionRead, Is.Not.Null);
+            Assert.That(resources.CombustionRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
+            Assert.That(resources.CombustionWrite.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
         }
 
         [Test]
@@ -101,7 +104,7 @@ namespace GeneSys.Tests
             renderer.SetOverlay(16);
             Assert.That(renderer.OverlayMode, Is.EqualTo(MycologyVisuals.OverlayMode));
             renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(MycologyVisuals.OverlayMode));
+            Assert.That(renderer.OverlayMode, Is.EqualTo(18));
             Object.DestroyImmediate(go);
         }
 

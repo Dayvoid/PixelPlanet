@@ -50,10 +50,10 @@ namespace GeneSys.Editor
                 Define(4, "Rock", MaterialCategory.Solid, new Color(0.24f,0.25f,0.28f,1), 3, 0.95f, 55, 2, 0, 0.25f, 1.5f, 0.15f, 0.08f, 0.08f, 900, 2400, 0.01f, 0.005f, 4, 6, 11, true, true),
                 Define(5, "Basalt", MaterialCategory.Solid, new Color(0.12f,0.11f,0.13f,1), 3.2f, 0.9f, 50, 1.5f, 0, 0.3f, 1.4f, 0.18f, 0.05f, 0.04f, 780, 2400, 0.01f, 0.005f, 5, 6, 11, true, true),
                 Define(6, "Magma", MaterialCategory.Magma, new Color(1f,0.22f,0.01f,1), 2.7f, 0.05f, 5, 1, 0.7f, 0.7f, 1.2f, 0.25f, 0, 0, 700, 2200, 0.08f, 0.02f, 5, 6, 11, false, true),
-                Define(7, "Soil", MaterialCategory.Granular, new Color(0.28f,0.14f,0.055f,1), 1.5f, 0.15f, 34, 0.8f, 0, 0.12f, 1.1f, 0.04f, 0.75f, 0.55f, 200, 900, 0.02f, 0, 7, 7, 11, true, true, 0.02f, 0.6f),
-                Define(8, "Sediment", MaterialCategory.Granular, new Color(0.46f,0.29f,0.13f,1), 1.3f, 0.05f, 25, 0.35f, 0, 0.1f, 1f, 0.03f, 0.65f, 0.65f, 160, 850, 0.02f, 0, 8, 8, 11, true, true, 0.01f, 0.4f),
-                Define(9, "Water", MaterialCategory.Liquid, new Color(0.02f,0.32f,0.9f,1), 1, 0, 0, 1, 0.5f, 0.55f, 4.2f, 0.05f, 1, 0, 0, 100, 0.02f, 0, 10, 9, 11, false, true),
-                Define(10, "Ice", MaterialCategory.Solid, new Color(0.55f,0.88f,1f,1), 0.92f, 0.65f, 45, 1, 0.3f, 0.35f, 2.1f, 0.01f, 0.1f, 0.05f, 0, 100, 0.02f, 0, 10, 9, 11, true, true),
+                Define(7, "Soil", MaterialCategory.Granular, new Color(0.28f,0.14f,0.055f,1), 1.5f, 0.15f, 34, 0.8f, 0, 0.12f, 1.1f, 0.04f, 0.75f, 0.55f, 200, 900, 0.02f, 0, 7, 7, 11, true, true, 0.02f, 0.6f, 180f, 160f, 0.85f, 0.6f),
+                Define(8, "Sediment", MaterialCategory.Granular, new Color(0.46f,0.29f,0.13f,1), 1.3f, 0.05f, 25, 0.35f, 0, 0.1f, 1f, 0.03f, 0.65f, 0.65f, 160, 850, 0.02f, 0, 8, 8, 11, true, true, 0.01f, 0.4f, 170f, 150f, 0.8f, 0.5f),
+                Define(9, "Water", MaterialCategory.Liquid, new Color(0.02f,0.32f,0.9f,1), 1, 0, 0, 1, 0.5f, 0.55f, 4.2f, 0.05f, 1, 0, 0, 100, 0.02f, 0, 10, 9, 11, false, true, 0, 0, 10000f, 80f, 0, 0),
+                Define(10, "Ice", MaterialCategory.Solid, new Color(0.55f,0.88f,1f,1), 0.92f, 0.65f, 45, 1, 0.3f, 0.35f, 2.1f, 0.01f, 0.1f, 0.05f, 0, 100, 0.02f, 0, 10, 9, 11, true, true, 0, 0, 10000f, 80f, 0, 0),
                 Define(11, "Vapor", MaterialCategory.Gas, new Color(0.75f,0.82f,0.9f,1), 0.0006f, 0, 0, 1, 1, 0.025f, 1.9f, 0, 0, 0, 0, 100, 0.05f, 0, 10, 9, 11, false),
                 Define(12, "Ash", MaterialCategory.Granular, new Color(0.45f,0.42f,0.38f,1), 0.55f, 0.03f, 22, 0.15f, 0.95f, 0.08f, 0.9f, 0.02f, 0.55f, 0.7f, 1100, 2600, 0.01f, 0, 12, 12, 12, true, false, 0.08f, 0.55f),
                 Define(13, "Metal", MaterialCategory.Solid, new Color(0.75f,0.78f,0.82f,1), 7.8f, 0.98f, 70, 1.5f, 0, 8f, 0.45f, 8f, 0, 0.01f, 1450, 2800, 0.008f, 0.015f, 13, 13, 11, false, true)
@@ -81,7 +81,8 @@ namespace GeneSys.Editor
             float thermal, float heatCapacity, float electrical, float absorbency, float porosity,
             float melt, float boil, float thermalExpansion, float electricalExpansion,
             int solid, int liquid, int gas, bool bioModifiable, bool densityDisplaceable = false,
-            float toxicity = 0, float calories = 0)
+            float toxicity = 0, float calories = 0,
+            float ignitionTemperature = 10000f, float flashPoint = 10000f, float oxygenDemand = 0f, float smokeYield = 0f)
         {
             string path = $"{MaterialRoot}/{id:D3}_{name}.asset";
             MaterialDefinition asset = LoadOrCreate<MaterialDefinition>(path);
@@ -93,6 +94,8 @@ namespace GeneSys.Editor
             asset.thermalExpansion = thermalExpansion; asset.electricalExpansion = electricalExpansion;
             asset.solidPhaseId = solid; asset.liquidPhaseId = liquid; asset.gasPhaseId = gas;
             asset.bioModifiable = bioModifiable; asset.toxicity = toxicity; asset.caloricContent = calories;
+            asset.ignitionTemperature = ignitionTemperature; asset.flashPoint = flashPoint;
+            asset.oxygenDemand = oxygenDemand; asset.smokeYield = smokeYield;
             EditorUtility.SetDirty(asset);
             return asset;
         }
@@ -155,6 +158,7 @@ namespace GeneSys.Editor
             SetObject(host, "hydrology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrology.compute"));
             SetObject(host, "weather", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Weather.compute"));
             SetObject(host, "mycology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mycology.compute"));
+            SetObject(host, "combustion", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Combustion.compute"));
             SetObject(host, "display", display);
             SetObject(host, "visuals", visuals);
             SetObject(host, "ui", ui);
