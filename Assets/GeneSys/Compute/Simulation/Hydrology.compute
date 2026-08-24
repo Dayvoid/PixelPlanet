@@ -74,6 +74,42 @@ uint LiquidPixelId(float temperature)
     return temperature < 0.0 ? 10u : 9u;
 }
 
+// A cell that carries surface film and can hand it to an open cell above.
+// Both sides of a materialization pair must agree, so they share this predicate.
+bool IsFilmSubstrate(int2 cell, uint material)
+{
+    if (IsAtmosphereCell(cell, material)) return false;
+    return material != 0u && material != 9u && material != 10u;
+}
+
+// Film one exposed cell pushes toward one angular neighbor, before the per-cell outflow cap.
+// Evaluated only from read fields so a donor and its receiver always compute the same mass.
+float LateralRunoffRaw(int2 from, int2 to)
+{
+    uint fromMaterial = M(from);
+    uint toMaterial = M(to);
+    if (!IsExposedSurface(from, fromMaterial) || !IsExposedSurface(to, toMaterial)) return 0.0;
+    float fromWater = S(from).z;
+    float toWater = S(to).z;
+    if (fromWater <= 0.02) return 0.0;
+    float delta = fromWater - toWater;
+    if (delta <= 0.0) return 0.0;
+    // Ponding holds film in place, so it throttles outflow instead of consuming mass.
+    float retention = saturate(max(0.0, _HydrologyC.y) * 0.15);
+    float amount = delta * 0.5 * max(0.0, _HydrologyC.x) * (1.0 - retention) * _DeltaTime;
+    return min(amount, max(0.0, 1.0 - toWater));
+}
+
+// Runoff leaving one cell as (toward -theta, toward +theta), capped so it cannot overdraw.
+float2 LateralRunoffFaces(int2 cell)
+{
+    float2 faces = float2(LateralRunoffRaw(cell, cell + int2(-1, 0)), LateralRunoffRaw(cell, cell + int2(1, 0)));
+    float total = faces.x + faces.y;
+    float cap = max(0.0, S(cell).z) * 0.35;
+    if (total > cap) faces *= cap / max(total, 1e-8);
+    return faces;
+}
+
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology)
 {
     uint oldMaterial = M(cell);
@@ -109,13 +145,17 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
     float infiltrationRate = _Hydrology.x;
     float groundwaterRate = _Hydrology.y;
 
+    // Every neighbor exchange below is evaluated from pre-tick fields that both cells can read,
+    // so a donor's subtraction and a receiver's addition are always the same number.
+    float groundwaterRead = max(0.0, aux.y);
+    float groundwaterDelta = 0.0;
+
     if (host)
     {
-        float remaining = max(0.0, capacity - aux.y);
+        float remaining = max(0.0, capacity - groundwaterRead);
         float film = InfiltrationAmount(state.z, remaining, absorbency, porosity, infiltrationRate, _DeltaTime);
         state.z -= film;
-        aux.y += film;
-        remaining = max(0.0, capacity - aux.y);
+        groundwaterDelta += film;
 
         if (cell.y < _GridSize.y - 1)
         {
@@ -125,8 +165,7 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
             {
                 float4 aboveState = S(above);
                 float soak = InfiltrationAmount(aboveState.z, remaining, absorbency, porosity, infiltrationRate, _DeltaTime);
-                aux.y += soak;
-                remaining = max(0.0, capacity - aux.y);
+                groundwaterDelta += soak;
                 state.x = MixTemperature(state.x, definition.transport.y, aboveState.x, soak, waterHeatCapacity);
             }
         }
@@ -143,7 +182,9 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
             float soak = InfiltrationAmount(state.z, remaining, saturate(belowDef.transport.w),
                 saturate(belowDef.biology.z), infiltrationRate, _DeltaTime);
             state.z -= soak;
-            if (state.z < 0.05)
+            // Only a pixel that actually drained may give up its residue; otherwise a pixel
+            // resting on soil with infiltration disabled would still evaporate itself away.
+            if (soak > 0.0 && state.z < 0.05)
             {
                 aux.x += state.z;
                 state.z = 0.0;
@@ -161,9 +202,9 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
             MaterialGpuData aboveDef = D(aboveMaterial);
             if (IsGroundwaterHost(aboveMaterial, aboveDef))
             {
-                float perc = PercolationAmount(A(above).y, GroundwaterCapacity(aboveDef), aux.y, capacity,
+                float perc = PercolationAmount(A(above).y, GroundwaterCapacity(aboveDef), groundwaterRead, capacity,
                     saturate(aboveDef.biology.z), porosity, groundwaterRate, fieldCapacityFraction, _DeltaTime);
-                aux.y += perc;
+                groundwaterDelta += perc;
                 state.x = MixTemperature(state.x, definition.transport.y, S(above).x, perc, waterHeatCapacity);
             }
         }
@@ -174,9 +215,9 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
             MaterialGpuData belowDef = D(belowMaterial);
             if (IsGroundwaterHost(belowMaterial, belowDef))
             {
-                float perc = PercolationAmount(aux.y, capacity, A(below).y, GroundwaterCapacity(belowDef),
+                float perc = PercolationAmount(groundwaterRead, capacity, A(below).y, GroundwaterCapacity(belowDef),
                     porosity, saturate(belowDef.biology.z), groundwaterRate, fieldCapacityFraction, _DeltaTime);
-                aux.y = max(0.0, aux.y - perc);
+                groundwaterDelta -= perc;
             }
         }
 
@@ -189,18 +230,27 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
         MaterialGpuData rightDef = D(rightMaterial);
         if (IsGroundwaterHost(leftMaterial, leftDef))
         {
-            aux.y += LateralGroundwaterReceive(aux.y, A(left).y, capacity, GroundwaterCapacity(leftDef),
+            groundwaterDelta += LateralGroundwaterReceive(groundwaterRead, A(left).y, capacity, GroundwaterCapacity(leftDef),
                 porosity, saturate(leftDef.biology.z), lateralRate, _DeltaTime);
         }
         if (IsGroundwaterHost(rightMaterial, rightDef))
         {
-            aux.y += LateralGroundwaterReceive(aux.y, A(right).y, capacity, GroundwaterCapacity(rightDef),
+            groundwaterDelta += LateralGroundwaterReceive(groundwaterRead, A(right).y, capacity, GroundwaterCapacity(rightDef),
                 porosity, saturate(rightDef.biology.z), lateralRate, _DeltaTime);
         }
-        aux.y = max(0.0, aux.y);
+        aux.y = max(0.0, groundwaterRead + groundwaterDelta);
     }
-    else if (IsAtmosphereCell(cell, material) || material == 9u || material == 11u)
+    else if (material == 9u || material == 10u)
+    {
+        // A host that turned to liquid keeps its water as surface mass instead of dropping it.
+        state.z += groundwaterRead;
         aux.y = 0.0;
+    }
+    else if (IsAtmosphereCell(cell, material))
+    {
+        aux.x += groundwaterRead;
+        aux.y = 0.0;
+    }
 
     float springThreshold = _HydrologyB.x;
     float head = aux.y + state.y * 0.15 + aux.w * 0.25;
@@ -233,25 +283,21 @@ void RunoffAndDeposition(uint3 id : SV_DispatchThreadID)
     float4 ecology = E(cell);
     MaterialGpuData definition = D(material);
     bool atmosphere = IsAtmosphereCell(cell, material);
-    bool exposed = IsExposedSurface(cell, material);
 
-    if (exposed && state.z > 0.02)
+    // Runoff is a pairwise exchange: what this cell sends across a face is exactly what the
+    // neighbor on that face receives, so spreading film never creates or destroys mass.
+    float2 sendFaces = LateralRunoffFaces(cell);
+    float sent = sendFaces.x + sendFaces.y;
+    float received = LateralRunoffFaces(cell + int2(-1, 0)).y + LateralRunoffFaces(cell + int2(1, 0)).x;
+    if (sent > 0.0 || received > 0.0)
     {
-        float downhill = S(cell + int2(0, -1)).z - state.z;
-        float lateral = (S(cell + int2(-1, 0)).z - S(cell + int2(1, 0)).z) * 0.5;
-        float transfer = max(0.0, downhill) * _HydrologyC.x * _DeltaTime;
-        transfer += max(0.0, lateral) * _HydrologyC.x * 0.35 * _DeltaTime;
-        transfer = min(transfer, state.z * 0.35);
-        state.z -= transfer;
-        flow.x += lateral * _HydrologyC.x * 0.2 * _DeltaTime;
-        flow.y -= transfer * 2.0;
+        state.z += received - sent;
+        flow.x += (sendFaces.y - sendFaces.x) * 2.0;
     }
 
+    // Ponding damps outward motion so depressions keep their water; the mass itself stays put.
     if ((material == 7u || material == 8u) && state.z > 0.05 && definition.biology.z > 0.2)
-    {
-        float pond = min(state.z, _HydrologyC.y * _DeltaTime * 0.25);
-        state.z = max(state.z - pond * 0.15, pond);
-    }
+        flow *= saturate(1.0 - max(0.0, _HydrologyC.y) * 0.25 * _DeltaTime);
 
     if (material == 9u && cell.y > 0)
     {
@@ -297,8 +343,11 @@ void GeothermalDischarge(uint3 id : SV_DispatchThreadID)
     if (material == 9u && (belowMat == 6u || belowMat == 5u) && hotBelow > 200.0 && aux.w > 0.25)
     {
         float vent = min(state.z, _GeologyB.x * _DeltaTime);
+        // The steam that leaves comes out of this cell's liquid rather than out of nowhere.
+        float steam = vent * 0.15;
+        state.z -= steam;
+        aux.x += steam;
         state.x += vent * 35.0;
-        aux.x += vent * 0.15;
         aux.z += vent * _GeologyB.y;
         flow.y += vent * 1.5;
         state.y += vent * 0.1;
@@ -455,8 +504,7 @@ void WaterMaterialization(uint3 id : SV_DispatchThreadID)
     {
         int2 below = cell + int2(0, -1);
         uint belowMat = M(below);
-        bool belowSubstrate = !IsAtmosphereCell(below, belowMat) && belowMat != 9u && belowMat != 10u
-            && belowMat != 0u && belowMat != 1u && belowMat != 11u;
+        bool belowSubstrate = IsFilmSubstrate(below, belowMat);
         float belowWater = S(below).z;
         if (belowSubstrate && belowWater >= surfaceThreshold)
         {
@@ -485,7 +533,7 @@ void WaterMaterialization(uint3 id : SV_DispatchThreadID)
         material = LiquidPixelId(state.x);
     }
 
-    if (!IsAtmosphereCell(cell, material) && material != 9u && material != 10u
+    if (IsFilmSubstrate(cell, material)
         && surfaceThreshold > 1e-6 && state.z >= surfaceThreshold && cell.y < _GridSize.y - 1)
     {
         uint aboveMat = M(cell + int2(0, 1));

@@ -28,6 +28,11 @@
 //   Film soak and Water-pixel contact drain state.z into aux.y up to porosity capacity.
 //   Excess above field capacity percolates radially inward; lateral flow is host-only.
 // Every transfer must subtract from a source reservoir before adding to a destination.
+// Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
+// each writes only its own cell. So both sides must derive the transferred mass from the same
+// pre-tick (read-texture) fields. Sizing a transfer from a value the current kernel already
+// mutated makes the two sides disagree, and the difference silently leaks or invents water.
+// Purely local moves between one cell's own reservoirs may use running values freely.
 //
 // Pressure (state.y):
 //   Local sources/sinks (thermal expansion, mantle feed, vapor, brushes) still write absolute

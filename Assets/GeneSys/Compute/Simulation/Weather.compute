@@ -380,13 +380,16 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
         float denom = max(1e-5, remain + heatInFrac);
         state.x = (state.x * remain + heatIn) / denom;
     }
-    else if (IsExposedSurface(cell, material) && aux.x > 1e-6 && cell.y < _GridSize.y - 1)
+    else if (IsExposedSurface(cell, material) && cell.y < _GridSize.y - 1)
     {
-        uint aboveMaterial = M(cell + int2(0, 1));
-        if (IsOpenCarrier(aboveMaterial))
+        // Mirror of the gather above: only vent into a cell that actually collects the vapor.
+        int2 above = cell + int2(0, 1);
+        uint aboveMaterial = M(above);
+        if (IsAtmosphereCell(above, aboveMaterial) && IsOpenCarrier(aboveMaterial))
         {
-            float vent = min(aux.x, aux.x * saturate(0.35 + advectionRate) * _DeltaTime);
-            aux.x = max(0.0, aux.x - vent);
+            float vapor = max(0.0, aux.x);
+            float vent = min(vapor, vapor * saturate(0.35 + advectionRate) * _DeltaTime);
+            aux.x = max(0.0, vapor - vent);
         }
     }
 
@@ -409,6 +412,9 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     MaterialGpuData definition = D(material);
     float evaporativeDrive = saturate((state.x - 5.0) / 80.0);
     float evaporationBudget = _WeatherB.y * evaporativeDrive * _DeltaTime;
+    // Rain is sized from pre-tick cloud and pre-tick surface film. Evaporation and condensation
+    // below only move mass within this cell, and a raining pair must agree on one number.
+    float filmRead = max(0.0, state.z);
 
     if (state.x > 5.0 && !atmosphere)
     {
@@ -441,12 +447,12 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
         }
 
         float rainThreshold = max(0.01, _WeatherE.y);
-        if (state.z > rainThreshold && cell.y > 0)
+        if (filmRead > rainThreshold && cell.y > 0)
         {
             uint belowMaterial = M(cell + int2(0, -1));
             if (!IsAtmosphereCell(cell + int2(0, -1), belowMaterial))
             {
-                float rain = min(state.z - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
+                float rain = min(filmRead - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
                 rain = max(0.0, rain);
                 float belowRoom = max(0.0, 1.0 - S(cell + int2(0, -1)).z);
                 rain = min(rain, belowRoom);
@@ -467,7 +473,7 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
             {
                 float rain = min(aboveCloud - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
                 rain = max(0.0, rain);
-                rain = min(rain, max(0.0, 1.0 - state.z));
+                rain = min(rain, max(0.0, 1.0 - filmRead));
                 float rainTemp = S(above).x;
                 state.z += rain;
                 state.x = MixTemperature(state.x, definition.transport.y, rainTemp, rain, max(0.001, D(9u).transport.y));

@@ -191,6 +191,57 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator FullWaterLoopHoldsItsMassOverManyTicks()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Config.targetOceanCoverage = 0.5f;
+            host.Config.validationIntervalTicks = 100000;
+            host.Config.seed = 90210;
+            // Every path that moves water runs at once: rain, runoff, ponding, infiltration,
+            // percolation, springs, evaporation, and both pixel materialization rules.
+            host.Config.evaporationRate = 0.3f;
+            host.Config.condensationRate = 0.4f;
+            host.Config.precipitationRate = 0.5f;
+            host.Config.infiltrationRate = 0.6f;
+            host.Config.groundwaterRate = 0.4f;
+            host.Config.runoffRate = 1f;
+            host.Config.pondingRate = 0.5f;
+            host.Config.springDischargeRate = 0.5f;
+            host.Config.rainPixelFormationThreshold = 0.35f;
+            host.Config.surfaceWaterPixelThreshold = 0.55f;
+            host.Config.slowPassInterval = 2;
+            host.Regenerate();
+            host.Clock.SetRunning(false);
+            for (int i = 0; i < 5; i++) yield return null;
+
+            double waterBefore = 0d;
+            yield return ReadGpuFields(host, (_, states, aux) =>
+            {
+                for (int i = 0; i < states.Length; i++)
+                    waterBefore += Math.Max(0d, states[i].z) + Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
+            });
+            Assert.That(waterBefore, Is.GreaterThan(1d));
+
+            yield return Step(host, 200);
+
+            double waterAfter = 0d;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                for (int i = 0; i < states.Length; i++)
+                {
+                    waterAfter += Math.Max(0d, states[i].z) + Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
+                    Assert.That(mats[i], Is.Not.EqualTo(MaterialIds.Vapor));
+                }
+            });
+
+            double drift = Math.Abs(waterAfter - waterBefore) / waterBefore;
+            Assert.That(drift, Is.LessThan(0.01d),
+                $"Tracked water drifted {drift:P3} over 200 ticks ({waterBefore:F2} to {waterAfter:F2}).");
+        }
+
+        [UnityTest]
         public IEnumerator ConservationValidatorPassesAfterLongRun()
         {
             SceneManager.LoadScene("Terrarium");
