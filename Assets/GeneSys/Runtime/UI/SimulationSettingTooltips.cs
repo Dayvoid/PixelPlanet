@@ -308,6 +308,57 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.combustionSuppressionMoisture)] =
                 "Local water plus steam above this amount forces the flame to decay rapidly. Use it with flash vaporization to make dousing extinguish fire.",
 
+            [nameof(SimulationConfig.stormChargeSeparationRate)] =
+                "How quickly cloud, updraft, and mixed-phase temperature separate signed space charge. Higher values build thunderstorm dipoles faster in existing weather fronts.",
+            [nameof(SimulationConfig.stormChargeLeakRate)] =
+                "How quickly atmospheric space charge relaxes toward zero. Higher leak prevents stale pockets; lower leak lets slow-moving clouds keep a charge for longer.",
+            [nameof(SimulationConfig.stormChargeDiffusionRate)] =
+                "How fast space charge mixes between neighboring air cells. Higher diffusion smears dipoles; lower diffusion keeps sharp storm-front charge layers.",
+            [nameof(SimulationConfig.stormChargeAdvectionRate)] =
+                "How strongly wind carries space charge with the air mass. Couples lightning initiation to the same fronts and stationary pockets the weather chain already produces.",
+            [nameof(SimulationConfig.stormRimingTempMin)] =
+                "Cold edge of the mixed-phase band where ice-crystal charge separation is active. Temperatures below this generate little storm charge.",
+            [nameof(SimulationConfig.stormRimingTempMax)] =
+                "Warm edge of the mixed-phase band. Charge separation peaks between this and the riming minimum, matching cold-cloud thunderstorm physics.",
+            [nameof(SimulationConfig.stormBreakdownThreshold)] =
+                "Neighbor charge contrast that must be exceeded before the breakdown accumulator starts filling. Higher thresholds make lightning rare except in strong storms.",
+            [nameof(SimulationConfig.stormBreakdownAccumulationRate)] =
+                "How quickly a supercritical charge gradient soaks toward a discharge. Higher values fire soon after a dipole forms; lower values add delay and cooldown spacing.",
+            [nameof(SimulationConfig.stormChannelDecay)] =
+                "How quickly the visible lightning channel fades after a strike. Higher decay makes bolts flicker for a tick; lower decay leaves lingering plasma trails.",
+            [nameof(SimulationConfig.stormFlashDecay)] =
+                "How quickly the ambient sky flash fades. Higher decay keeps illumination tight to the instant of discharge.",
+            [nameof(SimulationConfig.stormFlashDiffusion)] =
+                "How far the discharge glow bleeds into neighboring sky cells. Higher diffusion lights a broader sheet of atmosphere around the channel.",
+            [nameof(SimulationConfig.stormCooldownRate)] =
+                "How quickly a spent cell returns from negative cooldown to a neutral breakdown state. Lower rates space repeated strikes in the same pocket.",
+            [nameof(SimulationConfig.stormStrikeHeat)] =
+                "Temperature added along a lightning channel, falling off toward side branches. Hits at the terminus can ignite dry mycology fuel on the next combustion pass.",
+            [nameof(SimulationConfig.stormThunderPressure)] =
+                "Pressure pulse written along the channel. Continuity and pressure diffusion turn this into a thunder shock that couples back into wind.",
+            [nameof(SimulationConfig.stormChargeDeposit)] =
+                "Electrical charge dumped into state.w at the strike terminus. The existing Electrical pass conducts it away, stressing mycology on conductive ground.",
+            [nameof(SimulationConfig.stormIgnitionImpulse)] =
+                "How much the terminus ignition accumulator fills when lightning hits. Combined with heat, this can spark fueled, oxygenated soil on the next fire pass.",
+            [nameof(SimulationConfig.stormFlashVaporization)] =
+                "Surface liquid converted to vapor at the strike terminus. Moves existing water mass only, paying latent heat the same way combustion flashpoint steam does.",
+            [nameof(SimulationConfig.stormChannelChargeDrain)] =
+                "Fraction of local space charge removed as the channel passes. Spent pockets must recharge from weather before they can fire again.",
+            [nameof(SimulationConfig.stormTortuosity)] =
+                "How much a cloud-to-ground leader wanders instead of taking the shortest path to its conductive target. Higher values look more jagged and branchy.",
+            [nameof(SimulationConfig.stormTargetRange)] =
+                "Angular and radial search radius, in cells, used to pick a conductive terminus. Metal outranks wet rock and soil inside this window.",
+            [nameof(SimulationConfig.stormMaxChannelLength)] =
+                "Maximum steps a leader may walk in one tick, including side branches. Caps GPU work and keeps bolts from wrapping the whole planetoid.",
+            [nameof(SimulationConfig.stormMaxStrikesPerTick)] =
+                "Hard cap on discharges spawned in a single tick. Zero disables lightning; higher values allow storm fronts to fire several bolts at once.",
+            [nameof(SimulationConfig.stormStrikeBranchChance)] =
+                "Chance a cloud-to-ground leader sprouts a short side branch each step. Lower values keep a single jagged bolt; higher values add forks.",
+            [nameof(SimulationConfig.stormSheetBranchChance)] =
+                "Chance an in-cloud sheet sprouts extra tangential branches. Higher values spread a broad sky flash instead of a narrow channel.",
+            [nameof(SimulationConfig.stormMinimumHeight)] =
+                "Lowest radial cell (Y) that may originate lightning. Breakdown below this height is ignored, so bolts only start in the upper atmosphere while still being allowed to strike the surface.",
+
             [nameof(SimulationConfig.enableStarfield)] =
                 "Toggles background stars. Visual only; does not change solar heating, weather, or ecology.",
             [nameof(SimulationConfig.starCount)] =

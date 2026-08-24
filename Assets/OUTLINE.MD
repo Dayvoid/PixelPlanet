@@ -59,6 +59,12 @@ in order to achieve a 'living world' we can't start with uniform concentric laye
 - burning dumps heat, pressure, and updraft into the existing weather chain for atmospheric turbulation
 - flashpoint vaporization converts nearby surface liquid to steam without inventing water mass; steam suppresses further ignition
 
+#### STORMS
+- mixed-phase cloud plus updraft separates signed atmospheric space charge in existing weather fronts and slow pockets
+- dedicated storm field: space charge, lightning channel, sky flash, breakdown/cooldown
+- discharges as in-cloud sheets or cloud-to-ground strikes that prefer conductive materials (especially metal)
+- strikes dump heat, thunder pressure, electrical charge, and an ignition impulse; terminus flash-vaporizes existing surface water
+
 ### UI
 
 - pause/play, step, sim speed controls

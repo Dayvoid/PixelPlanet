@@ -111,6 +111,7 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         else if (mode == 8) state.w += command.values.y * max(0.1, falloff);
         else if (mode == 9) combustion.y = saturate(max(combustion.y, command.values.y * max(0.1, falloff)));
         else if (mode == 10) combustion.x = max(0.0, command.values.y);
+        else if (mode == 12) flow.y += command.values.y * max(0.1, falloff);
     }
     WriteCell(cell, material, state, flow, aux, ecology, combustion);
 }

@@ -94,6 +94,9 @@ namespace GeneSys.Tests
             Assert.That(resources.CombustionRead, Is.Not.Null);
             Assert.That(resources.CombustionRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.CombustionWrite.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
+            Assert.That(resources.StormRead, Is.Not.Null);
+            Assert.That(resources.StormRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
+            Assert.That(resources.StormWrite.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
         }
 
         [Test]
@@ -103,8 +106,10 @@ namespace GeneSys.Tests
             var renderer = go.AddComponent<PlanetoidDisplayRenderer>();
             renderer.SetOverlay(16);
             Assert.That(renderer.OverlayMode, Is.EqualTo(MycologyVisuals.OverlayMode));
+            renderer.SetOverlay(19);
+            Assert.That(renderer.OverlayMode, Is.EqualTo(StormVisuals.OverlayMode));
             renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(18));
+            Assert.That(renderer.OverlayMode, Is.EqualTo(19));
             Object.DestroyImmediate(go);
         }
 

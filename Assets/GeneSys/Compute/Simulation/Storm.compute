@@ -1,0 +1,514 @@
+#pragma kernel ApplyStormEdits
+#pragma kernel ChargeSeparation
+#pragma kernel DischargeSelect
+#pragma kernel DischargeWalk
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+Texture2D<float2> _FlowRead;
+Texture2D<float4> _AuxRead;
+Texture2D<float4> _CombustionRead;
+Texture2D<float4> _StormRead;
+RWTexture2D<float4> _StateWrite;
+RWTexture2D<float4> _AuxWrite;
+RWTexture2D<float4> _CombustionWrite;
+RWTexture2D<float4> _StormWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+StructuredBuffer<BrushCommand> _BrushCommands;
+RWStructuredBuffer<StrikeSeed> _StrikeSeeds;
+RWStructuredBuffer<uint> _StrikeCounter;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+int _BrushCount;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _WeatherF; // unused, unused, unused, atmosphericCflLimit
+float4 _StormA; // separation, leak, diffusion, advection
+float4 _StormB; // rimingMin, rimingMax, breakdownThreshold, breakdownAcc
+float4 _StormC; // channelDecay, flashDecay, flashDiffusion, cooldown
+float4 _StormD; // strikeHeat, thunderPressure, chargeDeposit, ignitionImpulse
+float4 _StormE; // flashVaporization, channelChargeDrain, targetRange, maxChannelLength
+float4 _StormF; // strikeBranchChance, sheetBranchChance, maxStrikesPerTick, tortuosity
+float4 _StormG; // minimumHeight, unused, unused, unused
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 StormR(int2 value) { return _StormRead.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+bool IsAtmosphereCell(int2 cell, uint material)
+{
+    float category = D(material).metadata.x;
+    if (category == 1.0 || material == 11u) return true;
+    return material == 0u && Radius01(cell.y, _GridSize.y) >= _AtmosphereStartRadius;
+}
+
+bool IsExposedSurface(int2 cell, uint material)
+{
+    if (cell.y >= _GridSize.y - 1) return false;
+    uint above = M(cell + int2(0, 1));
+    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
+}
+
+float4 AtmosphereFaceMask(int2 cell)
+{
+    int2 leftCell = C(cell + int2(-1, 0));
+    int2 rightCell = C(cell + int2(1, 0));
+    int2 downCell = C(cell + int2(0, -1));
+    int2 upCell = C(cell + int2(0, 1));
+    return float4(
+        IsAtmosphereCell(leftCell, M(leftCell)) ? 1.0 : 0.0,
+        IsAtmosphereCell(rightCell, M(rightCell)) ? 1.0 : 0.0,
+        (cell.y > 0 && IsAtmosphereCell(downCell, M(downCell))) ? 1.0 : 0.0,
+        (cell.y < _GridSize.y - 1 && IsAtmosphereCell(upCell, M(upCell))) ? 1.0 : 0.0);
+}
+
+float RimingBand(float temperature)
+{
+    float minT = _StormB.x;
+    float maxT = _StormB.y;
+    float span = max(0.01, maxT - minT);
+    float t = saturate((temperature - minT) / span);
+    return 4.0 * t * (1.0 - t);
+}
+
+float IceFluxY(int2 cell)
+{
+    uint material = M(cell);
+    if (!IsAtmosphereCell(cell, material)) return 0.0;
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    return max(0.0, state.z) * RimingBand(state.x) * flow.y;
+}
+
+float CellHash01(int2 cell, uint salt)
+{
+    return Hash01((uint)cell.x * 73856093u + (uint)cell.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + salt);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyStormEdits(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    float4 storm = SanitizeStorm(_StormWrite[cell]);
+
+    for (int i = 0; i < _BrushCount; i++)
+    {
+        BrushCommand command = _BrushCommands[i];
+        int dx = abs(cell.x - command.center.x);
+        dx = min(dx, _GridSize.x - dx);
+        int dy = cell.y - command.center.y;
+        if (dx * dx + dy * dy > command.radius * command.radius) continue;
+        int mode = (int)round(command.values.x);
+        float falloff = 1.0 - saturate(sqrt((float)(dx * dx + dy * dy)) / max(1.0, (float)command.radius));
+        if (mode == 11)
+            storm.x += command.values.y * max(0.1, falloff);
+        else if (mode == 13)
+            storm.w = clamp(command.values.y, -1.0, 1.0);
+    }
+
+    _StormWrite[cell] = SanitizeStorm(storm);
+}
+
+[numthreads(8, 8, 1)]
+void ChargeSeparation(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 storm = StormR(cell);
+    bool atmosphere = IsAtmosphereCell(cell, material);
+    float tanW = TangentialEdgeWeight(cell.y, _GridSize.y);
+    float cfl = saturate(_WeatherF.w);
+    float advRate = max(0.0, _StormA.w);
+    float diffRate = max(0.0, _StormA.z);
+    float leak = max(0.0, _StormA.y);
+
+    if (atmosphere)
+    {
+        float dFlux = IceFluxY(cell);
+        if (cell.y > 0)
+            dFlux -= IceFluxY(cell + int2(0, -1));
+        storm.x -= dFlux * max(0.0, _StormA.x) * _DeltaTime;
+
+        float pos = max(0.0, storm.x);
+        float neg = max(0.0, -storm.x);
+        float4 validFaces = AtmosphereFaceMask(cell);
+        float4 outPos = DonorFaceFlux(flow, pos, advRate, validFaces, tanW, _DeltaTime, cfl);
+        float4 outNeg = DonorFaceFlux(flow, neg, advRate, validFaces, tanW, _DeltaTime, cfl);
+        float posOut = outPos.x + outPos.y + outPos.z + outPos.w;
+        float negOut = outNeg.x + outNeg.y + outNeg.z + outNeg.w;
+        float posIn = 0.0;
+        float negIn = 0.0;
+        float chargeDiff = 0.0;
+        float flashDiff = 0.0;
+
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+
+            int2 neighbor = C(cell + offset);
+            uint neighborMaterial = M(neighbor);
+            if (!IsAtmosphereCell(neighbor, neighborMaterial)) continue;
+
+            float4 neighborStorm = StormR(neighbor);
+            float2 neighborFlow = F(neighbor);
+            float4 neighborValid = AtmosphereFaceMask(neighbor);
+            float neighborTan = TangentialEdgeWeight(neighbor.y, _GridSize.y);
+            float nPos = max(0.0, neighborStorm.x);
+            float nNeg = max(0.0, -neighborStorm.x);
+            float4 nOutPos = DonorFaceFlux(neighborFlow, nPos, advRate, neighborValid, neighborTan, _DeltaTime, cfl);
+            float4 nOutNeg = DonorFaceFlux(neighborFlow, nNeg, advRate, neighborValid, neighborTan, _DeltaTime, cfl);
+            float facePos = 0.0;
+            float faceNeg = 0.0;
+            if (offset.x == 1) { facePos = nOutPos.x; faceNeg = nOutNeg.x; }
+            else if (offset.x == -1) { facePos = nOutPos.y; faceNeg = nOutNeg.y; }
+            else if (offset.y == 1) { facePos = nOutPos.z; faceNeg = nOutNeg.z; }
+            else if (offset.y == -1) { facePos = nOutPos.w; faceNeg = nOutNeg.w; }
+            posIn += facePos;
+            negIn += faceNeg;
+            chargeDiff += (neighborStorm.x - storm.x) * saturate(diffRate * _DeltaTime) * 0.25;
+            flashDiff += (neighborStorm.z - storm.z) * saturate(max(0.0, _StormC.z) * _DeltaTime) * 0.25;
+        }
+
+        storm.x = (pos - posOut + posIn) - (neg - negOut + negIn) + chargeDiff;
+        storm.x *= 1.0 - saturate(leak * _DeltaTime);
+        storm.z = saturate(storm.z + flashDiff);
+
+        float grad = 0.0;
+        [unroll]
+        for (int g = 0; g < 4; g++)
+        {
+            int2 offset = offsets[g];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+            int2 neighbor = C(cell + offset);
+            if (!IsAtmosphereCell(neighbor, M(neighbor)))
+            {
+                grad += abs(storm.x);
+                continue;
+            }
+            grad += abs(storm.x - StormR(neighbor).x);
+        }
+
+        if (storm.w < 0.0)
+            storm.w = min(0.0, storm.w + max(0.0, _StormC.w) * _DeltaTime);
+        else if (grad > max(0.01, _StormB.z))
+            storm.w = saturate(storm.w + max(0.0, _StormB.w) * _DeltaTime);
+        else
+            storm.w = max(0.0, storm.w - max(0.0, _StormC.w) * _DeltaTime * 0.35);
+    }
+    else
+    {
+        storm.x *= 1.0 - saturate(leak * _DeltaTime * 2.0);
+        if (storm.w < 0.0)
+            storm.w = min(0.0, storm.w + max(0.0, _StormC.w) * _DeltaTime);
+        else
+            storm.w = max(0.0, storm.w - max(0.0, _StormC.w) * _DeltaTime);
+    }
+
+    storm.y = max(0.0, storm.y - max(0.0, _StormC.x) * _DeltaTime);
+    storm.z = max(0.0, storm.z - max(0.0, _StormC.y) * _DeltaTime);
+    _StormWrite[cell] = SanitizeStorm(storm);
+}
+
+[numthreads(8, 8, 1)]
+void DischargeSelect(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    if (!IsAtmosphereCell(cell, material)) return;
+    if (cell.y < (int)_StormG.x) return;
+
+    float4 storm = StormR(cell);
+    if (storm.w < 1.0) return;
+
+    uint maxStrikes = (uint)clamp((int)_StormF.z, 0, (int)STORM_MAX_STRIKES);
+    if (maxStrikes == 0u) return;
+
+    if ((Hash((uint)cell.x * 73856093u + (uint)cell.y * 19349663u + (uint)_Tick * 83492791u) & 7u) != 0u
+        && abs(storm.x) < _StormB.z * 1.5)
+        return;
+
+    float horiz = abs(storm.x - StormR(cell + int2(-1, 0)).x) + abs(storm.x - StormR(cell + int2(1, 0)).x);
+    float vert = 0.0;
+    if (cell.y > 0)
+        vert += abs(storm.x - StormR(cell + int2(0, -1)).x);
+    if (cell.y < _GridSize.y - 1)
+        vert += abs(storm.x - StormR(cell + int2(0, 1)).x);
+    if (cell.y > 0 && !IsAtmosphereCell(cell + int2(0, -1), M(cell + int2(0, -1))))
+        vert += abs(storm.x) * 1.5;
+
+    uint kind = vert >= horiz ? STORM_KIND_STRIKE : STORM_KIND_SHEET;
+
+    uint slot;
+    InterlockedAdd(_StrikeCounter[0], 1, slot);
+    if (slot >= maxStrikes) return;
+
+    StrikeSeed seed;
+    seed.cell = cell;
+    seed.charge = storm.x;
+    seed.kind = kind;
+    _StrikeSeeds[slot] = seed;
+}
+
+int2 FindConductiveTerminus(int2 origin)
+{
+    int range = clamp((int)_StormE.z, 1, 64);
+    float best = -1.0;
+    int2 bestCell = origin;
+    bool found = false;
+
+    [loop]
+    for (int dx = -range; dx <= range; dx++)
+    {
+        int x = (int)WrapTheta(origin.x + dx, _GridSize.x);
+        int startY = min(origin.y, _GridSize.y - 1);
+        [loop]
+        for (int y = startY; y >= 0; y--)
+        {
+            int2 candidate = int2(x, y);
+            uint material = M(candidate);
+            if (IsAtmosphereCell(candidate, material) || material == 0u) continue;
+            if (!IsExposedSurface(candidate, material)) continue;
+
+            float conductivity = max(0.001, D(material).transport.z);
+            float dist = abs((float)dx) + abs((float)(origin.y - y));
+            float score = conductivity / (1.0 + dist);
+            if (material == 13u) score *= 6.0;
+            if (score > best)
+            {
+                best = score;
+                bestCell = candidate;
+                found = true;
+            }
+            break;
+        }
+    }
+
+    return found ? bestCell : origin;
+}
+
+int2 WrappedStep(int2 cell, int2 offset)
+{
+    return C(cell + offset);
+}
+
+int2 PickStrikeStep(int2 cell, int2 target)
+{
+    int dx = target.x - cell.x;
+    int half = _GridSize.x / 2;
+    if (dx > half) dx -= _GridSize.x;
+    if (dx < -half) dx += _GridSize.x;
+    int dy = target.y - cell.y;
+    int2 step = int2(dx == 0 ? 0 : (dx > 0 ? 1 : -1), dy == 0 ? 0 : (dy > 0 ? 1 : -1));
+    if (CellHash01(cell, 11u) < saturate(_StormF.w))
+    {
+        int2 dirs[8] = {
+            int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1),
+            int2(-1, -1), int2(1, -1), int2(-1, 1), int2(1, 1)
+        };
+        uint pick = Hash((uint)cell.x * 2707u + (uint)cell.y * 4177u + (uint)_Tick) & 7u;
+        step = dirs[pick];
+    }
+    if (step.x == 0 && step.y == 0)
+        step = int2(0, -1);
+    return WrappedStep(cell, step);
+}
+
+int2 PickSheetStep(int2 cell)
+{
+    int2 dirs[6] = {
+        int2(-1, 0), int2(1, 0), int2(-1, 1), int2(1, 1), int2(-1, -1), int2(1, -1)
+    };
+    float best = -1e8;
+    int2 bestStep = cell;
+    [unroll]
+    for (int i = 0; i < 6; i++)
+    {
+        int2 next = WrappedStep(cell, dirs[i]);
+        if (next.y == cell.y && next.x == cell.x) continue;
+        if (next.y < 0 || next.y >= _GridSize.y) continue;
+        if (!IsAtmosphereCell(next, M(next))) continue;
+        float score = abs(_StormWrite[next].x) + CellHash01(next, (uint)(i + 3) * 17u) * 0.15;
+        if (dirs[i].y == 0) score += 0.35;
+        if (score > best)
+        {
+            best = score;
+            bestStep = next;
+        }
+    }
+    return bestStep;
+}
+
+int2 PickBranchStep(int2 cell, int2 mainStep, uint kind)
+{
+    int2 side = int2(-(mainStep.y - cell.y), mainStep.x - cell.x);
+    if (side.x == 0 && side.y == 0)
+        side = int2(1, 0);
+    side = int2(clamp(side.x, -1, 1), clamp(side.y, -1, 1));
+    int2 next = WrappedStep(cell, side);
+    if (kind == STORM_KIND_SHEET && !IsAtmosphereCell(next, M(next)))
+        return cell;
+    return next;
+}
+
+void StampChannel(int2 cell, float intensity, uint kind)
+{
+    float4 storm = SanitizeStorm(_StormWrite[cell]);
+    float luminance = kind == STORM_KIND_SHEET ? 0.45 * intensity : 0.95 * intensity;
+    float flash = kind == STORM_KIND_SHEET ? 0.85 * intensity : 0.55 * intensity;
+    storm.y = max(storm.y, luminance);
+    storm.z = saturate(max(storm.z, flash));
+    storm.x *= 1.0 - saturate(max(0.0, _StormE.y) * intensity);
+    _StormWrite[cell] = SanitizeStorm(storm);
+
+    float4 state = _StateWrite[cell];
+    state.x += max(0.0, _StormD.x) * intensity * (kind == STORM_KIND_SHEET ? 0.25 : 1.0);
+    state.y += max(0.0, _StormD.y) * intensity;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = WrappedStep(cell, offsets[i]);
+        if (offsets[i].y != 0 && (neighbor.y < 0 || neighbor.y >= _GridSize.y)) continue;
+        float4 nStorm = SanitizeStorm(_StormWrite[neighbor]);
+        nStorm.z = saturate(max(nStorm.z, flash * 0.45));
+        _StormWrite[neighbor] = nStorm;
+    }
+}
+
+void StampTerminus(int2 cell, float intensity)
+{
+    StampChannel(cell, intensity, STORM_KIND_STRIKE);
+
+    float4 state = _StateWrite[cell];
+    float4 aux = _AuxWrite[cell];
+    float4 combustion = SanitizeCombustion(_CombustionWrite[cell]);
+    uint material = M(cell);
+
+    state.w += max(0.0, _StormD.z) * intensity;
+    combustion.w = saturate(combustion.w + max(0.0, _StormD.w) * intensity);
+
+    if (!IsAtmosphereCell(cell, material) && state.z > 1e-5)
+    {
+        float steam = min(state.z, max(0.0, _StormE.x) * intensity);
+        state.z -= steam;
+        aux.x += steam;
+        state.x -= steam * 0.25;
+    }
+
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
+}
+
+[numthreads(32, 1, 1)]
+void DischargeWalk(uint3 id : SV_DispatchThreadID)
+{
+    uint maxStrikes = (uint)clamp((int)_StormF.z, 0, (int)STORM_MAX_STRIKES);
+    uint count = min(_StrikeCounter[0], maxStrikes);
+    if (id.x >= count) return;
+
+    StrikeSeed seed = _StrikeSeeds[id.x];
+    int2 origin = C(seed.cell);
+    uint kind = seed.kind == STORM_KIND_SHEET ? STORM_KIND_SHEET : STORM_KIND_STRIKE;
+    int maxLen = clamp((int)_StormE.w, 4, 128);
+    float branchChance = kind == STORM_KIND_SHEET ? saturate(_StormF.y) : saturate(_StormF.x);
+    int2 target = kind == STORM_KIND_STRIKE ? FindConductiveTerminus(origin) : origin;
+
+    float4 originStorm = SanitizeStorm(_StormWrite[origin]);
+    originStorm.w = -1.0;
+    _StormWrite[origin] = originStorm;
+
+    int2 stackPos[STORM_BRANCH_STACK];
+    int stackLife[STORM_BRANCH_STACK];
+    int sp = 1;
+    stackPos[0] = origin;
+    stackLife[0] = maxLen;
+
+    int guard = 0;
+    bool hitTerminus = false;
+    [loop]
+    while (sp > 0 && guard < maxLen * 2)
+    {
+        guard++;
+        sp--;
+        int2 cell = stackPos[sp];
+        int life = stackLife[sp];
+        if (life <= 0) continue;
+        if (cell.y < 0 || cell.y >= _GridSize.y) continue;
+
+        uint material = M(cell);
+        float intensity = saturate((float)life / max(1.0, (float)maxLen));
+        bool atmosphere = IsAtmosphereCell(cell, material);
+
+        if (kind == STORM_KIND_STRIKE && !atmosphere)
+        {
+            StampTerminus(cell, max(intensity, 0.55));
+            hitTerminus = true;
+            continue;
+        }
+
+        if (!atmosphere)
+            continue;
+
+        StampChannel(cell, intensity, kind);
+
+        if (kind == STORM_KIND_STRIKE && all(cell == target) && !atmosphere)
+        {
+            StampTerminus(cell, max(intensity, 0.55));
+            hitTerminus = true;
+            continue;
+        }
+
+        int2 next = kind == STORM_KIND_SHEET ? PickSheetStep(cell) : PickStrikeStep(cell, target);
+        if (next.x == cell.x && next.y == cell.y) continue;
+        if (kind == STORM_KIND_SHEET && !IsAtmosphereCell(next, M(next))) continue;
+
+        if (sp < STORM_BRANCH_STACK)
+        {
+            stackPos[sp] = next;
+            stackLife[sp] = life - 1;
+            sp++;
+        }
+
+        if (CellHash01(cell, 91u) < branchChance && sp < STORM_BRANCH_STACK)
+        {
+            int2 side = PickBranchStep(cell, next, kind);
+            if (side.x != cell.x || side.y != cell.y)
+            {
+                stackPos[sp] = side;
+                stackLife[sp] = max(1, life / 3);
+                sp++;
+            }
+        }
+    }
+
+    if (kind == STORM_KIND_STRIKE && !hitTerminus && target.y >= 0)
+        StampTerminus(target, 0.7);
+}

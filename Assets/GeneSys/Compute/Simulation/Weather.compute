@@ -98,26 +98,9 @@ float AtmosphericVaporCapacity(float temperature, float radius, float pressure)
     return max(0.01, _WeatherE.x * thermal * (1.0 - altitudeCooling * 0.65) * pressureBoost);
 }
 
-// CFL-capped face fluxes. Angular and radial weights contribute independently so
-// dominant angular wind cannot starve radial lofting.
 float4 DonorFaceFlux(float2 flow, float mass, float advectionRate, float4 validFaces, float tangentialWeight)
 {
-    if (mass <= 1e-8 || advectionRate <= 1e-8)
-        return 0.0;
-
-    float left = max(0.0, -flow.x) * validFaces.x * tangentialWeight;
-    float right = max(0.0, flow.x) * validFaces.y * tangentialWeight;
-    float down = max(0.0, -flow.y) * validFaces.z;
-    float up = max(0.0, flow.y) * validFaces.w;
-    float weightSum = left + right + down + up;
-    if (weightSum <= 1e-8)
-        return 0.0;
-
-    float cfl = saturate(_WeatherF.w);
-    float moveFraction = min(cfl, weightSum * advectionRate * _DeltaTime);
-    float movable = mass * moveFraction;
-    float inv = 1.0 / weightSum;
-    return float4(movable * left * inv, movable * right * inv, movable * down * inv, movable * up * inv);
+    return DonorFaceFlux(flow, mass, advectionRate, validFaces, tangentialWeight, _DeltaTime, _WeatherF.w);
 }
 
 float DiffusiveExchange(float selfMass, float neighborMass, float diffusionRate)

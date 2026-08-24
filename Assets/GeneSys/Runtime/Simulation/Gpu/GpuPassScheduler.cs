@@ -31,6 +31,12 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader weather;
         private readonly ComputeShader mycology;
         private readonly ComputeShader combustion;
+        private readonly ComputeShader storm;
+        private readonly GraphicsBuffer strikeSeedBuffer;
+        private readonly GraphicsBuffer strikeCounterBuffer;
+        private readonly uint[] strikeCounterZero = new uint[1];
+        private const int MaxStrikeSeeds = 32;
+        private const int StrikeSeedStride = 16;
         private int tick;
 
         public int TickIndex => tick;
@@ -40,7 +46,8 @@ namespace GeneSys.Simulation.Gpu
 
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
-            ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader combustion)
+            ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader combustion,
+            ComputeShader storm)
         {
             this.config = config;
             this.resources = resources;
@@ -51,8 +58,11 @@ namespace GeneSys.Simulation.Gpu
             this.weather = weather;
             this.mycology = mycology;
             this.combustion = combustion;
+            this.storm = storm;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 128, BrushCommand.Stride);
+            strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
+            strikeCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
         }
 
         public void GenerateWorld()
@@ -104,6 +114,13 @@ namespace GeneSys.Simulation.Gpu
                 materialSimulation.SetInt("_BrushCount", brushCommands.Count);
                 materialSimulation.SetBuffer(brushKernel, "_BrushCommands", brushBuffer);
                 DispatchPass(materialSimulation, brushKernel, deltaTime);
+                if (storm != null)
+                {
+                    int stormBrush = storm.FindKernel("ApplyStormEdits");
+                    storm.SetInt("_BrushCount", brushCommands.Count);
+                    storm.SetBuffer(stormBrush, "_BrushCommands", brushBuffer);
+                    DispatchStormInPlace(storm, stormBrush, deltaTime);
+                }
                 brushCommands.Clear();
             }
 
@@ -137,6 +154,10 @@ namespace GeneSys.Simulation.Gpu
             DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
+
+            if (storm != null)
+                DispatchStorm(deltaTime);
+
             DispatchPass(hydrology, hydrology.FindKernel("RunoffAndDeposition"), deltaTime);
             // Soak this tick's rain/ponding, then springs/geysers see the updated water table.
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
@@ -214,6 +235,13 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_CombustionC", new Vector4(config.combustionPressureScale, config.combustionUpdraftStrength, config.combustionSmokeYield, config.combustionSootSettlingRate));
             shader.SetVector("_CombustionD", new Vector4(config.combustionPyroFertilityYield, config.combustionMoistureIgnitionPenalty, config.combustionSteamSuppression, config.combustionFlameDecay));
             shader.SetVector("_CombustionE", new Vector4(config.combustionFlashVaporizationRate, config.combustionMinFuel, config.combustionMinOxygen, config.combustionSuppressionMoisture));
+            shader.SetVector("_StormA", new Vector4(config.stormChargeSeparationRate, config.stormChargeLeakRate, config.stormChargeDiffusionRate, config.stormChargeAdvectionRate));
+            shader.SetVector("_StormB", new Vector4(config.stormRimingTempMin, config.stormRimingTempMax, config.stormBreakdownThreshold, config.stormBreakdownAccumulationRate));
+            shader.SetVector("_StormC", new Vector4(config.stormChannelDecay, config.stormFlashDecay, config.stormFlashDiffusion, config.stormCooldownRate));
+            shader.SetVector("_StormD", new Vector4(config.stormStrikeHeat, config.stormThunderPressure, config.stormChargeDeposit, config.stormIgnitionImpulse));
+            shader.SetVector("_StormE", new Vector4(config.stormFlashVaporization, config.stormChannelChargeDrain, config.stormTargetRange, config.stormMaxChannelLength));
+            shader.SetVector("_StormF", new Vector4(config.stormStrikeBranchChance, config.stormSheetBranchChance, config.stormMaxStrikesPerTick, config.stormTortuosity));
+            shader.SetVector("_StormG", new Vector4(config.stormMinimumHeight, 0f, 0f, 0f));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)
@@ -243,6 +271,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_ShadeWrite", resources.ShadeRead);
             shader.SetTexture(kernel, "_EcologyWrite", resources.EcologyRead);
             shader.SetTexture(kernel, "_CombustionWrite", resources.CombustionRead);
+            shader.SetTexture(kernel, "_StormWrite", resources.StormRead);
         }
 
         /// <summary>
@@ -273,10 +302,99 @@ namespace GeneSys.Simulation.Gpu
             shader.Dispatch(kernel, groupsX, groupsY, 1);
         }
 
+        private void DispatchStorm(float deltaTime)
+        {
+            int separate = storm.FindKernel("ChargeSeparation");
+            int select = storm.FindKernel("DischargeSelect");
+            int walk = storm.FindKernel("DischargeWalk");
+            if (separate < 0 || select < 0 || walk < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing storm compute kernel. Skipping storm pass.");
+                return;
+            }
+
+            SetCommon(storm, separate, deltaTime);
+            storm.SetBuffer(separate, "_MaterialDefinitions", materialBuffer);
+            BindStormChargeTextures(separate);
+            Dispatch(storm, separate);
+            resources.SwapStorm();
+
+            strikeCounterZero[0] = 0;
+            strikeCounterBuffer.SetData(strikeCounterZero);
+            SetCommon(storm, select, deltaTime);
+            storm.SetBuffer(select, "_MaterialDefinitions", materialBuffer);
+            storm.SetBuffer(select, "_StrikeSeeds", strikeSeedBuffer);
+            storm.SetBuffer(select, "_StrikeCounter", strikeCounterBuffer);
+            BindStormSelectTextures(select);
+            Dispatch(storm, select);
+
+            SetCommon(storm, walk, deltaTime);
+            storm.SetBuffer(walk, "_MaterialDefinitions", materialBuffer);
+            storm.SetBuffer(walk, "_StrikeSeeds", strikeSeedBuffer);
+            storm.SetBuffer(walk, "_StrikeCounter", strikeCounterBuffer);
+            BindStormWalkTextures(walk);
+            storm.GetKernelThreadGroupSizes(walk, out uint walkX, out _, out _);
+            int groups = Mathf.Max(1, Mathf.CeilToInt(MaxStrikeSeeds / (float)walkX));
+            storm.Dispatch(walk, groups, 1, 1);
+        }
+
+        private void DispatchStormInPlace(ComputeShader shader, int kernel, float deltaTime)
+        {
+            if (kernel < 0) return;
+            SetCommon(shader, kernel, deltaTime);
+            shader.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            BindStormWalkTextures(kernel);
+            Dispatch(shader, kernel);
+        }
+
+        private void BindStormChargeTextures(int kernel)
+        {
+            storm.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            storm.SetTexture(kernel, "_StateRead", resources.StateRead);
+            storm.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            storm.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            storm.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            storm.SetTexture(kernel, "_StormRead", resources.StormRead);
+            storm.SetTexture(kernel, "_StormWrite", resources.StormWrite);
+            storm.SetTexture(kernel, "_StateWrite", resources.StateWrite);
+            storm.SetTexture(kernel, "_AuxWrite", resources.AuxWrite);
+            storm.SetTexture(kernel, "_CombustionWrite", resources.CombustionWrite);
+            storm.SetBuffer(kernel, "_StrikeSeeds", strikeSeedBuffer);
+            storm.SetBuffer(kernel, "_StrikeCounter", strikeCounterBuffer);
+        }
+
+        private void BindStormSelectTextures(int kernel)
+        {
+            storm.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            storm.SetTexture(kernel, "_StateRead", resources.StateRead);
+            storm.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            storm.SetTexture(kernel, "_StormRead", resources.StormRead);
+            storm.SetBuffer(kernel, "_StrikeSeeds", strikeSeedBuffer);
+            storm.SetBuffer(kernel, "_StrikeCounter", strikeCounterBuffer);
+        }
+
+        private void BindStormWalkTextures(int kernel)
+        {
+            storm.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            storm.SetTexture(kernel, "_StateRead", resources.StateRead);
+            storm.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            storm.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            storm.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            storm.SetTexture(kernel, "_StormRead", resources.StormRead);
+            storm.SetTexture(kernel, "_StateWrite", resources.StateRead);
+            storm.SetTexture(kernel, "_AuxWrite", resources.AuxRead);
+            storm.SetTexture(kernel, "_CombustionWrite", resources.CombustionRead);
+            storm.SetTexture(kernel, "_StormWrite", resources.StormRead);
+            storm.SetBuffer(kernel, "_StrikeSeeds", strikeSeedBuffer);
+            storm.SetBuffer(kernel, "_StrikeCounter", strikeCounterBuffer);
+        }
+
         public void Dispose()
         {
             materialBuffer?.Dispose();
             brushBuffer?.Dispose();
+            strikeSeedBuffer?.Dispose();
+            strikeCounterBuffer?.Dispose();
         }
     }
 }

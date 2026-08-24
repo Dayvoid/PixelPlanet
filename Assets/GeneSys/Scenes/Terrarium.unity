@@ -206,6 +206,7 @@ MonoBehaviour:
   weather: {fileID: 7200000, guid: 90f4c8bd082f6bc4bb24a0bec3130b9e, type: 3}
   mycology: {fileID: 7200000, guid: b7c41e2a9d8f4e6ab3c15d90e4a7f218, type: 3}
   combustion: {fileID: 7200000, guid: 4e8c1d7a9b3f4a21b6c5e0d8f1a2b3c4, type: 3}
+  storm: {fileID: 7200000, guid: 8c2f9a1b4d6e70f3a5c8e1d2b4f60718, type: 3}
   display: {fileID: 1566586365}
   visuals: {fileID: 1403217173}
   ui: {fileID: 1468489994}

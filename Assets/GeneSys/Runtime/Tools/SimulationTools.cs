@@ -103,8 +103,16 @@ namespace GeneSys.Tools
                                         NativeArray<Vector4> data = combustionRequest.GetData<Vector4>();
                                         if (data.Length > 0) inspection.combustion = data[0];
                                     }
-                                    readbackPending = false;
-                                    Inspected?.Invoke(inspection);
+                                    AsyncGPUReadback.Request(host.Resources.StormRead, 0, cell.x, 1, cell.y, 1, 0, 1, stormRequest =>
+                                    {
+                                        if (!stormRequest.hasError)
+                                        {
+                                            NativeArray<Vector4> data = stormRequest.GetData<Vector4>();
+                                            if (data.Length > 0) inspection.storm = data[0];
+                                        }
+                                        readbackPending = false;
+                                        Inspected?.Invoke(inspection);
+                                    });
                                 });
                             });
                         });
@@ -123,6 +131,7 @@ namespace GeneSys.Tools
         public Vector4 aux;
         public Vector4 ecology;
         public Vector4 combustion;
+        public Vector4 storm;
         public Vector2 flow;
     }
 }

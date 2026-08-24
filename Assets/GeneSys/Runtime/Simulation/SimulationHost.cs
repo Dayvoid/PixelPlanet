@@ -24,6 +24,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader weather;
         [SerializeField] private ComputeShader mycology;
         [SerializeField] private ComputeShader combustion;
+        [SerializeField] private ComputeShader storm;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -51,6 +52,7 @@ namespace GeneSys.Simulation
         public RenderTexture ChemicalAndGroundwaterField => Resources?.AuxRead;
         public RenderTexture EcologyField => Resources?.EcologyRead;
         public RenderTexture CombustionField => Resources?.CombustionRead;
+        public RenderTexture StormField => Resources?.StormRead;
 
         private void Start()
         {
@@ -81,7 +83,7 @@ namespace GeneSys.Simulation
                 enabled = false;
                 return;
             }
-            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || combustion == null)
+            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || combustion == null || storm == null)
             {
                 Debug.LogError("GeneSys bootstrap references are incomplete. Run Tools/GeneSys/Rebuild Phase 1 Scene.", this);
                 enabled = false;
@@ -89,7 +91,7 @@ namespace GeneSys.Simulation
             }
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, combustion);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, combustion, storm);
             scheduler.GenerateWorld();
             Clock.Reset();
             lastPerformanceTick = 0;

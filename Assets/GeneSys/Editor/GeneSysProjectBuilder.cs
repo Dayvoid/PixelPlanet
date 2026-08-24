@@ -159,6 +159,7 @@ namespace GeneSys.Editor
             SetObject(host, "weather", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Weather.compute"));
             SetObject(host, "mycology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mycology.compute"));
             SetObject(host, "combustion", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Combustion.compute"));
+            SetObject(host, "storm", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Storm.compute"));
             SetObject(host, "display", display);
             SetObject(host, "visuals", visuals);
             SetObject(host, "ui", ui);

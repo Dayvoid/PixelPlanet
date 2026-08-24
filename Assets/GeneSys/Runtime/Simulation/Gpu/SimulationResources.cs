@@ -21,6 +21,8 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture EcologyWrite { get; private set; }
         public RenderTexture CombustionRead { get; private set; }
         public RenderTexture CombustionWrite { get; private set; }
+        public RenderTexture StormRead { get; private set; }
+        public RenderTexture StormWrite { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -46,6 +48,8 @@ namespace GeneSys.Simulation.Gpu
             EcologyWrite = CreateTexture("GeneSys Ecology B", GraphicsFormat.R32G32B32A32_SFloat);
             CombustionRead = CreateTexture("GeneSys Combustion A", GraphicsFormat.R32G32B32A32_SFloat);
             CombustionWrite = CreateTexture("GeneSys Combustion B", GraphicsFormat.R32G32B32A32_SFloat);
+            StormRead = CreateTexture("GeneSys Storm A", GraphicsFormat.R32G32B32A32_SFloat);
+            StormWrite = CreateTexture("GeneSys Storm B", GraphicsFormat.R32G32B32A32_SFloat);
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -81,6 +85,12 @@ namespace GeneSys.Simulation.Gpu
             (ShadeRead, ShadeWrite) = (ShadeWrite, ShadeRead);
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
+            // Storm is excluded: other kernels do not copy it through WriteCell.
+        }
+
+        public void SwapStorm()
+        {
+            (StormRead, StormWrite) = (StormWrite, StormRead);
         }
 
         public void CopyReadToWrite()
@@ -92,6 +102,7 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(ShadeRead, ShadeWrite);
             Graphics.CopyTexture(EcologyRead, EcologyWrite);
             Graphics.CopyTexture(CombustionRead, CombustionWrite);
+            Graphics.CopyTexture(StormRead, StormWrite);
         }
 
         public void Dispose()
@@ -103,11 +114,13 @@ namespace GeneSys.Simulation.Gpu
             Release(ShadeRead); Release(ShadeWrite);
             Release(EcologyRead); Release(EcologyWrite);
             Release(CombustionRead); Release(CombustionWrite);
+            Release(StormRead); Release(StormWrite);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
             EcologyRead = EcologyWrite = null;
             CombustionRead = CombustionWrite = null;
+            StormRead = StormWrite = null;
         }
 
         private static void Release(RenderTexture texture)

@@ -46,7 +46,8 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float4> _AuxTex;
             Texture2D<uint> _ShadeTex;
             Texture2D<float4> _EcologyTex;
-            Texture2D<float4> _CombustionTex;
+                Texture2D<float4> _CombustionTex;
+            Texture2D<float4> _StormTex;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
             Texture2D<float4> _Categories;
@@ -102,6 +103,7 @@ Shader "GeneSys/Planetoid Display"
                 uint shade = min(_ShadeTex.Load(int3(cell, 0)), 2u);
                 float4 ecology = _EcologyTex.Load(int3(cell, 0));
                 float4 combustion = _CombustionTex.Load(int3(cell, 0));
+                float4 storm = _StormTex.Load(int3(cell, 0));
                 float category = _Categories.Load(int3((int)material, 0, 0)).x;
                 if (!IsMottledCategory(category)) shade = 0u;
                 float4 baseColor = _Palette.Load(int3((int)material, (int)shade, 0));
@@ -127,6 +129,13 @@ Shader "GeneSys/Planetoid Display"
                     float flame = saturate(combustion.y);
                     if (flame > 0.02)
                         color = lerp(color, float3(1.0, 0.38, 0.05), saturate(flame * 0.95)) + float3(1.0, 0.45, 0.08) * flame * 0.65;
+
+                    float bolt = saturate(storm.y);
+                    float flash = saturate(storm.z);
+                    if (flash > 0.02)
+                        color += float3(0.42, 0.55, 0.95) * flash * 0.55;
+                    if (bolt > 0.02)
+                        color = lerp(color, float3(0.82, 0.92, 1.0), saturate(bolt)) + float3(0.55, 0.72, 1.0) * bolt * 0.8;
 
                     // Soft ambient + directional day/night, matching Weather AtmosphericForcing insolation.
                     float strength = saturate(_DayNightLightingStrength);
@@ -218,6 +227,15 @@ Shader "GeneSys/Planetoid Display"
                 else if (_OverlayMode == 18)
                 {
                     color = lerp(float3(0.08, 0.02, 0.02), float3(0.25, 0.75, 1.0), saturate(combustion.x));
+                }
+                else if (_OverlayMode == 19)
+                {
+                    float q = clamp(storm.x * 0.55, -1.0, 1.0);
+                    color = q >= 0.0
+                        ? lerp(float3(0.05, 0.05, 0.1), float3(1.0, 0.22, 0.12), q)
+                        : lerp(float3(0.05, 0.05, 0.1), float3(0.15, 0.45, 1.0), -q);
+                    color = lerp(color, float3(0.9, 0.95, 1.0), saturate(storm.y));
+                    color += float3(0.4, 0.52, 0.95) * saturate(storm.z) * 0.4;
                 }
 
                 float radialGrid = frac(simulationRadius * height);

@@ -25,8 +25,9 @@ MonoBehaviour:
   materialSubsteps: 1
   slowPassInterval: 4
   seed: 12345
+  useOgWorldgen: 0
   coreRatio: 0.24
-  mantleRatio: 0.42
+  mantleRatio: 0.38
   crustRatio: 0.13
   soilRatio: 0.025
   borderNoise: 0.035
@@ -41,7 +42,16 @@ MonoBehaviour:
   terrainRelief: 0.045
   coastRoughness: 0.025
   initialGroundwaterSaturation: 0.65
-  initialAtmosphericHumidity: 0.08
+  initialAtmosphericHumidity: 0.7
+  metalVeinCount: 12
+  metalVeinMinSize: 0.002
+  metalVeinMaxSize: 0.015
+  metalVeinProtrusionChance: 0
+  metalVeinProtrusionDistance: 0.02
+  iceCapRadius: 0.08
+  iceCapHeight: 0.008
+  iceCapRadiusVariation: 0.25
+  iceCapHeightVariation: 0.3
   gravityStrength: 1
   thermalRate: 0.35
   electricalRate: 0.3
@@ -50,47 +60,49 @@ MonoBehaviour:
   densityExchangeEpsilon: 0.02
   mantlePressure: 0.7
   fractureRate: 0.2
-  extrusionRate: 0.3
+  extrusionRate: 0.4
   volcanicCooling: 0.15
   magmaViscosity: 0.5
   hydrothermalStrength: 0.35
   ventChemicalRate: 0.12
-  magmaEruption: 0
-  eruptionPressureStrength: 1
-  eruptionFlowStrength: 1
-  eruptionBurdenDepth: 4
+  magmaEruption: 1
+  eruptionPressureStrength: 3
+  eruptionFlowStrength: 5
+  eruptionBurdenDepth: 10
   eruptionBlastThreshold: 1.25
-  ashUpdraftStrength: 1
-  ashSettlingStrength: 1
+  ashUpdraftStrength: 0.4
+  ashSettlingStrength: 2
   ashFertilityStrength: 1
-  infiltrationRate: 0.3
-  groundwaterRate: 0.18
-  fieldCapacityFraction: 0.45
+  coreReactionFrequency: 2000
+  coreReactionMagnitude: 8
+  infiltrationRate: 0.5
+  groundwaterRate: 0.35
+  fieldCapacityFraction: 0.7
   dissolutionRate: 0.03
   collapseRate: 0.03
-  erosionRate: 0.06
-  baseSoilCohesion: 0.45
-  stressDecayRate: 0.02
+  erosionRate: 0.04
+  baseSoilCohesion: 0.75
+  stressDecayRate: 0.01
   dryMoistureThreshold: 0.08
   moistureCohesionStrength: 0.85
-  capillaryEvaporationFraction: 0.35
+  capillaryEvaporationFraction: 0.5
   runoffRate: 0.45
-  pondingRate: 0.25
-  surfaceWaterPixelThreshold: 0.55
-  springHeadThreshold: 0.55
-  springDischargeRate: 0.35
-  geyserHeatThreshold: 120
+  pondingRate: 0.05
+  surfaceWaterPixelThreshold: 0.2
+  springHeadThreshold: 0.9
+  springDischargeRate: 0.9
+  geyserHeatThreshold: 320
   geyserDischargeRate: 0.5
   geyserCooldownSeconds: 2.5
   dayLengthSeconds: 180
   solarIntensity: 0.8
-  spaceTemperature: -25
+  spaceTemperature: 0
   radiativeCooling: 0.2
-  windStrength: 0.35
-  windDamping: 0.06
-  evaporationRate: 0.1
-  condensationRate: 0.12
-  precipitationRate: 0.2
+  windStrength: 2
+  windDamping: 0.00001
+  evaporationRate: 0.5
+  condensationRate: 0.01
+  precipitationRate: 0.1
   vaporPressureScale: 0.25
   pressureRate: 0.4
   pressureDiffusionRate: 0.5
@@ -100,35 +112,99 @@ MonoBehaviour:
   rigidPressureDiffusivity: 0.02
   pressureEquilibriumGradient: 2
   pressureEquilibriumMaximum: 2
-  atmosphericAdvectionRate: 0.85
-  vaporDiffusionRate: 0.05
-  atmosphericBuoyancy: 0.4
-  humidityBuoyancy: 0.25
-  saturationCapacityScale: 0.55
-  cloudPrecipitationThreshold: 0.05
-  rainPixelFormationThreshold: 0.35
-  surfaceAirHeatExchange: 0.45
-  temperatureAdvectionRate: 0.55
-  pressureCompressibility: 0.45
-  atmosphericCflLimit: 0.4
-  surfaceAirTemperature: 18
-  atmosphericLapseRate: 12
+  atmosphericAdvectionRate: 0.8
+  vaporDiffusionRate: 0.33
+  atmosphericBuoyancy: 0.9
+  humidityBuoyancy: 0.8
+  saturationCapacityScale: 0.01
+  cloudPrecipitationThreshold: 0.9
+  rainPixelFormationThreshold: 0.999
+  surfaceAirHeatExchange: 1
+  temperatureAdvectionRate: 0.8
+  pressureCompressibility: 0.6
+  atmosphericCflLimit: 0.5
+  surfaceAirTemperature: 25
+  atmosphericLapseRate: 10
+  mycologyInitialSporeLoad: 0.08
+  mycologyRareStrainChance: 0.04
+  mycologyAirTransportRate: 0.55
+  mycologyWaterTransportRate: 0.7
+  mycologyDiffusionRate: 0.08
+  mycologySettlingRate: 0.35
+  mycologySporulationRate: 0.12
+  mycologyGrowthRate: 0.18
+  mycologyDecayRate: 0.22
+  mycologyGrowthTempMin: 5
+  mycologyGrowthTempMax: 90
+  mycologyGrowthMoistureMin: 0.08
+  mycologyGrowthMoistureMax: 0.85
+  mycologySurvivalTempMin: -5
+  mycologySurvivalTempMax: 100
+  mycologySurvivalMoistureMin: 0.02
+  mycologySurvivalMoistureMax: 1.2
+  mycologyElectricalTolerance: 0.65
+  mycologyTraitEffectStrength: 0.35
+  combustionAmbientOxygen: 1
+  combustionOxygenReplenishRate: 0.15
+  combustionOxygenDiffusionRate: 0.35
+  combustionIgnitionAccumulationRate: 2.5
+  combustionIgnitionDecayRate: 1.2
+  combustionSeedIntensity: 0.25
+  combustionBurnRate: 0.2
+  combustionHeatYield: 2.8
+  combustionPressureScale: 2.5
+  combustionUpdraftStrength: 6
+  combustionSmokeYield: 0.55
+  combustionSootSettlingRate: 0.2
+  combustionPyroFertilityYield: 0.18
+  combustionMoistureIgnitionPenalty: 2.5
+  combustionSteamSuppression: 0.85
+  combustionFlameDecay: 0.35
+  combustionFlashVaporizationRate: 0.55
+  combustionMinFuel: 0.02
+  combustionMinOxygen: 0.05
+  combustionSuppressionMoisture: 0.55
+  stormChargeSeparationRate: 0.35
+  stormChargeLeakRate: 0.08
+  stormChargeDiffusionRate: 0.12
+  stormChargeAdvectionRate: 0.45
+  stormRimingTempMin: -25
+  stormRimingTempMax: 5
+  stormBreakdownThreshold: 1.6
+  stormBreakdownAccumulationRate: 0.85
+  stormChannelDecay: 2.5
+  stormFlashDecay: 1.8
+  stormFlashDiffusion: 0.45
+  stormCooldownRate: 0.4
+  stormStrikeHeat: 90
+  stormThunderPressure: 0.55
+  stormChargeDeposit: 0.85
+  stormIgnitionImpulse: 1
+  stormFlashVaporization: 0.35
+  stormChannelChargeDrain: 0.55
+  stormTortuosity: 0.35
+  stormTargetRange: 18
+  stormMaxChannelLength: 48
+  stormMaxStrikesPerTick: 4
+  stormStrikeBranchChance: 0.12
+  stormSheetBranchChance: 0.45
+  stormMinimumHeight: 415
   enableStarfield: 1
   starCount: 300
-  starfieldStrength: 0.15
+  starfieldStrength: 0.1
   starTwinkleStrength: 0.65
   enableNebula: 1
   nebulaCount: 12
   nebulaStrength: 0.45
   enableAtmosphereGlow: 1
   atmosphereGlowStrength: 0.7
-  atmosphereGlowPixelScale: 18
+  atmosphereGlowPixelScale: 48
   atmosphereGlowRayCount: 7
   enableSolarBody: 1
   solarBodyStrength: 1
   solarCoronaStrength: 0.85
   solarOrbitRadius: 1.35
-  dayNightLightingStrength: 0.85
+  dayNightLightingStrength: 1
   brushRadius: 5
   brushStrength: 1
   validationIntervalTicks: 1000

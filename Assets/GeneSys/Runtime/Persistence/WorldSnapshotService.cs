@@ -17,19 +17,20 @@ namespace GeneSys.Persistence
         private const int Version3 = 3;
         private const int Version4 = 4;
         private const int Version5 = 5;
+        private const int Version6 = 6;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            byte[][] payloads = new byte[7][];
-            int remaining = 7;
+            byte[][] payloads = new byte[8][];
+            int remaining = 8;
             bool failed = false;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
                 host.Resources.FlowRead, host.Resources.AuxRead,
                 host.Resources.ShadeRead, host.Resources.EcologyRead,
-                host.Resources.CombustionRead
+                host.Resources.CombustionRead, host.Resources.StormRead
             };
             for (int i = 0; i < textures.Length; i++)
             {
@@ -47,7 +48,7 @@ namespace GeneSys.Persistence
                         using var writer = new BinaryWriter(stream);
                         SimulationConfig config = host.Config;
                         writer.Write(Magic);
-                        writer.Write(Version5);
+                        writer.Write(Version6);
                         writer.Write(host.Resources.Grid.angularResolution);
                         writer.Write(host.Resources.Grid.radialResolution);
                         writer.Write(config.seed);
@@ -72,7 +73,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -151,6 +152,22 @@ namespace GeneSys.Persistence
                 ClearCombustion(host.Resources);
             }
 
+            if (version >= Version6)
+            {
+                int length = reader.ReadInt32();
+                byte[] payload = reader.ReadBytes(length);
+                if (payload.Length != length) return false;
+                Texture2D staging = CreateStagingTexture(width, height, host.Resources.StormRead.graphicsFormat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, host.Resources.StormRead);
+                UnityEngine.Object.Destroy(staging);
+            }
+            else
+            {
+                ClearStorm(host.Resources);
+            }
+
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
             return true;
@@ -180,6 +197,18 @@ namespace GeneSys.Persistence
             staging.Apply(false, false);
             Graphics.CopyTexture(staging, resources.CombustionRead);
             Graphics.CopyTexture(staging, resources.CombustionWrite);
+            UnityEngine.Object.Destroy(staging);
+        }
+
+        private static void ClearStorm(SimulationResources resources)
+        {
+            int width = resources.Grid.angularResolution;
+            int height = resources.Grid.radialResolution;
+            var staging = new Texture2D(width, height, TextureFormat.RGBAFloat, false, true);
+            staging.SetPixels(new Color[width * height]);
+            staging.Apply(false, false);
+            Graphics.CopyTexture(staging, resources.StormRead);
+            Graphics.CopyTexture(staging, resources.StormWrite);
             UnityEngine.Object.Destroy(staging);
         }
 

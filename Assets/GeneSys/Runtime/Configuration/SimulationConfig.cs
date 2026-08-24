@@ -178,6 +178,33 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float combustionMinOxygen = 0.05f;
         [Range(0f, 2f)] public float combustionSuppressionMoisture = 0.55f;
 
+        [Header("Storm and lightning")]
+        [Range(0f, 4f)] public float stormChargeSeparationRate = 0.35f;
+        [Range(0f, 4f)] public float stormChargeLeakRate = 0.08f;
+        [Range(0f, 4f)] public float stormChargeDiffusionRate = 0.12f;
+        [Range(0f, 4f)] public float stormChargeAdvectionRate = 0.45f;
+        [Range(-80f, 40f)] public float stormRimingTempMin = -25f;
+        [Range(-40f, 40f)] public float stormRimingTempMax = 5f;
+        [Range(0.01f, 4f)] public float stormBreakdownThreshold = 1.6f;
+        [Range(0f, 8f)] public float stormBreakdownAccumulationRate = 0.85f;
+        [Range(0f, 8f)] public float stormChannelDecay = 2.5f;
+        [Range(0f, 8f)] public float stormFlashDecay = 1.8f;
+        [Range(0f, 4f)] public float stormFlashDiffusion = 0.45f;
+        [Range(0f, 4f)] public float stormCooldownRate = 0.4f;
+        [Range(0f, 400f)] public float stormStrikeHeat = 90f;
+        [Range(0f, 8f)] public float stormThunderPressure = 0.55f;
+        [Range(0f, 8f)] public float stormChargeDeposit = 0.85f;
+        [Range(0f, 4f)] public float stormIgnitionImpulse = 1f;
+        [Range(0f, 4f)] public float stormFlashVaporization = 0.35f;
+        [Range(0f, 4f)] public float stormChannelChargeDrain = 0.55f;
+        [Range(0f, 1f)] public float stormTortuosity = 0.35f;
+        [Range(1, 64)] public int stormTargetRange = 18;
+        [Range(4, 128)] public int stormMaxChannelLength = 48;
+        [Range(0, 32)] public int stormMaxStrikesPerTick = 4;
+        [Range(0f, 1f)] public float stormStrikeBranchChance = 0.12f;
+        [Range(0f, 1f)] public float stormSheetBranchChance = 0.45f;
+        [Range(0, 2048)] public int stormMinimumHeight = 415;
+
         [Header("Graphics")]
         [Range(0, 1)] public int enableStarfield = 1;
         [Range(32, 512)] public int starCount = 300;
@@ -312,6 +339,35 @@ namespace GeneSys.Configuration
             combustionMinFuel = Mathf.Clamp01(combustionMinFuel);
             combustionMinOxygen = Mathf.Clamp01(combustionMinOxygen);
             combustionSuppressionMoisture = Mathf.Max(0f, combustionSuppressionMoisture);
+            stormChargeSeparationRate = Mathf.Max(0f, stormChargeSeparationRate);
+            stormChargeLeakRate = Mathf.Max(0f, stormChargeLeakRate);
+            stormChargeDiffusionRate = Mathf.Max(0f, stormChargeDiffusionRate);
+            stormChargeAdvectionRate = Mathf.Max(0f, stormChargeAdvectionRate);
+            if (stormRimingTempMax < stormRimingTempMin)
+            {
+                float swap = stormRimingTempMin;
+                stormRimingTempMin = stormRimingTempMax;
+                stormRimingTempMax = swap;
+            }
+            stormBreakdownThreshold = Mathf.Max(0.01f, stormBreakdownThreshold);
+            stormBreakdownAccumulationRate = Mathf.Max(0f, stormBreakdownAccumulationRate);
+            stormChannelDecay = Mathf.Max(0f, stormChannelDecay);
+            stormFlashDecay = Mathf.Max(0f, stormFlashDecay);
+            stormFlashDiffusion = Mathf.Max(0f, stormFlashDiffusion);
+            stormCooldownRate = Mathf.Max(0f, stormCooldownRate);
+            stormStrikeHeat = Mathf.Max(0f, stormStrikeHeat);
+            stormThunderPressure = Mathf.Max(0f, stormThunderPressure);
+            stormChargeDeposit = Mathf.Max(0f, stormChargeDeposit);
+            stormIgnitionImpulse = Mathf.Max(0f, stormIgnitionImpulse);
+            stormFlashVaporization = Mathf.Max(0f, stormFlashVaporization);
+            stormChannelChargeDrain = Mathf.Max(0f, stormChannelChargeDrain);
+            stormTortuosity = Mathf.Clamp01(stormTortuosity);
+            stormTargetRange = Mathf.Clamp(stormTargetRange, 1, 64);
+            stormMaxChannelLength = Mathf.Clamp(stormMaxChannelLength, 4, 128);
+            stormMaxStrikesPerTick = Mathf.Clamp(stormMaxStrikesPerTick, 0, 32);
+            stormStrikeBranchChance = Mathf.Clamp01(stormStrikeBranchChance);
+            stormSheetBranchChance = Mathf.Clamp01(stormSheetBranchChance);
+            stormMinimumHeight = Mathf.Clamp(stormMinimumHeight, 0, 2048);
             enableStarfield = enableStarfield != 0 ? 1 : 0;
             starCount = Mathf.Clamp(starCount, 32, 512);
             starfieldStrength = Mathf.Max(0f, starfieldStrength);

@@ -28,6 +28,7 @@ namespace GeneSys.Integration
         RenderTexture ChemicalAndGroundwaterField { get; }
         RenderTexture EcologyField { get; }
         RenderTexture CombustionField { get; }
+        RenderTexture StormField { get; }
         SurfaceFrame GetSurfaceFrame(Vector2Int cell);
         /// <summary>
         /// Deposit into a field channel: 1 heat, 2 moisture/cloud, 3 pressure, 4 nutrients, 5 groundwater, 6 vapor, 7 spores, 8 charge.

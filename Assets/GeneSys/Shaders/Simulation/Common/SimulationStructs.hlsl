@@ -24,6 +24,14 @@
 // Milestone 1 fuel is ecology.y on Soil/Sediment. Burning consumes that biomass
 // locally and writes heat/pressure/updraft/steam into the existing weather chain.
 // Combustion never invents water: flashpoint vaporization only moves state.z -> aux.x.
+// Storm (dedicated RGBA32F field, excluded from the global ping-pong swap):
+//   storm.x = signed separated space charge on atmosphere cells
+//   storm.y = channel plasma luminance in [0, 1], decays via stormChannelDecay
+//   storm.z = ambient flash glow, diffused and decayed so a strike lights nearby sky
+//   storm.w = breakdown state in [-1, 1]; positive accumulates toward 1 (ready to fire),
+//             negative is post-strike cooldown climbing back to 0
+// Storm values do not follow cell-moving kernels (MaterialMotion, LiquidDensityExchange)
+// because charge lives in non-moving Air and the channel/flash channels are transient.
 // Atmosphere representation:
 //   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
 //   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
@@ -82,6 +90,18 @@ struct BrushCommand
     uint materialId;
     float4 values; // mode, amount, reserved, reserved
 };
+
+struct StrikeSeed
+{
+    int2 cell;
+    float charge;
+    uint kind; // 0 = cloud-to-ground strike, 1 = in-cloud sheet
+};
+
+#define STORM_KIND_STRIKE 0u
+#define STORM_KIND_SHEET 1u
+#define STORM_MAX_STRIKES 32u
+#define STORM_BRANCH_STACK 32
 
 uint WrapTheta(int theta, int width)
 {
@@ -299,6 +319,38 @@ float MixTemperature(float destTemp, float destHeatCapacity, float sourceTemp, f
     float destMassHeat = max(0.001, destHeatCapacity);
     float srcMassHeat = max(0.0, transferredMass) * max(0.001, waterHeatCapacity);
     return (destTemp * destMassHeat + sourceTemp * srcMassHeat) / (destMassHeat + srcMassHeat);
+}
+
+float4 SanitizeStorm(float4 storm)
+{
+    float4 value = SafeFinite4(storm, 0.0);
+    value.x = clamp(value.x, -8.0, 8.0);
+    value.y = saturate(value.y);
+    value.z = saturate(value.z);
+    value.w = clamp(value.w, -1.0, 1.0);
+    return value;
+}
+
+// CFL-capped face fluxes. Angular and radial weights contribute independently so
+// dominant angular wind cannot starve radial lofting.
+float4 DonorFaceFlux(float2 flow, float mass, float advectionRate, float4 validFaces, float tangentialWeight, float dt, float cflLimit)
+{
+    if (mass <= 1e-8 || advectionRate <= 1e-8)
+        return 0.0;
+
+    float left = max(0.0, -flow.x) * validFaces.x * tangentialWeight;
+    float right = max(0.0, flow.x) * validFaces.y * tangentialWeight;
+    float down = max(0.0, -flow.y) * validFaces.z;
+    float up = max(0.0, flow.y) * validFaces.w;
+    float weightSum = left + right + down + up;
+    if (weightSum <= 1e-8)
+        return 0.0;
+
+    float cfl = saturate(cflLimit);
+    float moveFraction = min(cfl, weightSum * advectionRate * max(0.0, dt));
+    float movable = mass * moveFraction;
+    float inv = 1.0 / weightSum;
+    return float4(movable * left * inv, movable * right * inv, movable * down * inv, movable * up * inv);
 }
 
 // Signed receive for the current cell from one neighbor. Positive means this cell gains mass.
