@@ -7,7 +7,6 @@ MonoImporter:
   - host: {instanceID: 0}
   - display: {instanceID: 0}
   - probeSprite: {fileID: 7482667652216324306, guid: bfe437eb65ae130468dbcf7d663218e4, type: 3}
-  - vaporIcon: {fileID: 21300000, guid: 84d6228bfcc8ad841b972d7b80985e04, type: 3}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

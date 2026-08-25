@@ -211,5 +211,12 @@ MonoBehaviour:
   conservationTolerance: 0.02
   probeOrbitRadius: 1.28
   probeSpriteScale: 0.08
+  probeSpriteRotationOffset: 0
   probeOrbitPeriodSeconds: 180
   probeVaporRate: 1
+  probeWaterRate: 1
+  probeHeatRate: 1
+  probeCoolRate: 1
+  probeDepositRadius: 4
+  probeLeadDegrees: 2
+  probeFollowZoom: 2.5

@@ -101,7 +101,9 @@ namespace GeneSys.Simulation
             Clock.SetSpeed(config.simulationSpeed);
             if (display != null) display.Initialize(Resources, materialRegistry, config.grid, config, this);
             if (visuals != null) visuals.Initialize(this, display);
+            if (probe == null) probe = GetComponent<ProbeController>();
             if (probe != null) probe.Initialize(this, display);
+            if (display != null) display.FollowProbe = probe;
             if (tools != null) { tools.Radius = config.brushRadius; tools.Strength = config.brushStrength; }
             if (bindUi && ui != null) ui.Initialize(this, display, tools);
             if (validator != null) validator.Initialize(this);
@@ -180,6 +182,17 @@ namespace GeneSys.Simulation
                 radius = Mathf.Max(1, radius),
                 materialId = MaterialIds.Void,
                 values = new Vector4(Mathf.Clamp(channel, 1, 8), amount, 0f, 0f)
+            });
+        }
+
+        public void QueueMaterialPaint(Vector2Int cell, int radius, uint materialId)
+        {
+            QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = cell,
+                radius = Mathf.Max(1, radius),
+                materialId = materialId,
+                values = Vector4.zero
             });
         }
 

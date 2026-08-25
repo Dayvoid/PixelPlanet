@@ -9,6 +9,12 @@ using UnityEngine.InputSystem;
 
 namespace GeneSys.Rendering
 {
+    public enum CameraViewMode
+    {
+        Globe,
+        ProbeFollow
+    }
+
     [RequireComponent(typeof(MeshRenderer))]
     public sealed class PlanetoidDisplayRenderer : MonoBehaviour
     {
@@ -29,9 +35,16 @@ namespace GeneSys.Rendering
         private SimulationHost host;
         private Vector2 lastPointer;
         private bool dragging;
+        private CameraViewMode cameraViewMode = CameraViewMode.Globe;
+        private Vector3 savedGlobeCameraPosition;
+        private float savedGlobeOrthoSize = 5.5f;
+        private Quaternion savedGlobeDisplayRotation = Quaternion.identity;
+        private bool hasGlobeCameraState;
 
         public int OverlayMode { get; private set; }
         public Camera TargetCamera => targetCamera;
+        public ProbeController FollowProbe { get; set; }
+        public CameraViewMode ViewMode => cameraViewMode;
         public Material RuntimeMaterial => displayMaterial;
         /// <summary>When set, returns true if world zoom/pan should ignore the pointer (e.g. over UI).</summary>
         public Func<Vector2, bool> ShouldBlockWorldInput { get; set; }
@@ -122,12 +135,32 @@ namespace GeneSys.Rendering
             if (displayMaterial != null) displayMaterial.SetInt("_OverlayMode", OverlayMode);
         }
 
+        public void SetCameraViewMode(CameraViewMode mode)
+        {
+            if (mode == cameraViewMode) return;
+            if (mode == CameraViewMode.ProbeFollow)
+            {
+                SaveGlobeCameraState();
+                cameraViewMode = CameraViewMode.ProbeFollow;
+                if (targetCamera != null && config != null)
+                    targetCamera.orthographicSize = Mathf.Clamp(config.probeFollowZoom, 0.75f, 20f);
+                ApplyProbeFollow();
+            }
+            else
+            {
+                cameraViewMode = CameraViewMode.Globe;
+                RestoreGlobeCameraState();
+            }
+        }
+
         private void LateUpdate()
         {
             if (resources == null || displayMaterial == null) return;
             RefreshTextures();
             PushGraphicsUniforms();
             HandleCamera();
+            if (cameraViewMode == CameraViewMode.ProbeFollow)
+                ApplyProbeFollow();
         }
 
         private void PushGraphicsUniforms()
@@ -156,17 +189,26 @@ namespace GeneSys.Rendering
             Vector2 pointer = Mouse.current.position.ReadValue();
             bool overUi = ShouldBlockWorldInput != null && ShouldBlockWorldInput(pointer);
 
-            if (Mouse.current.middleButton.wasPressedThisFrame && !overUi)
+            bool follow = cameraViewMode == CameraViewMode.ProbeFollow;
+
+            if (!follow)
             {
-                dragging = true;
-                lastPointer = pointer;
+                if (Mouse.current.middleButton.wasPressedThisFrame && !overUi)
+                {
+                    dragging = true;
+                    lastPointer = pointer;
+                }
+                if (Mouse.current.middleButton.wasReleasedThisFrame) dragging = false;
+                if (dragging)
+                {
+                    Vector2 delta = pointer - lastPointer;
+                    targetCamera.transform.position -= new Vector3(delta.x, delta.y, 0f) * (panSpeed * targetCamera.orthographicSize);
+                    lastPointer = pointer;
+                }
             }
-            if (Mouse.current.middleButton.wasReleasedThisFrame) dragging = false;
-            if (dragging)
+            else if (Mouse.current.middleButton.wasReleasedThisFrame)
             {
-                Vector2 delta = pointer - lastPointer;
-                targetCamera.transform.position -= new Vector3(delta.x, delta.y, 0f) * (panSpeed * targetCamera.orthographicSize);
-                lastPointer = pointer;
+                dragging = false;
             }
 
             if (!overUi)
@@ -176,13 +218,48 @@ namespace GeneSys.Rendering
                     targetCamera.orthographicSize = Mathf.Clamp(targetCamera.orthographicSize * (1f - scroll * zoomSpeed), 0.75f, 20f);
             }
 
-            if (Keyboard.current != null)
+            if (!follow && Keyboard.current != null)
             {
                 float rotation = 0f;
                 if (Keyboard.current.qKey.isPressed) rotation += rotateSpeed * Time.unscaledDeltaTime;
                 if (Keyboard.current.eKey.isPressed) rotation -= rotateSpeed * Time.unscaledDeltaTime;
                 transform.Rotate(0f, 0f, rotation);
             }
+        }
+
+        private void ApplyProbeFollow()
+        {
+            if (targetCamera == null) return;
+            if (FollowProbe == null)
+                FollowProbe = FindFirstObjectByType<ProbeController>();
+            if (FollowProbe == null) return;
+
+            FollowProbe.SyncPose();
+            transform.rotation = Quaternion.Euler(0f, 0f, ProbeController.FollowLockRotationZ(FollowProbe.ProbeAngle01));
+            Vector3 world = FollowProbe.WorldPosition;
+            if (world.sqrMagnitude < 0.0001f)
+                world = transform.TransformPoint(FollowProbe.LocalOrbitPosition);
+            Vector3 cameraPosition = targetCamera.transform.position;
+            // Pin the probe near the top of the screen: follow lock holds it on +Y, so shift the camera down.
+            float topAnchor = targetCamera.orthographicSize * 0.72f;
+            targetCamera.transform.position = new Vector3(world.x, world.y - topAnchor, cameraPosition.z);
+        }
+
+        private void SaveGlobeCameraState()
+        {
+            if (targetCamera == null) return;
+            savedGlobeCameraPosition = targetCamera.transform.position;
+            savedGlobeOrthoSize = targetCamera.orthographicSize;
+            savedGlobeDisplayRotation = transform.rotation;
+            hasGlobeCameraState = true;
+        }
+
+        private void RestoreGlobeCameraState()
+        {
+            if (!hasGlobeCameraState || targetCamera == null) return;
+            targetCamera.transform.position = savedGlobeCameraPosition;
+            targetCamera.orthographicSize = savedGlobeOrthoSize;
+            transform.rotation = savedGlobeDisplayRotation;
         }
 
         public bool TryScreenToCell(Vector2 screenPosition, out Vector2Int cell)

@@ -80,6 +80,8 @@ namespace GeneSys.UI
         private VisualElement toolsBody;
         private VisualElement settingsBody;
         private VisualElement statusBody;
+        private Button followCameraButton;
+        private Button globeCameraButton;
         private bool initialized;
         private bool metricsReadbackPending;
         private float metricsRefreshTimer;
@@ -96,7 +98,11 @@ namespace GeneSys.UI
             display = renderer;
             tools = simulationTools;
             if (document == null) document = GetComponent<UIDocument>();
-            if (display != null) display.ShouldBlockWorldInput = IsPointerOverUi;
+            if (display != null)
+            {
+                display.ShouldBlockWorldInput = IsPointerOverUi;
+                display.FollowProbe = probe;
+            }
             VisualElement root = document.rootVisualElement;
             toolsDrawer = root.Q("tools-drawer");
             settingsDrawer = root.Q("settings-drawer");
@@ -136,7 +142,7 @@ namespace GeneSys.UI
             SetupDropdowns(root);
             SetupTabs(root);
             BuildSettings(root);
-            SetupProbeVaporButton(root);
+            SetupProbeHud(root);
             AttachStaticSettingTooltips(root);
             tools.Inspected -= SetInspection;
             tools.Inspected += SetInspection;
@@ -255,47 +261,84 @@ namespace GeneSys.UI
             Show("world");
         }
 
-        private void SetupProbeVaporButton(VisualElement root)
+        private void SetupProbeHud(VisualElement root)
         {
             if (probe == null && host != null)
                 probe = host.GetComponent<ProbeController>();
+            if (display != null) display.FollowProbe = probe;
 
-            Button button = root.Q<Button>("probe-vapor-button");
-            if (button == null) return;
+            VisualElement toolsCard = root.Q("probe-tools-card");
+            VisualElement cameraCard = root.Q("probe-camera-card");
+            if (toolsCard != null) toolsCard.pickingMode = PickingMode.Position;
+            if (cameraCard != null) cameraCard.pickingMode = PickingMode.Position;
 
-            if (probe != null && probe.VaporIcon != null)
-                button.style.backgroundImage = new StyleBackground(probe.VaporIcon);
+            BindProbeActionButton(root.Q<Button>("probe-action-vapor"), ProbeAction.Vapor);
+            BindProbeActionButton(root.Q<Button>("probe-action-water"), ProbeAction.Water);
+            BindProbeActionButton(root.Q<Button>("probe-action-soil"), ProbeAction.Soil);
+            BindProbeActionButton(root.Q<Button>("probe-action-cool"), ProbeAction.Cool);
+            BindProbeActionButton(root.Q<Button>("probe-action-heat"), ProbeAction.Heat);
 
-            button.UnregisterCallback<PointerDownEvent>(OnProbeVaporPointerDown);
-            button.UnregisterCallback<PointerUpEvent>(OnProbeVaporPointerUp);
-            button.UnregisterCallback<PointerCaptureOutEvent>(OnProbeVaporCaptureOut);
-            button.RegisterCallback<PointerDownEvent>(OnProbeVaporPointerDown);
-            button.RegisterCallback<PointerUpEvent>(OnProbeVaporPointerUp);
-            button.RegisterCallback<PointerCaptureOutEvent>(OnProbeVaporCaptureOut);
+            followCameraButton = root.Q<Button>("probe-camera-follow");
+            globeCameraButton = root.Q<Button>("probe-camera-globe");
+            followCameraButton?.UnregisterCallback<ClickEvent>(OnFollowCameraClicked);
+            globeCameraButton?.UnregisterCallback<ClickEvent>(OnGlobeCameraClicked);
+            followCameraButton?.RegisterCallback<ClickEvent>(OnFollowCameraClicked);
+            globeCameraButton?.RegisterCallback<ClickEvent>(OnGlobeCameraClicked);
+            RefreshCameraModeButtons();
         }
 
-        private void OnProbeVaporPointerDown(PointerDownEvent evt)
+        private void OnFollowCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.ProbeFollow);
+
+        private void OnGlobeCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.Globe);
+
+        private void BindProbeActionButton(Button button, ProbeAction action)
+        {
+            if (button == null) return;
+            button.userData = action;
+            button.UnregisterCallback<PointerDownEvent>(OnProbeActionPointerDown);
+            button.UnregisterCallback<PointerUpEvent>(OnProbeActionPointerUp);
+            button.UnregisterCallback<PointerCaptureOutEvent>(OnProbeActionCaptureOut);
+            button.RegisterCallback<PointerDownEvent>(OnProbeActionPointerDown);
+            button.RegisterCallback<PointerUpEvent>(OnProbeActionPointerUp);
+            button.RegisterCallback<PointerCaptureOutEvent>(OnProbeActionCaptureOut);
+        }
+
+        private void OnProbeActionPointerDown(PointerDownEvent evt)
         {
             var target = (VisualElement)evt.currentTarget;
             target.CapturePointer(evt.pointerId);
-            target.AddToClassList("probe-vapor-button--held");
-            probe?.SetVaporSeeding(true);
+            target.AddToClassList("probe-tool-button--held");
+            if (target.userData is ProbeAction action)
+                probe?.SetAction(action);
             evt.StopImmediatePropagation();
         }
 
-        private void OnProbeVaporPointerUp(PointerUpEvent evt)
+        private void OnProbeActionPointerUp(PointerUpEvent evt)
         {
             var target = (VisualElement)evt.currentTarget;
             if (target.HasPointerCapture(evt.pointerId))
                 target.ReleasePointer(evt.pointerId);
-            target.RemoveFromClassList("probe-vapor-button--held");
-            probe?.SetVaporSeeding(false);
+            target.RemoveFromClassList("probe-tool-button--held");
+            probe?.SetAction(ProbeAction.None);
         }
 
-        private void OnProbeVaporCaptureOut(PointerCaptureOutEvent evt)
+        private void OnProbeActionCaptureOut(PointerCaptureOutEvent evt)
         {
-            ((VisualElement)evt.currentTarget).RemoveFromClassList("probe-vapor-button--held");
-            probe?.SetVaporSeeding(false);
+            ((VisualElement)evt.currentTarget).RemoveFromClassList("probe-tool-button--held");
+            probe?.SetAction(ProbeAction.None);
+        }
+
+        private void SetCameraViewMode(CameraViewMode mode)
+        {
+            display?.SetCameraViewMode(mode);
+            RefreshCameraModeButtons();
+        }
+
+        private void RefreshCameraModeButtons()
+        {
+            CameraViewMode mode = display != null ? display.ViewMode : CameraViewMode.Globe;
+            followCameraButton?.EnableInClassList("probe-camera-button--active", mode == CameraViewMode.ProbeFollow);
+            globeCameraButton?.EnableInClassList("probe-camera-button--active", mode == CameraViewMode.Globe);
         }
 
         private void SetupPresetDialog(VisualElement root)
@@ -583,9 +626,27 @@ namespace GeneSys.UI
                 "Material the brush paints, and whose properties appear below. Changing density, conductivity, or absorbency immediately affects gravity, weather, hydrology, and phase changes for that pixel type.");
             AttachNamedSettingTooltip(root, "brush-radius", nameof(SimulationConfig.brushRadius));
             AttachNamedSettingTooltip(root, "brush-strength", nameof(SimulationConfig.brushStrength));
-            AttachNamedSettingTooltip(root, "probe-vapor-button",
+            AttachNamedSettingTooltip(root, "probe-action-vapor",
                 "Seed Vapor",
                 "Hold to inject humidity at the outer atmosphere ring, a couple of degrees ahead of the clockwise probe so vapor trails into its path.");
+            AttachNamedSettingTooltip(root, "probe-action-water",
+                "Add Water",
+                "Hold to add surface water at the outer atmosphere ring ahead of the probe. Moisture can rain out and run off along the heading.");
+            AttachNamedSettingTooltip(root, "probe-action-soil",
+                "Drop Soil",
+                "Hold to paint soil at the outer ring ahead of the probe. Soil is density-displaceable, so dumped grains can settle toward the surface.");
+            AttachNamedSettingTooltip(root, "probe-action-cool",
+                "Cool",
+                "Hold to lower temperatures at the outer ring ahead of the probe. Cooling the column encourages condensation along the orbit.");
+            AttachNamedSettingTooltip(root, "probe-action-heat",
+                "Heat",
+                "Hold to raise temperatures at the outer ring ahead of the probe. Heating the column warms atmosphere and surface along the heading.");
+            AttachNamedSettingTooltip(root, "probe-camera-follow",
+                "Probe Camera",
+                "Centers the view on the probe and rotates the planetoid with its orbit so the orbiter stays pinned while the surface scrolls underneath.");
+            AttachNamedSettingTooltip(root, "probe-camera-globe",
+                "Globe Camera",
+                "Returns to the default camera: middle-drag pans, mouse wheel zooms, and Q/E rotates the planetoid independently of the probe.");
         }
 
         private void AttachNamedSettingTooltip(VisualElement root, string elementName, string fieldName)
@@ -720,14 +781,24 @@ namespace GeneSys.UI
                 RefreshWorldMetrics(force: false);
         }
 
+        public static Vector2 ToUiToolkitScreenPosition(Vector2 screenPosition, float screenHeight) =>
+            new(screenPosition.x, screenHeight - screenPosition.y);
+
+        public static bool ShouldBlockWorldBrush(bool pointerOverInteractiveUi, ProbeAction probeAction) =>
+            pointerOverInteractiveUi || probeAction != ProbeAction.None;
+
         public bool IsPointerOverUi(Vector2 screenPosition)
         {
-            if (document == null || document.rootVisualElement == null || document.rootVisualElement.panel == null)
-                return false;
-            IPanel panel = document.rootVisualElement.panel;
-            Vector2 panelPoint = RuntimePanelUtils.ScreenToPanel(panel, screenPosition);
-            VisualElement picked = panel.Pick(panelPoint);
-            return picked != null && picked != document.rootVisualElement;
+            bool overInteractive = false;
+            if (document != null && document.rootVisualElement != null && document.rootVisualElement.panel != null)
+            {
+                IPanel panel = document.rootVisualElement.panel;
+                Vector2 panelPoint = RuntimePanelUtils.ScreenToPanel(panel, ToUiToolkitScreenPosition(screenPosition, Screen.height));
+                VisualElement picked = panel.Pick(panelPoint);
+                overInteractive = picked != null && picked != document.rootVisualElement;
+            }
+            ProbeAction action = probe != null ? probe.ActiveAction : ProbeAction.None;
+            return ShouldBlockWorldBrush(overInteractive, action);
         }
 
         private void SetInspection(CellInspection inspection)

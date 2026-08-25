@@ -232,8 +232,15 @@ namespace GeneSys.Configuration
         [Header("Probe")]
         [Range(0.8f, 2f)] public float probeOrbitRadius = 1.28f;
         [Range(0.01f, 1f)] public float probeSpriteScale = 0.08f;
+        [Range(-180f, 180f)] public float probeSpriteRotationOffset = 0f;
         [Min(1f)] public float probeOrbitPeriodSeconds = 180f;
         [Range(0f, 10f)] public float probeVaporRate = 1f;
+        [Range(0f, 10f)] public float probeWaterRate = 1f;
+        [Range(0f, 10f)] public float probeHeatRate = 1f;
+        [Range(0f, 10f)] public float probeCoolRate = 1f;
+        [Range(1, 64)] public int probeDepositRadius = 4;
+        [Range(0f, 45f)] public float probeLeadDegrees = 2f;
+        [Range(0.75f, 20f)] public float probeFollowZoom = 2.5f;
 
         public void RestoreDefaults()
         {
@@ -394,8 +401,15 @@ namespace GeneSys.Configuration
             coreReactionMagnitude = Mathf.Max(0f, coreReactionMagnitude);
             probeOrbitRadius = Mathf.Clamp(probeOrbitRadius, 0.8f, 2f);
             probeSpriteScale = Mathf.Clamp(probeSpriteScale, 0.01f, 1f);
+            probeSpriteRotationOffset = Mathf.Clamp(probeSpriteRotationOffset, -180f, 180f);
             probeOrbitPeriodSeconds = Mathf.Max(1f, probeOrbitPeriodSeconds);
             probeVaporRate = Mathf.Max(0f, probeVaporRate);
+            probeWaterRate = Mathf.Max(0f, probeWaterRate);
+            probeHeatRate = Mathf.Max(0f, probeHeatRate);
+            probeCoolRate = Mathf.Max(0f, probeCoolRate);
+            probeDepositRadius = Mathf.Clamp(probeDepositRadius, 1, 64);
+            probeLeadDegrees = Mathf.Clamp(probeLeadDegrees, 0f, 45f);
+            probeFollowZoom = Mathf.Clamp(probeFollowZoom, 0.75f, 20f);
         }
     }
 }

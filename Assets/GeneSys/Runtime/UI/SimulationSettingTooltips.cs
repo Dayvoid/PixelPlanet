@@ -405,10 +405,24 @@ namespace GeneSys.UI
                 "How far the probe orbits the planetoid, in the same units as Solar Orbit Radius. 1.0 sits on the disc edge; 1.28 rides the outer atmosphere glow.",
             [nameof(SimulationConfig.probeSpriteScale)] =
                 "Local scale of the probe sprite. Raise it to make the orbiter easier to see against the glow; lower it to keep the disc unobstructed.",
+            [nameof(SimulationConfig.probeSpriteRotationOffset)] =
+                "Degrees added to the probe sprite's clockwise-tangent facing. Use it to align art that is not drawn pointing along the orbit path.",
             [nameof(SimulationConfig.probeOrbitPeriodSeconds)] =
                 "Seconds of simulation time for one clockwise lap. Independent of Day Length Seconds, so the probe can cross the sun instead of locking to night-side.",
             [nameof(SimulationConfig.probeVaporRate)] =
-                "Humidity added to the outer atmosphere ring each frame while the water icon is held. Higher rates seed clouds faster ahead of the probe's path.",
+                "Humidity added to the outer atmosphere ring each frame while the vapor icon is held. Higher rates seed clouds faster ahead of the probe's path.",
+            [nameof(SimulationConfig.probeWaterRate)] =
+                "Surface water added to the outer atmosphere ring each frame while the water icon is held. Higher rates seed rain and runoff faster ahead of the probe.",
+            [nameof(SimulationConfig.probeHeatRate)] =
+                "Temperature added at the outer ring each frame while the heat icon is held. Use it to warm atmosphere and surface along the probe heading.",
+            [nameof(SimulationConfig.probeCoolRate)] =
+                "Temperature subtracted at the outer ring each frame while the cool icon is held. Use it to chill atmosphere and encourage condensation along the path.",
+            [nameof(SimulationConfig.probeDepositRadius)] =
+                "Radius in cells of probe deposits. Larger radii seed vapor, water, soil, and temperature over a wider patch ahead of the orbiter.",
+            [nameof(SimulationConfig.probeLeadDegrees)] =
+                "How many degrees ahead of the probe heading deposits land. A small lead lets vapor and water trail into the clockwise path instead of sitting under the sprite.",
+            [nameof(SimulationConfig.probeFollowZoom)] =
+                "Orthographic size applied when switching to the probe camera. Smaller values frame the orbiter tightly; larger values keep more of the planetoid in view.",
         };
 
         public static bool TryGet(string fieldName, out string tooltip)

@@ -246,44 +246,6 @@
     flex-shrink: 0;
 }
 
-.probe-vapor-button {
-    width: 64px;
-    height: 64px;
-    margin-top: 8px;
-    margin-bottom: 8px;
-    padding-top: 0;
-    padding-right: 0;
-    padding-bottom: 0;
-    padding-left: 0;
-    background-color: rgba(0, 0, 0, 0);
-    background-image: url("project://database/Assets/Concept/Art/Water-Icon-Sprite.png");
-    -unity-background-scale-mode: scale-to-fit;
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-    border-radius: 14px;
-}
-
-.probe-vapor-button:hover {
-    background-image: url("project://database/Assets/Concept/Art/Water-Icon-Sprite.png");
-    background-color: rgba(72, 210, 230, 0.12);
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-}
-
-.probe-vapor-button:active,
-.probe-vapor-button.probe-vapor-button--held {
-    background-image: url("project://database/Assets/Concept/Art/Water-Icon-Sprite.png");
-    background-color: rgba(72, 210, 230, 0.22);
-    border-top-width: 0;
-    border-right-width: 0;
-    border-bottom-width: 0;
-    border-left-width: 0;
-}
-
 .unity-button {
     background-image: none;
     background-color: rgb(18, 36, 64);
@@ -472,4 +434,147 @@
     white-space: normal;
     color: rgb(210, 228, 240);
     font-size: 11px;
+}
+
+.probe-dock {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 16px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-end;
+}
+
+.probe-dock-balance {
+    width: 128px;
+    height: 1px;
+    visibility: hidden;
+}
+
+.probe-tools-card,
+.probe-camera-card {
+    flex-direction: row;
+    align-items: center;
+    background-color: rgba(8, 16, 32, 0.94);
+    border-width: 1px;
+    border-color: rgb(40, 90, 140);
+    border-radius: 12px;
+    padding: 8px;
+}
+
+.probe-camera-card {
+    margin-left: 8px;
+    padding: 6px;
+}
+
+.unity-button.probe-tool-button {
+    width: 64px;
+    height: 64px;
+    margin-right: 6px;
+    padding-top: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    border-radius: 14px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.unity-button.probe-tool-button.probe-tool-last {
+    margin-right: 0;
+}
+
+.unity-button.probe-camera-button {
+    width: 48px;
+    height: 48px;
+    margin-right: 6px;
+    padding-top: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    border-radius: 12px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.unity-button.probe-camera-button.probe-camera-last {
+    margin-right: 0;
+}
+
+.unity-button.probe-tool-vapor,
+.unity-button.probe-tool-vapor:hover,
+.unity-button.probe-tool-vapor:active,
+.unity-button.probe-tool-vapor.probe-tool-button--held {
+    background-image: url("project://database/Assets/Concept/Art/Humidity-Button.png");
+}
+
+.unity-button.probe-tool-water,
+.unity-button.probe-tool-water:hover,
+.unity-button.probe-tool-water:active,
+.unity-button.probe-tool-water.probe-tool-button--held {
+    background-image: url("project://database/Assets/Concept/Art/Water-Button.png");
+}
+
+.unity-button.probe-tool-soil,
+.unity-button.probe-tool-soil:hover,
+.unity-button.probe-tool-soil:active,
+.unity-button.probe-tool-soil.probe-tool-button--held {
+    background-image: url("project://database/Assets/Concept/Art/Soil-Button.png");
+}
+
+.unity-button.probe-tool-cool,
+.unity-button.probe-tool-cool:hover,
+.unity-button.probe-tool-cool:active,
+.unity-button.probe-tool-cool.probe-tool-button--held {
+    background-image: url("project://database/Assets/Concept/Art/Cool-Button.png");
+}
+
+.unity-button.probe-tool-heat,
+.unity-button.probe-tool-heat:hover,
+.unity-button.probe-tool-heat:active,
+.unity-button.probe-tool-heat.probe-tool-button--held {
+    background-image: url("project://database/Assets/Concept/Art/Heat-Button.png");
+}
+
+.unity-button.probe-camera-follow,
+.unity-button.probe-camera-follow:hover,
+.unity-button.probe-camera-follow:active,
+.unity-button.probe-camera-follow.probe-camera-button--active {
+    background-image: url("project://database/Assets/Concept/Art/Camera-Button.png");
+}
+
+.unity-button.probe-camera-globe,
+.unity-button.probe-camera-globe:hover,
+.unity-button.probe-camera-globe:active,
+.unity-button.probe-camera-globe.probe-camera-button--active {
+    background-image: url("project://database/Assets/Concept/Art/Globe-Button.png");
+}
+
+.unity-button.probe-tool-button:hover,
+.unity-button.probe-camera-button:hover {
+    background-color: rgba(72, 210, 230, 0.12);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.unity-button.probe-tool-button:active,
+.unity-button.probe-tool-button.probe-tool-button--held,
+.unity-button.probe-camera-button:active,
+.unity-button.probe-camera-button.probe-camera-button--active {
+    background-color: rgba(72, 210, 230, 0.22);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
 }

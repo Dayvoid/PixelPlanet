@@ -170,7 +170,6 @@ namespace GeneSys.Editor
             SetObject(probe, "host", host);
             SetObject(probe, "display", display);
             SetObject(probe, "probeSprite", LoadSprite("Assets/Concept/Art/Probe-Sprite.png"));
-            SetObject(probe, "vaporIcon", LoadSprite("Assets/Concept/Art/Water-Icon-Sprite.png"));
             SetObject(visuals, "host", host);
             SetObject(visuals, "display", display);
             SetObject(visuals, "targetCamera", camera);
