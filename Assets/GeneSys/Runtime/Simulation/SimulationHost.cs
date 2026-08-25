@@ -31,6 +31,7 @@ namespace GeneSys.Simulation
         [SerializeField] private SimulationUIController ui;
         [SerializeField] private SimulationTools tools;
         [SerializeField] private SimulationValidator validator;
+        [SerializeField] private ProbeController probe;
 
         private GpuPassScheduler scheduler;
         private long lastPerformanceTick;
@@ -100,6 +101,7 @@ namespace GeneSys.Simulation
             Clock.SetSpeed(config.simulationSpeed);
             if (display != null) display.Initialize(Resources, materialRegistry, config.grid, config, this);
             if (visuals != null) visuals.Initialize(this, display);
+            if (probe != null) probe.Initialize(this, display);
             if (tools != null) { tools.Radius = config.brushRadius; tools.Strength = config.brushStrength; }
             if (bindUi && ui != null) ui.Initialize(this, display, tools);
             if (validator != null) validator.Initialize(this);

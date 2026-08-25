@@ -53,6 +53,7 @@
                         <ui:Button name="tab-ecology" text="Ecology" class="tab-button" />
                         <ui:Button name="tab-combustion" text="Fire" class="tab-button" />
                         <ui:Button name="tab-storm" text="Storm" class="tab-button" />
+                        <ui:Button name="tab-probe" text="Probe" class="tab-button" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-world" class="settings-page">
@@ -95,6 +96,13 @@
                         <ui:Label text="Storm and Lightning" class="section-title" />
                         <ui:Label text="Cloud, updraft, and mixed-phase temperatures separate atmospheric charge. Breakdown fires a sheet across the sky or a strike that prefers conductive ground, dumping heat, thunder, charge, and ignition. Use the Storm Charge overlay." class="help" />
                         <ui:ScrollView name="settings-storm" class="settings-scroll" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement name="page-probe" class="settings-page hidden">
+                        <ui:Label text="Probe" class="section-title" />
+                        <ui:Label text="The probe orbits clockwise along the atmosphere glow, opposite the sun. Hold the water icon to seed vapor at the outer atmosphere ring a couple of degrees ahead of its path." class="help" />
+                        <ui:Button name="probe-vapor-button" class="probe-vapor-button" tooltip="Hold to seed vapor" />
+                        <ui:ScrollView name="settings-probe" class="settings-scroll" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-performance" class="settings-page hidden">

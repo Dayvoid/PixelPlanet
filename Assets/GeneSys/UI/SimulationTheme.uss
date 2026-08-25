@@ -246,6 +246,44 @@
     flex-shrink: 0;
 }
 
+.probe-vapor-button {
+    width: 64px;
+    height: 64px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding-top: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    background-color: rgba(0, 0, 0, 0);
+    background-image: url("project://database/Assets/Concept/Art/Water-Icon-Sprite.png");
+    -unity-background-scale-mode: scale-to-fit;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    border-radius: 14px;
+}
+
+.probe-vapor-button:hover {
+    background-image: url("project://database/Assets/Concept/Art/Water-Icon-Sprite.png");
+    background-color: rgba(72, 210, 230, 0.12);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.probe-vapor-button:active,
+.probe-vapor-button.probe-vapor-button--held {
+    background-image: url("project://database/Assets/Concept/Art/Water-Icon-Sprite.png");
+    background-color: rgba(72, 210, 230, 0.22);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
 .unity-button {
     background-image: none;
     background-color: rgb(18, 36, 64);

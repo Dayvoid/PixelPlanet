@@ -28,7 +28,8 @@ namespace GeneSys.UI
             { "Combustion", "combustion" },
             { "Storm and lightning", "storm" },
             { "Graphics", "performance" },
-            { "Tools and validation", "performance" }
+            { "Tools and validation", "performance" },
+            { "Probe", "probe" }
         };
 
         private static readonly HashSet<string> ToggleSettingsFields = new()
@@ -48,6 +49,7 @@ namespace GeneSys.UI
 
         [SerializeField] private UIDocument document;
         [SerializeField] private SimulationValidator validator;
+        [SerializeField] private ProbeController probe;
         private SimulationHost host;
         private PlanetoidDisplayRenderer display;
         private SimulationTools tools;
@@ -134,6 +136,7 @@ namespace GeneSys.UI
             SetupDropdowns(root);
             SetupTabs(root);
             BuildSettings(root);
+            SetupProbeVaporButton(root);
             AttachStaticSettingTooltips(root);
             tools.Inspected -= SetInspection;
             tools.Inspected += SetInspection;
@@ -229,7 +232,7 @@ namespace GeneSys.UI
 
         private void SetupTabs(VisualElement root)
         {
-            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology", "combustion", "storm" };
+            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology", "combustion", "storm", "probe" };
             void Show(string name)
             {
                 HideSettingTooltip();
@@ -250,6 +253,49 @@ namespace GeneSys.UI
             }
 
             Show("world");
+        }
+
+        private void SetupProbeVaporButton(VisualElement root)
+        {
+            if (probe == null && host != null)
+                probe = host.GetComponent<ProbeController>();
+
+            Button button = root.Q<Button>("probe-vapor-button");
+            if (button == null) return;
+
+            if (probe != null && probe.VaporIcon != null)
+                button.style.backgroundImage = new StyleBackground(probe.VaporIcon);
+
+            button.UnregisterCallback<PointerDownEvent>(OnProbeVaporPointerDown);
+            button.UnregisterCallback<PointerUpEvent>(OnProbeVaporPointerUp);
+            button.UnregisterCallback<PointerCaptureOutEvent>(OnProbeVaporCaptureOut);
+            button.RegisterCallback<PointerDownEvent>(OnProbeVaporPointerDown);
+            button.RegisterCallback<PointerUpEvent>(OnProbeVaporPointerUp);
+            button.RegisterCallback<PointerCaptureOutEvent>(OnProbeVaporCaptureOut);
+        }
+
+        private void OnProbeVaporPointerDown(PointerDownEvent evt)
+        {
+            var target = (VisualElement)evt.currentTarget;
+            target.CapturePointer(evt.pointerId);
+            target.AddToClassList("probe-vapor-button--held");
+            probe?.SetVaporSeeding(true);
+            evt.StopImmediatePropagation();
+        }
+
+        private void OnProbeVaporPointerUp(PointerUpEvent evt)
+        {
+            var target = (VisualElement)evt.currentTarget;
+            if (target.HasPointerCapture(evt.pointerId))
+                target.ReleasePointer(evt.pointerId);
+            target.RemoveFromClassList("probe-vapor-button--held");
+            probe?.SetVaporSeeding(false);
+        }
+
+        private void OnProbeVaporCaptureOut(PointerCaptureOutEvent evt)
+        {
+            ((VisualElement)evt.currentTarget).RemoveFromClassList("probe-vapor-button--held");
+            probe?.SetVaporSeeding(false);
         }
 
         private void SetupPresetDialog(VisualElement root)
@@ -397,7 +443,8 @@ namespace GeneSys.UI
                 { "performance", root.Q<ScrollView>("settings-performance") },
                 { "ecology", root.Q<ScrollView>("settings-ecology") },
                 { "combustion", root.Q<ScrollView>("settings-combustion") },
-                { "storm", root.Q<ScrollView>("settings-storm") }
+                { "storm", root.Q<ScrollView>("settings-storm") },
+                { "probe", root.Q<ScrollView>("settings-probe") }
             };
             HideSettingTooltip();
             foreach (ScrollView container in containers.Values)
@@ -536,6 +583,9 @@ namespace GeneSys.UI
                 "Material the brush paints, and whose properties appear below. Changing density, conductivity, or absorbency immediately affects gravity, weather, hydrology, and phase changes for that pixel type.");
             AttachNamedSettingTooltip(root, "brush-radius", nameof(SimulationConfig.brushRadius));
             AttachNamedSettingTooltip(root, "brush-strength", nameof(SimulationConfig.brushStrength));
+            AttachNamedSettingTooltip(root, "probe-vapor-button",
+                "Seed Vapor",
+                "Hold to inject humidity at the outer atmosphere ring, a couple of degrees ahead of the clockwise probe so vapor trails into its path.");
         }
 
         private void AttachNamedSettingTooltip(VisualElement root, string elementName, string fieldName)

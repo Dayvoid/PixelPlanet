@@ -148,6 +148,7 @@ namespace GeneSys.Editor
             var root = new GameObject("GeneSys Simulation");
             SimulationHost host = root.AddComponent<SimulationHost>();
             TerrariumVisualController visuals = root.AddComponent<TerrariumVisualController>();
+            ProbeController probe = root.AddComponent<ProbeController>();
             SimulationTools tools = root.AddComponent<SimulationTools>();
             SimulationValidator validator = root.AddComponent<SimulationValidator>();
             SetObject(host, "config", config);
@@ -165,6 +166,11 @@ namespace GeneSys.Editor
             SetObject(host, "ui", ui);
             SetObject(host, "tools", tools);
             SetObject(host, "validator", validator);
+            SetObject(host, "probe", probe);
+            SetObject(probe, "host", host);
+            SetObject(probe, "display", display);
+            SetObject(probe, "probeSprite", LoadSprite("Assets/Concept/Art/Probe-Sprite.png"));
+            SetObject(probe, "vaporIcon", LoadSprite("Assets/Concept/Art/Water-Icon-Sprite.png"));
             SetObject(visuals, "host", host);
             SetObject(visuals, "display", display);
             SetObject(visuals, "targetCamera", camera);
@@ -175,6 +181,7 @@ namespace GeneSys.Editor
             SetObject(tools, "display", display);
             SetObject(tools, "ui", ui);
             SetObject(ui, "validator", validator);
+            SetObject(ui, "probe", probe);
             SetObject(validator, "host", host);
 
             string scenePath = Root + "/Scenes/Terrarium.unity";
@@ -198,6 +205,17 @@ namespace GeneSys.Editor
             EditorUtility.SetDirty(document);
             EditorSceneManager.MarkSceneDirty(host.gameObject.scene);
             EditorSceneManager.SaveScene(host.gameObject.scene);
+        }
+
+        private static Sprite LoadSprite(string path)
+        {
+            foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(path))
+            {
+                if (asset is Sprite sprite)
+                    return sprite;
+            }
+
+            return AssetDatabase.LoadAssetAtPath<Sprite>(path);
         }
 
         private static void SetObject(Object target, string propertyName, Object value)

@@ -400,6 +400,15 @@ namespace GeneSys.UI
                 "How often automatic validation samples finite values and tracked water mass. Lower intervals catch conservation bugs sooner at a small readback cost.",
             [nameof(SimulationConfig.conservationTolerance)] =
                 "Allowed relative error in tracked water (surface + ground + vapor). Tighter tolerance flags leaks in hydrology and weather mass transfer.",
+
+            [nameof(SimulationConfig.probeOrbitRadius)] =
+                "How far the probe orbits the planetoid, in the same units as Solar Orbit Radius. 1.0 sits on the disc edge; 1.28 rides the outer atmosphere glow.",
+            [nameof(SimulationConfig.probeSpriteScale)] =
+                "Local scale of the probe sprite. Raise it to make the orbiter easier to see against the glow; lower it to keep the disc unobstructed.",
+            [nameof(SimulationConfig.probeOrbitPeriodSeconds)] =
+                "Seconds of simulation time for one clockwise lap. Independent of Day Length Seconds, so the probe can cross the sun instead of locking to night-side.",
+            [nameof(SimulationConfig.probeVaporRate)] =
+                "Humidity added to the outer atmosphere ring each frame while the water icon is held. Higher rates seed clouds faster ahead of the probe's path.",
         };
 
         public static bool TryGet(string fieldName, out string tooltip)

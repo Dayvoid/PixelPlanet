@@ -229,6 +229,12 @@ namespace GeneSys.Configuration
         [Min(1)] public int validationIntervalTicks = 1000;
         [Range(0.0001f, 0.1f)] public float conservationTolerance = 0.02f;
 
+        [Header("Probe")]
+        [Range(0.8f, 2f)] public float probeOrbitRadius = 1.28f;
+        [Range(0.01f, 1f)] public float probeSpriteScale = 0.08f;
+        [Min(1f)] public float probeOrbitPeriodSeconds = 180f;
+        [Range(0f, 10f)] public float probeVaporRate = 1f;
+
         public void RestoreDefaults()
         {
             SimulationConfig defaults = CreateInstance<SimulationConfig>();
@@ -386,6 +392,10 @@ namespace GeneSys.Configuration
             dayNightLightingStrength = Mathf.Max(0f, dayNightLightingStrength);
             coreReactionFrequency = Mathf.Max(0, coreReactionFrequency);
             coreReactionMagnitude = Mathf.Max(0f, coreReactionMagnitude);
+            probeOrbitRadius = Mathf.Clamp(probeOrbitRadius, 0.8f, 2f);
+            probeSpriteScale = Mathf.Clamp(probeSpriteScale, 0.01f, 1f);
+            probeOrbitPeriodSeconds = Mathf.Max(1f, probeOrbitPeriodSeconds);
+            probeVaporRate = Mathf.Max(0f, probeVaporRate);
         }
     }
 }

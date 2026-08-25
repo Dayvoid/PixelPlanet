@@ -209,3 +209,7 @@ MonoBehaviour:
   brushStrength: 1
   validationIntervalTicks: 1000
   conservationTolerance: 0.02
+  probeOrbitRadius: 1.28
+  probeSpriteScale: 0.08
+  probeOrbitPeriodSeconds: 180
+  probeVaporRate: 1
