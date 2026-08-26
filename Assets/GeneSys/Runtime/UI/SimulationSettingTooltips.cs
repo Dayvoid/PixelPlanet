@@ -267,6 +267,65 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.mycologyTraitEffectStrength)] =
                 "How strongly rare strain traits shift growth, decay, and transport. 0 ignores genetics; higher values make strain overlays matter more.",
 
+            [nameof(SimulationConfig.floraSeedAtWorldgen)] =
+                "When enabled, worldgen places a light flora spore load on air and water so algae can colonize after regenerate. Off keeps existing worlds deterministic.",
+            [nameof(SimulationConfig.floraInitialSporeLoad)] =
+                "Starting flora spore density when worldgen seeding is on. Higher loads germinate mats faster along coasts and wet soil after a regenerate.",
+            [nameof(SimulationConfig.floraAirTransportRate)] =
+                "How strongly wind moves flora spores. Higher values spread algae globally with weather; lower values keep inoculation local to source mats.",
+            [nameof(SimulationConfig.floraWaterTransportRate)] =
+                "How strongly oceans, runoff, and ponds carry flora spores. Couples hydrology to colonization of distant basins, shores, and wet soil.",
+            [nameof(SimulationConfig.floraDiffusionRate)] =
+                "Slow neighbor mixing of flora spores without flow. Higher diffusion fills gaps in mats; lower keeps patchy, isolated stands.",
+            [nameof(SimulationConfig.floraSettlingRate)] =
+                "How quickly airborne flora spores land on soil, sediment, water, and existing mats. Faster settling inoculates ground under spore clouds.",
+            [nameof(SimulationConfig.floraSporulationRate)] =
+                "Spores released by active algae. Higher sporulation feeds air and water transport and can recolonize after drought or fire.",
+            [nameof(SimulationConfig.floraGrowthRate)] =
+                "How fast active algae biomass expands inside the growth temperature, moisture, and light window. Stronger growth thickens mats sooner.",
+            [nameof(SimulationConfig.floraDecayRate)] =
+                "How fast desiccated or toxin-stressed algae lose biomass. Higher decay makes boom-and-bust mats; lower lets dry fuel persist for fire.",
+            [nameof(SimulationConfig.floraPhotosynthesisRate)] =
+                "How quickly sunlit algae convert available light into stored energy toward division. Higher rates fill the reproduction threshold faster.",
+            [nameof(SimulationConfig.floraOxygenYield)] =
+                "Oxygen emitted into the local combustion field while photosynthesizing. Mats can raise fire risk by oxygenating still air above them.",
+            [nameof(SimulationConfig.floraExudationRate)] =
+                "Nutrient exudate released by growing algae into a diffusive gradient. Higher exudation marks mats for future chemotactic organisms.",
+            [nameof(SimulationConfig.floraReproductionThreshold)] =
+                "Stored energy required before an active cell divides into a neighbor. Lower thresholds produce denser mats; higher thresholds rarer splits.",
+            [nameof(SimulationConfig.floraBaseMutationRate)] =
+                "Baseline per-gene walk applied on division. Higher rates drift the genome faster; toxins and the mutation gene scale this further.",
+            [nameof(SimulationConfig.floraToxinMutationScale)] =
+                "How much accumulated toxin dose amplifies mutation on division. Couples metal, soot, and charge stress to genetic divergence.",
+            [nameof(SimulationConfig.floraGeneExpressionRange)] =
+                "How far genes may deviate from baseline envelopes. 0 ignores genetics; higher values make temperature, moisture, and light genes matter more.",
+            [nameof(SimulationConfig.floraGrowthTempMin)] =
+                "Lower temperature for active photosynthesis and division. Raising it confines mats to warmer shores; lowering it lets algae spread into cool water.",
+            [nameof(SimulationConfig.floraGrowthTempMax)] =
+                "Upper temperature for active growth. Lowering it protects mats from heat but shrinks equatorial and geothermal habitat.",
+            [nameof(SimulationConfig.floraGrowthMoistureMin)] =
+                "Minimum moisture for active growth. Higher values restrict algae to wet soil and water; lower values let mossy mats colonize drier crust.",
+            [nameof(SimulationConfig.floraGrowthMoistureMax)] =
+                "Maximum moisture for active growth. Higher values let mats thrive in ponds; lower values punish fully submerged or waterlogged cells.",
+            [nameof(SimulationConfig.floraSurvivalTempMin)] =
+                "Lower temperature dormant algae can endure. Must stay at or below the growth minimum. Controls winter and polar die-off versus dormancy.",
+            [nameof(SimulationConfig.floraSurvivalTempMax)] =
+                "Upper temperature dormant algae can endure. Kept high so fire can consume desiccating mats before heat alone deletes them.",
+            [nameof(SimulationConfig.floraSurvivalMoistureMin)] =
+                "Driest moisture dormant algae can survive. Below this they desiccate into dry fuel instead of vanishing, so combustion can still find them.",
+            [nameof(SimulationConfig.floraSurvivalMoistureMax)] =
+                "Wettest moisture dormant algae can survive. Extreme floods beyond this cap desiccate or decay rather than instantly deleting biomass.",
+            [nameof(SimulationConfig.floraMinLight)] =
+                "Minimum raymarched light for germination and active photosynthesis. Higher values confine mats to the day face and shallow water.",
+            [nameof(SimulationConfig.floraGerminationSporeThreshold)] =
+                "Spore load required to germinate an air or water cell into Algae/Moss. Higher thresholds need denser inoculation before a mat appears.",
+            [nameof(SimulationConfig.floraMaintenanceRate)] =
+                "Baseline metabolic drain on stored energy. Higher maintenance makes nights and shade starve mats; lower lets energy bank across days.",
+            [nameof(SimulationConfig.floraNightDrain)] =
+                "Extra energy drain when local light is below the minimum. Controls how harshly darkness taxes active photosynthesizers.",
+            [nameof(SimulationConfig.floraDormancyMetabolicScale)] =
+                "Fraction of maintenance applied while dormant. Lower values let spore-like dormancy last through drought; higher values starve sleeping mats.",
+
             [nameof(SimulationConfig.combustionAmbientOxygen)] =
                 "Target oxygen fill as a fraction of each cell's capacity. Atmosphere and porous ground relax toward this level; lowering it starves fire and favors smolder.",
             [nameof(SimulationConfig.combustionOxygenReplenishRate)] =

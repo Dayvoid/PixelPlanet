@@ -11,7 +11,7 @@ using UnityEngine.Rendering;
 
 namespace GeneSys.Tools
 {
-    public enum BrushMode { Material, Heat, Water, Pressure, Vapor, Ignite }
+    public enum BrushMode { Material, Heat, Water, Pressure, Vapor, Ignite, Life }
 
     public sealed class SimulationTools : MonoBehaviour
     {
@@ -42,6 +42,7 @@ namespace GeneSys.Tools
                     BrushMode.Pressure => new Vector4(3f, Strength, 0f, 0f),
                     BrushMode.Vapor => new Vector4(6f, Strength, 0f, 0f),
                     BrushMode.Ignite => new Vector4(9f, Strength, 0f, 0f),
+                    BrushMode.Life => new Vector4(14f, Strength, 0f, 0f),
                     _ => Vector4.zero
                 };
                 host.QueueBrush(new GpuPassScheduler.BrushCommand
@@ -103,16 +104,41 @@ namespace GeneSys.Tools
                                         NativeArray<Vector4> data = combustionRequest.GetData<Vector4>();
                                         if (data.Length > 0) inspection.combustion = data[0];
                                     }
-                                    AsyncGPUReadback.Request(host.Resources.StormRead, 0, cell.x, 1, cell.y, 1, 0, 1, stormRequest =>
-                                    {
-                                        if (!stormRequest.hasError)
+                                        AsyncGPUReadback.Request(host.Resources.StormRead, 0, cell.x, 1, cell.y, 1, 0, 1, stormRequest =>
                                         {
-                                            NativeArray<Vector4> data = stormRequest.GetData<Vector4>();
-                                            if (data.Length > 0) inspection.storm = data[0];
-                                        }
-                                        readbackPending = false;
-                                        Inspected?.Invoke(inspection);
-                                    });
+                                            if (!stormRequest.hasError)
+                                            {
+                                                NativeArray<Vector4> data = stormRequest.GetData<Vector4>();
+                                                if (data.Length > 0) inspection.storm = data[0];
+                                            }
+                                            AsyncGPUReadback.Request(host.Resources.LifeGenomeRead, 0, cell.x, 1, cell.y, 1, 0, 1, lifeRequest =>
+                                            {
+                                                if (!lifeRequest.hasError)
+                                                {
+                                                    NativeArray<Vector4> data = lifeRequest.GetData<Vector4>();
+                                                    if (data.Length > 0) inspection.life = data[0];
+                                                }
+                                                AsyncGPUReadback.Request(host.Resources.LifeGenomeRead, 0, cell.x, 1, cell.y, 1, 1, 1, genomeRequest =>
+                                                {
+                                                    if (!genomeRequest.hasError)
+                                                    {
+                                                        NativeArray<Vector4> data = genomeRequest.GetData<Vector4>();
+                                                        if (data.Length > 0)
+                                                            inspection.genome = FloraGenome.Sanitize(FloraGenome.FromFloatBits(data[0]));
+                                                    }
+                                                    AsyncGPUReadback.Request(host.Resources.LightField, 0, cell.x, 1, cell.y, 1, 0, 1, lightRequest =>
+                                                    {
+                                                        if (!lightRequest.hasError)
+                                                        {
+                                                            NativeArray<float> data = lightRequest.GetData<float>();
+                                                            if (data.Length > 0) inspection.light = data[0];
+                                                        }
+                                                        readbackPending = false;
+                                                        Inspected?.Invoke(inspection);
+                                                    });
+                                                });
+                                            });
+                                        });
                                 });
                             });
                         });
@@ -132,6 +158,9 @@ namespace GeneSys.Tools
         public Vector4 ecology;
         public Vector4 combustion;
         public Vector4 storm;
+        public Vector4 life;
+        public FloraGenome.Packed genome;
+        public float light;
         public Vector2 flow;
     }
 }

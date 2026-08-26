@@ -23,6 +23,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader hydrology;
         [SerializeField] private ComputeShader weather;
         [SerializeField] private ComputeShader mycology;
+        [SerializeField] private ComputeShader flora;
         [SerializeField] private ComputeShader combustion;
         [SerializeField] private ComputeShader storm;
         [Header("Scene")]
@@ -54,6 +55,9 @@ namespace GeneSys.Simulation
         public RenderTexture EcologyField => Resources?.EcologyRead;
         public RenderTexture CombustionField => Resources?.CombustionRead;
         public RenderTexture StormField => Resources?.StormRead;
+        public RenderTexture LifeField => Resources?.LifeRead;
+        public RenderTexture GenomeField => Resources?.GenomeRead;
+        public RenderTexture LightField => Resources?.LightField;
 
         private void Start()
         {
@@ -84,7 +88,7 @@ namespace GeneSys.Simulation
                 enabled = false;
                 return;
             }
-            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || combustion == null || storm == null)
+            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || flora == null || combustion == null || storm == null)
             {
                 Debug.LogError("GeneSys bootstrap references are incomplete. Run Tools/GeneSys/Rebuild Phase 1 Scene.", this);
                 enabled = false;
@@ -92,7 +96,7 @@ namespace GeneSys.Simulation
             }
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, combustion, storm);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, combustion, storm);
             scheduler.GenerateWorld();
             Clock.Reset();
             lastPerformanceTick = 0;
@@ -204,6 +208,17 @@ namespace GeneSys.Simulation
                 radius = Mathf.Max(0, radius),
                 materialId = MaterialIds.Void,
                 values = new Vector4(7f, sporeLoad, mycoValue, MycologyTraits.Sanitize(traitFlags))
+            });
+        }
+
+        public void QueueFloraSeed(Vector2Int cell, int radius, float sporeLoad)
+        {
+            QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = cell,
+                radius = Mathf.Max(0, radius),
+                materialId = MaterialIds.Void,
+                values = new Vector4(14f, sporeLoad, 0f, 0f)
             });
         }
 

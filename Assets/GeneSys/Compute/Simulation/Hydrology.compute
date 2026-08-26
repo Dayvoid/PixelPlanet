@@ -21,6 +21,8 @@ Texture2D<float4> _EcologyRead;
 RWTexture2D<float4> _EcologyWrite;
 Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2DArray<float4> _LifeGenomeWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -126,6 +128,7 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
 }
 
 [numthreads(8, 8, 1)]

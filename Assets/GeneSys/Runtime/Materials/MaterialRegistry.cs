@@ -76,6 +76,7 @@ namespace GeneSys.Materials
         public const uint Vapor = 11;
         public const uint Ash = 12;
         public const uint Metal = 13;
+        public const uint Algae = 128;
         public const uint BiologicalStart = 128;
     }
 }

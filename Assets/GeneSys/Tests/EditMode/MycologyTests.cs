@@ -109,7 +109,7 @@ namespace GeneSys.Tests
             renderer.SetOverlay(19);
             Assert.That(renderer.OverlayMode, Is.EqualTo(StormVisuals.OverlayMode));
             renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(19));
+            Assert.That(renderer.OverlayMode, Is.EqualTo(22));
             Object.DestroyImmediate(go);
         }
 

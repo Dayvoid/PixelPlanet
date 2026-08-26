@@ -18,12 +18,13 @@ namespace GeneSys.Persistence
         private const int Version4 = 4;
         private const int Version5 = 5;
         private const int Version6 = 6;
+        private const int Version7 = 7;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            byte[][] payloads = new byte[8][];
-            int remaining = 8;
+            byte[][] payloads = new byte[10][];
+            int remaining = 10;
             bool failed = false;
             RenderTexture[] textures =
             {
@@ -35,34 +36,42 @@ namespace GeneSys.Persistence
             for (int i = 0; i < textures.Length; i++)
             {
                 int index = i;
-                AsyncGPUReadback.Request(textures[i], 0, request =>
+                AsyncGPUReadback.Request(textures[i], 0, request => CompletePayload(index, request));
+            }
+            RenderTexture lifeGenome = host.Resources.LifeGenomeRead;
+            AsyncGPUReadback.Request(lifeGenome, 0, 0, lifeGenome.width, 0, lifeGenome.height, 0, 1,
+                request => CompletePayload(8, request));
+            AsyncGPUReadback.Request(lifeGenome, 0, 0, lifeGenome.width, 0, lifeGenome.height, 1, 1,
+                request => CompletePayload(9, request));
+
+            void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
+            {
+                if (request.hasError) failed = true;
+                else payloads[index] = request.GetData<byte>().ToArray();
+                remaining--;
+                if (remaining != 0) return;
+                if (!failed)
                 {
-                    if (request.hasError) failed = true;
-                    else payloads[index] = request.GetData<byte>().ToArray();
-                    remaining--;
-                    if (remaining != 0) return;
-                    if (!failed)
+                    Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
+                    using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
+                    using var writer = new BinaryWriter(stream);
+                    SimulationConfig config = host.Config;
+                    writer.Write(Magic);
+                    writer.Write(Version7);
+                    writer.Write(host.Resources.Grid.angularResolution);
+                    writer.Write(host.Resources.Grid.radialResolution);
+                    writer.Write(config.seed);
+                    writer.Write(host.Clock.TickCount);
+                    WriteConfig(writer, config);
+                    WriteEcologyConfig(writer, config);
+                    WriteFloraConfig(writer, config);
+                    foreach (byte[] payload in payloads)
                     {
-                        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
-                        using var stream = File.Open(path, FileMode.Create, FileAccess.Write);
-                        using var writer = new BinaryWriter(stream);
-                        SimulationConfig config = host.Config;
-                        writer.Write(Magic);
-                        writer.Write(Version6);
-                        writer.Write(host.Resources.Grid.angularResolution);
-                        writer.Write(host.Resources.Grid.radialResolution);
-                        writer.Write(config.seed);
-                        writer.Write(host.Clock.TickCount);
-                        WriteConfig(writer, config);
-                        WriteEcologyConfig(writer, config);
-                        foreach (byte[] payload in payloads)
-                        {
-                            writer.Write(payload.Length);
-                            writer.Write(payload);
-                        }
+                        writer.Write(payload.Length);
+                        writer.Write(payload);
                     }
-                    completed?.Invoke(!failed);
-                });
+                }
+                completed?.Invoke(!failed);
             }
         }
 
@@ -73,7 +82,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -86,6 +95,8 @@ namespace GeneSys.Persistence
                 ReadConfig(reader, host.Config);
             if (version >= Version4)
                 ReadEcologyConfig(reader, host.Config);
+            if (version >= Version7)
+                ReadFloraConfig(reader, host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -168,6 +179,31 @@ namespace GeneSys.Persistence
                 ClearStorm(host.Resources);
             }
 
+            if (version >= Version7)
+            {
+                int lifeLength = reader.ReadInt32();
+                byte[] lifePayload = reader.ReadBytes(lifeLength);
+                if (lifePayload.Length != lifeLength) return false;
+                Texture2D lifeStaging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                lifeStaging.LoadRawTextureData(lifePayload);
+                lifeStaging.Apply(false, false);
+                Graphics.CopyTexture(lifeStaging, 0, 0, host.Resources.LifeGenomeRead, 0, 0);
+                UnityEngine.Object.Destroy(lifeStaging);
+
+                int genomeLength = reader.ReadInt32();
+                byte[] genomePayload = reader.ReadBytes(genomeLength);
+                if (genomePayload.Length != genomeLength) return false;
+                Texture2D genomeStaging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                genomeStaging.LoadRawTextureData(genomePayload);
+                genomeStaging.Apply(false, false);
+                Graphics.CopyTexture(genomeStaging, 0, 0, host.Resources.LifeGenomeRead, 1, 0);
+                UnityEngine.Object.Destroy(genomeStaging);
+            }
+            else
+            {
+                ClearFlora(host.Resources);
+            }
+
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
             return true;
@@ -210,6 +246,25 @@ namespace GeneSys.Persistence
             Graphics.CopyTexture(staging, resources.StormRead);
             Graphics.CopyTexture(staging, resources.StormWrite);
             UnityEngine.Object.Destroy(staging);
+        }
+
+        private static void ClearFlora(SimulationResources resources)
+        {
+            int width = resources.Grid.angularResolution;
+            int height = resources.Grid.radialResolution;
+            var lifeStaging = new Texture2D(width, height, TextureFormat.RGBAFloat, false, true);
+            lifeStaging.SetPixels(new Color[width * height]);
+            lifeStaging.Apply(false, false);
+            Graphics.CopyTexture(lifeStaging, 0, 0, resources.LifeGenomeRead, 0, 0);
+            Graphics.CopyTexture(lifeStaging, 0, 0, resources.LifeGenomeWrite, 0, 0);
+            UnityEngine.Object.Destroy(lifeStaging);
+
+            var genomeStaging = new Texture2D(width, height, TextureFormat.RGBAFloat, false, true);
+            genomeStaging.SetPixels(new Color[width * height]);
+            genomeStaging.Apply(false, false);
+            Graphics.CopyTexture(genomeStaging, 0, 0, resources.LifeGenomeRead, 1, 0);
+            Graphics.CopyTexture(genomeStaging, 0, 0, resources.LifeGenomeWrite, 1, 0);
+            UnityEngine.Object.Destroy(genomeStaging);
         }
 
         private static void WriteConfig(BinaryWriter writer, SimulationConfig config)
@@ -304,15 +359,75 @@ namespace GeneSys.Persistence
             config.mycologyTraitEffectStrength = reader.ReadSingle();
         }
 
+        private static void WriteFloraConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.floraSeedAtWorldgen);
+            writer.Write(config.floraInitialSporeLoad);
+            writer.Write(config.floraAirTransportRate);
+            writer.Write(config.floraWaterTransportRate);
+            writer.Write(config.floraDiffusionRate);
+            writer.Write(config.floraSettlingRate);
+            writer.Write(config.floraSporulationRate);
+            writer.Write(config.floraGrowthRate);
+            writer.Write(config.floraDecayRate);
+            writer.Write(config.floraPhotosynthesisRate);
+            writer.Write(config.floraOxygenYield);
+            writer.Write(config.floraExudationRate);
+            writer.Write(config.floraReproductionThreshold);
+            writer.Write(config.floraBaseMutationRate);
+            writer.Write(config.floraToxinMutationScale);
+            writer.Write(config.floraGeneExpressionRange);
+            writer.Write(config.floraGrowthTempMin);
+            writer.Write(config.floraGrowthTempMax);
+            writer.Write(config.floraGrowthMoistureMin);
+            writer.Write(config.floraGrowthMoistureMax);
+            writer.Write(config.floraSurvivalTempMin);
+            writer.Write(config.floraSurvivalTempMax);
+            writer.Write(config.floraSurvivalMoistureMin);
+            writer.Write(config.floraSurvivalMoistureMax);
+            writer.Write(config.floraMinLight);
+            writer.Write(config.floraGerminationSporeThreshold);
+            writer.Write(config.floraMaintenanceRate);
+            writer.Write(config.floraNightDrain);
+            writer.Write(config.floraDormancyMetabolicScale);
+        }
+
+        private static void ReadFloraConfig(BinaryReader reader, SimulationConfig config)
+        {
+            config.floraSeedAtWorldgen = reader.ReadBoolean();
+            config.floraInitialSporeLoad = reader.ReadSingle();
+            config.floraAirTransportRate = reader.ReadSingle();
+            config.floraWaterTransportRate = reader.ReadSingle();
+            config.floraDiffusionRate = reader.ReadSingle();
+            config.floraSettlingRate = reader.ReadSingle();
+            config.floraSporulationRate = reader.ReadSingle();
+            config.floraGrowthRate = reader.ReadSingle();
+            config.floraDecayRate = reader.ReadSingle();
+            config.floraPhotosynthesisRate = reader.ReadSingle();
+            config.floraOxygenYield = reader.ReadSingle();
+            config.floraExudationRate = reader.ReadSingle();
+            config.floraReproductionThreshold = reader.ReadSingle();
+            config.floraBaseMutationRate = reader.ReadSingle();
+            config.floraToxinMutationScale = reader.ReadSingle();
+            config.floraGeneExpressionRange = reader.ReadSingle();
+            config.floraGrowthTempMin = reader.ReadSingle();
+            config.floraGrowthTempMax = reader.ReadSingle();
+            config.floraGrowthMoistureMin = reader.ReadSingle();
+            config.floraGrowthMoistureMax = reader.ReadSingle();
+            config.floraSurvivalTempMin = reader.ReadSingle();
+            config.floraSurvivalTempMax = reader.ReadSingle();
+            config.floraSurvivalMoistureMin = reader.ReadSingle();
+            config.floraSurvivalMoistureMax = reader.ReadSingle();
+            config.floraMinLight = reader.ReadSingle();
+            config.floraGerminationSporeThreshold = reader.ReadSingle();
+            config.floraMaintenanceRate = reader.ReadSingle();
+            config.floraNightDrain = reader.ReadSingle();
+            config.floraDormancyMetabolicScale = reader.ReadSingle();
+        }
+
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)
         {
-            TextureFormat textureFormat = format switch
-            {
-                GraphicsFormat.R32_UInt => TextureFormat.RFloat,
-                GraphicsFormat.R32G32_SFloat => TextureFormat.RGFloat,
-                _ => TextureFormat.RGBAFloat
-            };
-            return new Texture2D(width, height, textureFormat, false, true);
+            return new Texture2D(width, height, format, TextureCreationFlags.None);
         }
     }
 }

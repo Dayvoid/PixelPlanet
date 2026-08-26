@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 128_AlgaeMoss
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 128
+  displayName: Algae/Moss
+  category: 6
+  displayColor: {r: 0.18, g: 0.55, b: 0.22, a: 1}
+  shadeVariation: 0.22
+  density: 0.45
+  rigidity: 0.95
+  angleOfRepose: 40
+  grainSize: 0.6
+  buoyancyBias: 0.6
+  densityDisplaceable: 1
+  thermalConductivity: 0.18
+  heatCapacity: 1.6
+  electricalConductivity: 0.03
+  absorbency: 0.8
+  porosity: 0.4
+  meltingTemperature: 90
+  boilingTemperature: 180
+  thermalExpansion: 0.02
+  electricalExpansion: 0
+  solidPhaseId: 128
+  liquidPhaseId: 128
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0.85
+  bioModifiable: 1
+  ignitionTemperature: 220
+  flashPoint: 180
+  oxygenDemand: 0.7
+  smokeYield: 0.5

@@ -21,9 +21,20 @@
 //   combustion.y = flame intensity in [0, 1]
 //   combustion.z = soot / smoke mass (airborne tracer; settles into aux.z)
 //   combustion.w = ignition accumulator in [0, 1]
-// Milestone 1 fuel is ecology.y on Soil/Sediment. Burning consumes that biomass
-// locally and writes heat/pressure/updraft/steam into the existing weather chain.
+// Milestone 1 fuel is ecology.y on Soil/Sediment plus life.y on Algae (ID 128).
+// Burning consumes that biomass locally and writes heat/pressure/updraft/steam
+// into the existing weather chain.
 // Combustion never invents water: flashpoint vaporization only moves state.z -> aux.x.
+// Life (dedicated RGBA32F field, follows cells through WriteCell):
+//   life.x = spore load on air/water carriers and dormant reserve on substrate
+//   life.y = biomass / caloric index in [0, 1] — combustion fuel on Algae pixels
+//   life.z = stored photosynthate energy toward the reproduction threshold
+//   life.w = nutrient exudate / chemoattractant (diffuses; slowly deposits into aux.z)
+// Genome (dedicated RGBA32U field, follows cells through WriteCell):
+//   genome.x/y/z = 12 genes, 8 bits each (see FLORA_GENE_*)
+//   genome.w = stage(8) | generation(8) | lineage(8) | toxinDose(8)
+// Light (derived R32F field, recomputed every tick, excluded from Swap/WriteCell):
+//   light.x = available photosynthetically active radiation after radial attenuation
 // Storm (dedicated RGBA32F field, excluded from the global ping-pong swap):
 //   storm.x = signed separated space charge on atmosphere cells
 //   storm.y = channel plasma luminance in [0, 1], decays via stormChannelDecay
@@ -280,6 +291,176 @@ float4 SeedCombustion(uint material, MaterialGpuData definition)
 float MycologyFuel(uint material, float4 ecology)
 {
     return IsMycologySubstrate(material) ? saturate(ecology.y) : 0.0;
+}
+
+#define FLORA_ALGAE_ID 128u
+#define FLORA_STAGE_SPORE 0u
+#define FLORA_STAGE_ACTIVE 1u
+#define FLORA_STAGE_DORMANT 2u
+#define FLORA_STAGE_DESICCATED 3u
+#define FLORA_STAGE_DEAD 4u
+
+#define FLORA_GENE_TEMP_OPTIMUM 0u
+#define FLORA_GENE_TEMP_TOLERANCE 1u
+#define FLORA_GENE_MOISTURE_OPTIMUM 2u
+#define FLORA_GENE_MOISTURE_TOLERANCE 3u
+#define FLORA_GENE_LIGHT_AFFINITY 4u
+#define FLORA_GENE_REPRODUCTION 5u
+#define FLORA_GENE_METABOLIC 6u
+#define FLORA_GENE_DORMANCY 7u
+#define FLORA_GENE_TOXIN_TOLERANCE 8u
+#define FLORA_GENE_EXUDATION 9u
+#define FLORA_GENE_SUBSTRATE 10u
+#define FLORA_GENE_MUTATION 11u
+
+bool IsFloraMaterial(uint material)
+{
+    return material == FLORA_ALGAE_ID;
+}
+
+bool IsFloraOpenHabitat(uint material)
+{
+    return material == 0u || material == 1u || material == 11u;
+}
+
+bool IsFloraAnchor(uint material)
+{
+    return material == 7u || material == 8u || material == 9u || material == 10u || material == FLORA_ALGAE_ID;
+}
+
+bool IsFloraSporeDepositTarget(uint material)
+{
+    return material == 7u || material == 8u || material == 9u || material == 10u || material == FLORA_ALGAE_ID;
+}
+
+bool IsFloraGerminationTarget(uint material)
+{
+    return IsFloraOpenHabitat(material) || material == 9u || material == 10u;
+}
+
+uint DecodeGene(uint4 genome, uint index)
+{
+    uint word = index < 4u ? genome.x : (index < 8u ? genome.y : genome.z);
+    uint shift = (index & 3u) * 8u;
+    return (word >> shift) & 255u;
+}
+
+void EncodeGene(inout uint4 genome, uint index, uint value)
+{
+    value &= 255u;
+    uint shift = (index & 3u) * 8u;
+    uint mask = ~(255u << shift);
+    if (index < 4u)
+        genome.x = (genome.x & mask) | (value << shift);
+    else if (index < 8u)
+        genome.y = (genome.y & mask) | (value << shift);
+    else
+        genome.z = (genome.z & mask) | (value << shift);
+}
+
+uint FloraStage(uint4 genome)
+{
+    return genome.w & 255u;
+}
+
+uint FloraGeneration(uint4 genome)
+{
+    return (genome.w >> 8) & 255u;
+}
+
+uint FloraLineage(uint4 genome)
+{
+    return (genome.w >> 16) & 255u;
+}
+
+uint FloraToxinDose(uint4 genome)
+{
+    return (genome.w >> 24) & 255u;
+}
+
+uint PackFloraMeta(uint stage, uint generation, uint lineage, uint toxinDose)
+{
+    return (stage & 255u) | ((generation & 255u) << 8) | ((lineage & 255u) << 16) | ((toxinDose & 255u) << 24);
+}
+
+uint4 SanitizeGenome(uint4 genome)
+{
+    uint stage = FloraStage(genome);
+    if (stage > FLORA_STAGE_DEAD)
+        stage = FLORA_STAGE_SPORE;
+    genome.w = PackFloraMeta(stage, FloraGeneration(genome), FloraLineage(genome), FloraToxinDose(genome));
+    return genome;
+}
+
+float4 SanitizeLife(float4 life)
+{
+    float4 value = max(SafeFinite4(life, 0.0), 0.0);
+    value.y = saturate(value.y);
+    value.z = saturate(value.z);
+    return value;
+}
+
+// Life and genome share one Tex2DArray UAV (slice 0 = life, slice 1 = asfloat(genome))
+// so WriteCell stays at the DX11 8-UAV cap. Genome bits ride float channels for AsyncGPUReadback.
+#define FLORA_LIFE_SLICE 0
+#define FLORA_GENOME_SLICE 1
+
+float4 SampleLife(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, FLORA_LIFE_SLICE, 0));
+}
+
+uint4 SampleGenome(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, FLORA_GENOME_SLICE, 0)));
+}
+
+void WriteLifeGenome(RWTexture2DArray<float4> tex, int2 cell, float4 life, uint4 genome)
+{
+    tex[uint3((uint2)cell, FLORA_LIFE_SLICE)] = SanitizeLife(life);
+    tex[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(SanitizeGenome(genome));
+}
+
+float FloraExpressFactor(uint gene, float range)
+{
+    return 1.0 + ((gene / 255.0) - 0.5) * 2.0 * saturate(range);
+}
+
+float FloraExpressShift(uint gene, float range)
+{
+    return ((gene / 255.0) - 0.5) * 2.0 * range;
+}
+
+float FloraFuel(uint material, float4 life, uint stage)
+{
+    if (!IsFloraMaterial(material))
+        return 0.0;
+    if (stage == FLORA_STAGE_SPORE || stage == FLORA_STAGE_DEAD)
+        return 0.0;
+    return saturate(life.y);
+}
+
+uint4 RandomFloraGenome(uint2 cell, int seed, int tick)
+{
+    uint4 genome = 0;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float h = Hash01(cell.x * 73856093u + cell.y * 19349663u + i * 83492791u + (uint)seed * 31337u + (uint)tick * 6151u);
+        EncodeGene(genome, i, (uint)round(h * 255.0));
+    }
+    uint lineage = (uint)round(Hash01(cell.x * 19349663u + cell.y * 73856093u + (uint)seed * 7919u + (uint)tick) * 255.0);
+    genome.w = PackFloraMeta(FLORA_STAGE_SPORE, 0u, lineage, 0u);
+    return genome;
+}
+
+void ConsiderGenomeContribution(inout float bestMass, inout uint4 bestGenome, float mass, uint4 genome)
+{
+    if (mass > bestMass)
+    {
+        bestMass = mass;
+        bestGenome = genome;
+    }
 }
 
 float TraitModulatedIgnition(float ignitionTemperature, uint traits, float traitEffect)

@@ -16,6 +16,8 @@ Texture2D<float4> _EcologyRead;
 RWTexture2D<float4> _EcologyWrite;
 Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2DArray<float4> _LifeGenomeWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -37,9 +39,11 @@ float2 ReadFlow(int2 cell) { cell = ClampCell(cell, _GridSize); return _FlowRead
 float4 ReadAux(int2 cell) { cell = ClampCell(cell, _GridSize); return _AuxRead.Load(int3(cell, 0)); }
 float4 ReadEcology(int2 cell) { cell = ClampCell(cell, _GridSize); return _EcologyRead.Load(int3(cell, 0)); }
 float4 ReadCombustion(int2 cell) { cell = ClampCell(cell, _GridSize); return _CombustionRead.Load(int3(cell, 0)); }
+float4 ReadLife(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleLife(_LifeGenomeRead, cell); }
+uint4 ReadGenome(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleGenome(_LifeGenomeRead, cell); }
 MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
 
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome)
 {
     uint oldMaterial = ReadMaterial(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -52,6 +56,7 @@ void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, 
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -65,6 +70,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
     float4 aux = ReadAux(cell);
     float4 ecology = ReadEcology(cell);
     float4 combustion = ReadCombustion(cell);
+    float4 life = ReadLife(cell);
+    uint4 genome = ReadGenome(cell);
     MaterialGpuData definition = Mat(material);
 
     float igniteAccRate = max(0.0, _CombustionA.w);
@@ -87,10 +94,12 @@ void Combustion(uint3 id : SV_DispatchThreadID)
     float capacity = OxygenCapacity(material, definition);
     combustion.x = min(max(0.0, combustion.x), capacity);
 
-    float fuel = MycologyFuel(material, ecology);
+    float fuel = MycologyFuel(material, ecology) + FloraFuel(material, life, FloraStage(genome));
     float wetness = max(0.0, state.z) + max(0.0, aux.y) + max(0.0, aux.x) * steamSuppression;
     uint traits = DecodeMycologyTraits(ecology.z);
     float threshold = TraitModulatedIgnition(definition.combustion.x, traits, _MycologyE.z) + wetness * moisturePenalty;
+    if (IsFloraMaterial(material) && FloraStage(genome) == FLORA_STAGE_DESICCATED)
+        threshold -= 40.0;
 
     bool canIgnite = fuel > minFuel && combustion.x > minOxygen && state.x > threshold;
     if (canIgnite)
@@ -118,6 +127,11 @@ void Combustion(uint3 id : SV_DispatchThreadID)
         burn = max(0.0, min(burn, fuel));
 
         ecology.y = saturate(ecology.y - burn);
+        if (IsFloraMaterial(material))
+        {
+            float floraShare = min(burn, saturate(life.y));
+            life.y = saturate(life.y - floraShare);
+        }
         combustion.x = max(0.0, combustion.x - burn * oxygenDemand);
         state.x += burn * calories * heatYield * 60.0;
         state.y += burn * pressureScale;
@@ -164,6 +178,15 @@ void Combustion(uint3 id : SV_DispatchThreadID)
         combustion.y = 0.0;
     if (ecology.y <= 1e-4)
         ecology.y = 0.0;
+    if (IsFloraMaterial(material) && life.y <= minFuel && combustion.y > 0.0)
+    {
+        aux.z += max(0.05, life.y + life.z) * max(0.15, pyroFertility);
+        material = 12u;
+        life = float4(0.0, 0.0, 0.0, life.w * 0.25);
+        genome = uint4(0u, 0u, 0u, PackFloraMeta(FLORA_STAGE_DEAD, 0u, 0u, 0u));
+        combustion.y = 0.0;
+        definition = Mat(material);
+    }
 
-    WriteCell(cell, material, state, flow, aux, ecology, combustion);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

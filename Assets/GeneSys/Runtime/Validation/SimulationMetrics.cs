@@ -46,6 +46,19 @@ namespace GeneSys.Validation
         public int DowndraftCells;
     }
 
+    public struct FloraMetrics
+    {
+        public int LivingCount;
+        public int DormantCount;
+        public int DesiccatedCount;
+        public int SporeCarrierCount;
+        public double TotalBiomass;
+        public float MeanEnergy;
+        public float MeanGeneration;
+        public float[] GeneMeans;
+        public float[] GeneVariance;
+    }
+
     public static class SimulationMetrics
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
@@ -75,6 +88,39 @@ namespace GeneSys.Validation
                                 completed?.Invoke(ComputeMetrics(grid, materials, states, aux, flow, combustion));
                             });
                         });
+                    });
+                });
+            });
+        }
+
+        public static void MeasureFloraAsync(SimulationHost host, Action<FloraMetrics> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            RenderTexture materialTex = host.Resources.MaterialRead;
+            RenderTexture lifeGenomeTex = host.Resources.LifeGenomeRead;
+            if (materialTex == null || lifeGenomeTex == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            Action fail = () => completed?.Invoke(default);
+            RequestField(materialTex, fail, materialRequest =>
+            {
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                RequestFieldSlice(lifeGenomeTex, 0, fail, lifeRequest =>
+                {
+                    Vector4[] life = lifeRequest.GetData<Vector4>().ToArray();
+                    RequestFieldSlice(lifeGenomeTex, 1, fail, genomeRequest =>
+                    {
+                        Vector4[] genomeBits = genomeRequest.GetData<Vector4>().ToArray();
+                        var genomes = new FloraGenome.Packed[genomeBits.Length];
+                        for (int i = 0; i < genomeBits.Length; i++)
+                            genomes[i] = FloraGenome.FromFloatBits(genomeBits[i]);
+                        completed?.Invoke(ComputeFloraMetrics(materials, life, genomes));
                     });
                 });
             });
@@ -124,6 +170,27 @@ namespace GeneSys.Validation
             flowTex = host.Resources.FlowRead;
             combustionTex = host.Resources.CombustionRead;
             return materialTex != null && stateTex != null && auxTex != null && flowTex != null;
+        }
+
+        private static void RequestFieldSlice(RenderTexture texture, int slice, Action onFailed, Action<AsyncGPUReadbackRequest> onSuccess)
+        {
+            if (texture == null)
+            {
+                onFailed();
+                return;
+            }
+            try
+            {
+                AsyncGPUReadback.Request(texture, 0, 0, texture.width, 0, texture.height, slice, 1, request =>
+                {
+                    if (request.hasError) onFailed();
+                    else onSuccess(request);
+                });
+            }
+            catch (Exception)
+            {
+                onFailed();
+            }
         }
 
         private static void RequestField(RenderTexture texture, Action onFailed, Action<AsyncGPUReadbackRequest> onSuccess)
@@ -214,6 +281,9 @@ namespace GeneSys.Validation
                         moistureSum += Math.Max(0f, state.z);
                         sampleCount++;
                     }
+
+                    if (material == MaterialIds.Algae)
+                        metrics.OrganismCount++;
 
                     if (flow != null && (material == MaterialIds.Air || material == MaterialIds.Vapor))
                     {
@@ -357,6 +427,54 @@ namespace GeneSys.Validation
             float dayMean = daySurfaceCount > 0 ? (float)(daySurfaceTemp / daySurfaceCount) : 0f;
             float nightMean = nightSurfaceCount > 0 ? (float)(nightSurfaceTemp / nightSurfaceCount) : 0f;
             metrics.DayNightSurfaceTemperatureDelta = dayMean - nightMean;
+            return metrics;
+        }
+
+        public static FloraMetrics ComputeFloraMetrics(uint[] materials, Vector4[] life, FloraGenome.Packed[] genomes)
+        {
+            var metrics = new FloraMetrics
+            {
+                GeneMeans = new float[FloraGenome.GeneCount],
+                GeneVariance = new float[FloraGenome.GeneCount]
+            };
+            int count = Math.Min(materials.Length, Math.Min(life.Length, genomes.Length));
+            var geneSums = new double[FloraGenome.GeneCount];
+            var geneSquares = new double[FloraGenome.GeneCount];
+            int living = 0;
+            double energySum = 0d;
+            double generationSum = 0d;
+            for (int i = 0; i < count; i++)
+            {
+                Vector4 cellLife = life[i];
+                if (cellLife.x > 1e-4f) metrics.SporeCarrierCount++;
+                if (materials[i] != MaterialIds.Algae) continue;
+                FloraGenome.Packed genome = FloraGenome.Sanitize(genomes[i]);
+                uint stage = FloraGenome.Stage(genome);
+                if (stage == FloraGenome.StageActive) metrics.LivingCount++;
+                else if (stage == FloraGenome.StageDormant) metrics.DormantCount++;
+                else if (stage == FloraGenome.StageDesiccated) metrics.DesiccatedCount++;
+                metrics.TotalBiomass += Math.Max(0d, cellLife.y);
+                energySum += Math.Max(0f, cellLife.z);
+                generationSum += FloraGenome.Generation(genome);
+                living++;
+                for (int g = 0; g < FloraGenome.GeneCount; g++)
+                {
+                    double gene = FloraGenome.DecodeGene(genome, g);
+                    geneSums[g] += gene;
+                    geneSquares[g] += gene * gene;
+                }
+            }
+            if (living > 0)
+            {
+                metrics.MeanEnergy = (float)(energySum / living);
+                metrics.MeanGeneration = (float)(generationSum / living);
+                for (int g = 0; g < FloraGenome.GeneCount; g++)
+                {
+                    double mean = geneSums[g] / living;
+                    metrics.GeneMeans[g] = (float)mean;
+                    metrics.GeneVariance[g] = (float)Math.Max(0d, geneSquares[g] / living - mean * mean);
+                }
+            }
             return metrics;
         }
 

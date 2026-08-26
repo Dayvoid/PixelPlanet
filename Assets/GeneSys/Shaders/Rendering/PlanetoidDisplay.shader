@@ -48,6 +48,8 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float4> _EcologyTex;
                 Texture2D<float4> _CombustionTex;
             Texture2D<float4> _StormTex;
+            Texture2DArray<float4> _LifeGenomeTex;
+            Texture2D<float> _LightTex;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
             Texture2D<float4> _Categories;
@@ -104,6 +106,9 @@ Shader "GeneSys/Planetoid Display"
                 float4 ecology = _EcologyTex.Load(int3(cell, 0));
                 float4 combustion = _CombustionTex.Load(int3(cell, 0));
                 float4 storm = _StormTex.Load(int3(cell, 0));
+                float4 life = _LifeGenomeTex.Load(int4(cell, 0, 0));
+                uint4 genome = asuint(_LifeGenomeTex.Load(int4(cell, 1, 0)));
+                float lightField = _LightTex.Load(int3(cell, 0));
                 float category = _Categories.Load(int3((int)material, 0, 0)).x;
                 if (!IsMottledCategory(category)) shade = 0u;
                 float4 baseColor = _Palette.Load(int3((int)material, (int)shade, 0));
@@ -119,6 +124,22 @@ Shader "GeneSys/Planetoid Display"
                         color = lerp(color, float3(0.10, 0.32, 0.11), myco);
                     else if (material == 8u && myco > 0.001)
                         color = lerp(color, float3(0.62, 0.68, 0.48), myco);
+
+                    if (material == 128u)
+                    {
+                        uint stage = genome.w & 255u;
+                        float3 stageColor = stage == 1u ? float3(0.18, 0.62, 0.24)
+                            : stage == 2u ? float3(0.28, 0.42, 0.22)
+                            : stage == 3u ? float3(0.45, 0.32, 0.14)
+                            : float3(0.22, 0.48, 0.2);
+                        float biomass = saturate(life.y);
+                        float radius = biomass < 0.33 ? 0.22 : (biomass < 0.66 ? 0.35 : 0.48);
+                        float2 cellUv = float2(
+                            frac(angle / 6.28318530718 * width),
+                            frac(simulationRadius * height));
+                        float disc = saturate((radius - length(cellUv - 0.5)) * 8.0);
+                        color = lerp(color * 0.45, stageColor, lerp(0.35, 0.95, disc));
+                    }
 
                     if (cloud > 0.02)
                         color = lerp(color, float3(0.92, 0.95, 1.0), saturate(cloud * 0.9));
@@ -236,6 +257,33 @@ Shader "GeneSys/Planetoid Display"
                         : lerp(float3(0.05, 0.05, 0.1), float3(0.15, 0.45, 1.0), -q);
                     color = lerp(color, float3(0.9, 0.95, 1.0), saturate(storm.y));
                     color += float3(0.4, 0.52, 0.95) * saturate(storm.z) * 0.4;
+                }
+                else if (_OverlayMode == 20)
+                {
+                    float spores = saturate(life.x);
+                    float biomass = saturate(life.y);
+                    uint stage = genome.w & 255u;
+                    color = lerp(float3(0.04, 0.05, 0.03), float3(0.18, 0.72, 0.28), biomass);
+                    if (stage == 2u)
+                        color = lerp(color, float3(0.32, 0.42, 0.2), 0.55);
+                    if (stage == 3u)
+                        color = lerp(color, float3(0.55, 0.35, 0.12), 0.7);
+                    color = lerp(color, float3(0.82, 0.88, 0.35), spores * 0.55);
+                    if (material == 128u)
+                        color = lerp(color, float3(0.12, 0.85, 0.32), 0.25);
+                }
+                else if (_OverlayMode == 21)
+                {
+                    color = lerp(float3(0.02, 0.02, 0.06), float3(1.0, 0.92, 0.45), saturate(lightField));
+                }
+                else if (_OverlayMode == 22)
+                {
+                    float hue = frac(((genome.x ^ genome.y ^ genome.z) * 0.0000000023) + (genome.w & 255u) * 0.07);
+                    color = float3(hue, saturate(life.y), 0.35 + 0.4 * saturate(life.z));
+                    if (material == 128u)
+                        color = lerp(float3(0.05, 0.05, 0.08), color, 0.9);
+                    else
+                        color = lerp(float3(0.04, 0.03, 0.04), color, saturate(life.x));
                 }
 
                 float radialGrid = frac(simulationRadius * height);

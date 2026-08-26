@@ -2,6 +2,7 @@ using System;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering;
 
 namespace GeneSys.Simulation.Gpu
 {
@@ -23,6 +24,13 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture CombustionWrite { get; private set; }
         public RenderTexture StormRead { get; private set; }
         public RenderTexture StormWrite { get; private set; }
+        public RenderTexture LifeGenomeRead { get; private set; }
+        public RenderTexture LifeGenomeWrite { get; private set; }
+        public RenderTexture LifeRead => LifeGenomeRead;
+        public RenderTexture LifeWrite => LifeGenomeWrite;
+        public RenderTexture GenomeRead => LifeGenomeRead;
+        public RenderTexture GenomeWrite => LifeGenomeWrite;
+        public RenderTexture LightField { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -50,6 +58,9 @@ namespace GeneSys.Simulation.Gpu
             CombustionWrite = CreateTexture("GeneSys Combustion B", GraphicsFormat.R32G32B32A32_SFloat);
             StormRead = CreateTexture("GeneSys Storm A", GraphicsFormat.R32G32B32A32_SFloat);
             StormWrite = CreateTexture("GeneSys Storm B", GraphicsFormat.R32G32B32A32_SFloat);
+            LifeGenomeRead = CreateTextureArray("GeneSys LifeGenome A", GraphicsFormat.R32G32B32A32_SFloat, 2);
+            LifeGenomeWrite = CreateTextureArray("GeneSys LifeGenome B", GraphicsFormat.R32G32B32A32_SFloat, 2);
+            LightField = CreateTexture("GeneSys Light", GraphicsFormat.R32_SFloat);
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -76,6 +87,32 @@ namespace GeneSys.Simulation.Gpu
             return texture;
         }
 
+        private RenderTexture CreateTextureArray(string name, GraphicsFormat format, int slices)
+        {
+            var descriptor = new RenderTextureDescriptor(Grid.angularResolution, Grid.radialResolution)
+            {
+                graphicsFormat = format,
+                depthBufferBits = 0,
+                msaaSamples = 1,
+                enableRandomWrite = true,
+                useMipMap = false,
+                autoGenerateMips = false,
+                sRGB = false,
+                dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray,
+                volumeDepth = Mathf.Max(1, slices)
+            };
+            var texture = new RenderTexture(descriptor)
+            {
+                name = name,
+                filterMode = FilterMode.Point,
+                wrapModeU = TextureWrapMode.Repeat,
+                wrapModeV = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.DontSave
+            };
+            texture.Create();
+            return texture;
+        }
+
         public void Swap()
         {
             (MaterialRead, MaterialWrite) = (MaterialWrite, MaterialRead);
@@ -85,7 +122,9 @@ namespace GeneSys.Simulation.Gpu
             (ShadeRead, ShadeWrite) = (ShadeWrite, ShadeRead);
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
+            (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
             // Storm is excluded: other kernels do not copy it through WriteCell.
+            // Light is derived each tick and is not ping-ponged.
         }
 
         public void SwapStorm()
@@ -103,6 +142,7 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(EcologyRead, EcologyWrite);
             Graphics.CopyTexture(CombustionRead, CombustionWrite);
             Graphics.CopyTexture(StormRead, StormWrite);
+            Graphics.CopyTexture(LifeGenomeRead, LifeGenomeWrite);
         }
 
         public void Dispose()
@@ -115,12 +155,16 @@ namespace GeneSys.Simulation.Gpu
             Release(EcologyRead); Release(EcologyWrite);
             Release(CombustionRead); Release(CombustionWrite);
             Release(StormRead); Release(StormWrite);
+            Release(LifeGenomeRead); Release(LifeGenomeWrite);
+            Release(LightField);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
             EcologyRead = EcologyWrite = null;
             CombustionRead = CombustionWrite = null;
             StormRead = StormWrite = null;
+            LifeGenomeRead = LifeGenomeWrite = null;
+            LightField = null;
         }
 
         private static void Release(RenderTexture texture)

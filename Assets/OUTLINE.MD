@@ -53,7 +53,7 @@ in order to achieve a 'living world' we can't start with uniform concentric laye
 - runtime hydrology adds rain deposition, runoff/waterfalls, aquifer springs, geysers, and hydrothermal ocean vents coupled to geology
 
 #### COMBUSTION
-- fire requires temperature, oxygen, and fuel (milestone 1 fuel is mycology biomass on soil/sediment)
+- fire requires temperature, oxygen, and fuel (mycology biomass on soil/sediment plus flora `life.y` on Algae/Moss)
 - dedicated combustion field: oxygen, flame intensity, soot, ignition accumulator
 - oxygen capacity is full in air and limited by porosity in solids; sealed fires smolder then suffocate
 - burning dumps heat, pressure, and updraft into the existing weather chain for atmospheric turbulation
@@ -91,6 +91,22 @@ fitness for evolutionary promotion should be a sum of weighted values, with a "l
 #### BRAIN
 
 The left/right hemisphere approach should be adopted when developing behavior trees or predictive coding/LSTM wiring. One set of 'motivating factors' should be calculated per tick/cycle for each the left and the right brain hemisphere: left values concerning only the immediate self/environment, while right values concern group/bigger picture states such as species population and environmental health/equilibrium. any action taken should first be selected from one of the two hemispheres with a weight dependent on stress level (max stress excludes right brain selection, zero stress excludes left brain).
+
+### MILESTONE - First species
+
+- photosynthesizer: algae/moss analog. all values should have associated genes/expression levels that drive deviation from a baseline. temp/moisture survival thresholds that are tuned long term enough to allow combustion to occur before 'death' from temp/drought. 'dormant' spore form acts as seed as well as 'last ditch' survival mechanism, when environmental factors are outside of 'growth/reproduction' values but within survival/destruction values. during growth/reproduction periods sunlight should be collected while available towards a reproduction threshold that when reached causes the organism to divide with a gentle base mutation rate augmented by toxins encountered. while growing/active and receiving sunlight the organism should diffuse nutrients acting as a gradient for other organisms to follow. the morphology should be simple/circular with a size/caloric index that isn't strictly tied to visual display(breakpoints for scale, etc). we'll treat it as a 'single cell' that is bouyant, forming 'mats' on water/soil in appropriate environmental coniditions. a new brush mode "Life" should be added with "Algae/Moss" as an entry in the material field, using the established template this mode should introduce spores into the simulation.
+
+#### Implemented flora contract
+- material `128 Algae/Moss`, category Biological, density 0.45 (floats on water via existing `LiquidDensityExchange`), rigidity ~0.95 (no diagonal slump; lateral spread is division)
+- one colonized cell is one organism; mycology is left untouched as a sibling subsystem
+- `LifeGenomeRead/Write` Tex2DArray RGBA32F (2 slices) so WriteCell stays at the DX11 8-UAV cap: slice 0 = life (`x` spore load, `y` biomass/caloric fuel `[0,1]`, `z` stored photosynthate energy, `w` nutrient exudate); slice 1 = `asfloat(genome uint4)` for AsyncGPUReadback. Genome `.x/.y/.z` = 12 genes × 8 bits; `.w` = `stage(8) | generation(8) | lineage(8) | toxinDose(8)`
+- genes express as deviations from config baselines: `1 + (gene/255 - 0.5) * 2 * geneExpressionRange`
+- derived `LightField` R32F, recomputed each tick by a radial inward march (cloud condensate, soot, water depth, material opacity); not ping-ponged
+- life stages: `SPORE`, `ACTIVE` (growth envelope + light, accumulate energy, divide with mutation), `DORMANT` (survival envelope, biomass kept, revival), `DESICCATED` (outside survival: dry fuel with a lowered ignition threshold so fire can consume the mat), `DEAD` → Ash `12` plus `aux.z` fertility
+- race-free division is a gather from Read-state on one neighbor direction per slow tick
+- brush mode `Life` (GPU 14) seeds spores plus a randomized genome; painting material 128 plants an active organism
+- worldgen flora seeding is off by default (`floraSeedAtWorldgen`) so existing determinism tests stay green
+- snapshots are Version7 with Life/Genome payloads; Light is derived and omitted
 
 
 ## PHASE X - BEYOND

@@ -156,6 +156,37 @@ namespace GeneSys.Configuration
         [Range(0f, 8f)] public float mycologyElectricalTolerance = 0.65f;
         [Range(0f, 1f)] public float mycologyTraitEffectStrength = 0.35f;
 
+        [Header("Ecology - Flora")]
+        public bool floraSeedAtWorldgen = false;
+        [Range(0f, 1f)] public float floraInitialSporeLoad = 0.06f;
+        [Range(0f, 4f)] public float floraAirTransportRate = 0.5f;
+        [Range(0f, 4f)] public float floraWaterTransportRate = 0.65f;
+        [Range(0f, 2f)] public float floraDiffusionRate = 0.07f;
+        [Range(0f, 4f)] public float floraSettlingRate = 0.4f;
+        [Range(0f, 4f)] public float floraSporulationRate = 0.1f;
+        [Range(0f, 4f)] public float floraGrowthRate = 0.16f;
+        [Range(0f, 4f)] public float floraDecayRate = 0.12f;
+        [Range(0f, 4f)] public float floraPhotosynthesisRate = 0.35f;
+        [Range(0f, 4f)] public float floraOxygenYield = 0.2f;
+        [Range(0f, 4f)] public float floraExudationRate = 0.12f;
+        [Range(0.05f, 1f)] public float floraReproductionThreshold = 0.55f;
+        [Range(0f, 1f)] public float floraBaseMutationRate = 0.04f;
+        [Range(0f, 4f)] public float floraToxinMutationScale = 1.2f;
+        [Range(0f, 1f)] public float floraGeneExpressionRange = 0.45f;
+        [Range(-40f, 80f)] public float floraGrowthTempMin = 8f;
+        [Range(-40f, 120f)] public float floraGrowthTempMax = 34f;
+        [Range(0f, 2f)] public float floraGrowthMoistureMin = 0.1f;
+        [Range(0f, 2f)] public float floraGrowthMoistureMax = 1.15f;
+        [Range(-80f, 80f)] public float floraSurvivalTempMin = -8f;
+        [Range(-40f, 160f)] public float floraSurvivalTempMax = 72f;
+        [Range(0f, 2f)] public float floraSurvivalMoistureMin = 0.02f;
+        [Range(0f, 2f)] public float floraSurvivalMoistureMax = 1.5f;
+        [Range(0f, 2f)] public float floraMinLight = 0.08f;
+        [Range(0.001f, 1f)] public float floraGerminationSporeThreshold = 0.08f;
+        [Range(0f, 4f)] public float floraMaintenanceRate = 0.06f;
+        [Range(0f, 4f)] public float floraNightDrain = 0.04f;
+        [Range(0f, 1f)] public float floraDormancyMetabolicScale = 0.12f;
+
         [Header("Combustion")]
         [Range(0f, 2f)] public float combustionAmbientOxygen = 1f;
         [Range(0f, 4f)] public float combustionOxygenReplenishRate = 0.15f;
@@ -332,6 +363,54 @@ namespace GeneSys.Configuration
             mycologySurvivalMoistureMax = Mathf.Max(mycologySurvivalMoistureMax, mycologyGrowthMoistureMax);
             mycologyElectricalTolerance = Mathf.Max(0f, mycologyElectricalTolerance);
             mycologyTraitEffectStrength = Mathf.Clamp01(mycologyTraitEffectStrength);
+            floraInitialSporeLoad = Mathf.Max(0f, floraInitialSporeLoad);
+            floraAirTransportRate = Mathf.Max(0f, floraAirTransportRate);
+            floraWaterTransportRate = Mathf.Max(0f, floraWaterTransportRate);
+            floraDiffusionRate = Mathf.Max(0f, floraDiffusionRate);
+            floraSettlingRate = Mathf.Max(0f, floraSettlingRate);
+            floraSporulationRate = Mathf.Max(0f, floraSporulationRate);
+            floraGrowthRate = Mathf.Max(0f, floraGrowthRate);
+            floraDecayRate = Mathf.Max(0f, floraDecayRate);
+            floraPhotosynthesisRate = Mathf.Max(0f, floraPhotosynthesisRate);
+            floraOxygenYield = Mathf.Max(0f, floraOxygenYield);
+            floraExudationRate = Mathf.Max(0f, floraExudationRate);
+            floraReproductionThreshold = Mathf.Clamp(floraReproductionThreshold, 0.05f, 1f);
+            floraBaseMutationRate = Mathf.Clamp01(floraBaseMutationRate);
+            floraToxinMutationScale = Mathf.Max(0f, floraToxinMutationScale);
+            floraGeneExpressionRange = Mathf.Clamp01(floraGeneExpressionRange);
+            if (floraGrowthTempMax < floraGrowthTempMin)
+            {
+                float swap = floraGrowthTempMin;
+                floraGrowthTempMin = floraGrowthTempMax;
+                floraGrowthTempMax = swap;
+            }
+            if (floraSurvivalTempMax < floraSurvivalTempMin)
+            {
+                float swap = floraSurvivalTempMin;
+                floraSurvivalTempMin = floraSurvivalTempMax;
+                floraSurvivalTempMax = swap;
+            }
+            floraSurvivalTempMin = Mathf.Min(floraSurvivalTempMin, floraGrowthTempMin);
+            floraSurvivalTempMax = Mathf.Max(floraSurvivalTempMax, floraGrowthTempMax);
+            if (floraGrowthMoistureMax < floraGrowthMoistureMin)
+            {
+                float swap = floraGrowthMoistureMin;
+                floraGrowthMoistureMin = floraGrowthMoistureMax;
+                floraGrowthMoistureMax = swap;
+            }
+            if (floraSurvivalMoistureMax < floraSurvivalMoistureMin)
+            {
+                float swap = floraSurvivalMoistureMin;
+                floraSurvivalMoistureMin = floraSurvivalMoistureMax;
+                floraSurvivalMoistureMax = swap;
+            }
+            floraSurvivalMoistureMin = Mathf.Min(floraSurvivalMoistureMin, floraGrowthMoistureMin);
+            floraSurvivalMoistureMax = Mathf.Max(floraSurvivalMoistureMax, floraGrowthMoistureMax);
+            floraMinLight = Mathf.Max(0f, floraMinLight);
+            floraGerminationSporeThreshold = Mathf.Clamp(floraGerminationSporeThreshold, 0.001f, 1f);
+            floraMaintenanceRate = Mathf.Max(0f, floraMaintenanceRate);
+            floraNightDrain = Mathf.Max(0f, floraNightDrain);
+            floraDormancyMetabolicScale = Mathf.Clamp01(floraDormancyMetabolicScale);
             combustionAmbientOxygen = Mathf.Max(0f, combustionAmbientOxygen);
             combustionOxygenReplenishRate = Mathf.Max(0f, combustionOxygenReplenishRate);
             combustionOxygenDiffusionRate = Mathf.Max(0f, combustionOxygenDiffusionRate);

@@ -19,6 +19,8 @@ Texture2D<float4> _EcologyRead;
 RWTexture2D<float4> _EcologyWrite;
 Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2DArray<float4> _LifeGenomeWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -48,6 +50,8 @@ float2 ReadFlow(int2 cell) { return _FlowRead.Load(int3(Cell(cell), 0)); }
 float4 ReadAux(int2 cell) { return _AuxRead.Load(int3(Cell(cell), 0)); }
 float4 ReadEcology(int2 cell) { return _EcologyRead.Load(int3(Cell(cell), 0)); }
 float4 ReadCombustion(int2 cell) { return _CombustionRead.Load(int3(Cell(cell), 0)); }
+float4 ReadLife(int2 cell) { return SampleLife(_LifeGenomeRead, Cell(cell)); }
+uint4 ReadGenome(int2 cell) { return SampleGenome(_LifeGenomeRead, Cell(cell)); }
 
 bool IsGranularBurden(uint material)
 {
@@ -81,7 +85,7 @@ float ColumnBurden(int2 magmaCell)
     return burden;
 }
 
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome)
 {
     uint oldMaterial = ReadMaterial(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -94,6 +98,7 @@ void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, 
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -107,6 +112,8 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     float4 aux = ReadAux(cell);
     float4 ecology = ReadEcology(cell);
     float4 combustion = ReadCombustion(cell);
+    float4 life = ReadLife(cell);
+    uint4 genome = ReadGenome(cell);
     float radius = Radius01(cell.y, _GridSize.y);
 
     bool mantle = material == 3u;
@@ -165,10 +172,10 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
         aboveAux.x += heatTransfer * 0.25;
         aboveAux.z += heatTransfer * _GeologyB.y;
         flow.y += heatTransfer;
-        WriteCell(Cell(cell + int2(0, 1)), aboveMat, aboveState, ReadFlow(cell + int2(0, 1)), aboveAux, ReadEcology(cell + int2(0, 1)), ReadCombustion(cell + int2(0, 1)));
+        WriteCell(Cell(cell + int2(0, 1)), aboveMat, aboveState, ReadFlow(cell + int2(0, 1)), aboveAux, ReadEcology(cell + int2(0, 1)), ReadCombustion(cell + int2(0, 1)), ReadLife(cell + int2(0, 1)), ReadGenome(cell + int2(0, 1)));
     }
 
-    WriteCell(cell, material, state, flow, aux, ecology, combustion);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -182,11 +189,13 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
     float4 aux = ReadAux(cell);
     float4 ecology = ReadEcology(cell);
     float4 combustion = ReadCombustion(cell);
+    float4 life = ReadLife(cell);
+    uint4 genome = ReadGenome(cell);
 
     float eruption = saturate(_EruptionA.x);
     if (eruption <= 0.0001)
     {
-        WriteCell(cell, material, state, flow, aux, ecology, combustion);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
 
@@ -213,6 +222,8 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                 float4 belowAux = ReadAux(below);
                 float4 belowEcology = ReadEcology(below);
                 float4 belowCombustion = ReadCombustion(below);
+                float4 belowLife = ReadLife(below);
+                uint4 belowGenome = ReadGenome(below);
                 bool blast = overdrive >= max(0.05, _EruptionB.x);
                 material = 6u;
                 state = belowState;
@@ -220,10 +231,12 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                 aux = belowAux;
                 ecology = belowEcology;
                 combustion = belowCombustion;
+                life = belowLife;
+                genome = belowGenome;
                 state.y = max(0.0, state.y - resistance * 0.35);
                 if (blast)
                     flow.y += overdrive * 0.5 * _DeltaTime;
-                WriteCell(cell, material, state, flow, aux, ecology, combustion);
+                WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
                 return;
             }
         }
@@ -241,6 +254,8 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
             float4 aboveAux = ReadAux(above);
             float4 aboveEcology = ReadEcology(above);
             float4 aboveCombustion = ReadCombustion(above);
+            float4 aboveLife = ReadLife(above);
+            uint4 aboveGenome = ReadGenome(above);
             float pressureGradient = max(0.0, state.y - aboveState.y);
             float viscosityFactor = max(0.15, 1.0 - _WeatherC.w * 0.35);
             float drive = (pressureGradient * _EruptionA.y + max(0.0, flow.y) * _EruptionA.z + _Geology.z * 0.35)
@@ -265,6 +280,8 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                     aux.z = max(aux.z, 0.15 * _EruptionB.w);
                     ecology = aboveEcology;
                     combustion = aboveCombustion;
+                    life = aboveLife;
+                    genome = aboveGenome;
                 }
                 else
                 {
@@ -274,14 +291,16 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                     aux = aboveAux;
                     ecology = aboveEcology;
                     combustion = aboveCombustion;
+                    life = aboveLife;
+                    genome = aboveGenome;
                 }
-                WriteCell(cell, material, state, flow, aux, ecology, combustion);
+                WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
                 return;
             }
         }
     }
 
-    WriteCell(cell, material, state, flow, aux, ecology, combustion);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 int2 AshDestination(int2 source)
@@ -342,6 +361,8 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
     float4 aux = ReadAux(cell);
     float4 ecology = ReadEcology(cell);
     float4 combustion = ReadCombustion(cell);
+    float4 life = ReadLife(cell);
+    uint4 genome = ReadGenome(cell);
 
     int2 destination = AshDestination(cell);
     if (material == 12u && !all(destination == cell))
@@ -352,7 +373,9 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
         aux = ReadAux(destination);
         ecology = ReadEcology(destination);
         combustion = ReadCombustion(destination);
-        WriteCell(cell, material, state, flow, aux, ecology, combustion);
+        life = ReadLife(destination);
+        genome = ReadGenome(destination);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
 
@@ -385,12 +408,14 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
             aux = ReadAux(source);
             ecology = ReadEcology(source);
             combustion = ReadCombustion(source);
-            WriteCell(cell, material, state, flow, aux, ecology, combustion);
+            life = ReadLife(source);
+            genome = ReadGenome(source);
+            WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
             return;
         }
     }
 
-    WriteCell(cell, material, state, flow, aux, ecology, combustion);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -404,11 +429,13 @@ void CoreReaction(uint3 id : SV_DispatchThreadID)
     float4 aux = ReadAux(cell);
     float4 ecology = ReadEcology(cell);
     float4 combustion = ReadCombustion(cell);
+    float4 life = ReadLife(cell);
+    uint4 genome = ReadGenome(cell);
 
     int freq = max(0, (int)_GeologyB.z);
     float magnitude = max(0.0, _GeologyB.w);
     if (freq > 0 && magnitude > 0.0 && (_Tick % freq) == 0 && material == 2u)
         state.x += magnitude;
 
-    WriteCell(cell, material, state, flow, aux, ecology, combustion);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

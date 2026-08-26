@@ -38,7 +38,8 @@ namespace GeneSys.Validation
             RenderTexture flowTex = host.Resources.FlowRead;
             RenderTexture ecologyTex = host.Resources.EcologyRead;
             RenderTexture combustionTex = host.Resources.CombustionRead;
-            if (stateTex == null || auxTex == null || flowTex == null || ecologyTex == null || combustionTex == null) return;
+            RenderTexture lifeGenomeTex = host.Resources.LifeGenomeRead;
+            if (stateTex == null || auxTex == null || flowTex == null || ecologyTex == null || combustionTex == null || lifeGenomeTex == null) return;
             pending = true;
             AsyncGPUReadback.Request(stateTex, 0, stateRequest =>
             {
@@ -102,12 +103,36 @@ namespace GeneSys.Validation
                                     if (value.z < -0.001f) { Complete(false, $"Negative soot at cell {i}."); return; }
                                     if (value.w < -0.01f || value.w > 1.01f) { Complete(false, $"Ignition accumulator out of range at cell {i}."); return; }
                                 }
-                                if (host == null || !host.IsReady || host.Config == null)
-                                { Complete(false, "Simulation host unavailable."); return; }
-                                if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
-                                double drift = Math.Abs(water - baselineWater) / baselineWater;
-                                bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
-                                Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                AsyncGPUReadback.Request(lifeGenomeTex, 0, 0, lifeGenomeTex.width, 0, lifeGenomeTex.height, 0, 1, lifeRequest =>
+                                {
+                                    if (lifeRequest.hasError) { Complete(false, "Life GPU readback failed."); return; }
+                                    NativeArray<Vector4> life = lifeRequest.GetData<Vector4>();
+                                    for (int i = 0; i < life.Length; i++)
+                                    {
+                                        Vector4 value = life[i];
+                                        if (!Finite(value)) { Complete(false, $"Non-finite life field at cell {i}."); return; }
+                                        if (value.x < -0.001f) { Complete(false, $"Negative flora spore load at cell {i}."); return; }
+                                        if (value.y < -0.01f || value.y > 1.01f) { Complete(false, $"Flora biomass out of range at cell {i}."); return; }
+                                        if (value.z < -0.01f || value.z > 1.01f) { Complete(false, $"Flora energy out of range at cell {i}."); return; }
+                                    }
+                                    AsyncGPUReadback.Request(lifeGenomeTex, 0, 0, lifeGenomeTex.width, 0, lifeGenomeTex.height, 1, 1, genomeRequest =>
+                                    {
+                                        if (genomeRequest.hasError) { Complete(false, "Genome GPU readback failed."); return; }
+                                        NativeArray<Vector4> genomeBits = genomeRequest.GetData<Vector4>();
+                                        for (int i = 0; i < genomeBits.Length; i++)
+                                        {
+                                            uint stage = FloraGenome.Stage(FloraGenome.FromFloatBits(genomeBits[i]));
+                                            if (!FloraGenome.IsValidStage(stage))
+                                            { Complete(false, $"Invalid flora stage {stage} at cell {i}."); return; }
+                                        }
+                                        if (host == null || !host.IsReady || host.Config == null)
+                                        { Complete(false, "Simulation host unavailable."); return; }
+                                        if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
+                                        double drift = Math.Abs(water - baselineWater) / baselineWater;
+                                        bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                                        Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                    });
+                                });
                             });
                         });
                     });

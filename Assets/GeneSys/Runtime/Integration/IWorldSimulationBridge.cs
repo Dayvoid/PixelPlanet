@@ -29,12 +29,16 @@ namespace GeneSys.Integration
         RenderTexture EcologyField { get; }
         RenderTexture CombustionField { get; }
         RenderTexture StormField { get; }
+        RenderTexture LifeField { get; }
+        RenderTexture GenomeField { get; }
+        RenderTexture LightField { get; }
         SurfaceFrame GetSurfaceFrame(Vector2Int cell);
         /// <summary>
         /// Deposit into a field channel: 1 heat, 2 moisture/cloud, 3 pressure, 4 nutrients, 5 groundwater, 6 vapor, 7 spores, 8 charge.
         /// </summary>
         void QueueFieldDeposit(Vector2Int cell, int radius, int channel, float amount);
         void QueueSporeSeed(Vector2Int cell, int radius, float sporeLoad, float mycoValue, uint traitFlags);
+        void QueueFloraSeed(Vector2Int cell, int radius, float sporeLoad);
         void QueueIgnition(Vector2Int cell, int radius, float intensity);
     }
 }

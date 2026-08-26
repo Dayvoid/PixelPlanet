@@ -30,6 +30,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader hydrology;
         private readonly ComputeShader weather;
         private readonly ComputeShader mycology;
+        private readonly ComputeShader flora;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
         private readonly GraphicsBuffer strikeSeedBuffer;
@@ -46,8 +47,8 @@ namespace GeneSys.Simulation.Gpu
 
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
-            ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader combustion,
-            ComputeShader storm)
+            ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
+            ComputeShader combustion, ComputeShader storm)
         {
             this.config = config;
             this.resources = resources;
@@ -57,6 +58,7 @@ namespace GeneSys.Simulation.Gpu
             this.hydrology = hydrology;
             this.weather = weather;
             this.mycology = mycology;
+            this.flora = flora;
             this.combustion = combustion;
             this.storm = storm;
             materialBuffer = registry.CreateGpuBuffer();
@@ -91,6 +93,17 @@ namespace GeneSys.Simulation.Gpu
             worldGeneration.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindWorldgenOutputs(worldGeneration, kernel);
             Dispatch(worldGeneration, kernel);
+            if (flora != null)
+            {
+                int seedFlora = flora.FindKernel("SeedFlora");
+                if (seedFlora >= 0)
+                {
+                    SetCommon(flora, seedFlora, 0f);
+                    flora.SetTexture(seedFlora, "_MaterialRead", resources.MaterialRead);
+                    flora.SetTexture(seedFlora, "_LifeGenomeWrite", resources.LifeGenomeRead);
+                    Dispatch(flora, seedFlora);
+                }
+            }
             resources.CopyReadToWrite();
         }
 
@@ -178,6 +191,15 @@ namespace GeneSys.Simulation.Gpu
                     DispatchPass(mycology, mycology.FindKernel("ColonyLifecycle"), deltaTime * config.slowPassInterval);
             }
 
+            if (flora != null)
+            {
+                DispatchLight(flora, flora.FindKernel("LightAttenuation"), deltaTime);
+                DispatchPass(flora, flora.FindKernel("SporeTransport"), deltaTime);
+                DispatchPass(flora, flora.FindKernel("Photosynthesis"), deltaTime);
+                if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
+                    DispatchPass(flora, flora.FindKernel("FloraLifecycle"), deltaTime * config.slowPassInterval);
+            }
+
             tick++;
             stopwatch.Stop();
             LastTickMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
@@ -230,6 +252,14 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_MycologyC", new Vector4(config.mycologyDecayRate, config.mycologyGrowthTempMin, config.mycologyGrowthTempMax, config.mycologyGrowthMoistureMin));
             shader.SetVector("_MycologyD", new Vector4(config.mycologyGrowthMoistureMax, config.mycologySurvivalTempMin, config.mycologySurvivalTempMax, config.mycologySurvivalMoistureMin));
             shader.SetVector("_MycologyE", new Vector4(config.mycologySurvivalMoistureMax, config.mycologyElectricalTolerance, config.mycologyTraitEffectStrength, 0f));
+            shader.SetVector("_FloraA", new Vector4(config.floraAirTransportRate, config.floraWaterTransportRate, config.floraDiffusionRate, config.floraSettlingRate));
+            shader.SetVector("_FloraB", new Vector4(config.floraSporulationRate, config.floraGrowthRate, config.floraDecayRate, config.floraPhotosynthesisRate));
+            shader.SetVector("_FloraC", new Vector4(config.floraOxygenYield, config.floraExudationRate, config.floraReproductionThreshold, config.floraBaseMutationRate));
+            shader.SetVector("_FloraD", new Vector4(config.floraToxinMutationScale, config.floraGeneExpressionRange, config.floraGrowthTempMin, config.floraGrowthTempMax));
+            shader.SetVector("_FloraE", new Vector4(config.floraGrowthMoistureMin, config.floraGrowthMoistureMax, config.floraSurvivalTempMin, config.floraSurvivalTempMax));
+            shader.SetVector("_FloraF", new Vector4(config.floraSurvivalMoistureMin, config.floraSurvivalMoistureMax, config.floraMinLight, config.floraGerminationSporeThreshold));
+            shader.SetVector("_FloraG", new Vector4(config.floraMaintenanceRate, config.floraNightDrain, config.floraDormancyMetabolicScale, config.floraInitialSporeLoad));
+            shader.SetVector("_FloraH", new Vector4(config.floraSeedAtWorldgen ? 1f : 0f, 0f, 0f, 0f));
             shader.SetVector("_CombustionA", new Vector4(config.combustionAmbientOxygen, config.combustionOxygenReplenishRate, config.combustionOxygenDiffusionRate, config.combustionIgnitionAccumulationRate));
             shader.SetVector("_CombustionB", new Vector4(config.combustionIgnitionDecayRate, config.combustionSeedIntensity, config.combustionBurnRate, config.combustionHeatYield));
             shader.SetVector("_CombustionC", new Vector4(config.combustionPressureScale, config.combustionUpdraftStrength, config.combustionSmokeYield, config.combustionSootSettlingRate));
@@ -260,6 +290,9 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_EcologyWrite", resources.EcologyWrite);
             shader.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
             shader.SetTexture(kernel, "_CombustionWrite", resources.CombustionWrite);
+            shader.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            shader.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeWrite);
+            shader.SetTexture(kernel, "_LightRead", resources.LightField);
         }
 
         private void BindWorldgenOutputs(ComputeShader shader, int kernel)
@@ -292,6 +325,20 @@ namespace GeneSys.Simulation.Gpu
             worldGeneration.SetTexture(kernel, "_ShadeWrite", resources.ShadeRead);
             Dispatch(worldGeneration, kernel);
             Graphics.CopyTexture(resources.ShadeRead, resources.ShadeWrite);
+        }
+
+        private void DispatchLight(ComputeShader shader, int kernel, float deltaTime)
+        {
+            if (kernel < 0)
+            {
+                UnityEngine.Debug.LogError($"GeneSys: missing compute kernel on {shader.name}. Skipping light pass.");
+                return;
+            }
+            SetCommon(shader, kernel, deltaTime);
+            shader.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            BindPassTextures(shader, kernel);
+            shader.SetTexture(kernel, "_LightWrite", resources.LightField);
+            Dispatch(shader, kernel);
         }
 
         private void Dispatch(ComputeShader shader, int kernel)
