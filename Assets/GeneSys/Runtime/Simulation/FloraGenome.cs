@@ -29,14 +29,14 @@ namespace GeneSys.Simulation
         public const int GeneDormancy = 7;
         public const int GeneToxinTolerance = 8;
         public const int GeneExudation = 9;
-        public const int GeneStackMotility = 10;
+        public const int GeneSubstrate = 10;
         public const int GeneMutation = 11;
 
         public static readonly string[] GeneNames =
         {
             "Temp optimum", "Temp tolerance", "Moisture optimum", "Moisture tolerance",
             "Light affinity", "Reproduction", "Metabolic rate", "Dormancy",
-            "Toxin tolerance", "Exudation", "Stack motility", "Mutation rate"
+            "Toxin tolerance", "Exudation", "Substrate affinity", "Mutation rate"
         };
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]

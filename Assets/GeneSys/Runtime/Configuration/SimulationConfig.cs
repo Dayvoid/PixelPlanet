@@ -186,9 +186,6 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float floraMaintenanceRate = 0.06f;
         [Range(0f, 4f)] public float floraNightDrain = 0.04f;
         [Range(0f, 1f)] public float floraDormancyMetabolicScale = 0.12f;
-        [Range(0f, 8f)] public float floraWindDispersalRate = 0.35f;
-        [Range(0f, 8f)] public float floraRainDispersalRate = 0.45f;
-        [Range(0f, 8f)] public float floraStackMigrationRate = 0.2f;
 
         [Header("Combustion")]
         [Range(0f, 2f)] public float combustionAmbientOxygen = 1f;
@@ -414,9 +411,6 @@ namespace GeneSys.Configuration
             floraMaintenanceRate = Mathf.Max(0f, floraMaintenanceRate);
             floraNightDrain = Mathf.Max(0f, floraNightDrain);
             floraDormancyMetabolicScale = Mathf.Clamp01(floraDormancyMetabolicScale);
-            floraWindDispersalRate = Mathf.Max(0f, floraWindDispersalRate);
-            floraRainDispersalRate = Mathf.Max(0f, floraRainDispersalRate);
-            floraStackMigrationRate = Mathf.Max(0f, floraStackMigrationRate);
             combustionAmbientOxygen = Mathf.Max(0f, combustionAmbientOxygen);
             combustionOxygenReplenishRate = Mathf.Max(0f, combustionOxygenReplenishRate);
             combustionOxygenDiffusionRate = Mathf.Max(0f, combustionOxygenDiffusionRate);

@@ -325,12 +325,6 @@ namespace GeneSys.UI
                 "Extra energy drain when local light is below the minimum. Controls how harshly darkness taxes active photosynthesizers.",
             [nameof(SimulationConfig.floraDormancyMetabolicScale)] =
                 "Fraction of maintenance applied while dormant. Lower values let spore-like dormancy last through drought; higher values starve sleeping mats.",
-            [nameof(SimulationConfig.floraWindDispersalRate)] =
-                "How strongly tangential wind and currents dislodge whole algae pixels into adjacent open air. Independent of stack motility; zero disables wind-driven spread.",
-            [nameof(SimulationConfig.floraRainDispersalRate)] =
-                "How strongly rain, cloud impact, and surface film knock algae into a neighboring open cell. Independent of genetics; without lateral flow the landing side is seeded.",
-            [nameof(SimulationConfig.floraStackMigrationRate)] =
-                "Baseline rate for stacked algae crawling toward the nearest ice-cap pole until a cell with no algae below is found. Multiplied by the stack-motility gene, which may be zero.",
 
             [nameof(SimulationConfig.combustionAmbientOxygen)] =
                 "Target oxygen fill as a fraction of each cell's capacity. Atmosphere and porous ground relax toward this level; lowering it starves fire and favors smolder.",

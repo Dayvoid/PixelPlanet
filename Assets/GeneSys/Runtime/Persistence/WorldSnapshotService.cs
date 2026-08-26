@@ -19,7 +19,6 @@ namespace GeneSys.Persistence
         private const int Version5 = 5;
         private const int Version6 = 6;
         private const int Version7 = 7;
-        private const int Version8 = 8;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
@@ -58,7 +57,7 @@ namespace GeneSys.Persistence
                     using var writer = new BinaryWriter(stream);
                     SimulationConfig config = host.Config;
                     writer.Write(Magic);
-                    writer.Write(Version8);
+                    writer.Write(Version7);
                     writer.Write(host.Resources.Grid.angularResolution);
                     writer.Write(host.Resources.Grid.radialResolution);
                     writer.Write(config.seed);
@@ -66,7 +65,6 @@ namespace GeneSys.Persistence
                     WriteConfig(writer, config);
                     WriteEcologyConfig(writer, config);
                     WriteFloraConfig(writer, config);
-                    WriteFloraMovementConfig(writer, config);
                     foreach (byte[] payload in payloads)
                     {
                         writer.Write(payload.Length);
@@ -84,7 +82,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7 && version != Version8) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -99,10 +97,6 @@ namespace GeneSys.Persistence
                 ReadEcologyConfig(reader, host.Config);
             if (version >= Version7)
                 ReadFloraConfig(reader, host.Config);
-            if (version >= Version8)
-                ReadFloraMovementConfig(reader, host.Config);
-            else
-                ApplyFloraMovementDefaults(host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -114,7 +108,11 @@ namespace GeneSys.Persistence
                 int length = reader.ReadInt32();
                 byte[] payload = reader.ReadBytes(length);
                 if (payload.Length != length) return false;
-                UploadTexturePayload(host, target, payload, width, height);
+                Texture2D staging = CreateStagingTexture(width, height, target.graphicsFormat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, target);
+                UnityEngine.Object.Destroy(staging);
             }
 
             if (version >= Version3)
@@ -122,7 +120,11 @@ namespace GeneSys.Persistence
                 int length = reader.ReadInt32();
                 byte[] payload = reader.ReadBytes(length);
                 if (payload.Length != length) return false;
-                UploadTexturePayload(host, host.Resources.ShadeRead, payload, width, height);
+                Texture2D staging = CreateStagingTexture(width, height, host.Resources.ShadeRead.graphicsFormat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, host.Resources.ShadeRead);
+                UnityEngine.Object.Destroy(staging);
             }
             else
             {
@@ -390,13 +392,6 @@ namespace GeneSys.Persistence
             writer.Write(config.floraDormancyMetabolicScale);
         }
 
-        private static void WriteFloraMovementConfig(BinaryWriter writer, SimulationConfig config)
-        {
-            writer.Write(config.floraWindDispersalRate);
-            writer.Write(config.floraRainDispersalRate);
-            writer.Write(config.floraStackMigrationRate);
-        }
-
         private static void ReadFloraConfig(BinaryReader reader, SimulationConfig config)
         {
             config.floraSeedAtWorldgen = reader.ReadBoolean();
@@ -430,38 +425,9 @@ namespace GeneSys.Persistence
             config.floraDormancyMetabolicScale = reader.ReadSingle();
         }
 
-        private static void ReadFloraMovementConfig(BinaryReader reader, SimulationConfig config)
-        {
-            config.floraWindDispersalRate = reader.ReadSingle();
-            config.floraRainDispersalRate = reader.ReadSingle();
-            config.floraStackMigrationRate = reader.ReadSingle();
-        }
-
-        private static void ApplyFloraMovementDefaults(SimulationConfig config)
-        {
-            config.floraWindDispersalRate = 0.35f;
-            config.floraRainDispersalRate = 0.45f;
-            config.floraStackMigrationRate = 0.2f;
-        }
-
-        private static void UploadTexturePayload(SimulationHost host, RenderTexture target, byte[] payload, int width, int height)
-        {
-            if (target.graphicsFormat == GraphicsFormat.R32_UInt)
-            {
-                host.UploadUIntTexture(target, payload);
-                return;
-            }
-
-            Texture2D staging = CreateStagingTexture(width, height, target.graphicsFormat);
-            staging.LoadRawTextureData(payload);
-            staging.Apply(false, false);
-            Graphics.CopyTexture(staging, target);
-            UnityEngine.Object.Destroy(staging);
-        }
-
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)
         {
-            return new Texture2D(width, height, format, TextureCreationFlags.DontInitializePixels);
+            return new Texture2D(width, height, format, TextureCreationFlags.None);
         }
     }
 }
