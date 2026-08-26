@@ -16,6 +16,7 @@ MonoBehaviour:
   displayName: Ice
   category: 4
   displayColor: {r: 0.55, g: 0.88, b: 1, a: 1}
+  shadeVariation: 0.18
   density: 0.92
   rigidity: 0.65
   angleOfRepose: 45

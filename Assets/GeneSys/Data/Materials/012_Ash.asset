@@ -16,6 +16,7 @@ MonoBehaviour:
   displayName: Ash
   category: 3
   displayColor: {r: 0.45, g: 0.42, b: 0.38, a: 1}
+  shadeVariation: 0.18
   density: 0.55
   rigidity: 0.03
   angleOfRepose: 22
@@ -36,8 +37,8 @@ MonoBehaviour:
   gasPhaseId: 12
   toxicity: 0.08
   caloricContent: 0.55
-  ignitionTemperature: 900
-  flashPoint: 500
-  oxygenDemand: 0.2
-  smokeYield: 0.15
   bioModifiable: 1
+  ignitionTemperature: 10000
+  flashPoint: 10000
+  oxygenDemand: 0
+  smokeYield: 0

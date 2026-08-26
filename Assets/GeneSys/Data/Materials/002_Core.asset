@@ -16,6 +16,7 @@ MonoBehaviour:
   displayName: Core
   category: 4
   displayColor: {r: 0.9, g: 0.16, b: 0.03, a: 1}
+  shadeVariation: 0.18
   density: 8
   rigidity: 1
   angleOfRepose: 80
@@ -36,8 +37,8 @@ MonoBehaviour:
   gasPhaseId: 11
   toxicity: 0
   caloricContent: 0
+  bioModifiable: 0
   ignitionTemperature: 10000
   flashPoint: 10000
-  oxygenDemand: 0.2
+  oxygenDemand: 0
   smokeYield: 0
-  bioModifiable: 0

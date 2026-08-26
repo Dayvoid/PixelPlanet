@@ -16,6 +16,7 @@ MonoBehaviour:
   displayName: Water
   category: 2
   displayColor: {r: 0.02, g: 0.32, b: 0.9, a: 1}
+  shadeVariation: 0.18
   density: 1
   rigidity: 0
   angleOfRepose: 0

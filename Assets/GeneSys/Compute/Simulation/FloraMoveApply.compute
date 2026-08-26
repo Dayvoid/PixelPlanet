@@ -18,7 +18,8 @@ Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
-StructuredBuffer<uint> _FloraMoveClaimsRead;
+// Separate SRV twin of the claim UAV so Apply stays within the DX11 8-UAV write limit.
+Texture2D<uint> _FloraMoveClaimsRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -61,14 +62,18 @@ void ApplyFloraMoves(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
+
+    // Default: identity copy from Read. Override only for accepted move endpoints.
     int2 source = cell;
-    uint claimHere = _FloraMoveClaimsRead[FloraClaimIndex(cell)];
+    uint claimHere = _FloraMoveClaimsRead.Load(int3(cell, 0));
     if (claimHere != 0u && claimHere != FLORA_MOVE_EMPTY)
+    {
         source = UnpackFloraCell(claimHere);
+    }
     else
     {
         int2 dest = FloraMoveDestination(cell);
-        if (!all(dest == cell) && _FloraMoveClaimsRead[FloraClaimIndex(dest)] == PackFloraCell(cell))
+        if (!all(dest == cell) && _FloraMoveClaimsRead.Load(int3(dest, 0)) == PackFloraCell(cell))
             source = dest;
     }
 

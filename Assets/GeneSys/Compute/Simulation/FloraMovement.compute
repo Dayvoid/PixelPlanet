@@ -1,0 +1,52 @@
+#pragma kernel ClearFloraMoveClaims
+#pragma kernel ClaimFloraMoves
+#pragma kernel UploadUIntField
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+Texture2D<float2> _FlowRead;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2D<uint> _FloraMoveClaims;
+StructuredBuffer<uint> _UploadSource;
+RWTexture2D<uint> _UploadDest;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float4 _FloraH; // seedAtWorldgen, windDispersal, rainDispersal, stackMigration
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
+uint4 G(int2 value) { return SampleGenome(_LifeGenomeRead, C(value)); }
+
+#include "../../Shaders/Simulation/Common/FloraMovement.hlsl"
+
+[numthreads(8, 8, 1)]
+void ClearFloraMoveClaims(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    _FloraMoveClaims[id.xy] = FLORA_MOVE_EMPTY;
+}
+
+[numthreads(8, 8, 1)]
+void ClaimFloraMoves(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    int2 dest = FloraMoveDestination(cell);
+    if (all(dest == cell)) return;
+    uint unused;
+    InterlockedMin(_FloraMoveClaims[dest], PackFloraCell(cell), unused);
+}
+
+[numthreads(8, 8, 1)]
+void UploadUIntField(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    _UploadDest[id.xy] = _UploadSource[FloraClaimIndex(id.xy)];
+}

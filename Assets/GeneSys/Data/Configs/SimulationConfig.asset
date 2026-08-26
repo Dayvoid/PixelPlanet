@@ -42,7 +42,7 @@ MonoBehaviour:
   terrainRelief: 0.045
   coastRoughness: 0.025
   initialGroundwaterSaturation: 0.65
-  initialAtmosphericHumidity: 0.7
+  initialAtmosphericHumidity: 0.08
   metalVeinCount: 12
   metalVeinMinSize: 0.002
   metalVeinMaxSize: 0.015
@@ -144,6 +144,35 @@ MonoBehaviour:
   mycologySurvivalMoistureMax: 1.2
   mycologyElectricalTolerance: 0.65
   mycologyTraitEffectStrength: 0.35
+  floraSeedAtWorldgen: 0
+  floraInitialSporeLoad: 0.06
+  floraAirTransportRate: 0.5
+  floraWaterTransportRate: 0.65
+  floraDiffusionRate: 0.07
+  floraSettlingRate: 0.4
+  floraSporulationRate: 0.1
+  floraGrowthRate: 0.16
+  floraDecayRate: 0.12
+  floraPhotosynthesisRate: 0.35
+  floraOxygenYield: 0.2
+  floraExudationRate: 0.12
+  floraReproductionThreshold: 0.55
+  floraBaseMutationRate: 0.04
+  floraToxinMutationScale: 1.2
+  floraGeneExpressionRange: 0.45
+  floraGrowthTempMin: 8
+  floraGrowthTempMax: 34
+  floraGrowthMoistureMin: 0.1
+  floraGrowthMoistureMax: 1.15
+  floraSurvivalTempMin: -8
+  floraSurvivalTempMax: 72
+  floraSurvivalMoistureMin: 0.02
+  floraSurvivalMoistureMax: 1.5
+  floraMinLight: 0.08
+  floraGerminationSporeThreshold: 0.08
+  floraMaintenanceRate: 0.06
+  floraNightDrain: 0.04
+  floraDormancyMetabolicScale: 0.12
   combustionAmbientOxygen: 1
   combustionOxygenReplenishRate: 0.15
   combustionOxygenDiffusionRate: 0.35
