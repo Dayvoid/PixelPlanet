@@ -1,0 +1,70 @@
+#pragma kernel LightAttenuation
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+Texture2D<float4> _CombustionRead;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2D<float> _LightWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Seed;
+float _AtmosphereStartRadius;
+float4 _WeatherA; // solarIntensity, ...
+float4 _WeatherC; // vaporPressureScale, solarAngle01, ...
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
+float4 L(int2 value) { return SampleLife(_LifeGenomeRead, C(value)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+[numthreads(64, 1, 1)]
+void LightAttenuation(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    int theta = (int)id.x;
+    float theta01 = (theta + 0.5) / _GridSize.x;
+    float angle = (theta01 - _WeatherC.y) * 6.28318530718;
+    float light = max(0.0, cos(angle)) * max(0.0, _WeatherA.x);
+
+    for (int r = _GridSize.y - 1; r >= 0; r--)
+    {
+        int2 cell = int2(theta, r);
+        _LightWrite[cell] = light;
+
+        uint material = M(cell);
+        float4 state = S(cell);
+        float4 combustion = Comb(cell);
+        MaterialGpuData definition = D(material);
+        float category = definition.metadata.x;
+        float opacity = 0.0;
+        bool atmosphere = category == 1.0 || material == 1u || material == 11u
+            || (material == 0u && Radius01(r, _GridSize.y) >= _AtmosphereStartRadius);
+        if (atmosphere)
+        {
+            opacity += saturate(state.z) * 0.35;
+            opacity += saturate(combustion.z) * 0.4;
+        }
+        else if (material == 9u || material == 10u)
+        {
+            opacity += 0.18 + saturate(state.z) * 0.12;
+        }
+        else if (IsFloraMaterial(material))
+        {
+            opacity += 0.08 + saturate(L(cell).y) * 0.12;
+        }
+        else if (category >= 3.0)
+        {
+            opacity += lerp(0.55, 0.95, 1.0 - saturate(definition.biology.z));
+        }
+        else if (category == 2.0)
+        {
+            opacity += 0.18;
+        }
+        light *= saturate(1.0 - opacity);
+    }
+}

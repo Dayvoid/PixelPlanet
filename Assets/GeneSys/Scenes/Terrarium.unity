@@ -207,6 +207,9 @@ MonoBehaviour:
   weather: {fileID: 7200000, guid: 90f4c8bd082f6bc4bb24a0bec3130b9e, type: 3}
   mycology: {fileID: 7200000, guid: b7c41e2a9d8f4e6ab3c15d90e4a7f218, type: 3}
   flora: {fileID: 7200000, guid: c8f3a91e4b6d47a0b2e5c7d9f0a1b348, type: 3}
+  floraLight: {fileID: 7200000, guid: d0a6b8c4152e7f9b23c4d5e6f70a1b2c, type: 3}
+  floraMovement: {fileID: 7200000, guid: a7d3e5f1829b4c6e90f1a2b3c4d5e6f7, type: 3}
+  floraMoveApply: {fileID: 7200000, guid: c9f5a7b3041d6e8a12b3c4d5e6f8091a, type: 3}
   combustion: {fileID: 7200000, guid: 4e8c1d7a9b3f4a21b6c5e0d8f1a2b3c4, type: 3}
   storm: {fileID: 7200000, guid: 8c2f9a1b4d6e70f3a5c8e1d2b4f60718, type: 3}
   display: {fileID: 1566586365}

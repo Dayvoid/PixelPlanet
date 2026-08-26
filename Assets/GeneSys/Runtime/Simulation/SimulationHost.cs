@@ -24,6 +24,9 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader weather;
         [SerializeField] private ComputeShader mycology;
         [SerializeField] private ComputeShader flora;
+        [SerializeField] private ComputeShader floraLight;
+        [SerializeField] private ComputeShader floraMovement;
+        [SerializeField] private ComputeShader floraMoveApply;
         [SerializeField] private ComputeShader combustion;
         [SerializeField] private ComputeShader storm;
         [Header("Scene")]
@@ -88,7 +91,7 @@ namespace GeneSys.Simulation
                 enabled = false;
                 return;
             }
-            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || flora == null || combustion == null || storm == null)
+            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || flora == null || floraLight == null || floraMovement == null || floraMoveApply == null || combustion == null || storm == null)
             {
                 Debug.LogError("GeneSys bootstrap references are incomplete. Run Tools/GeneSys/Rebuild Phase 1 Scene.", this);
                 enabled = false;
@@ -96,7 +99,7 @@ namespace GeneSys.Simulation
             }
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, combustion, storm);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, floraLight, floraMovement, floraMoveApply, combustion, storm);
             scheduler.GenerateWorld();
             Clock.Reset();
             lastPerformanceTick = 0;
@@ -149,6 +152,11 @@ namespace GeneSys.Simulation
         public void FillShadesFromMaterials()
         {
             if (IsReady) scheduler.FillShadesFromMaterials();
+        }
+
+        public void UploadUIntTexture(RenderTexture destination, byte[] payload)
+        {
+            if (IsReady) scheduler.UploadUIntTexture(destination, payload);
         }
 
         public void ApplyPreset(SimulationPreset preset)

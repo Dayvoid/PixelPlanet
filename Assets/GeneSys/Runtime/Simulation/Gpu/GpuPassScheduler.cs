@@ -31,6 +31,9 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader weather;
         private readonly ComputeShader mycology;
         private readonly ComputeShader flora;
+        private readonly ComputeShader floraLight;
+        private readonly ComputeShader floraMovement;
+        private readonly ComputeShader floraMoveApply;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
         private readonly GraphicsBuffer strikeSeedBuffer;
@@ -48,7 +51,7 @@ namespace GeneSys.Simulation.Gpu
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
             ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
-            ComputeShader combustion, ComputeShader storm)
+            ComputeShader floraLight, ComputeShader floraMovement, ComputeShader floraMoveApply, ComputeShader combustion, ComputeShader storm)
         {
             this.config = config;
             this.resources = resources;
@@ -59,6 +62,9 @@ namespace GeneSys.Simulation.Gpu
             this.weather = weather;
             this.mycology = mycology;
             this.flora = flora;
+            this.floraLight = floraLight;
+            this.floraMovement = floraMovement;
+            this.floraMoveApply = floraMoveApply;
             this.combustion = combustion;
             this.storm = storm;
             materialBuffer = registry.CreateGpuBuffer();
@@ -99,6 +105,8 @@ namespace GeneSys.Simulation.Gpu
                 if (seedFlora >= 0)
                 {
                     SetCommon(flora, seedFlora, 0f);
+                    flora.SetBuffer(seedFlora, "_MaterialDefinitions", materialBuffer);
+                    BindPassTextures(flora, seedFlora);
                     flora.SetTexture(seedFlora, "_MaterialRead", resources.MaterialRead);
                     flora.SetTexture(seedFlora, "_LifeGenomeWrite", resources.LifeGenomeRead);
                     Dispatch(flora, seedFlora);
@@ -193,7 +201,8 @@ namespace GeneSys.Simulation.Gpu
 
             if (flora != null)
             {
-                DispatchLight(flora, flora.FindKernel("LightAttenuation"), deltaTime);
+                DispatchFloraMovement(deltaTime);
+                DispatchLight(deltaTime);
                 DispatchPass(flora, flora.FindKernel("SporeTransport"), deltaTime);
                 DispatchPass(flora, flora.FindKernel("Photosynthesis"), deltaTime);
                 if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
@@ -259,7 +268,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_FloraE", new Vector4(config.floraGrowthMoistureMin, config.floraGrowthMoistureMax, config.floraSurvivalTempMin, config.floraSurvivalTempMax));
             shader.SetVector("_FloraF", new Vector4(config.floraSurvivalMoistureMin, config.floraSurvivalMoistureMax, config.floraMinLight, config.floraGerminationSporeThreshold));
             shader.SetVector("_FloraG", new Vector4(config.floraMaintenanceRate, config.floraNightDrain, config.floraDormancyMetabolicScale, config.floraInitialSporeLoad));
-            shader.SetVector("_FloraH", new Vector4(config.floraSeedAtWorldgen ? 1f : 0f, 0f, 0f, 0f));
+            shader.SetVector("_FloraH", new Vector4(config.floraSeedAtWorldgen ? 1f : 0f, config.floraWindDispersalRate, config.floraRainDispersalRate, config.floraStackMigrationRate));
             shader.SetVector("_CombustionA", new Vector4(config.combustionAmbientOxygen, config.combustionOxygenReplenishRate, config.combustionOxygenDiffusionRate, config.combustionIgnitionAccumulationRate));
             shader.SetVector("_CombustionB", new Vector4(config.combustionIgnitionDecayRate, config.combustionSeedIntensity, config.combustionBurnRate, config.combustionHeatYield));
             shader.SetVector("_CombustionC", new Vector4(config.combustionPressureScale, config.combustionUpdraftStrength, config.combustionSmokeYield, config.combustionSootSettlingRate));
@@ -295,6 +304,34 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_LightRead", resources.LightField);
         }
 
+        private void BindFloraMoveClaimTextures(ComputeShader shader, int kernel)
+        {
+            shader.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            shader.SetTexture(kernel, "_StateRead", resources.StateRead);
+            shader.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            shader.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+        }
+
+        private void BindFloraMoveApplyTextures(int kernel)
+        {
+            floraMoveApply.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            floraMoveApply.SetTexture(kernel, "_MaterialWrite", resources.MaterialWrite);
+            floraMoveApply.SetTexture(kernel, "_StateRead", resources.StateRead);
+            floraMoveApply.SetTexture(kernel, "_StateWrite", resources.StateWrite);
+            floraMoveApply.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            floraMoveApply.SetTexture(kernel, "_FlowWrite", resources.FlowWrite);
+            floraMoveApply.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            floraMoveApply.SetTexture(kernel, "_AuxWrite", resources.AuxWrite);
+            floraMoveApply.SetTexture(kernel, "_ShadeRead", resources.ShadeRead);
+            floraMoveApply.SetTexture(kernel, "_ShadeWrite", resources.ShadeWrite);
+            floraMoveApply.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
+            floraMoveApply.SetTexture(kernel, "_EcologyWrite", resources.EcologyWrite);
+            floraMoveApply.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            floraMoveApply.SetTexture(kernel, "_CombustionWrite", resources.CombustionWrite);
+            floraMoveApply.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            floraMoveApply.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeWrite);
+        }
+
         private void BindWorldgenOutputs(ComputeShader shader, int kernel)
         {
             shader.SetTexture(kernel, "_MaterialWrite", resources.MaterialRead);
@@ -327,18 +364,84 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(resources.ShadeRead, resources.ShadeWrite);
         }
 
-        private void DispatchLight(ComputeShader shader, int kernel, float deltaTime)
+        private void DispatchLight(float deltaTime)
         {
+            if (floraLight == null) return;
+            int kernel = floraLight.FindKernel("LightAttenuation");
             if (kernel < 0)
             {
-                UnityEngine.Debug.LogError($"GeneSys: missing compute kernel on {shader.name}. Skipping light pass.");
+                UnityEngine.Debug.LogError("GeneSys: missing LightAttenuation kernel. Skipping light pass.");
                 return;
             }
-            SetCommon(shader, kernel, deltaTime);
-            shader.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
-            BindPassTextures(shader, kernel);
-            shader.SetTexture(kernel, "_LightWrite", resources.LightField);
-            Dispatch(shader, kernel);
+            SetCommon(floraLight, kernel, deltaTime);
+            floraLight.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            floraLight.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            floraLight.SetTexture(kernel, "_StateRead", resources.StateRead);
+            floraLight.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            floraLight.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            floraLight.SetTexture(kernel, "_LightWrite", resources.LightField);
+            floraLight.GetKernelThreadGroupSizes(kernel, out uint x, out _, out _);
+            int groupsX = Mathf.CeilToInt(resources.Grid.angularResolution / (float)x);
+            floraLight.Dispatch(kernel, groupsX, 1, 1);
+        }
+
+        private void DispatchFloraMovement(float deltaTime)
+        {
+            if (floraMovement == null || floraMoveApply == null
+                || (config.floraWindDispersalRate <= 0f
+                    && config.floraRainDispersalRate <= 0f
+                    && config.floraStackMigrationRate <= 0f))
+                return;
+
+            int clear = floraMovement.FindKernel("ClearFloraMoveClaims");
+            int claim = floraMovement.FindKernel("ClaimFloraMoves");
+            int apply = floraMoveApply.FindKernel("ApplyFloraMoves");
+            if (clear < 0 || claim < 0 || apply < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing flora movement kernel. Skipping dispersal pass.");
+                return;
+            }
+
+            SetCommon(floraMovement, clear, deltaTime);
+            floraMovement.SetBuffer(clear, "_FloraMoveClaims", resources.FloraMoveClaims);
+            Dispatch(floraMovement, clear);
+
+            SetCommon(floraMovement, claim, deltaTime);
+            BindFloraMoveClaimTextures(floraMovement, claim);
+            floraMovement.SetBuffer(claim, "_FloraMoveClaims", resources.FloraMoveClaims);
+            Dispatch(floraMovement, claim);
+            Graphics.CopyBuffer(resources.FloraMoveClaims, resources.FloraMoveClaimsRead);
+
+            SetCommon(floraMoveApply, apply, deltaTime);
+            floraMoveApply.SetBuffer(apply, "_MaterialDefinitions", materialBuffer);
+            BindFloraMoveApplyTextures(apply);
+            floraMoveApply.SetBuffer(apply, "_FloraMoveClaimsRead", resources.FloraMoveClaimsRead);
+            Dispatch(floraMoveApply, apply);
+            resources.Swap();
+        }
+
+        public void UploadUIntTexture(RenderTexture destination, byte[] payload)
+        {
+            if (floraMovement == null || destination == null || payload == null) return;
+            int kernel = floraMovement.FindKernel("UploadUIntField");
+            if (kernel < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing UploadUIntField kernel.");
+                return;
+            }
+
+            int count = destination.width * destination.height;
+            if (payload.Length != count * sizeof(uint)) return;
+            var buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, sizeof(uint));
+            buffer.SetData(payload);
+            floraMovement.SetInts("_GridSize", destination.width, destination.height);
+            floraMovement.SetBuffer(kernel, "_UploadSource", buffer);
+            floraMovement.SetTexture(kernel, "_UploadDest", destination);
+            floraMovement.GetKernelThreadGroupSizes(kernel, out uint x, out uint y, out _);
+            int groupsX = Mathf.CeilToInt(destination.width / (float)x);
+            int groupsY = Mathf.CeilToInt(destination.height / (float)y);
+            floraMovement.Dispatch(kernel, groupsX, groupsY, 1);
+            buffer.Dispose();
         }
 
         private void Dispatch(ComputeShader shader, int kernel)

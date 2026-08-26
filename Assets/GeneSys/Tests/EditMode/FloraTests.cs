@@ -33,6 +33,9 @@ namespace GeneSys.Tests
             Assert.That(config.floraSurvivalMoistureMax, Is.GreaterThanOrEqualTo(config.floraGrowthMoistureMax));
             Assert.That(config.floraReproductionThreshold, Is.InRange(0.05f, 1f));
             Assert.That(config.floraGeneExpressionRange, Is.InRange(0f, 1f));
+            Assert.That(config.floraWindDispersalRate, Is.GreaterThan(0f));
+            Assert.That(config.floraRainDispersalRate, Is.GreaterThan(0f));
+            Assert.That(config.floraStackMigrationRate, Is.GreaterThan(0f));
             Object.DestroyImmediate(config);
         }
 
@@ -48,12 +51,18 @@ namespace GeneSys.Tests
             config.floraGrowthMoistureMax = 0.2f;
             config.floraSurvivalMoistureMin = 0.4f;
             config.floraSurvivalMoistureMax = 0.5f;
+            config.floraWindDispersalRate = -2f;
+            config.floraRainDispersalRate = -1f;
+            config.floraStackMigrationRate = -4f;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
             Assert.That(config.floraGrowthTempMin, Is.LessThan(config.floraGrowthTempMax));
             Assert.That(config.floraSurvivalTempMin, Is.LessThanOrEqualTo(config.floraGrowthTempMin));
             Assert.That(config.floraSurvivalTempMax, Is.GreaterThanOrEqualTo(config.floraGrowthTempMax));
             Assert.That(config.floraSurvivalMoistureMin, Is.LessThanOrEqualTo(config.floraGrowthMoistureMin));
             Assert.That(config.floraSurvivalMoistureMax, Is.GreaterThanOrEqualTo(config.floraGrowthMoistureMax));
+            Assert.That(config.floraWindDispersalRate, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(config.floraRainDispersalRate, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(config.floraStackMigrationRate, Is.GreaterThanOrEqualTo(0f));
             Object.DestroyImmediate(config);
         }
 
@@ -64,10 +73,16 @@ namespace GeneSys.Tests
             config.floraGrowthRate = 0f;
             config.floraPhotosynthesisRate = 0f;
             config.floraInitialSporeLoad = 0f;
+            config.floraWindDispersalRate = 0f;
+            config.floraRainDispersalRate = 0f;
+            config.floraStackMigrationRate = 0f;
             config.RestoreDefaults();
             Assert.That(config.floraGrowthRate, Is.EqualTo(0.16f).Within(0.001f));
             Assert.That(config.floraPhotosynthesisRate, Is.EqualTo(0.35f).Within(0.001f));
             Assert.That(config.floraInitialSporeLoad, Is.EqualTo(0.06f).Within(0.001f));
+            Assert.That(config.floraWindDispersalRate, Is.EqualTo(0.35f).Within(0.001f));
+            Assert.That(config.floraRainDispersalRate, Is.EqualTo(0.45f).Within(0.001f));
+            Assert.That(config.floraStackMigrationRate, Is.EqualTo(0.2f).Within(0.001f));
             Object.DestroyImmediate(config);
         }
 
@@ -90,6 +105,9 @@ namespace GeneSys.Tests
                 Assert.That(FloraGenome.DecodeGene(mutated, i), Is.InRange(0, 255));
             Assert.That(FloraGenome.IsValidStage(FloraGenome.Stage(mutated)), Is.True);
             Assert.That(FloraGenome.ExpressFactor(128, 0.45f), Is.EqualTo(1f).Within(0.02f));
+            Assert.That(FloraGenome.GeneNames[FloraGenome.GeneStackMotility], Is.EqualTo("Stack motility"));
+            Assert.That(FloraGenome.DecodeGene(FloraGenome.EncodeGene(default, FloraGenome.GeneStackMotility, 0), FloraGenome.GeneStackMotility), Is.EqualTo((byte)0));
+            Assert.That(FloraGenome.DecodeGene(FloraGenome.EncodeGene(default, FloraGenome.GeneStackMotility, 0), FloraGenome.GeneStackMotility) / 255f, Is.EqualTo(0f));
         }
 
         [Test]
@@ -114,7 +132,28 @@ namespace GeneSys.Tests
             Assert.That(resources.LifeGenomeRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.LifeGenomeWrite.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.LightField.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_SFloat));
+            Assert.That(resources.FloraMoveClaims, Is.Not.Null);
+            Assert.That(resources.FloraMoveClaims.count, Is.EqualTo(PolarGridDefinition.Validation.angularResolution * PolarGridDefinition.Validation.radialResolution));
+            Assert.That(resources.FloraMoveClaims.stride, Is.EqualTo(sizeof(uint)));
+            Assert.That(resources.FloraMoveClaimsRead, Is.Not.Null);
+            Assert.That(resources.FloraMoveClaimsRead.count, Is.EqualTo(resources.FloraMoveClaims.count));
             Assert.That(resources.LifeGenomeRead.width, Is.EqualTo(PolarGridDefinition.Validation.angularResolution));
+
+            var movement = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/FloraMovement.compute");
+            var apply = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/FloraMoveApply.compute");
+            var flora = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Flora.compute");
+            Assert.That(movement, Is.Not.Null);
+            Assert.That(apply, Is.Not.Null);
+            Assert.That(flora, Is.Not.Null);
+            Assert.That(movement.FindKernel("ClearFloraMoveClaims"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(movement.FindKernel("ClaimFloraMoves"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(apply.FindKernel("ApplyFloraMoves"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.HasKernel("ApplyFloraMoves"), Is.False);
+            Assert.That(flora.HasKernel("ClearFloraMoveClaims"), Is.False);
+            Assert.That(flora.HasKernel("LightAttenuation"), Is.False);
+            var light = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/FloraLight.compute");
+            Assert.That(light, Is.Not.Null);
+            Assert.That(light.FindKernel("LightAttenuation"), Is.GreaterThanOrEqualTo(0));
         }
 
         [Test]
