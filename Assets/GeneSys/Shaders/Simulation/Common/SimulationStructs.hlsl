@@ -31,7 +31,7 @@
 //   life.z = stored photosynthate energy toward the reproduction threshold
 //   life.w = nutrient exudate / chemoattractant (diffuses; slowly deposits into aux.z)
 // Genome (dedicated RGBA32U field, follows cells through WriteCell):
-//   genome.x/y/z = 12 genes, 8 bits each (see FLORA_GENE_*)
+//   genome.x/y/z = 12 genes, 8 bits each (see FLORA_GENE_*). Slot 10 is pole-drift rate.
 //   genome.w = stage(8) | generation(8) | lineage(8) | toxinDose(8)
 // Light (derived R32F field, recomputed every tick, excluded from Swap/WriteCell):
 //   light.x = available photosynthetically active radiation after radial attenuation
@@ -184,6 +184,27 @@ float Hash01(uint value)
     return (Hash(value) & 0x00ffffff) / 16777215.0;
 }
 
+// Ice-cap angular centers used by V2 worldgen and flora pole-drift. Must stay in lockstep
+// with PolarPoleGeometry.cs: pole = Hash01(seed * 9829), antipode = pole + 0.5.
+float PoleAngle01(int seed)
+{
+    return Hash01((uint)seed * 9829u);
+}
+
+// -1 / +1 angular step toward the nearer ice cap; 0 when already on that column.
+int NearestPoleStep(int theta, int width, int seed)
+{
+    float angular = (theta + 0.5) / max(1.0, (float)width);
+    float a = frac(PoleAngle01(seed));
+    float b = frac(a + 0.5);
+    float pole = AngularDistance01(angular, a) <= AngularDistance01(angular, b) ? a : b;
+    float delta = pole - angular;
+    if (delta > 0.5) delta -= 1.0;
+    else if (delta < -0.5) delta += 1.0;
+    float cells = delta * width;
+    return abs(cells) < 0.5 ? 0 : (cells > 0.0 ? 1 : -1);
+}
+
 // Liquid, Granular, Solid, Magma, Biological — not Empty/Gas.
 bool IsMottledCategory(float category)
 {
@@ -310,7 +331,7 @@ float MycologyFuel(uint material, float4 ecology)
 #define FLORA_GENE_DORMANCY 7u
 #define FLORA_GENE_TOXIN_TOLERANCE 8u
 #define FLORA_GENE_EXUDATION 9u
-#define FLORA_GENE_SUBSTRATE 10u
+#define FLORA_GENE_POLE_DRIFT 10u
 #define FLORA_GENE_MUTATION 11u
 
 bool IsFloraMaterial(uint material)
@@ -429,6 +450,13 @@ float FloraExpressFactor(uint gene, float range)
 float FloraExpressShift(uint gene, float range)
 {
     return ((gene / 255.0) - 0.5) * 2.0 * range;
+}
+
+// Alleles at or below 16 are silent, so "no drift at all" is reachable and heritable.
+float FloraPoleDrift(uint4 genome)
+{
+    uint g = DecodeGene(genome, FLORA_GENE_POLE_DRIFT);
+    return g <= 16u ? 0.0 : (float)(g - 16u) / 239.0;
 }
 
 float FloraFuel(uint material, float4 life, uint stage)

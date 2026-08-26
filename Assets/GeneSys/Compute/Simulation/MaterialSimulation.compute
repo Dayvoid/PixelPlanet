@@ -130,6 +130,7 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         else if (mode == 9) combustion.y = saturate(max(combustion.y, command.values.y * max(0.1, falloff)));
         else if (mode == 10) combustion.x = max(0.0, command.values.y);
         else if (mode == 12) flow.y += command.values.y * max(0.1, falloff);
+        else if (mode == 13) flow.x = command.values.y;
         else if (mode == 14)
         {
             life.x = max(0.0, command.values.y * max(0.1, falloff));

@@ -29,14 +29,14 @@ namespace GeneSys.Simulation
         public const int GeneDormancy = 7;
         public const int GeneToxinTolerance = 8;
         public const int GeneExudation = 9;
-        public const int GeneSubstrate = 10;
+        public const int GenePoleDrift = 10;
         public const int GeneMutation = 11;
 
         public static readonly string[] GeneNames =
         {
             "Temp optimum", "Temp tolerance", "Moisture optimum", "Moisture tolerance",
             "Light affinity", "Reproduction", "Metabolic rate", "Dormancy",
-            "Toxin tolerance", "Exudation", "Substrate affinity", "Mutation rate"
+            "Toxin tolerance", "Exudation", "Pole drift", "Mutation rate"
         };
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -109,6 +109,13 @@ namespace GeneSys.Simulation
 
         public static float ExpressShift(byte gene, float range) =>
             (gene / 255f - 0.5f) * 2f * range;
+
+        // Alleles at or below 16 are silent, so "no drift at all" is reachable and heritable.
+        public static float PoleDrift(Packed genome)
+        {
+            byte gene = DecodeGene(genome, GenePoleDrift);
+            return gene <= 16 ? 0f : (gene - 16) / 239f;
+        }
 
         public static byte MutateGene(byte gene, float mutationRate, uint salt)
         {

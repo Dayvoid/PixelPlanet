@@ -19,6 +19,7 @@ namespace GeneSys.Persistence
         private const int Version5 = 5;
         private const int Version6 = 6;
         private const int Version7 = 7;
+        private const int Version8 = 8;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
@@ -57,7 +58,7 @@ namespace GeneSys.Persistence
                     using var writer = new BinaryWriter(stream);
                     SimulationConfig config = host.Config;
                     writer.Write(Magic);
-                    writer.Write(Version7);
+                    writer.Write(Version8);
                     writer.Write(host.Resources.Grid.angularResolution);
                     writer.Write(host.Resources.Grid.radialResolution);
                     writer.Write(config.seed);
@@ -82,7 +83,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7 && version != Version8) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -96,7 +97,7 @@ namespace GeneSys.Persistence
             if (version >= Version4)
                 ReadEcologyConfig(reader, host.Config);
             if (version >= Version7)
-                ReadFloraConfig(reader, host.Config);
+                ReadFloraConfig(reader, host.Config, version);
 
             RenderTexture[] coreTargets =
             {
@@ -390,9 +391,14 @@ namespace GeneSys.Persistence
             writer.Write(config.floraMaintenanceRate);
             writer.Write(config.floraNightDrain);
             writer.Write(config.floraDormancyMetabolicScale);
+            writer.Write(config.floraPoleDriftRate);
+            writer.Write(config.floraWindShearRate);
+            writer.Write(config.floraRainShearRate);
+            writer.Write(config.floraFragmentYield);
+            writer.Write(config.floraAnchorGrip);
         }
 
-        private static void ReadFloraConfig(BinaryReader reader, SimulationConfig config)
+        private static void ReadFloraConfig(BinaryReader reader, SimulationConfig config, int version)
         {
             config.floraSeedAtWorldgen = reader.ReadBoolean();
             config.floraInitialSporeLoad = reader.ReadSingle();
@@ -423,11 +429,34 @@ namespace GeneSys.Persistence
             config.floraMaintenanceRate = reader.ReadSingle();
             config.floraNightDrain = reader.ReadSingle();
             config.floraDormancyMetabolicScale = reader.ReadSingle();
+            if (version >= Version8)
+            {
+                config.floraPoleDriftRate = reader.ReadSingle();
+                config.floraWindShearRate = reader.ReadSingle();
+                config.floraRainShearRate = reader.ReadSingle();
+                config.floraFragmentYield = reader.ReadSingle();
+                config.floraAnchorGrip = reader.ReadSingle();
+            }
         }
 
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)
         {
-            return new Texture2D(width, height, format, TextureCreationFlags.None);
+            GraphicsFormat stagingFormat = format;
+            if (!SystemInfo.IsFormatSupported(format, GraphicsFormatUsage.Sample))
+            {
+                // D3D11 rejects Texture2D(R32_UInt) because that format is load/store only.
+                // Same-size float textures copy bit-identically into the integer render targets.
+                uint block = GraphicsFormatUtility.GetBlockSize(format);
+                stagingFormat = block <= 4 ? GraphicsFormat.R32_SFloat
+                    : block <= 8 ? GraphicsFormat.R32G32_SFloat
+                    : GraphicsFormat.R32G32B32A32_SFloat;
+            }
+
+            return new Texture2D(width, height, stagingFormat, TextureCreationFlags.DontInitializePixels)
+            {
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
         }
     }
 }

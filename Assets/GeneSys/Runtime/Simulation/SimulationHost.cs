@@ -244,6 +244,17 @@ namespace GeneSys.Simulation
             });
         }
 
+        public void QueueAngularWind(Vector2Int cell, int radius, float flowX)
+        {
+            QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = cell,
+                radius = Mathf.Max(0, radius),
+                materialId = MaterialIds.Void,
+                values = new Vector4(13f, flowX, 0f, 0f)
+            });
+        }
+
         private void OnDestroy() => Shutdown();
 
         private void Shutdown()

@@ -6,11 +6,13 @@ using GeneSys.Materials;
 using GeneSys.Persistence;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
+using GeneSys.Simulation.Topology;
 using GeneSys.Validation;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.TestTools;
 
 namespace GeneSys.Tests
@@ -200,6 +202,11 @@ namespace GeneSys.Tests
             host.Config.floraExudationRate = 0f;
             host.Config.floraMaintenanceRate = 0f;
             host.Config.floraNightDrain = 0f;
+            host.Config.floraPoleDriftRate = 0f;
+            host.Config.floraWindShearRate = 0f;
+            host.Config.floraRainShearRate = 0f;
+            host.Config.floraFragmentYield = 0f;
+            host.Config.floraGeneExpressionRange = 0f;
             host.Config.combustionOxygenReplenishRate = 0f;
             host.Config.combustionOxygenDiffusionRate = 0f;
             host.Config.combustionIgnitionAccumulationRate = 0f;
@@ -207,6 +214,11 @@ namespace GeneSys.Tests
             host.Config.combustionMoistureIgnitionPenalty = 0f;
             host.Config.combustionSteamSuppression = 0f;
             host.Config.combustionSuppressionMoisture = 8f;
+            host.Config.combustionHeatYield = 0f;
+            host.Config.combustionPressureScale = 0f;
+            host.Config.combustionUpdraftStrength = 0f;
+            host.Config.ashUpdraftStrength = 0f;
+            host.Config.ashSettlingStrength = 0f;
             host.Config.densityExchangeRate = 0f;
             ConfigureFloraClimate(host);
         }
@@ -236,6 +248,108 @@ namespace GeneSys.Tests
             Paint(host, x, y + 1, MaterialIds.Air);
             Paint(host, x - 1, y + 1, MaterialIds.Air);
             Paint(host, x + 1, y + 1, MaterialIds.Air);
+        }
+
+        private static void StampAlgaeStack(SimulationHost host, int x, int y, int height)
+        {
+            for (int dx = -4; dx <= 4; dx++)
+            {
+                Paint(host, x + dx, y - 1, MaterialIds.Rock);
+                Paint(host, x + dx, y, MaterialIds.Soil);
+                for (int dy = 1; dy <= height + 2; dy++)
+                    Paint(host, x + dx, y + dy, MaterialIds.Air);
+            }
+            for (int dy = 1; dy <= height; dy++)
+                Paint(host, x, y + dy, MaterialIds.Algae);
+        }
+
+        private static int CountAlgae(uint[] materials)
+        {
+            int count = 0;
+            for (int i = 0; i < materials.Length; i++)
+            {
+                if (materials[i] == MaterialIds.Algae) count++;
+            }
+            return count;
+        }
+
+        private static float SignedThetaDelta(int from, int to, int width)
+        {
+            int delta = to - from;
+            if (delta > width / 2) delta -= width;
+            if (delta < -width / 2) delta += width;
+            return delta;
+        }
+
+        private static float AlgaeCentroidOffset(SimulationHost host, uint[] materials, int originX)
+        {
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            float sum = 0f;
+            int count = 0;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (materials[Index(host, x, y)] != MaterialIds.Algae) continue;
+                    sum += SignedThetaDelta(originX, x, width);
+                    count++;
+                }
+            }
+            return count == 0 ? 0f : sum / count;
+        }
+
+        private static IEnumerator StampAlgaeGene(SimulationHost host, int geneIndex, byte value)
+        {
+            uint[] materials = null;
+            FloraGenome.Packed[] genomes = null;
+            yield return ReadFloraFields(host, (mats, _, _, _, _, packed, _) =>
+            {
+                materials = mats;
+                genomes = packed;
+            });
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            var data = new Vector4[width * height];
+            for (int i = 0; i < genomes.Length; i++)
+            {
+                FloraGenome.Packed genome = genomes[i];
+                if (materials[i] == MaterialIds.Algae)
+                    genome = FloraGenome.EncodeGene(genome, geneIndex, value);
+                data[i] = new Vector4(
+                    BitConverter.Int32BitsToSingle(unchecked((int)genome.X)),
+                    BitConverter.Int32BitsToSingle(unchecked((int)genome.Y)),
+                    BitConverter.Int32BitsToSingle(unchecked((int)genome.Z)),
+                    BitConverter.Int32BitsToSingle(unchecked((int)genome.W)));
+            }
+
+            var staging = new Texture2D(width, height, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.None);
+            staging.SetPixelData(data, 0);
+            staging.Apply(false, false);
+            Graphics.CopyTexture(staging, 0, 0, host.Resources.LifeGenomeRead, 1, 0);
+            Graphics.CopyTexture(staging, 0, 0, host.Resources.LifeGenomeWrite, 1, 0);
+            UnityEngine.Object.Destroy(staging);
+        }
+
+        private static int ChooseStackTheta(SimulationHost host, out int expectedStep)
+        {
+            int width = host.Grid.angularResolution;
+            int seed = host.Config.seed;
+            int poleTheta = Mathf.FloorToInt(PolarPoleGeometry.PoleAngle01(seed) * width);
+            int candidate = host.Grid.WrapTheta(poleTheta + 12);
+            expectedStep = PolarPoleGeometry.NearestPoleStep(candidate, width, seed);
+            if (expectedStep == 0)
+            {
+                candidate = host.Grid.WrapTheta(poleTheta + 16);
+                expectedStep = PolarPoleGeometry.NearestPoleStep(candidate, width, seed);
+            }
+            if (expectedStep == 0)
+            {
+                candidate = host.Grid.WrapTheta(poleTheta - 12);
+                expectedStep = PolarPoleGeometry.NearestPoleStep(candidate, width, seed);
+            }
+            return candidate;
         }
 
         private IEnumerator PrepareIsolatedWorld(SimulationHost host)
@@ -537,7 +651,11 @@ namespace GeneSys.Tests
             int x = DayX(host);
             int y = SurfaceY(host);
             StampSurfacePlot(host, x, y);
+            Paint(host, x, y, MaterialIds.Rock);
             Paint(host, x, y + 1, MaterialIds.Algae);
+            Paint(host, x - 1, y + 1, MaterialIds.Rock);
+            Paint(host, x + 1, y + 1, MaterialIds.Rock);
+            Paint(host, x, y + 2, MaterialIds.Rock);
             host.Config.floraSurvivalMoistureMin = 0.2f;
             host.Config.floraGrowthMoistureMin = 0.3f;
             PaintField(host, x, y + 1, 2f, -10f);
@@ -652,6 +770,168 @@ namespace GeneSys.Tests
             });
             Assert.That(oxygen, Is.GreaterThan(0.08f));
             Assert.That(oxygen, Is.LessThanOrEqualTo(capacity + 0.02f));
+        }
+
+        [UnityTest]
+        public IEnumerator StackedAlgaeDriftsTowardNearestPoleAndConservesCount()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int expectedStep;
+            int x = ChooseStackTheta(host, out expectedStep);
+            Assert.That(expectedStep, Is.Not.EqualTo(0));
+            int y = SurfaceY(host);
+            StampAlgaeStack(host, x, y, 3);
+            yield return Step(host, 2);
+            yield return StampAlgaeGene(host, FloraGenome.GenePoleDrift, 255);
+            host.Config.floraPoleDriftRate = 4f;
+            int countBefore = 0;
+            yield return ReadFloraFields(host, (materials, _, _, _, _, _, _) =>
+            {
+                countBefore = CountAlgae(materials);
+            });
+            Assert.That(countBefore, Is.EqualTo(3));
+            yield return Step(host, 40);
+
+            int countAfter = 0;
+            float centroid = 0f;
+            yield return ReadFloraFields(host, (materials, _, _, _, _, _, _) =>
+            {
+                countAfter = CountAlgae(materials);
+                centroid = AlgaeCentroidOffset(host, materials, x);
+            });
+            Assert.That(countAfter, Is.EqualTo(countBefore));
+            Assert.That(centroid * expectedStep, Is.GreaterThan(0.5f));
+        }
+
+        [UnityTest]
+        public IEnumerator SilentPoleDriftGeneDoesNotMoveStackedAlgae()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int expectedStep;
+            int x = ChooseStackTheta(host, out expectedStep);
+            Assert.That(expectedStep, Is.Not.EqualTo(0));
+            int y = SurfaceY(host);
+            StampAlgaeStack(host, x, y, 3);
+            yield return Step(host, 2);
+            yield return StampAlgaeGene(host, FloraGenome.GenePoleDrift, 0);
+            host.Config.floraPoleDriftRate = 4f;
+            yield return Step(host, 24);
+
+            float centroid = 1f;
+            int count = 0;
+            yield return ReadFloraFields(host, (materials, _, _, _, _, _, _) =>
+            {
+                count = CountAlgae(materials);
+                centroid = AlgaeCentroidOffset(host, materials, x);
+            });
+            Assert.That(count, Is.EqualTo(3));
+            Assert.That(Mathf.Abs(centroid), Is.LessThan(0.01f));
+        }
+
+        [UnityTest]
+        public IEnumerator WindShearMovesCrestAndFragmentsBiomassIntoSpores()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = DayX(host);
+            int y = SurfaceY(host);
+            for (int dx = -2; dx <= 8; dx++)
+            {
+                Paint(host, x + dx, y - 1, MaterialIds.Rock);
+                Paint(host, x + dx, y, MaterialIds.Soil);
+                Paint(host, x + dx, y + 1, MaterialIds.Air);
+                Paint(host, x + dx, y + 2, MaterialIds.Air);
+            }
+            Paint(host, x, y + 1, MaterialIds.Algae);
+            yield return Step(host, 2);
+            yield return StampAlgaeGene(host, FloraGenome.GenePoleDrift, 0);
+            host.Config.windDamping = 0f;
+            host.Config.floraWindShearRate = 4f;
+            host.Config.floraRainShearRate = 0f;
+            host.Config.floraFragmentYield = 0.5f;
+            host.Config.floraAnchorGrip = 0f;
+            host.Config.floraPoleDriftRate = 0f;
+
+            float biomassBefore = 0f;
+            yield return ReadFloraFields(host, (_, _, _, _, life, _, _) =>
+            {
+                biomassBefore = life[Index(host, x, y + 1)].y;
+            });
+            for (int i = 0; i < 12; i++)
+            {
+                for (int dx = -2; dx <= 6; dx++)
+                {
+                    host.QueueAngularWind(new Vector2Int(host.Grid.WrapTheta(x + dx), y + 1), 0, 8f);
+                    host.QueueAngularWind(new Vector2Int(host.Grid.WrapTheta(x + dx), y + 2), 0, 8f);
+                }
+                yield return Step(host, 1);
+            }
+
+            int algaeX = x;
+            float biomassAfter = 1f;
+            float sporeLoad = 0f;
+            yield return ReadFloraFields(host, (materials, _, _, _, life, _, _) =>
+            {
+                for (int dx = -2; dx <= 8; dx++)
+                {
+                    for (int dy = 0; dy <= 3; dy++)
+                    {
+                        int ix = host.Grid.WrapTheta(x + dx);
+                        int iy = y + dy;
+                        if (materials[Index(host, ix, iy)] != MaterialIds.Algae) continue;
+                        algaeX = ix;
+                        biomassAfter = life[Index(host, ix, iy)].y;
+                    }
+                }
+                sporeLoad = life[Index(host, x, y + 2)].x
+                    + life[Index(host, x + 1, y + 1)].x
+                    + life[Index(host, x - 1, y + 1)].x
+                    + life[Index(host, algaeX, y + 2)].x;
+            });
+            Assert.That(SignedThetaDelta(x, algaeX, host.Grid.angularResolution), Is.GreaterThan(0f));
+            Assert.That(biomassAfter, Is.LessThan(biomassBefore - 0.02f));
+            Assert.That(sporeLoad, Is.GreaterThan(0.01f));
+        }
+
+        [UnityTest]
+        public IEnumerator SnapshotRoundTripPreservesFloraMigrationConfig()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.floraPoleDriftRate = 1.25f;
+            host.Config.floraWindShearRate = 2.5f;
+            host.Config.floraRainShearRate = 1.75f;
+            host.Config.floraFragmentYield = 0.4f;
+            host.Config.floraAnchorGrip = 0.8f;
+
+            string path = System.IO.Path.Combine(Application.temporaryCachePath, "genesys-flora-migration.snapshot");
+            var snapshots = new WorldSnapshotService();
+            bool saved = false;
+            snapshots.Save(host, path, ok => saved = ok);
+            for (int i = 0; i < 240 && !saved; i++) yield return null;
+            Assert.That(saved, Is.True);
+
+            host.Config.floraPoleDriftRate = 0f;
+            host.Config.floraWindShearRate = 0f;
+            host.Config.floraRainShearRate = 0f;
+            host.Config.floraFragmentYield = 0f;
+            host.Config.floraAnchorGrip = 0f;
+            Assert.That(snapshots.Load(host, path), Is.True);
+            Assert.That(host.Config.floraPoleDriftRate, Is.EqualTo(1.25f).Within(0.001f));
+            Assert.That(host.Config.floraWindShearRate, Is.EqualTo(2.5f).Within(0.001f));
+            Assert.That(host.Config.floraRainShearRate, Is.EqualTo(1.75f).Within(0.001f));
+            Assert.That(host.Config.floraFragmentYield, Is.EqualTo(0.4f).Within(0.001f));
+            Assert.That(host.Config.floraAnchorGrip, Is.EqualTo(0.8f).Within(0.001f));
         }
 
         [UnityTest]

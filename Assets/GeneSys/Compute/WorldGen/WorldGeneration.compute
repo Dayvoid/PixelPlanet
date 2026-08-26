@@ -304,7 +304,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     }
 
     // Stage 3: polar ice cap humps on top of the surface (Air -> Ice, no replacement).
-    float poleAngle = Hash01((uint)_Seed * 9829u);
+    float poleAngle = PoleAngle01(_Seed);
     float iceStrength = 0.0;
     if (material == 1u)
         iceStrength = IceCapHumpStrength(id.x, radius, terrainSurface, poleAngle);

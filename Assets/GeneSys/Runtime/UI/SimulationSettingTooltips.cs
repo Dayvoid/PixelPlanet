@@ -325,6 +325,16 @@ namespace GeneSys.UI
                 "Extra energy drain when local light is below the minimum. Controls how harshly darkness taxes active photosynthesizers.",
             [nameof(SimulationConfig.floraDormancyMetabolicScale)] =
                 "Fraction of maintenance applied while dormant. Lower values let spore-like dormancy last through drought; higher values starve sleeping mats.",
+            [nameof(SimulationConfig.floraPoleDriftRate)] =
+                "How quickly stacked algae drift toward the nearest ice-cap pole. 0 disables pole-seeking; the pole-drift gene can still silence individual cells.",
+            [nameof(SimulationConfig.floraWindShearRate)] =
+                "How strongly angular wind on neighboring air or water shears exposed algae sideways. Higher values peel crest cells off mats and stacks.",
+            [nameof(SimulationConfig.floraRainShearRate)] =
+                "How strongly overhead rain and falling water dislodge exposed algae. Couples precipitation to physical spread along the surface.",
+            [nameof(SimulationConfig.floraFragmentYield)] =
+                "Fraction of sheared biomass converted into airborne or waterborne spores. Higher yield spreads genetics farther when wind and rain strike mats.",
+            [nameof(SimulationConfig.floraAnchorGrip)] =
+                "How much local biomass resists wind and rain shear. Higher grip keeps thick mats intact; lower grip lets weather tear even dense colonies.",
 
             [nameof(SimulationConfig.combustionAmbientOxygen)] =
                 "Target oxygen fill as a fraction of each cell's capacity. Atmosphere and porous ground relax toward this level; lowering it starves fire and favors smolder.",

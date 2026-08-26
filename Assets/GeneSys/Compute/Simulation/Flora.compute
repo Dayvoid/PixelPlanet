@@ -3,6 +3,7 @@
 #pragma kernel Photosynthesis
 #pragma kernel FloraLifecycle
 #pragma kernel SeedFlora
+#pragma kernel FloraMigration
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -34,6 +35,7 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _WeatherA; // solarIntensity, ...
 float4 _WeatherC; // vaporPressureScale, solarAngle01, ...
+float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, rainPixelFormationThreshold, surfaceWaterPixelThreshold
 float4 _WeatherF; // ..., atmosphericCflLimit
 float4 _FloraA; // airTransport, waterTransport, diffusion, settling
 float4 _FloraB; // sporulation, growth, decay, photosynthesis
@@ -42,7 +44,8 @@ float4 _FloraD; // toxinMutationScale, geneExpressionRange, growthTempMin, growt
 float4 _FloraE; // growthMoistureMin, growthMoistureMax, survivalTempMin, survivalTempMax
 float4 _FloraF; // survivalMoistureMin, survivalMoistureMax, minLight, germinationSporeThreshold
 float4 _FloraG; // maintenanceRate, nightDrain, dormancyMetabolicScale, initialSporeLoad
-float4 _FloraH; // seedAtWorldgen, unused, unused, unused
+float4 _FloraH; // seedAtWorldgen, anchorGrip, unused, unused
+float4 _FloraI; // poleDriftRate, windShearRate, rainShearRate, fragmentYield
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
@@ -70,6 +73,18 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
     WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
+}
+
+void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux, out float4 ecology, out float4 combustion, out float4 life, out uint4 genome)
+{
+    material = M(cell);
+    state = S(cell);
+    flow = F(cell);
+    aux = A(cell);
+    ecology = Eco(cell);
+    combustion = Comb(cell);
+    life = L(cell);
+    genome = G(cell);
 }
 
 float MoistureOf(float4 state, float4 aux)
@@ -226,6 +241,117 @@ uint4 MutateFloraGenome(uint4 genome, uint2 cell)
         EncodeGene(genome, i, (uint)clamp((int)gene + step, 0, 255));
     }
     return genome;
+}
+
+void SampleShear(int2 cell, out float wind, out float rain, out int windDir)
+{
+    wind = F(cell).x;
+    rain = 0.0;
+    windDir = 0;
+    float bestAbs = abs(wind);
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 offset = offsets[i];
+        if (offset.y != 0)
+        {
+            int neighborY = cell.y + offset.y;
+            if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+        }
+        int2 neighbor = C(cell + offset);
+        if (!IsSporeCarrier(M(neighbor))) continue;
+        float wx = F(neighbor).x;
+        float mag = abs(wx);
+        if (mag > bestAbs)
+        {
+            bestAbs = mag;
+            wind = wx;
+        }
+    }
+    windDir = wind > 1e-6 ? 1 : (wind < -1e-6 ? -1 : 0);
+
+    if (cell.y < _GridSize.y - 1)
+    {
+        int2 above = cell + int2(0, 1);
+        uint aboveMat = M(above);
+        if (IsSporeAirCarrier(aboveMat))
+            rain = max(0.0, S(above).z - max(0.01, _WeatherE.y));
+        else if (aboveMat == 9u || aboveMat == 10u)
+            rain = 0.5;
+    }
+}
+
+float FloraShearUrge(int2 cell)
+{
+    float wind;
+    float rain;
+    int windDir;
+    SampleShear(cell, wind, rain, windDir);
+    float shear = abs(wind) * max(0.0, _FloraI.y) + rain * max(0.0, _FloraI.z);
+    float grip = saturate(L(cell).y) * max(0.0, _FloraH.y);
+    return max(0.0, shear - grip);
+}
+
+float FloraFragmentAmount(int2 cell)
+{
+    if (!IsFloraMaterial(M(cell))) return 0.0;
+    float yield = max(0.0, _FloraI.w);
+    if (yield <= 1e-8) return 0.0;
+    return min(saturate(L(cell).y), FloraShearUrge(cell) * yield * _DeltaTime);
+}
+
+int2 FloraDriftDestination(int2 cell)
+{
+    if (!IsFloraMaterial(M(cell))) return cell;
+
+    float poleUrge = 0.0;
+    int poleStep = 0;
+    bool stacked = cell.y > 0 && IsFloraMaterial(M(cell + int2(0, -1)));
+    if (stacked)
+    {
+        poleUrge = FloraPoleDrift(G(cell)) * max(0.0, _FloraI.x);
+        poleStep = NearestPoleStep(cell.x, _GridSize.x, _Seed);
+        if (poleStep == 0 && poleUrge > 1e-8)
+            poleStep = ((cell.x + _Tick) & 1) == 0 ? -1 : 1;
+    }
+
+    float shearUrge = 0.0;
+    int shearStep = 0;
+    bool isCrest = cell.y >= _GridSize.y - 1 || !IsFloraMaterial(M(cell + int2(0, 1)));
+    if (isCrest)
+    {
+        float wind;
+        float rain;
+        int windDir;
+        SampleShear(cell, wind, rain, windDir);
+        shearUrge = FloraShearUrge(cell);
+        shearStep = windDir;
+        if (shearStep == 0 && shearUrge > 1e-8)
+            shearStep = poleStep != 0 ? poleStep : (((cell.x + _Tick) & 1) == 0 ? -1 : 1);
+    }
+
+    float signedUrge = (float)poleStep * poleUrge + (float)shearStep * shearUrge;
+    int step = signedUrge > 0.0 ? 1 : (signedUrge < 0.0 ? -1 : 0);
+    float urge = abs(signedUrge);
+    if (step == 0 || urge <= 1e-8) return cell;
+
+    float h = Hash01(cell.x * 73856093u + cell.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 31337u);
+    if (h >= saturate(urge * _DeltaTime)) return cell;
+
+    int2 dest = C(cell + int2(step, 0));
+    if (IsFloraMaterial(M(dest))) return cell;
+    if (!IsFloraGerminationTarget(M(dest))) return cell;
+    return dest;
+}
+
+bool FloraDriftWins(int2 source, int2 target)
+{
+    int2 left = C(target + int2(-1, 0));
+    int2 right = C(target + int2(1, 0));
+    if (all(FloraDriftDestination(left) == target)) return all(source == left);
+    if (all(FloraDriftDestination(right) == target)) return all(source == right);
+    return false;
 }
 
 int2 DivisionOffset()
@@ -565,6 +691,22 @@ void FloraLifecycle(uint3 id : SV_DispatchThreadID)
             incoming += emit;
             ConsiderGenomeContribution(bestMass, bestGenome, emit, G(neighbor));
         }
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 offset = offsets[i];
+            if (offset.y != 0)
+            {
+                int neighborY = cell.y + offset.y;
+                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+            }
+            int2 neighbor = C(cell + offset);
+            float frag = FloraFragmentAmount(neighbor);
+            if (frag <= 1e-8) continue;
+            int carriers = max(1, CountCarrierNeighbors(neighbor));
+            incoming += frag / (float)carriers;
+            ConsiderGenomeContribution(bestMass, bestGenome, frag, G(neighbor));
+        }
         life.x = max(0.0, life.x + incoming);
         if (incoming > life.x - incoming)
             genome = bestGenome;
@@ -654,6 +796,7 @@ void FloraLifecycle(uint3 id : SV_DispatchThreadID)
     }
 
     genome.w = PackFloraMeta(stage, FloraGeneration(genome), FloraLineage(genome), dose);
+    life.y = max(0.0, life.y - FloraFragmentAmount(cell));
     Write(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
@@ -666,4 +809,39 @@ void SeedFlora(uint3 id : SV_DispatchThreadID)
     if (_FloraH.x > 0.5 && IsSporeCarrier(material))
         floraSpores = max(0.0, _FloraG.w) * lerp(0.35, 1.0, Hash01(id.x * 6151u + id.y * 2707u + (uint)_Seed));
     WriteLifeGenome(_LifeGenomeWrite, id.xy, float4(floraSpores, 0.0, 0.0, 0.0), uint4(0u, 0u, 0u, 0u));
+}
+
+[numthreads(8, 8, 1)]
+void FloraMigration(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material;
+    float4 state;
+    float2 flow;
+    float4 aux;
+    float4 ecology;
+    float4 combustion;
+    float4 life;
+    uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+
+    if (IsFloraMaterial(material))
+    {
+        int2 dest = FloraDriftDestination(cell);
+        if (!all(dest == cell) && FloraDriftWins(cell, dest))
+            CopyCell(dest, material, state, flow, aux, ecology, combustion, life, genome);
+    }
+    else
+    {
+        int2 left = C(cell + int2(-1, 0));
+        int2 right = C(cell + int2(1, 0));
+        int2 source = cell;
+        if (FloraDriftWins(left, cell)) source = left;
+        else if (FloraDriftWins(right, cell)) source = right;
+        if (!all(source == cell))
+            CopyCell(source, material, state, flow, aux, ecology, combustion, life, genome);
+    }
+
+    Write(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

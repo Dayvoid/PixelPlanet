@@ -198,6 +198,8 @@ namespace GeneSys.Simulation.Gpu
                 DispatchPass(flora, flora.FindKernel("Photosynthesis"), deltaTime);
                 if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
                     DispatchPass(flora, flora.FindKernel("FloraLifecycle"), deltaTime * config.slowPassInterval);
+                if (config.floraPoleDriftRate > 1e-8f || config.floraWindShearRate > 1e-8f || config.floraRainShearRate > 1e-8f)
+                    DispatchPass(flora, flora.FindKernel("FloraMigration"), deltaTime);
             }
 
             tick++;
@@ -259,7 +261,8 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_FloraE", new Vector4(config.floraGrowthMoistureMin, config.floraGrowthMoistureMax, config.floraSurvivalTempMin, config.floraSurvivalTempMax));
             shader.SetVector("_FloraF", new Vector4(config.floraSurvivalMoistureMin, config.floraSurvivalMoistureMax, config.floraMinLight, config.floraGerminationSporeThreshold));
             shader.SetVector("_FloraG", new Vector4(config.floraMaintenanceRate, config.floraNightDrain, config.floraDormancyMetabolicScale, config.floraInitialSporeLoad));
-            shader.SetVector("_FloraH", new Vector4(config.floraSeedAtWorldgen ? 1f : 0f, 0f, 0f, 0f));
+            shader.SetVector("_FloraH", new Vector4(config.floraSeedAtWorldgen ? 1f : 0f, config.floraAnchorGrip, 0f, 0f));
+            shader.SetVector("_FloraI", new Vector4(config.floraPoleDriftRate, config.floraWindShearRate, config.floraRainShearRate, config.floraFragmentYield));
             shader.SetVector("_CombustionA", new Vector4(config.combustionAmbientOxygen, config.combustionOxygenReplenishRate, config.combustionOxygenDiffusionRate, config.combustionIgnitionAccumulationRate));
             shader.SetVector("_CombustionB", new Vector4(config.combustionIgnitionDecayRate, config.combustionSeedIntensity, config.combustionBurnRate, config.combustionHeatYield));
             shader.SetVector("_CombustionC", new Vector4(config.combustionPressureScale, config.combustionUpdraftStrength, config.combustionSmokeYield, config.combustionSootSettlingRate));

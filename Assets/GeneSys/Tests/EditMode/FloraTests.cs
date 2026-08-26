@@ -33,6 +33,11 @@ namespace GeneSys.Tests
             Assert.That(config.floraSurvivalMoistureMax, Is.GreaterThanOrEqualTo(config.floraGrowthMoistureMax));
             Assert.That(config.floraReproductionThreshold, Is.InRange(0.05f, 1f));
             Assert.That(config.floraGeneExpressionRange, Is.InRange(0f, 1f));
+            Assert.That(config.floraPoleDriftRate, Is.GreaterThan(0f));
+            Assert.That(config.floraWindShearRate, Is.GreaterThan(0f));
+            Assert.That(config.floraRainShearRate, Is.GreaterThan(0f));
+            Assert.That(config.floraFragmentYield, Is.InRange(0f, 1f));
+            Assert.That(config.floraAnchorGrip, Is.GreaterThan(0f));
             Object.DestroyImmediate(config);
         }
 
@@ -48,12 +53,16 @@ namespace GeneSys.Tests
             config.floraGrowthMoistureMax = 0.2f;
             config.floraSurvivalMoistureMin = 0.4f;
             config.floraSurvivalMoistureMax = 0.5f;
+            config.floraPoleDriftRate = -1f;
+            config.floraFragmentYield = 2f;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
             Assert.That(config.floraGrowthTempMin, Is.LessThan(config.floraGrowthTempMax));
             Assert.That(config.floraSurvivalTempMin, Is.LessThanOrEqualTo(config.floraGrowthTempMin));
             Assert.That(config.floraSurvivalTempMax, Is.GreaterThanOrEqualTo(config.floraGrowthTempMax));
             Assert.That(config.floraSurvivalMoistureMin, Is.LessThanOrEqualTo(config.floraGrowthMoistureMin));
             Assert.That(config.floraSurvivalMoistureMax, Is.GreaterThanOrEqualTo(config.floraGrowthMoistureMax));
+            Assert.That(config.floraPoleDriftRate, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(config.floraFragmentYield, Is.InRange(0f, 1f));
             Object.DestroyImmediate(config);
         }
 
@@ -64,10 +73,14 @@ namespace GeneSys.Tests
             config.floraGrowthRate = 0f;
             config.floraPhotosynthesisRate = 0f;
             config.floraInitialSporeLoad = 0f;
+            config.floraPoleDriftRate = 0f;
+            config.floraAnchorGrip = 0f;
             config.RestoreDefaults();
             Assert.That(config.floraGrowthRate, Is.EqualTo(0.16f).Within(0.001f));
             Assert.That(config.floraPhotosynthesisRate, Is.EqualTo(0.35f).Within(0.001f));
             Assert.That(config.floraInitialSporeLoad, Is.EqualTo(0.06f).Within(0.001f));
+            Assert.That(config.floraPoleDriftRate, Is.EqualTo(0.35f).Within(0.001f));
+            Assert.That(config.floraAnchorGrip, Is.EqualTo(1f).Within(0.001f));
             Object.DestroyImmediate(config);
         }
 
@@ -90,6 +103,21 @@ namespace GeneSys.Tests
                 Assert.That(FloraGenome.DecodeGene(mutated, i), Is.InRange(0, 255));
             Assert.That(FloraGenome.IsValidStage(FloraGenome.Stage(mutated)), Is.True);
             Assert.That(FloraGenome.ExpressFactor(128, 0.45f), Is.EqualTo(1f).Within(0.02f));
+        }
+
+        [Test]
+        public void PoleDriftGeneIsSilentAtLowAlleles()
+        {
+            var genome = new FloraGenome.Packed();
+            genome = FloraGenome.EncodeGene(genome, FloraGenome.GenePoleDrift, 0);
+            Assert.That(FloraGenome.PoleDrift(genome), Is.EqualTo(0f));
+            genome = FloraGenome.EncodeGene(genome, FloraGenome.GenePoleDrift, 16);
+            Assert.That(FloraGenome.PoleDrift(genome), Is.EqualTo(0f));
+            genome = FloraGenome.EncodeGene(genome, FloraGenome.GenePoleDrift, 17);
+            Assert.That(FloraGenome.PoleDrift(genome), Is.GreaterThan(0f));
+            genome = FloraGenome.EncodeGene(genome, FloraGenome.GenePoleDrift, 255);
+            Assert.That(FloraGenome.PoleDrift(genome), Is.EqualTo(1f).Within(0.001f));
+            Assert.That(FloraGenome.DescribeGenes(genome, 0.45f), Does.Contain("Pole drift"));
         }
 
         [Test]
