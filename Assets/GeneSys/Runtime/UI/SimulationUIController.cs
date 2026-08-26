@@ -68,19 +68,20 @@ namespace GeneSys.UI
         private bool presetDialogIsSave;
         private List<string> presetNames = new();
         private Label statusLabel;
-        private Label inspectLabel;
+        private Label envInspectLabel;
+        private Label lifeInspectLabel;
         private Label worldMetricsLabel;
         private Label simulationStatusLabel;
         private Button playButton;
         private Button toolsHeader;
-        private Button settingsHeader;
         private Button statusHeader;
+        private VisualElement inspectBar;
         private VisualElement toolsDrawer;
-        private VisualElement settingsDrawer;
         private VisualElement statusDrawer;
         private VisualElement toolsBody;
         private VisualElement settingsBody;
         private VisualElement statusBody;
+        private VisualElement settingsOverlay;
         private Button followCameraButton;
         private Button globeCameraButton;
         private bool initialized;
@@ -106,16 +107,17 @@ namespace GeneSys.UI
             }
             VisualElement root = document.rootVisualElement;
             toolsDrawer = root.Q("tools-drawer");
-            settingsDrawer = root.Q("settings-drawer");
             statusDrawer = root.Q("status-drawer");
             toolsHeader = root.Q<Button>("tools-header");
-            settingsHeader = root.Q<Button>("settings-header");
             statusHeader = root.Q<Button>("status-header");
             toolsBody = root.Q("tools-body");
             settingsBody = root.Q("settings-body");
             statusBody = root.Q("status-body");
+            settingsOverlay = root.Q("settings-overlay");
+            inspectBar = root.Q("inspect-bar");
             statusLabel = root.Q<Label>("status");
-            inspectLabel = root.Q<Label>("inspection");
+            envInspectLabel = root.Q<Label>("env-inspection");
+            lifeInspectLabel = root.Q<Label>("life-inspection");
             worldMetricsLabel = root.Q<Label>("world-metrics");
             simulationStatusLabel = root.Q<Label>("simulation-status");
             playButton = root.Q<Button>("play");
@@ -140,6 +142,7 @@ namespace GeneSys.UI
 
             SetupSettingTooltip(root);
             SetupDrawers();
+            SetupSettingsModal(root);
             SetupDropdowns(root);
             SetupTabs(root);
             BuildSettings(root);
@@ -156,13 +159,53 @@ namespace GeneSys.UI
         private void SetupDrawers()
         {
             toolsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(toolsHeader, toolsBody, toolsDrawer, "Tools"));
-            settingsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(settingsHeader, settingsBody, settingsDrawer, "Simulation Settings"));
             statusHeader?.RegisterCallback<ClickEvent>(_ =>
             {
                 ToggleDrawer(statusHeader, statusBody, statusDrawer, "Simulation Status");
                 if (statusBody != null && !statusBody.ClassListContains("collapsed"))
                     RefreshWorldMetrics(force: true);
             });
+        }
+
+        private void SetupSettingsModal(VisualElement root)
+        {
+            if (settingsOverlay != null)
+                settingsOverlay.focusable = true;
+            root.Q<Button>("settings-open")?.RegisterCallback<ClickEvent>(_ => ShowSettingsModal());
+            root.Q<Button>("settings-close")?.RegisterCallback<ClickEvent>(_ => HideSettingsModal());
+            settingsOverlay?.RegisterCallback<ClickEvent>(evt =>
+            {
+                if (evt.target == settingsOverlay)
+                    HideSettingsModal();
+            });
+            root.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Escape) return;
+                if (presetOverlay != null && !presetOverlay.ClassListContains("hidden"))
+                {
+                    HidePresetDialog();
+                    evt.StopPropagation();
+                    return;
+                }
+                if (settingsOverlay != null && !settingsOverlay.ClassListContains("hidden"))
+                {
+                    HideSettingsModal();
+                    evt.StopPropagation();
+                }
+            }, TrickleDown.TrickleDown);
+        }
+
+        private void ShowSettingsModal()
+        {
+            HideSettingTooltip();
+            settingsOverlay?.RemoveFromClassList("hidden");
+            settingsOverlay?.Focus();
+        }
+
+        private void HideSettingsModal()
+        {
+            HideSettingTooltip();
+            settingsOverlay?.AddToClassList("hidden");
         }
 
         private void ToggleDrawer(Button header, VisualElement body, VisualElement drawer, string title)
@@ -621,7 +664,7 @@ namespace GeneSys.UI
                 "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Wind, Vapor, Groundwater, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, and the others reveal the systems those settings drive.");
             AttachNamedSettingTooltip(root, "brush-mode",
                 "Brush Mode",
-                "Selects what left-drag paints: material, heat, water, pressure, vapor, ignition, or life spores. Right-click still inspects the cell under the cursor.");
+                "Selects what left-drag paints: material, heat, water, pressure, vapor, ignition, or life spores. Hold right-click to inspect the cell under the cursor.");
             AttachNamedSettingTooltip(root, "material",
                 "Material",
                 "Material the brush paints, and whose properties appear below. Changing density, conductivity, or absorbency immediately affects gravity, weather, hydrology, and phase changes for that pixel type.");
@@ -804,9 +847,37 @@ namespace GeneSys.UI
 
         private void SetInspection(CellInspection inspection)
         {
-            if (inspectLabel == null) return;
+            if (envInspectLabel == null && lifeInspectLabel == null) return;
+            inspectBar?.RemoveFromClassList("hidden");
             GeneSys.Materials.MaterialDefinition definition = host.MaterialRegistry.Get((int)inspection.materialId);
-            inspectLabel.text = $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\nMaterial: {(definition != null ? definition.displayName : inspection.materialId.ToString())}\nT {inspection.state.x:F2}  P {inspection.state.y:F3}\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\nVapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\nNutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\nSpores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\nStrain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\nO2 {inspection.combustion.x:F3}  Flame {inspection.combustion.y:F3}\nSoot {inspection.combustion.z:F3}  Ignite {inspection.combustion.w:F3}\nStorm Q {inspection.storm.x:F3}  Bolt {inspection.storm.y:F3}\nFlash {inspection.storm.z:F3}  Break {inspection.storm.w:F3}\nFlora spores {inspection.life.x:F3}  biomass {inspection.life.y:F3}\nEnergy {inspection.life.z:F3}  exudate {inspection.life.w:F3}\nStage {FloraGenome.DescribeStage(FloraGenome.Stage(inspection.genome))}  gen {FloraGenome.Generation(inspection.genome)}  toxin {FloraGenome.ToxinDose(inspection.genome)}\nLight {inspection.light:F3}\n{FloraGenome.DescribeGenes(inspection.genome, host.Config != null ? host.Config.floraGeneExpressionRange : 0.45f)}\nWind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}";
+            string materialName = definition != null ? definition.displayName : inspection.materialId.ToString();
+            if (envInspectLabel != null)
+            {
+                envInspectLabel.text =
+                    $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\n" +
+                    $"Material: {materialName}\n" +
+                    $"T {inspection.state.x:F2}  P {inspection.state.y:F3}\n" +
+                    $"Water {inspection.state.z:F3}  Charge {inspection.state.w:F3}\n" +
+                    $"Vapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\n" +
+                    $"Nutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\n" +
+                    $"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n" +
+                    $"Light {inspection.light:F3}";
+            }
+            if (lifeInspectLabel != null)
+            {
+                float geneRange = host.Config != null ? host.Config.floraGeneExpressionRange : 0.45f;
+                lifeInspectLabel.text =
+                    $"Spores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\n" +
+                    $"Strain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\n" +
+                    $"O2 {inspection.combustion.x:F3}  Flame {inspection.combustion.y:F3}\n" +
+                    $"Soot {inspection.combustion.z:F3}  Ignite {inspection.combustion.w:F3}\n" +
+                    $"Storm Q {inspection.storm.x:F3}  Bolt {inspection.storm.y:F3}\n" +
+                    $"Flash {inspection.storm.z:F3}  Break {inspection.storm.w:F3}\n" +
+                    $"Flora spores {inspection.life.x:F3}  biomass {inspection.life.y:F3}\n" +
+                    $"Energy {inspection.life.z:F3}  exudate {inspection.life.w:F3}\n" +
+                    $"Stage {FloraGenome.DescribeStage(FloraGenome.Stage(inspection.genome))}  gen {FloraGenome.Generation(inspection.genome)}  toxin {FloraGenome.ToxinDose(inspection.genome)}\n" +
+                    FloraGenome.DescribeGenes(inspection.genome, geneRange);
+            }
         }
 
         private void RefreshPlayLabel()

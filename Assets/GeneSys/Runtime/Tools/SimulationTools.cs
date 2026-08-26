@@ -26,6 +26,8 @@ namespace GeneSys.Tools
         public event Action<CellInspection> Inspected;
 
         private bool readbackPending;
+        private float inspectPollTimer;
+        private const float InspectPollInterval = 0.4f;
 
         private void Update()
         {
@@ -54,8 +56,19 @@ namespace GeneSys.Tools
                 });
             }
 
-            if (Mouse.current.rightButton.wasPressedThisFrame && !readbackPending && display.TryScreenToCell(pointer, out Vector2Int inspectCell))
-                Inspect(inspectCell);
+            if (Mouse.current.rightButton.isPressed)
+            {
+                inspectPollTimer -= Time.deltaTime;
+                if (!readbackPending && inspectPollTimer <= 0f && display.TryScreenToCell(pointer, out Vector2Int inspectCell))
+                {
+                    inspectPollTimer = InspectPollInterval;
+                    Inspect(inspectCell);
+                }
+            }
+            else
+            {
+                inspectPollTimer = 0f;
+            }
         }
 
         private void Inspect(Vector2Int cell)

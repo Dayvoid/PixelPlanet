@@ -13,11 +13,6 @@
                 <ui:Label name="status" text="Initializing GeneSys..." class="status" />
             </ui:VisualElement>
 
-            <ui:VisualElement name="inspector-panel" class="inspector-panel">
-                <ui:Label text="Inspector" class="section-title inspector-title" />
-                <ui:Label name="inspection" text="No cell selected." class="inspection" />
-            </ui:VisualElement>
-
             <ui:VisualElement name="tools-drawer" class="drawer tools-drawer">
                 <ui:Button name="tools-header" text="Tools ▾" class="drawer-header" />
                 <ui:VisualElement name="tools-body" class="drawer-body">
@@ -33,15 +28,55 @@
                         <ui:Button name="save" text="Save" />
                         <ui:Button name="load" text="Load" class="row-last" />
                     </ui:VisualElement>
-                    <ui:Label text="Left drag paints. Right click inspects. Middle drag pans. Mouse wheel zooms. Q/E rotates. Validation checks finite values and tracked water conservation." class="help" />
+                    <ui:Label text="Left drag paints. Hold right click to inspect. Middle drag pans. Mouse wheel zooms. Q/E rotates. Validation checks finite values and tracked water conservation." class="help" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
 
         <ui:VisualElement name="right-column" class="right-column" picking-mode="Ignore">
-            <ui:VisualElement name="settings-drawer" class="drawer settings-drawer collapsed">
-                <ui:Button name="settings-header" text="Simulation Settings ▸" class="drawer-header" />
-                <ui:VisualElement name="settings-body" class="drawer-body collapsed">
+            <ui:Button name="settings-open" text="Simulation Settings" class="drawer-header settings-open-button" />
+
+            <ui:VisualElement name="status-drawer" class="drawer status-drawer">
+                <ui:Button name="status-header" text="Simulation Status ▾" class="drawer-header" />
+                <ui:VisualElement name="status-body" class="drawer-body">
+                    <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="inspect-bar" class="inspect-bar hidden" picking-mode="Ignore">
+            <ui:VisualElement name="env-inspect-panel" class="inspect-panel inspect-panel--env">
+                <ui:Label text="Environment" class="section-title inspector-title" />
+                <ui:Label name="env-inspection" text="" class="inspection" />
+            </ui:VisualElement>
+            <ui:VisualElement name="life-inspect-panel" class="inspect-panel inspect-panel--life">
+                <ui:Label text="Life" class="section-title inspector-title" />
+                <ui:Label name="life-inspection" text="" class="inspection" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="probe-dock" class="probe-dock" picking-mode="Ignore">
+            <ui:VisualElement name="probe-dock-balance" class="probe-dock-balance" picking-mode="Ignore" />
+            <ui:VisualElement name="probe-tools-card" class="probe-tools-card" picking-mode="Position">
+                <ui:Button name="probe-action-vapor" class="probe-tool-button probe-tool-vapor" tooltip="Hold to seed vapor" />
+                <ui:Button name="probe-action-water" class="probe-tool-button probe-tool-water" tooltip="Hold to add water" />
+                <ui:Button name="probe-action-soil" class="probe-tool-button probe-tool-soil" tooltip="Hold to drop soil" />
+                <ui:Button name="probe-action-cool" class="probe-tool-button probe-tool-cool" tooltip="Hold to cool" />
+                <ui:Button name="probe-action-heat" class="probe-tool-button probe-tool-heat probe-tool-last" tooltip="Hold to heat" />
+            </ui:VisualElement>
+            <ui:VisualElement name="probe-camera-card" class="probe-camera-card" picking-mode="Position">
+                <ui:Button name="probe-camera-follow" class="probe-camera-button probe-camera-follow" tooltip="Follow probe" />
+                <ui:Button name="probe-camera-globe" class="probe-camera-button probe-camera-globe probe-camera-last probe-camera-button--active" tooltip="Globe camera" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="settings-overlay" class="settings-overlay hidden" picking-mode="Position">
+            <ui:VisualElement name="settings-dialog" class="settings-dialog">
+                <ui:VisualElement class="settings-dialog-header">
+                    <ui:Label text="Simulation Settings" class="section-title settings-dialog-title" />
+                    <ui:Button name="settings-close" text="Close" class="settings-close-button" />
+                </ui:VisualElement>
+                <ui:VisualElement name="settings-body" class="settings-dialog-body">
                     <ui:VisualElement class="tab-row">
                         <ui:Button name="tab-world" text="World" class="tab-button tab-button--active" />
                         <ui:Button name="tab-geology" text="Geo" class="tab-button" />
@@ -116,28 +151,6 @@
                         <ui:Label text="Restores all simulation settings to their initial values and regenerates the world. Use the Validation preset for fast iteration." class="help" />
                     </ui:VisualElement>
                 </ui:VisualElement>
-            </ui:VisualElement>
-
-            <ui:VisualElement name="status-drawer" class="drawer status-drawer">
-                <ui:Button name="status-header" text="Simulation Status ▾" class="drawer-header" />
-                <ui:VisualElement name="status-body" class="drawer-body">
-                    <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
-                </ui:VisualElement>
-            </ui:VisualElement>
-        </ui:VisualElement>
-
-        <ui:VisualElement name="probe-dock" class="probe-dock" picking-mode="Ignore">
-            <ui:VisualElement name="probe-dock-balance" class="probe-dock-balance" picking-mode="Ignore" />
-            <ui:VisualElement name="probe-tools-card" class="probe-tools-card" picking-mode="Position">
-                <ui:Button name="probe-action-vapor" class="probe-tool-button probe-tool-vapor" tooltip="Hold to seed vapor" />
-                <ui:Button name="probe-action-water" class="probe-tool-button probe-tool-water" tooltip="Hold to add water" />
-                <ui:Button name="probe-action-soil" class="probe-tool-button probe-tool-soil" tooltip="Hold to drop soil" />
-                <ui:Button name="probe-action-cool" class="probe-tool-button probe-tool-cool" tooltip="Hold to cool" />
-                <ui:Button name="probe-action-heat" class="probe-tool-button probe-tool-heat probe-tool-last" tooltip="Hold to heat" />
-            </ui:VisualElement>
-            <ui:VisualElement name="probe-camera-card" class="probe-camera-card" picking-mode="Position">
-                <ui:Button name="probe-camera-follow" class="probe-camera-button probe-camera-follow" tooltip="Follow probe" />
-                <ui:Button name="probe-camera-globe" class="probe-camera-button probe-camera-globe probe-camera-last probe-camera-button--active" tooltip="Globe camera" />
             </ui:VisualElement>
         </ui:VisualElement>
 
