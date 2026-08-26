@@ -24,6 +24,7 @@ MonoBehaviour:
   simulationSpeed: 1
   materialSubsteps: 1
   slowPassInterval: 4
+  transportPassInterval: 2
   seed: 12345
   useOgWorldgen: 0
   coreRatio: 0.24

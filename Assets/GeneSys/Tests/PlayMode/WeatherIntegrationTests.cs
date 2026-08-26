@@ -158,6 +158,7 @@ namespace GeneSys.Tests
         {
             host.Clock.SetRunning(false);
             host.Config.slowPassInterval = 1;
+            host.Config.transportPassInterval = 1;
             host.Config.validationIntervalTicks = 100000;
             host.Config.gravityStrength = 0f;
             host.Config.thermalRate = 0f;

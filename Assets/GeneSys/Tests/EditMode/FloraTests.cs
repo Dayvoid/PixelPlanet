@@ -38,6 +38,7 @@ namespace GeneSys.Tests
             Assert.That(config.floraRainShearRate, Is.GreaterThan(0f));
             Assert.That(config.floraFragmentYield, Is.InRange(0f, 1f));
             Assert.That(config.floraAnchorGrip, Is.GreaterThan(0f));
+            Assert.That(config.transportPassInterval, Is.EqualTo(2));
             Object.DestroyImmediate(config);
         }
 
@@ -55,6 +56,7 @@ namespace GeneSys.Tests
             config.floraSurvivalMoistureMax = 0.5f;
             config.floraPoleDriftRate = -1f;
             config.floraFragmentYield = 2f;
+            config.transportPassInterval = 0;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
             Assert.That(config.floraGrowthTempMin, Is.LessThan(config.floraGrowthTempMax));
             Assert.That(config.floraSurvivalTempMin, Is.LessThanOrEqualTo(config.floraGrowthTempMin));
@@ -63,6 +65,7 @@ namespace GeneSys.Tests
             Assert.That(config.floraSurvivalMoistureMax, Is.GreaterThanOrEqualTo(config.floraGrowthMoistureMax));
             Assert.That(config.floraPoleDriftRate, Is.GreaterThanOrEqualTo(0f));
             Assert.That(config.floraFragmentYield, Is.InRange(0f, 1f));
+            Assert.That(config.transportPassInterval, Is.InRange(1, 8));
             Object.DestroyImmediate(config);
         }
 
@@ -75,12 +78,14 @@ namespace GeneSys.Tests
             config.floraInitialSporeLoad = 0f;
             config.floraPoleDriftRate = 0f;
             config.floraAnchorGrip = 0f;
+            config.transportPassInterval = 8;
             config.RestoreDefaults();
             Assert.That(config.floraGrowthRate, Is.EqualTo(0.16f).Within(0.001f));
             Assert.That(config.floraPhotosynthesisRate, Is.EqualTo(0.35f).Within(0.001f));
             Assert.That(config.floraInitialSporeLoad, Is.EqualTo(0.06f).Within(0.001f));
             Assert.That(config.floraPoleDriftRate, Is.EqualTo(0.35f).Within(0.001f));
             Assert.That(config.floraAnchorGrip, Is.EqualTo(1f).Within(0.001f));
+            Assert.That(config.transportPassInterval, Is.EqualTo(2));
             Object.DestroyImmediate(config);
         }
 

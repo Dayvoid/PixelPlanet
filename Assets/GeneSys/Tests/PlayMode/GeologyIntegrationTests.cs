@@ -172,6 +172,7 @@ namespace GeneSys.Tests
         {
             host.Clock.SetRunning(false);
             host.Config.slowPassInterval = 1;
+            host.Config.transportPassInterval = 1;
             host.Config.volcanicCooling = 0f;
             host.Config.gravityStrength = 0f;
             host.Config.fractureRate = 0f;
@@ -192,6 +193,7 @@ namespace GeneSys.Tests
         {
             host.Clock.SetRunning(false);
             host.Config.slowPassInterval = 1;
+            host.Config.transportPassInterval = 1;
             host.Config.validationIntervalTicks = 100000;
             host.Config.magmaEruption = 0f;
             host.Config.gravityStrength = 0f;

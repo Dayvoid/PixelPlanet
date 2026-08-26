@@ -19,7 +19,9 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.materialSubsteps)] =
                 "Splits each tick's material pass into extra substeps. Higher values stabilize gravity settling, density sorting, heat, and charge at more GPU cost per tick.",
             [nameof(SimulationConfig.slowPassInterval)] =
-                "Runs volcanism, erosion/collapse, ash fertilization, and mycology colony updates every N ticks. Lower values make geology and ecology more responsive; higher values save GPU time.",
+                "Runs volcanism, erosion/collapse, ash fertilization, mycology colony updates, flora lifecycle, and flora migration every N ticks. Lower values make geology and ecology more responsive; higher values save GPU time.",
+            [nameof(SimulationConfig.transportPassInterval)] =
+                "Runs flora light, spore transport, photosynthesis, and mycology spore transport every N ticks. Keep at 1 for tests; 2 cuts ecology GPU work without changing weather or hydrology CFL.",
             [nameof(SimulationConfig.seed)] =
                 "Worldgen random seed for layer noise, faults, ocean basins, metal veins, ice caps, and initial spore patches. Change it and regenerate to get a different planetoid with the same settings.",
             [nameof(SimulationConfig.useOgWorldgen)] =

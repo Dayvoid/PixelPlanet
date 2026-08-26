@@ -818,9 +818,12 @@ namespace GeneSys.UI
         {
             if (host == null || !host.IsReady) return 1.5f;
             int cells = host.Grid.CellCount;
-            if (cells >= 1_500_000) return 4f;
-            if (cells >= 400_000) return 2.5f;
-            return 1.5f;
+            float interval = 1.5f;
+            if (cells >= 1_500_000) interval = 4f;
+            else if (cells >= 400_000) interval = 2.5f;
+            if (host.Clock.Speed > SimulationClock.FastForwardSpeed)
+                interval *= host.Clock.Speed;
+            return interval;
         }
 
         private void RefreshWorldMetrics(bool force)

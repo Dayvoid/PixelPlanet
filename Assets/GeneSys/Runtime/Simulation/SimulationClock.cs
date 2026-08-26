@@ -9,6 +9,8 @@ namespace GeneSys.Simulation
         private float accumulator;
         private bool stepRequested;
 
+        public const float FastForwardSpeed = 5f;
+
         public bool IsRunning { get; private set; } = true;
         public float Speed { get; private set; } = 1f;
         public long TickCount { get; private set; }

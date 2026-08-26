@@ -148,8 +148,8 @@ namespace GeneSys.Simulation.Gpu
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
             }
 
-            if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
-                DispatchPass(geology, geology.FindKernel("Volcanism"), deltaTime * config.slowPassInterval);
+            if (Due(config.slowPassInterval))
+                DispatchPass(geology, geology.FindKernel("Volcanism"), CadenceDt(deltaTime, config.slowPassInterval));
 
             if (config.coreReactionFrequency > 0
                 && config.coreReactionMagnitude > 0f
@@ -178,34 +178,47 @@ namespace GeneSys.Simulation.Gpu
             DispatchPass(hydrology, hydrology.FindKernel("WaterMaterialization"), deltaTime);
 
             // Erosion sees the current tick's moisture, exposure, and flow after weather/runoff.
-            if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
+            if (Due(config.slowPassInterval))
             {
-                DispatchPass(hydrology, hydrology.FindKernel("ErosionAndCollapse"), deltaTime * config.slowPassInterval);
-                DispatchPass(hydrology, hydrology.FindKernel("AshFertilization"), deltaTime * config.slowPassInterval);
+                float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
+                DispatchPass(hydrology, hydrology.FindKernel("ErosionAndCollapse"), slowDt);
+                DispatchPass(hydrology, hydrology.FindKernel("AshFertilization"), slowDt);
             }
 
             if (mycology != null)
             {
-                DispatchPass(mycology, mycology.FindKernel("SporeTransport"), deltaTime);
-                if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
-                    DispatchPass(mycology, mycology.FindKernel("ColonyLifecycle"), deltaTime * config.slowPassInterval);
+                if (Due(config.transportPassInterval))
+                    DispatchPass(mycology, mycology.FindKernel("SporeTransport"), CadenceDt(deltaTime, config.transportPassInterval));
+                if (Due(config.slowPassInterval))
+                    DispatchPass(mycology, mycology.FindKernel("ColonyLifecycle"), CadenceDt(deltaTime, config.slowPassInterval));
             }
 
             if (flora != null)
             {
-                DispatchLight(flora, flora.FindKernel("LightAttenuation"), deltaTime);
-                DispatchPass(flora, flora.FindKernel("SporeTransport"), deltaTime);
-                DispatchPass(flora, flora.FindKernel("Photosynthesis"), deltaTime);
-                if (tick % Mathf.Max(1, config.slowPassInterval) == 0)
-                    DispatchPass(flora, flora.FindKernel("FloraLifecycle"), deltaTime * config.slowPassInterval);
-                if (config.floraPoleDriftRate > 1e-8f || config.floraWindShearRate > 1e-8f || config.floraRainShearRate > 1e-8f)
-                    DispatchPass(flora, flora.FindKernel("FloraMigration"), deltaTime);
+                if (Due(config.transportPassInterval))
+                {
+                    float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
+                    DispatchLight(flora, flora.FindKernel("LightAttenuation"), transportDt);
+                    DispatchPass(flora, flora.FindKernel("SporeTransport"), transportDt);
+                    DispatchPass(flora, flora.FindKernel("Photosynthesis"), transportDt);
+                }
+                if (Due(config.slowPassInterval))
+                {
+                    float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
+                    DispatchPass(flora, flora.FindKernel("FloraLifecycle"), slowDt);
+                    if (config.floraPoleDriftRate > 1e-8f || config.floraWindShearRate > 1e-8f || config.floraRainShearRate > 1e-8f)
+                        DispatchPass(flora, flora.FindKernel("FloraMigration"), slowDt);
+                }
             }
 
             tick++;
             stopwatch.Stop();
             LastTickMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
         }
+
+        private static int Interval(int value) => Mathf.Max(1, value);
+        private bool Due(int interval) => tick % Interval(interval) == 0;
+        private static float CadenceDt(float deltaTime, int interval) => deltaTime * Interval(interval);
 
         private void DispatchPass(ComputeShader shader, int kernel, float deltaTime)
         {

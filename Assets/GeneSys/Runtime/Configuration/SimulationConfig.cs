@@ -22,6 +22,7 @@ namespace GeneSys.Configuration
         [Range(0.05f, 16f)] public float simulationSpeed = 1f;
         [Range(1, 8)] public int materialSubsteps = 1;
         [Range(1, 32)] public int slowPassInterval = 4;
+        [Range(1, 8)] public int transportPassInterval = 2;
         public int seed = 12345;
         public bool useOgWorldgen = false;
 
@@ -303,6 +304,8 @@ namespace GeneSys.Configuration
         {
             grid.Validate();
             ticksPerSecond = Mathf.Max(1f, ticksPerSecond);
+            slowPassInterval = Mathf.Clamp(slowPassInterval, 1, 32);
+            transportPassInterval = Mathf.Clamp(transportPassInterval, 1, 8);
             dayLengthSeconds = Mathf.Max(1f, dayLengthSeconds);
             minOceanBasins = Mathf.Clamp(minOceanBasins, 2, 3);
             maxOceanBasins = Mathf.Clamp(maxOceanBasins, minOceanBasins, 3);

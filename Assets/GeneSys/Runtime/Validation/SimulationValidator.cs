@@ -25,7 +25,10 @@ namespace GeneSys.Validation
         {
             if (host == null || !host.IsReady || pending) return;
             long tick = host.Clock.TickCount;
-            if (tick == 0 || tick == lastValidatedTick || tick % Mathf.Max(1, host.Config.validationIntervalTicks) != 0) return;
+            int interval = Mathf.Max(1, host.Config.validationIntervalTicks);
+            if (host.Clock.Speed > SimulationClock.FastForwardSpeed)
+                interval *= Mathf.Max(1, Mathf.CeilToInt(host.Clock.Speed));
+            if (tick == 0 || tick == lastValidatedTick || tick % interval != 0) return;
             lastValidatedTick = tick;
             ValidateNow();
         }

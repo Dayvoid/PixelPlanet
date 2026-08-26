@@ -180,6 +180,7 @@ namespace GeneSys.Tests
             host.Config.extrusionRate = 0f;
             host.Config.materialSubsteps = 1;
             host.Config.slowPassInterval = 1;
+            host.Config.transportPassInterval = 1;
             host.Config.mycologyAirTransportRate = 0f;
             host.Config.mycologyWaterTransportRate = 0f;
             host.Config.mycologyDiffusionRate = 0f;
