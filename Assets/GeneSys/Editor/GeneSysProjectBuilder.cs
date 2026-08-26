@@ -161,8 +161,6 @@ namespace GeneSys.Editor
             SetObject(host, "weather", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Weather.compute"));
             SetObject(host, "mycology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mycology.compute"));
             SetObject(host, "flora", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Flora.compute"));
-            SetObject(host, "floraMovement", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/FloraMovement.compute"));
-            SetObject(host, "floraMoveApply", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/FloraMoveApply.compute"));
             SetObject(host, "combustion", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Combustion.compute"));
             SetObject(host, "storm", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Storm.compute"));
             SetObject(host, "display", display);
@@ -205,8 +203,6 @@ namespace GeneSys.Editor
             SetObject(host, "config", config);
             SetObject(host, "materialRegistry", registry);
             SetObject(host, "flora", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Flora.compute"));
-            SetObject(host, "floraMovement", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/FloraMovement.compute"));
-            SetObject(host, "floraMoveApply", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/FloraMoveApply.compute"));
             document.panelSettings = panelSettings;
             EditorUtility.SetDirty(document);
             EditorSceneManager.MarkSceneDirty(host.gameObject.scene);

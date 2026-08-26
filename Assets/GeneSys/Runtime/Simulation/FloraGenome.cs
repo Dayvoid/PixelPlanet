@@ -29,18 +29,15 @@ namespace GeneSys.Simulation
         public const int GeneDormancy = 7;
         public const int GeneToxinTolerance = 8;
         public const int GeneExudation = 9;
-        public const int GeneStackMotility = 10;
+        public const int GeneSubstrate = 10;
         public const int GeneMutation = 11;
 
         public static readonly string[] GeneNames =
         {
             "Temp optimum", "Temp tolerance", "Moisture optimum", "Moisture tolerance",
             "Light affinity", "Reproduction", "Metabolic rate", "Dormancy",
-            "Toxin tolerance", "Exudation", "Stack motility", "Mutation rate"
+            "Toxin tolerance", "Exudation", "Substrate affinity", "Mutation rate"
         };
-
-        /// <summary>True-zero mapping for stack motility: gene/255, so 0 fully disables natural poleward relief.</summary>
-        public static float StackMotilityFactor(byte gene) => gene / 255f;
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         public struct Packed

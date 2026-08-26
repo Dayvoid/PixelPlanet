@@ -16,7 +16,6 @@ MonoBehaviour:
   displayName: Mantle
   category: 4
   displayColor: {r: 0.72, g: 0.08, b: 0.02, a: 1}
-  shadeVariation: 0.18
   density: 4.5
   rigidity: 0.8
   angleOfRepose: 60
@@ -37,8 +36,8 @@ MonoBehaviour:
   gasPhaseId: 11
   toxicity: 0
   caloricContent: 0
-  bioModifiable: 0
   ignitionTemperature: 10000
   flashPoint: 10000
-  oxygenDemand: 0
+  oxygenDemand: 0.2
   smokeYield: 0
+  bioModifiable: 0

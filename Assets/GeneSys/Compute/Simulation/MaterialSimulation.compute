@@ -135,14 +135,6 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
             life.x = max(0.0, command.values.y * max(0.1, falloff));
             genome = RandomFloraGenome((uint2)cell, _Seed, _Tick);
         }
-        else if (mode == 15)
-        {
-            EncodeGene(genome, (uint)clamp(round(command.values.y), 0.0, 11.0), (uint)clamp(round(command.values.z), 0.0, 255.0));
-            if (IsFloraMaterial(material))
-                genome.w = PackFloraMeta(FLORA_STAGE_ACTIVE, FloraGeneration(genome), FloraLineage(genome), FloraToxinDose(genome));
-        }
-        else if (mode == 16)
-            flow.x = command.values.y;
     }
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

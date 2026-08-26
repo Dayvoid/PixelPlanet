@@ -31,8 +31,6 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture GenomeRead => LifeGenomeRead;
         public RenderTexture GenomeWrite => LifeGenomeWrite;
         public RenderTexture LightField { get; private set; }
-        public GraphicsBuffer FloraMoveClaims { get; private set; }
-        public GraphicsBuffer FloraMoveClaimsRead { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -63,22 +61,6 @@ namespace GeneSys.Simulation.Gpu
             LifeGenomeRead = CreateTextureArray("GeneSys LifeGenome A", GraphicsFormat.R32G32B32A32_SFloat, 2);
             LifeGenomeWrite = CreateTextureArray("GeneSys LifeGenome B", GraphicsFormat.R32G32B32A32_SFloat, 2);
             LightField = CreateTexture("GeneSys Light", GraphicsFormat.R32_SFloat);
-            FloraMoveClaims = CreateClaimBuffer("GeneSys FloraMoveClaims");
-            FloraMoveClaimsRead = CreateClaimBuffer("GeneSys FloraMoveClaimsRead");
-        }
-
-        private GraphicsBuffer CreateClaimBuffer(string name)
-        {
-            int count = Mathf.Max(1, Grid.angularResolution * Grid.radialResolution);
-            const GraphicsBuffer.Target target = GraphicsBuffer.Target.Structured
-                | GraphicsBuffer.Target.CopySource
-                | GraphicsBuffer.Target.CopyDestination;
-            var buffer = new GraphicsBuffer(target, count, sizeof(uint)) { name = name };
-            var empty = new uint[count];
-            for (int i = 0; i < empty.Length; i++)
-                empty[i] = 0xffffffffu;
-            buffer.SetData(empty);
-            return buffer;
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -175,8 +157,6 @@ namespace GeneSys.Simulation.Gpu
             Release(StormRead); Release(StormWrite);
             Release(LifeGenomeRead); Release(LifeGenomeWrite);
             Release(LightField);
-            FloraMoveClaims?.Dispose();
-            FloraMoveClaimsRead?.Dispose();
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -185,8 +165,6 @@ namespace GeneSys.Simulation.Gpu
             StormRead = StormWrite = null;
             LifeGenomeRead = LifeGenomeWrite = null;
             LightField = null;
-            FloraMoveClaims = null;
-            FloraMoveClaimsRead = null;
         }
 
         private static void Release(RenderTexture texture)

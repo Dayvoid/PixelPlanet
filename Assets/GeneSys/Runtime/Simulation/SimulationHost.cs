@@ -24,8 +24,6 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader weather;
         [SerializeField] private ComputeShader mycology;
         [SerializeField] private ComputeShader flora;
-        [SerializeField] private ComputeShader floraMovement;
-        [SerializeField] private ComputeShader floraMoveApply;
         [SerializeField] private ComputeShader combustion;
         [SerializeField] private ComputeShader storm;
         [Header("Scene")]
@@ -90,7 +88,7 @@ namespace GeneSys.Simulation
                 enabled = false;
                 return;
             }
-            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || flora == null || floraMovement == null || floraMoveApply == null || combustion == null || storm == null)
+            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || flora == null || combustion == null || storm == null)
             {
                 Debug.LogError("GeneSys bootstrap references are incomplete. Run Tools/GeneSys/Rebuild Phase 1 Scene.", this);
                 enabled = false;
@@ -98,7 +96,7 @@ namespace GeneSys.Simulation
             }
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, floraMovement, floraMoveApply, combustion, storm);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, combustion, storm);
             scheduler.GenerateWorld();
             Clock.Reset();
             lastPerformanceTick = 0;
@@ -151,11 +149,6 @@ namespace GeneSys.Simulation
         public void FillShadesFromMaterials()
         {
             if (IsReady) scheduler.FillShadesFromMaterials();
-        }
-
-        public void UploadUIntTexture(RenderTexture destination, byte[] payload)
-        {
-            if (IsReady) scheduler.UploadUIntTexture(destination, payload);
         }
 
         public void ApplyPreset(SimulationPreset preset)
@@ -226,28 +219,6 @@ namespace GeneSys.Simulation
                 radius = Mathf.Max(0, radius),
                 materialId = MaterialIds.Void,
                 values = new Vector4(14f, sporeLoad, 0f, 0f)
-            });
-        }
-
-        public void QueueFloraGene(Vector2Int cell, int geneIndex, byte value)
-        {
-            QueueBrush(new GpuPassScheduler.BrushCommand
-            {
-                center = cell,
-                radius = 0,
-                materialId = MaterialIds.Void,
-                values = new Vector4(15f, geneIndex, value, 0f)
-            });
-        }
-
-        public void QueueTangentialFlow(Vector2Int cell, float tangential)
-        {
-            QueueBrush(new GpuPassScheduler.BrushCommand
-            {
-                center = cell,
-                radius = 0,
-                materialId = MaterialIds.Void,
-                values = new Vector4(16f, tangential, 0f, 0f)
             });
         }
 

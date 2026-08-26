@@ -16,7 +16,6 @@ MonoBehaviour:
   displayName: Basalt
   category: 4
   displayColor: {r: 0.12, g: 0.11, b: 0.13, a: 1}
-  shadeVariation: 0.18
   density: 3.2
   rigidity: 0.9
   angleOfRepose: 50
@@ -37,8 +36,8 @@ MonoBehaviour:
   gasPhaseId: 11
   toxicity: 0
   caloricContent: 0
+  ignitionTemperature: 800
+  flashPoint: 400
+  oxygenDemand: 0.3
+  smokeYield: 0.1
   bioModifiable: 1
-  ignitionTemperature: 10000
-  flashPoint: 10000
-  oxygenDemand: 0
-  smokeYield: 0

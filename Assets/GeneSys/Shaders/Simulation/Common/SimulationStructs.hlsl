@@ -310,7 +310,7 @@ float MycologyFuel(uint material, float4 ecology)
 #define FLORA_GENE_DORMANCY 7u
 #define FLORA_GENE_TOXIN_TOLERANCE 8u
 #define FLORA_GENE_EXUDATION 9u
-#define FLORA_GENE_STACK_MOTILITY 10u
+#define FLORA_GENE_SUBSTRATE 10u
 #define FLORA_GENE_MUTATION 11u
 
 bool IsFloraMaterial(uint material)

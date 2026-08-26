@@ -42,7 +42,7 @@ float4 _FloraD; // toxinMutationScale, geneExpressionRange, growthTempMin, growt
 float4 _FloraE; // growthMoistureMin, growthMoistureMax, survivalTempMin, survivalTempMax
 float4 _FloraF; // survivalMoistureMin, survivalMoistureMax, minLight, germinationSporeThreshold
 float4 _FloraG; // maintenanceRate, nightDrain, dormancyMetabolicScale, initialSporeLoad
-float4 _FloraH; // seedAtWorldgen, windDispersal, rainDispersal, stackMigration
+float4 _FloraH; // seedAtWorldgen, unused, unused, unused
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
