@@ -404,6 +404,28 @@ uint PackFloraMeta(uint stage, uint generation, uint lineage, uint toxinDose)
     return (stage & 255u) | ((generation & 255u) << 8) | ((lineage & 255u) << 16) | ((toxinDose & 255u) << 24);
 }
 
+#define ORGANISM_HISTORY_CAPACITY 2048u
+#define ORGANISM_KIND_BIRTH 0u
+#define ORGANISM_KIND_REPRODUCE 1u
+#define ORGANISM_KIND_DEATH 2u
+#define ORGANISM_CAUSE_NONE 0u
+#define ORGANISM_CAUSE_DESICCATION 1u
+#define ORGANISM_CAUSE_TOXIN 2u
+#define ORGANISM_CAUSE_FIRE 3u
+#define ORGANISM_CAUSE_PAINTED 4u
+
+struct OrganismHistoryEvent
+{
+    uint tick;
+    uint kind;
+    uint generation;
+    uint lineage;
+    uint cause;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+};
+
 uint4 SanitizeGenome(uint4 genome)
 {
     uint stage = FloraStage(genome);

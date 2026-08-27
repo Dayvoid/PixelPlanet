@@ -220,5 +220,33 @@ namespace GeneSys.Tests
             Assert.That(System.Enum.GetNames(typeof(BrushMode)), Does.Contain("Life"));
             Assert.That((int)BrushMode.Life, Is.EqualTo((int)BrushMode.Ignite + 1));
         }
+
+        [Test]
+        public void OrganismHistoryFormatsTickKindAndLineage()
+        {
+            var birth = new OrganismHistoryLog.Entry(12480, OrganismHistoryKind.Birth, 0, 42, OrganismHistoryCause.None);
+            Assert.That(birth.Format(), Is.EqualTo("Tick 12480  Birth  gen 0 / lineage 42"));
+            var death = new OrganismHistoryLog.Entry(12612, OrganismHistoryKind.Death, 1, 42, OrganismHistoryCause.Toxin);
+            Assert.That(death.Format(), Is.EqualTo("Tick 12612  Death (toxin)  gen 1 / lineage 42"));
+            var painted = new OrganismHistoryLog.Entry(10, OrganismHistoryKind.Birth, 0, 17, OrganismHistoryCause.Painted);
+            Assert.That(painted.Format(), Is.EqualTo("Tick 10  Birth (painted)  gen 0 / lineage 17"));
+        }
+
+        [Test]
+        public void OrganismHistoryCapsOldestEntries()
+        {
+            var log = new OrganismHistoryLog();
+            var batch = new OrganismHistoryLog.GpuEvent[OrganismHistoryLog.Capacity + 8];
+            for (int i = 0; i < batch.Length; i++)
+            {
+                batch[i].Tick = (uint)(i + 1);
+                batch[i].Kind = (uint)OrganismHistoryKind.Birth;
+                batch[i].Lineage = (uint)i;
+            }
+            log.AppendFromGpu(batch, batch.Length);
+            Assert.That(log.Entries.Count, Is.EqualTo(OrganismHistoryLog.Capacity));
+            Assert.That(log.Entries[0].Tick, Is.EqualTo(9));
+            Assert.That(log.Entries[log.Entries.Count - 1].Tick, Is.EqualTo(batch.Length));
+        }
     }
 }

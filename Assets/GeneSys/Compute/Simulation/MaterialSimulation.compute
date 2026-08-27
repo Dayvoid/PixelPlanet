@@ -5,8 +5,10 @@
 #pragma kernel MaterialMotion
 #pragma kernel Electrical
 #pragma kernel PressureDiffusion
+#pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
 
 Texture2D<uint> _MaterialRead;
 RWTexture2D<uint> _MaterialWrite;
@@ -112,6 +114,7 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
                 life.y = 0.35;
                 life.z = 0.1;
                 life.x = max(life.x, 0.05);
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_PAINTED);
             }
         }
         else if (mode == 1) state.x += command.values.y * max(0.1, falloff);

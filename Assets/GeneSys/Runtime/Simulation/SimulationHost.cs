@@ -47,6 +47,7 @@ namespace GeneSys.Simulation
         public int TickIndex => scheduler?.TickIndex ?? 0;
         public float SolarAngle01 => scheduler?.SolarAngle01 ?? 0f;
         public double LastTickMilliseconds => scheduler?.LastTickMilliseconds ?? 0d;
+        public OrganismHistoryLog OrganismHistory { get; } = new();
         public PolarGridDefinition Grid => Resources?.Grid ?? config.grid;
         public RenderTexture MaterialField => Resources?.MaterialRead;
         public RenderTexture EnvironmentalField => Resources?.StateRead;
@@ -98,6 +99,7 @@ namespace GeneSys.Simulation
             Resources = new SimulationResources(config.grid);
             scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, combustion, storm);
             scheduler.GenerateWorld();
+            OrganismHistory.Clear();
             Clock.Reset();
             lastPerformanceTick = 0;
             dispatchMilliseconds = 0d;
@@ -119,6 +121,7 @@ namespace GeneSys.Simulation
             if (!IsReady) return;
             int advanced = Clock.Advance(Time.unscaledDeltaTime, config.ticksPerSecond, scheduler.Step);
             if (advanced <= 0) return;
+            scheduler.DrainOrganismHistory(OrganismHistory);
             dispatchMilliseconds += scheduler.LastTickMilliseconds;
             dispatchSamples++;
             if (Clock.TickCount - lastPerformanceTick >= 100)
@@ -135,6 +138,7 @@ namespace GeneSys.Simulation
         {
             if (!IsReady) return;
             scheduler.GenerateWorld();
+            OrganismHistory.Clear();
             Clock.Reset();
             validator?.ResetBaseline();
         }
@@ -143,6 +147,8 @@ namespace GeneSys.Simulation
         {
             Clock.SetTickCount(tick);
             scheduler?.SetTickIndex((int)Mathf.Min(int.MaxValue, tick));
+            OrganismHistory.Clear();
+            scheduler?.ResetOrganismHistoryCounter();
             validator?.ResetBaseline();
         }
 

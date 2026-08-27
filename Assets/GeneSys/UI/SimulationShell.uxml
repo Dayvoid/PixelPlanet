@@ -42,6 +42,13 @@
                     <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
                 </ui:VisualElement>
             </ui:VisualElement>
+
+            <ui:VisualElement name="history-drawer" class="drawer history-drawer">
+                <ui:Button name="history-header" text="History ▾" class="drawer-header" />
+                <ui:VisualElement name="history-body" class="drawer-body">
+                    <ui:ScrollView name="history-log" class="history-scroll" />
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
 
         <ui:VisualElement name="inspect-bar" class="inspect-bar hidden" picking-mode="Ignore">

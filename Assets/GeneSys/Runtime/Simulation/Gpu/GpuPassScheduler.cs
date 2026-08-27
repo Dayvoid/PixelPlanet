@@ -36,8 +36,14 @@ namespace GeneSys.Simulation.Gpu
         private readonly GraphicsBuffer strikeSeedBuffer;
         private readonly GraphicsBuffer strikeCounterBuffer;
         private readonly uint[] strikeCounterZero = new uint[1];
+        private readonly GraphicsBuffer organismHistoryBuffer;
+        private readonly GraphicsBuffer organismHistoryCounterBuffer;
+        private readonly uint[] organismHistoryCounterZero = new uint[1];
+        private readonly uint[] organismHistoryCounterRead = new uint[1];
+        private readonly OrganismHistoryLog.GpuEvent[] organismHistoryScratch;
         private const int MaxStrikeSeeds = 32;
         private const int StrikeSeedStride = 16;
+        public const int OrganismHistoryGpuCapacity = 2048;
         private int tick;
 
         public int TickIndex => tick;
@@ -65,11 +71,35 @@ namespace GeneSys.Simulation.Gpu
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 128, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
             strikeCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
+            organismHistoryBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, OrganismHistoryGpuCapacity, OrganismHistoryLog.GpuEvent.Stride);
+            organismHistoryCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
+            organismHistoryScratch = new OrganismHistoryLog.GpuEvent[OrganismHistoryGpuCapacity];
+            ResetOrganismHistoryCounter();
+        }
+
+        public void ResetOrganismHistoryCounter()
+        {
+            organismHistoryCounterZero[0] = 0;
+            organismHistoryCounterBuffer.SetData(organismHistoryCounterZero);
+        }
+
+        public void DrainOrganismHistory(OrganismHistoryLog log)
+        {
+            if (log == null) return;
+            organismHistoryCounterBuffer.GetData(organismHistoryCounterRead);
+            int count = (int)Math.Min(organismHistoryCounterRead[0], (uint)OrganismHistoryGpuCapacity);
+            if (count > 0)
+            {
+                organismHistoryBuffer.GetData(organismHistoryScratch, 0, 0, count);
+                log.AppendFromGpu(organismHistoryScratch, count);
+            }
+            ResetOrganismHistoryCounter();
         }
 
         public void GenerateWorld()
         {
             tick = 0;
+            ResetOrganismHistoryCounter();
             string kernelName = config.useOgWorldgen ? "GenerateWorld" : "GenerateWorldV2";
             int kernel = worldGeneration.FindKernel(kernelName);
             if (kernel < 0)
@@ -101,6 +131,7 @@ namespace GeneSys.Simulation.Gpu
                     SetCommon(flora, seedFlora, 0f);
                     flora.SetTexture(seedFlora, "_MaterialRead", resources.MaterialRead);
                     flora.SetTexture(seedFlora, "_LifeGenomeWrite", resources.LifeGenomeRead);
+                    BindOrganismHistory(flora, seedFlora);
                     Dispatch(flora, seedFlora);
                 }
             }
@@ -230,6 +261,7 @@ namespace GeneSys.Simulation.Gpu
             SetCommon(shader, kernel, deltaTime);
             shader.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindPassTextures(shader, kernel);
+            BindOrganismHistory(shader, kernel);
             Dispatch(shader, kernel);
             resources.Swap();
         }
@@ -311,6 +343,14 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_LightRead", resources.LightField);
         }
 
+        private void BindOrganismHistory(ComputeShader shader, int kernel)
+        {
+            if (shader != flora && shader != combustion && shader != materialSimulation)
+                return;
+            shader.SetBuffer(kernel, "_OrganismHistory", organismHistoryBuffer);
+            shader.SetBuffer(kernel, "_OrganismHistoryCounter", organismHistoryCounterBuffer);
+        }
+
         private void BindWorldgenOutputs(ComputeShader shader, int kernel)
         {
             shader.SetTexture(kernel, "_MaterialWrite", resources.MaterialRead);
@@ -354,6 +394,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindPassTextures(shader, kernel);
             shader.SetTexture(kernel, "_LightWrite", resources.LightField);
+            BindOrganismHistory(shader, kernel);
             Dispatch(shader, kernel);
         }
 
@@ -458,6 +499,8 @@ namespace GeneSys.Simulation.Gpu
             brushBuffer?.Dispose();
             strikeSeedBuffer?.Dispose();
             strikeCounterBuffer?.Dispose();
+            organismHistoryBuffer?.Dispose();
+            organismHistoryCounterBuffer?.Dispose();
         }
     }
 }

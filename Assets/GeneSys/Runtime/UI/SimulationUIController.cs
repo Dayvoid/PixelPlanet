@@ -75,18 +75,23 @@ namespace GeneSys.UI
         private Button playButton;
         private Button toolsHeader;
         private Button statusHeader;
+        private Button historyHeader;
         private VisualElement inspectBar;
         private VisualElement toolsDrawer;
         private VisualElement statusDrawer;
+        private VisualElement historyDrawer;
         private VisualElement toolsBody;
         private VisualElement settingsBody;
         private VisualElement statusBody;
+        private VisualElement historyBody;
+        private ScrollView historyLog;
         private VisualElement settingsOverlay;
         private Button followCameraButton;
         private Button globeCameraButton;
         private bool initialized;
         private bool metricsReadbackPending;
         private float metricsRefreshTimer;
+        private int historyRenderedVersion = -1;
         private VisualElement settingTooltip;
         private Label settingTooltipTitle;
         private Label settingTooltipLabel;
@@ -108,11 +113,15 @@ namespace GeneSys.UI
             VisualElement root = document.rootVisualElement;
             toolsDrawer = root.Q("tools-drawer");
             statusDrawer = root.Q("status-drawer");
+            historyDrawer = root.Q("history-drawer");
             toolsHeader = root.Q<Button>("tools-header");
             statusHeader = root.Q<Button>("status-header");
+            historyHeader = root.Q<Button>("history-header");
             toolsBody = root.Q("tools-body");
             settingsBody = root.Q("settings-body");
             statusBody = root.Q("status-body");
+            historyBody = root.Q("history-body");
+            historyLog = root.Q<ScrollView>("history-log");
             settingsOverlay = root.Q("settings-overlay");
             inspectBar = root.Q("inspect-bar");
             statusLabel = root.Q<Label>("status");
@@ -124,7 +133,12 @@ namespace GeneSys.UI
 
             root.Q<Button>("play")?.RegisterCallback<ClickEvent>(_ => { host.Clock.Toggle(); RefreshPlayLabel(); });
             root.Q<Button>("step")?.RegisterCallback<ClickEvent>(_ => host.Clock.RequestStep());
-            root.Q<Button>("regenerate")?.RegisterCallback<ClickEvent>(_ => { host.Regenerate(); RefreshWorldMetrics(force: true); });
+            root.Q<Button>("regenerate")?.RegisterCallback<ClickEvent>(_ =>
+            {
+                host.Regenerate();
+                RefreshWorldMetrics(force: true);
+                RefreshHistory(force: true);
+            });
             root.Q<Button>("save")?.RegisterCallback<ClickEvent>(_ => SaveSnapshot());
             root.Q<Button>("load")?.RegisterCallback<ClickEvent>(_ => LoadSnapshot());
             root.Q<Button>("validate")?.RegisterCallback<ClickEvent>(_ => validator?.ValidateNow());
@@ -152,8 +166,10 @@ namespace GeneSys.UI
             tools.Inspected += SetInspection;
             initialized = true;
             metricsRefreshTimer = 0f;
+            historyRenderedVersion = -1;
             RefreshPlayLabel();
             RefreshWorldMetrics(force: true);
+            RefreshHistory(force: true);
         }
 
         private void SetupDrawers()
@@ -164,6 +180,12 @@ namespace GeneSys.UI
                 ToggleDrawer(statusHeader, statusBody, statusDrawer, "Simulation Status");
                 if (statusBody != null && !statusBody.ClassListContains("collapsed"))
                     RefreshWorldMetrics(force: true);
+            });
+            historyHeader?.RegisterCallback<ClickEvent>(_ =>
+            {
+                ToggleDrawer(historyHeader, historyBody, historyDrawer, "History");
+                if (historyBody != null && !historyBody.ClassListContains("collapsed"))
+                    RefreshHistory(force: true);
             });
         }
 
@@ -497,6 +519,8 @@ namespace GeneSys.UI
             BuildSettings(root);
             RefreshPlayLabel();
             RefreshWorldMetrics(force: true);
+            RefreshHistory(force: true);
+            RefreshHistory(force: true);
         }
 
         private void RestoreDefaultSettings(VisualElement root)
@@ -506,6 +530,7 @@ namespace GeneSys.UI
             BuildSettings(root);
             RefreshPlayLabel();
             RefreshWorldMetrics(force: true);
+            RefreshHistory(force: true);
         }
 
         private void RefreshBoundControls(VisualElement root)
@@ -819,10 +844,15 @@ namespace GeneSys.UI
             if (!initialized || host == null || statusLabel == null) return;
             statusLabel.text = $"Tick {host.Clock.TickCount:N0} | {(host.Clock.IsRunning ? "Running" : "Paused")} | {host.LastTickMilliseconds:F2} ms CPU dispatch";
 
-            if (statusBody == null || statusBody.ClassListContains("collapsed")) return;
-            metricsRefreshTimer -= Time.unscaledDeltaTime;
-            if (metricsRefreshTimer <= 0f)
-                RefreshWorldMetrics(force: false);
+            if (statusBody != null && !statusBody.ClassListContains("collapsed"))
+            {
+                metricsRefreshTimer -= Time.unscaledDeltaTime;
+                if (metricsRefreshTimer <= 0f)
+                    RefreshWorldMetrics(force: false);
+            }
+
+            if (historyBody != null && !historyBody.ClassListContains("collapsed"))
+                RefreshHistory(force: false);
         }
 
         public static Vector2 ToUiToolkitScreenPosition(Vector2 screenPosition, float screenHeight) =>
@@ -897,6 +927,36 @@ namespace GeneSys.UI
             return interval;
         }
 
+        private void RefreshHistory(bool force)
+        {
+            if (historyLog == null || host == null) return;
+            if (!force && (historyBody == null || historyBody.ClassListContains("collapsed"))) return;
+            OrganismHistoryLog log = host.OrganismHistory;
+            if (!force && historyRenderedVersion == log.Version) return;
+            historyRenderedVersion = log.Version;
+            historyLog.Clear();
+            IReadOnlyList<OrganismHistoryLog.Entry> entries = log.Entries;
+            if (entries.Count == 0)
+            {
+                var empty = new Label("No organism events yet.");
+                empty.AddToClassList("history-empty");
+                historyLog.Add(empty);
+                return;
+            }
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var line = new Label(entries[i].Format());
+                line.AddToClassList("history-entry");
+                historyLog.Add(line);
+            }
+
+            historyLog.schedule.Execute(() =>
+            {
+                historyLog.scrollOffset = new Vector2(0f, historyLog.contentContainer.layout.height);
+            });
+        }
+
         private void RefreshWorldMetrics(bool force)
         {
             if (host == null || !host.IsReady) return;
@@ -931,6 +991,14 @@ namespace GeneSys.UI
 
         private string SnapshotPath => System.IO.Path.Combine(Application.persistentDataPath, "genesys-phase1.snapshot");
         private void SaveSnapshot() => snapshots.Save(host, SnapshotPath, ok => Debug.Log(ok ? $"Saved {SnapshotPath}" : "Snapshot save failed."));
-        private void LoadSnapshot() { if (!snapshots.Load(host, SnapshotPath)) Debug.LogWarning("Snapshot load failed or grid preset differs."); }
+        private void LoadSnapshot()
+        {
+            if (!snapshots.Load(host, SnapshotPath))
+            {
+                Debug.LogWarning("Snapshot load failed or grid preset differs.");
+                return;
+            }
+            RefreshHistory(force: true);
+        }
     }
 }

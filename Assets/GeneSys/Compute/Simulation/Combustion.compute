@@ -1,6 +1,8 @@
 #pragma kernel Combustion
+#pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
 
 Texture2D<uint> _MaterialRead;
 RWTexture2D<uint> _MaterialWrite;
@@ -180,6 +182,7 @@ void Combustion(uint3 id : SV_DispatchThreadID)
         ecology.y = 0.0;
     if (IsFloraMaterial(material) && life.y <= minFuel && combustion.y > 0.0)
     {
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_FIRE);
         aux.z += max(0.05, life.y + life.z) * max(0.15, pyroFertility);
         material = 12u;
         life = float4(0.0, 0.0, 0.0, life.w * 0.25);
