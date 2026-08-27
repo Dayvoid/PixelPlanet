@@ -80,6 +80,13 @@ namespace GeneSys.Tests
             host.Config.mycologySporulationRate = 0f;
             host.Config.mycologyGrowthRate = 0f;
             host.Config.mycologyDecayRate = 0f;
+            host.Config.grassSeedAtWorldgen = false;
+            host.Config.grassRootUptakeRate = 0f;
+            host.Config.detritusVaporAbsorbRate = 0f;
+            host.Config.detritusEvaporationScale = 0f;
+            host.Config.detritusMoistureShareRate = 0f;
+            host.Config.detritusNutrientLeachRate = 0f;
+            host.Config.detritusDecayRate = 0f;
         }
 
         [UnityTearDown]

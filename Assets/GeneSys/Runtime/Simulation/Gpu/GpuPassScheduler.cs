@@ -31,6 +31,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader weather;
         private readonly ComputeShader mycology;
         private readonly ComputeShader flora;
+        private readonly ComputeShader grass;
         private readonly ComputeShader fauna;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
@@ -56,7 +57,7 @@ namespace GeneSys.Simulation.Gpu
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
             ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
-            ComputeShader fauna, ComputeShader combustion, ComputeShader storm)
+            ComputeShader grass, ComputeShader fauna, ComputeShader combustion, ComputeShader storm)
         {
             this.config = config;
             this.resources = resources;
@@ -67,6 +68,7 @@ namespace GeneSys.Simulation.Gpu
             this.weather = weather;
             this.mycology = mycology;
             this.flora = flora;
+            this.grass = grass;
             this.fauna = fauna;
             this.combustion = combustion;
             this.storm = storm;
@@ -103,6 +105,7 @@ namespace GeneSys.Simulation.Gpu
         {
             tick = 0;
             ResetOrganismHistoryCounter();
+            resources.ClearGrass();
             string kernelName = config.useOgWorldgen ? "GenerateWorld" : "GenerateWorldV2";
             int kernel = worldGeneration.FindKernel(kernelName);
             if (kernel < 0)
@@ -152,6 +155,18 @@ namespace GeneSys.Simulation.Gpu
                     Dispatch(fauna, seedFauna);
                 }
             }
+            if (grass != null)
+            {
+                int seedGrass = grass.FindKernel("SeedGrass");
+                if (seedGrass >= 0)
+                {
+                    SetCommon(grass, seedGrass, 0f);
+                    BindGrassWorldReads(seedGrass);
+                    grass.SetTexture(seedGrass, "_GrassWrite", resources.GrassRead);
+                    BindOrganismHistory(grass, seedGrass);
+                    Dispatch(grass, seedGrass);
+                }
+            }
             resources.CopyReadToWrite();
         }
 
@@ -181,6 +196,22 @@ namespace GeneSys.Simulation.Gpu
                     storm.SetInt("_BrushCount", brushCommands.Count);
                     storm.SetBuffer(stormBrush, "_BrushCommands", brushBuffer);
                     DispatchStormInPlace(storm, stormBrush, deltaTime);
+                }
+                if (grass != null)
+                {
+                    int grassBrush = grass.FindKernel("ApplyGrassEdits");
+                    if (grassBrush >= 0)
+                    {
+                        SetCommon(grass, grassBrush, deltaTime);
+                        grass.SetInt("_BrushCount", brushCommands.Count);
+                        grass.SetBuffer(grassBrush, "_BrushCommands", brushBuffer);
+                        BindGrassWorldReads(grassBrush);
+                        grass.SetTexture(grassBrush, "_GrassRead", resources.GrassRead);
+                        grass.SetTexture(grassBrush, "_GrassWrite", resources.GrassWrite);
+                        BindOrganismHistory(grass, grassBrush);
+                        Dispatch(grass, grassBrush);
+                        resources.SwapGrass();
+                    }
                 }
                 brushCommands.Clear();
             }
@@ -231,6 +262,11 @@ namespace GeneSys.Simulation.Gpu
                 float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
                 DispatchPass(hydrology, hydrology.FindKernel("ErosionAndCollapse"), slowDt);
                 DispatchPass(hydrology, hydrology.FindKernel("AshFertilization"), slowDt);
+                if (config.detritusVaporAbsorbRate > 1e-8f
+                    || config.detritusDecayRate > 1e-8f
+                    || config.detritusNutrientLeachRate > 1e-8f
+                    || config.detritusMoistureShareRate > 1e-8f)
+                    DispatchPass(hydrology, hydrology.FindKernel("DetritusExchange"), slowDt);
             }
 
             if (mycology != null)
@@ -258,6 +294,9 @@ namespace GeneSys.Simulation.Gpu
                         DispatchPass(flora, flora.FindKernel("FloraMigration"), slowDt);
                 }
             }
+
+            if (grass != null)
+                DispatchGrass(deltaTime);
 
             if (fauna != null)
                 DispatchFauna(deltaTime);
@@ -328,6 +367,17 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_FloraG", new Vector4(config.floraMaintenanceRate, config.floraNightDrain, config.floraDormancyMetabolicScale, config.floraInitialSporeLoad));
             shader.SetVector("_FloraH", new Vector4(config.floraSeedAtWorldgen ? 1f : 0f, config.floraAnchorGrip, 0f, 0f));
             shader.SetVector("_FloraI", new Vector4(config.floraPoleDriftRate, config.floraWindShearRate, config.floraRainShearRate, config.floraFragmentYield));
+            shader.SetVector("_GrassA", new Vector4(config.grassGrowthRate, config.grassDecayRate, config.grassPhotosynthesisRate, config.grassOxygenYield));
+            shader.SetVector("_GrassB", new Vector4(config.grassExudationRate, config.grassReproductionThreshold, config.grassMaintenanceRate, config.grassNightDrain));
+            shader.SetVector("_GrassC", new Vector4(config.grassMinLight, config.grassRootUptakeRate, config.grassRootCohesionScale, config.grassInitialBiomass));
+            shader.SetVector("_GrassD", new Vector4(config.grassGrowthTempMin, config.grassGrowthTempMax, config.grassGrowthMoistureMin, config.grassGrowthMoistureMax));
+            shader.SetVector("_GrassE", new Vector4(config.grassSurvivalTempMin, config.grassSurvivalTempMax, config.grassSurvivalMoistureMin, config.grassSurvivalMoistureMax));
+            shader.SetVector("_GrassF", new Vector4(config.grassPollenEmitRate, config.grassPollenAirRate, config.grassPollenWaterRate, config.grassPollenSettlingRate));
+            shader.SetVector("_GrassG", new Vector4(config.grassSeedAirRate, config.grassSeedWaterRate, config.grassSeedGravityRate, config.grassSeedDiffusionRate));
+            shader.SetVector("_GrassH", new Vector4(config.grassNectarRate, config.grassSeedAtWorldgen ? 1f : 0f, config.grassGeneExpressionRange, config.grassCanopyOpacity));
+            shader.SetVector("_GrassI", new Vector4(config.dayLengthSeconds, config.ticksPerSecond, 0f, 0f));
+            shader.SetVector("_DetritusA", new Vector4(config.detritusVaporAbsorbRate, config.detritusEvaporationScale, config.detritusMoistureShareRate, config.detritusNutrientLeachRate));
+            shader.SetVector("_DetritusB", new Vector4(config.detritusDecayRate, config.detritusInitialNutrient, config.detritusInitialMoisture, 0f));
             shader.SetVector("_FaunaA", new Vector4(config.faunaInitialCalories, config.faunaInitialHydration, config.faunaMaturityTicks, config.faunaDecisionInterval));
             shader.SetVector("_FaunaB", new Vector4(config.faunaMaintenanceRate, config.faunaHydrationDrain, config.faunaCalorieCapacity, config.faunaFullThreshold));
             shader.SetVector("_FaunaC", new Vector4(config.faunaHungerThreshold, config.faunaReproductionCalorieThreshold, config.faunaHopImpulse, config.faunaHopCost));
@@ -372,13 +422,17 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
             shader.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeWrite);
             shader.SetTexture(kernel, "_LightRead", resources.LightField);
+            if (shader == combustion || shader == flora)
+                shader.SetTexture(kernel, "_GrassRead", resources.GrassRead);
+            if (shader == hydrology)
+                shader.SetTexture(kernel, "_GrassRootShare", resources.GrassRootShare);
             if (shader == combustion)
                 shader.SetTexture(kernel, "_FaunaRead", resources.FaunaRead);
         }
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)
         {
-            if (shader != flora && shader != fauna && shader != combustion && shader != materialSimulation)
+            if (shader != fauna && shader != grass)
                 return;
             shader.SetBuffer(kernel, "_OrganismHistory", organismHistoryBuffer);
             shader.SetBuffer(kernel, "_OrganismHistoryCounter", organismHistoryCounterBuffer);
@@ -532,6 +586,154 @@ namespace GeneSys.Simulation.Gpu
             storm.SetBuffer(kernel, "_StrikeCounter", strikeCounterBuffer);
         }
 
+        private void BindGrassWorldReads(int kernel)
+        {
+            grass.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            grass.SetTexture(kernel, "_StateRead", resources.StateRead);
+            grass.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            grass.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            grass.SetTexture(kernel, "_ShadeRead", resources.ShadeRead);
+            grass.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
+            grass.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            grass.SetTexture(kernel, "_LightRead", resources.LightField);
+            grass.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+        }
+
+        private void DispatchGrass(float deltaTime)
+        {
+            int clearDemand = grass.FindKernel("ClearRootDemand");
+            int countDemand = grass.FindKernel("CountRootDemand");
+            int resolveShare = grass.FindKernel("ResolveRootShare");
+            int debit = grass.FindKernel("ApplyRootDebit");
+            int photo = grass.FindKernel("GrassPhotosynthesis");
+            int life = grass.FindKernel("GrassLifecycle");
+            int pollen = grass.FindKernel("GrassPollenTransport");
+            int seed = grass.FindKernel("GrassSeedTransport");
+            int germ = grass.FindKernel("GrassGermination");
+            int clearClaims = grass.FindKernel("ClearGrassClaims");
+            int claim = grass.FindKernel("ClaimDetritusDrops");
+            int applyDrop = grass.FindKernel("ApplyDetritusDrops");
+            int confirm = grass.FindKernel("ConfirmGrassDrops");
+            if (clearDemand < 0 || countDemand < 0 || resolveShare < 0 || debit < 0 || photo < 0 || life < 0 || pollen < 0
+                || seed < 0 || germ < 0 || clearClaims < 0 || claim < 0 || applyDrop < 0 || confirm < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing grass compute kernel. Skipping grass pass.");
+                return;
+            }
+
+            if (Due(config.transportPassInterval))
+            {
+                float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
+                DispatchGrassPropagule(pollen, transportDt);
+                DispatchGrassPropagule(seed, transportDt);
+                DispatchGrassState(photo, transportDt);
+            }
+
+            if (!Due(config.slowPassInterval))
+                return;
+
+            float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
+
+            SetCommon(grass, clearDemand, slowDt);
+            grass.SetTexture(clearDemand, "_GrassRootDemandWrite", resources.GrassRootDemand);
+            Dispatch(grass, clearDemand);
+
+            SetCommon(grass, countDemand, slowDt);
+            BindGrassWorldReads(countDemand);
+            grass.SetTexture(countDemand, "_GrassRead", resources.GrassRead);
+            grass.SetTexture(countDemand, "_GrassRootDemandWrite", resources.GrassRootDemand);
+            Dispatch(grass, countDemand);
+
+            SetCommon(grass, resolveShare, slowDt);
+            BindGrassWorldReads(resolveShare);
+            grass.SetTexture(resolveShare, "_GrassRootDemandRead", resources.GrassRootDemand);
+            grass.SetTexture(resolveShare, "_GrassRootShareWrite", resources.GrassRootShare);
+            Dispatch(grass, resolveShare);
+
+            if (config.grassRootUptakeRate > 1e-8f)
+            {
+                SetCommon(grass, debit, slowDt);
+                grass.SetTexture(debit, "_StateWrite", resources.StateRead);
+                grass.SetTexture(debit, "_AuxWrite", resources.AuxRead);
+                grass.SetTexture(debit, "_GrassRootDemandRead", resources.GrassRootDemand);
+                grass.SetTexture(debit, "_GrassRootShareRead", resources.GrassRootShare);
+                Dispatch(grass, debit);
+            }
+
+            DispatchGrassState(life, slowDt);
+            resources.SwapPropagule();
+
+            DispatchGrassBoth(germ, slowDt);
+
+            SetCommon(grass, clearClaims, slowDt);
+            grass.SetTexture(clearClaims, "_GrassClaimsWrite", resources.GrassClaims);
+            Dispatch(grass, clearClaims);
+
+            SetCommon(grass, claim, slowDt);
+            BindGrassWorldReads(claim);
+            grass.SetTexture(claim, "_GrassRead", resources.GrassRead);
+            grass.SetTexture(claim, "_GrassClaimsWrite", resources.GrassClaims);
+            Dispatch(grass, claim);
+
+            SetCommon(grass, applyDrop, slowDt);
+            grass.SetBuffer(applyDrop, "_MaterialDefinitions", materialBuffer);
+            grass.SetTexture(applyDrop, "_MaterialWrite", resources.MaterialRead);
+            grass.SetTexture(applyDrop, "_StateWrite", resources.StateRead);
+            grass.SetTexture(applyDrop, "_FlowWrite", resources.FlowRead);
+            grass.SetTexture(applyDrop, "_AuxWrite", resources.AuxRead);
+            grass.SetTexture(applyDrop, "_ShadeWrite", resources.ShadeRead);
+            grass.SetTexture(applyDrop, "_CombustionWrite", resources.CombustionRead);
+            grass.SetTexture(applyDrop, "_GrassClaims", resources.GrassClaims);
+            Dispatch(grass, applyDrop);
+            resources.CopyReadToWrite();
+
+            SetCommon(grass, confirm, slowDt);
+            BindGrassWorldReads(confirm);
+            grass.SetTexture(confirm, "_GrassRead", resources.GrassRead);
+            grass.SetTexture(confirm, "_GrassWrite", resources.GrassWrite);
+            grass.SetTexture(confirm, "_GrassClaims", resources.GrassClaims);
+            Dispatch(grass, confirm);
+            resources.SwapGrass();
+        }
+
+        private void DispatchGrassState(int kernel, float deltaTime)
+        {
+            SetCommon(grass, kernel, deltaTime);
+            BindGrassWorldReads(kernel);
+            grass.SetTexture(kernel, "_GrassRead", resources.GrassRead);
+            grass.SetTexture(kernel, "_GrassWrite", resources.GrassWrite);
+            grass.SetTexture(kernel, "_PropaguleRead", resources.PropaguleRead);
+            grass.SetTexture(kernel, "_PropaguleWrite", resources.PropaguleWrite);
+            grass.SetTexture(kernel, "_GrassRootShareRead", resources.GrassRootShare);
+            BindOrganismHistory(grass, kernel);
+            Dispatch(grass, kernel);
+            resources.SwapGrass();
+        }
+
+        private void DispatchGrassPropagule(int kernel, float deltaTime)
+        {
+            SetCommon(grass, kernel, deltaTime);
+            BindGrassWorldReads(kernel);
+            grass.SetTexture(kernel, "_PropaguleRead", resources.PropaguleRead);
+            grass.SetTexture(kernel, "_PropaguleWrite", resources.PropaguleWrite);
+            Dispatch(grass, kernel);
+            resources.SwapPropagule();
+        }
+
+        private void DispatchGrassBoth(int kernel, float deltaTime)
+        {
+            SetCommon(grass, kernel, deltaTime);
+            BindGrassWorldReads(kernel);
+            grass.SetTexture(kernel, "_GrassRead", resources.GrassRead);
+            grass.SetTexture(kernel, "_GrassWrite", resources.GrassWrite);
+            grass.SetTexture(kernel, "_PropaguleRead", resources.PropaguleRead);
+            grass.SetTexture(kernel, "_PropaguleWrite", resources.PropaguleWrite);
+            BindOrganismHistory(grass, kernel);
+            Dispatch(grass, kernel);
+            resources.SwapGrass();
+            resources.SwapPropagule();
+        }
+
         private void DispatchFauna(float deltaTime)
         {
             int seed = fauna.FindKernel("SeedFauna");
@@ -586,6 +788,7 @@ namespace GeneSys.Simulation.Gpu
             fauna.SetTexture(claim, "_FaunaClaimsWrite", resources.FaunaClaims);
             Dispatch(fauna, claim);
 
+            resources.CopyReadToWrite();
             SetCommon(fauna, applyWorld, deltaTime);
             fauna.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
             fauna.SetTexture(applyWorld, "_MaterialRead", resources.MaterialRead);
@@ -606,7 +809,6 @@ namespace GeneSys.Simulation.Gpu
             fauna.SetTexture(applyWorld, "_LifeGenomeWrite", resources.LifeGenomeWrite);
             fauna.SetTexture(applyWorld, "_FaunaRead", resources.FaunaRead);
             fauna.SetTexture(applyWorld, "_FaunaClaims", resources.FaunaClaims);
-            BindOrganismHistory(fauna, applyWorld);
             Dispatch(fauna, applyWorld);
 
             SetCommon(fauna, applyState, deltaTime);

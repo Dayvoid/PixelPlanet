@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 131_Detritus
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 131
+  displayName: Detritus
+  category: 3
+  displayColor: {r: 0.28, g: 0.22, b: 0.12, a: 1}
+  shadeVariation: 0.2
+  density: 0.42
+  rigidity: 0.04
+  angleOfRepose: 28
+  grainSize: 0.4
+  buoyancyBias: 0.35
+  densityDisplaceable: 1
+  thermalConductivity: 0.09
+  heatCapacity: 1.4
+  electricalConductivity: 0.02
+  absorbency: 0.9
+  porosity: 0.85
+  meltingTemperature: 180
+  boilingTemperature: 400
+  thermalExpansion: 0.02
+  electricalExpansion: 0
+  solidPhaseId: 131
+  liquidPhaseId: 131
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0.6
+  ignitionTemperature: 220
+  flashPoint: 170
+  oxygenDemand: 0.7
+  smokeYield: 0.55
+  bioModifiable: 1

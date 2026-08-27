@@ -183,6 +183,7 @@ namespace GeneSys.Rendering
             displayMaterial.SetTexture("_StormTex", resources.StormRead);
             displayMaterial.SetTexture("_LifeGenomeTex", resources.LifeGenomeRead);
             displayMaterial.SetTexture("_FaunaTex", resources.FaunaRead);
+            displayMaterial.SetTexture("_GrassTex", resources.GrassRead);
             displayMaterial.SetTexture("_AcousticTex", resources.AcousticRead);
             displayMaterial.SetTexture("_LightTex", resources.LightField);
         }

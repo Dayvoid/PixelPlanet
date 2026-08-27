@@ -37,6 +37,13 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture AcousticWrite { get; private set; }
         public RenderTexture AcousticPrev { get; private set; }
         public RenderTexture FaunaClaims { get; private set; }
+        public RenderTexture GrassRead { get; private set; }
+        public RenderTexture GrassWrite { get; private set; }
+        public RenderTexture PropaguleRead { get; private set; }
+        public RenderTexture PropaguleWrite { get; private set; }
+        public RenderTexture GrassRootDemand { get; private set; }
+        public RenderTexture GrassRootShare { get; private set; }
+        public RenderTexture GrassClaims { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -73,7 +80,26 @@ namespace GeneSys.Simulation.Gpu
             AcousticWrite = CreateTexture("GeneSys Acoustic B", GraphicsFormat.R32G32_SFloat);
             AcousticPrev = CreateTexture("GeneSys Acoustic Prev", GraphicsFormat.R32G32_SFloat);
             FaunaClaims = CreateTextureArray("GeneSys Fauna Claims", GraphicsFormat.R32_UInt, 4);
+            GrassRead = CreateTextureArray("GeneSys Grass A", GraphicsFormat.R32G32B32A32_SFloat, 12);
+            GrassWrite = CreateTextureArray("GeneSys Grass B", GraphicsFormat.R32G32B32A32_SFloat, 12);
+            PropaguleRead = CreateTextureArray("GeneSys Propagule A", GraphicsFormat.R32G32B32A32_SFloat, 4);
+            PropaguleWrite = CreateTextureArray("GeneSys Propagule B", GraphicsFormat.R32G32B32A32_SFloat, 4);
+            GrassRootDemand = CreateTextureArray("GeneSys Grass Root Demand", GraphicsFormat.R32_UInt, 3);
+            GrassRootShare = CreateTexture("GeneSys Grass Root Share", GraphicsFormat.R32G32B32A32_SFloat);
+            GrassClaims = CreateTexture("GeneSys Grass Claims", GraphicsFormat.R32_UInt);
             ClearFaunaAndAcoustic();
+            ClearGrass();
+        }
+
+        public void ClearGrass()
+        {
+            ClearRenderTarget(GrassRead);
+            ClearRenderTarget(GrassWrite);
+            ClearRenderTarget(PropaguleRead);
+            ClearRenderTarget(PropaguleWrite);
+            ClearRenderTarget(GrassRootDemand);
+            ClearRenderTarget(GrassRootShare);
+            ClearRenderTarget(GrassClaims);
         }
 
         public void ClearFaunaAndAcoustic()
@@ -161,7 +187,8 @@ namespace GeneSys.Simulation.Gpu
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
             (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
-            // Storm, Light, Fauna, Acoustic, and Claims are excluded: other kernels do not copy them through WriteCell.
+            // Storm, Light, Fauna, Acoustic, Claims, Grass, and Propagule are excluded:
+            // other kernels do not copy them through WriteCell.
         }
 
         public void SwapStorm()
@@ -172,6 +199,16 @@ namespace GeneSys.Simulation.Gpu
         public void SwapFauna()
         {
             (FaunaRead, FaunaWrite) = (FaunaWrite, FaunaRead);
+        }
+
+        public void SwapGrass()
+        {
+            (GrassRead, GrassWrite) = (GrassWrite, GrassRead);
+        }
+
+        public void SwapPropagule()
+        {
+            (PropaguleRead, PropaguleWrite) = (PropaguleWrite, PropaguleRead);
         }
 
         public void SwapAcoustic()
@@ -195,6 +232,8 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(LifeGenomeRead, LifeGenomeWrite);
             Graphics.CopyTexture(FaunaRead, FaunaWrite);
             Graphics.CopyTexture(AcousticRead, AcousticWrite);
+            Graphics.CopyTexture(GrassRead, GrassWrite);
+            Graphics.CopyTexture(PropaguleRead, PropaguleWrite);
         }
 
         public void Dispose()
@@ -212,6 +251,9 @@ namespace GeneSys.Simulation.Gpu
             Release(FaunaRead); Release(FaunaWrite);
             Release(AcousticRead); Release(AcousticWrite); Release(AcousticPrev);
             Release(FaunaClaims);
+            Release(GrassRead); Release(GrassWrite);
+            Release(PropaguleRead); Release(PropaguleWrite);
+            Release(GrassRootDemand); Release(GrassRootShare); Release(GrassClaims);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -223,6 +265,9 @@ namespace GeneSys.Simulation.Gpu
             FaunaRead = FaunaWrite = null;
             AcousticRead = AcousticWrite = AcousticPrev = null;
             FaunaClaims = null;
+            GrassRead = GrassWrite = null;
+            PropaguleRead = PropaguleWrite = null;
+            GrassRootDemand = GrassRootShare = GrassClaims = null;
         }
 
         private static void Release(RenderTexture texture)

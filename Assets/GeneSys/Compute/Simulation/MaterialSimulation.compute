@@ -8,7 +8,6 @@
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
-#include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
 
 Texture2D<uint> _MaterialRead;
 RWTexture2D<uint> _MaterialWrite;
@@ -48,6 +47,7 @@ float4 _EruptionB;
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _PressureB; // gas, fluid, porous, rigid diffusivities
 float4 _DensityExchange; // rate, epsilon, unused, unused
+float4 _DetritusB;
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -107,6 +107,12 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         if (mode == 0)
         {
             material = command.materialId;
+            if (IsDetritusMaterial(material))
+            {
+                aux.z = max(aux.z, saturate(_DetritusB.y));
+                aux.y = max(aux.y, max(0.0, _DetritusB.z));
+                state.x = min(state.x, 28.0);
+            }
             if (IsFloraMaterial(material) && life.y <= 1e-6)
             {
                 genome = RandomFloraGenome((uint2)cell, _Seed, _Tick);
@@ -114,7 +120,6 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
                 life.y = 0.35;
                 life.z = 0.1;
                 life.x = max(life.x, 0.05);
-                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_PAINTED);
             }
         }
         else if (mode == 1) state.x += command.values.y * max(0.1, falloff);
@@ -324,6 +329,11 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
     int2 cell = id.xy;
     uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
     CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+    if (_Mechanics.x <= 1e-8)
+    {
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+        return;
+    }
 
     int2 destination = MovementDestination(cell);
     if (IsMovable(material) && !all(destination == cell))

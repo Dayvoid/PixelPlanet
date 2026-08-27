@@ -121,6 +121,13 @@ namespace GeneSys.Tests
             host.Config.collapseRate = 0f;
             host.Config.erosionRate = 0f;
             host.Config.baseSoilCohesion = 0f;
+            host.Config.grassSeedAtWorldgen = false;
+            host.Config.grassRootUptakeRate = 0f;
+            host.Config.detritusVaporAbsorbRate = 0f;
+            host.Config.detritusEvaporationScale = 0f;
+            host.Config.detritusMoistureShareRate = 0f;
+            host.Config.detritusNutrientLeachRate = 0f;
+            host.Config.detritusDecayRate = 0f;
         }
 
         private static void ConfigureCategoryDiffusivities(SimulationHost host, float gas, float fluid, float porous, float rigid)

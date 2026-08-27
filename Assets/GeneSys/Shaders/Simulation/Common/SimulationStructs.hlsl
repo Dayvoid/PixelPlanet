@@ -23,6 +23,8 @@
 //   combustion.w = ignition accumulator in [0, 1]
 // Milestone 1 fuel is ecology.y on Soil/Sediment plus life.y on Algae (ID 128).
 // Milestone 2 also burns cricket/egg calories sampled from the dedicated fauna field.
+// Flowering grass occupies up to 3 slots on Soil (material stays 7) in a dedicated array.
+// Detritus (ID 131) is a porous organic nutrient/moisture battery painted by fallen flowers.
 // Burning consumes that biomass locally and writes heat/pressure/updraft/steam
 // into the existing weather chain.
 // Combustion never invents water: flashpoint vaporization only moves state.z -> aux.x.
@@ -506,6 +508,259 @@ float FloraFuel(uint material, float4 life, uint stage)
     return saturate(life.y);
 }
 
+#define DETRITUS_ID 131u
+#define GRASS_SLOT_COUNT 3
+#define GRASS_SLICES_PER_SLOT 4
+#define GRASS_SLICE_COUNT 12
+#define GRASS_LIFE_OFFSET 0
+#define GRASS_GENOME_OFFSET 1
+#define GRASS_PHENOLOGY_OFFSET 2
+#define GRASS_DONOR_OFFSET 3
+#define PROPAGULE_SLICE_COUNT 4
+#define PROPAGULE_LOAD_SLICE 0
+#define PROPAGULE_MATERNAL_SLICE 1
+#define PROPAGULE_POLLEN_SLICE 2
+#define PROPAGULE_MIXED_SLICE 3
+#define GRASS_STAGE_EMPTY 0u
+#define GRASS_STAGE_SEEDLING 1u
+#define GRASS_STAGE_ADULT 2u
+#define GRASS_STAGE_FLOWERING 3u
+#define GRASS_STAGE_SEEDING 4u
+#define GRASS_STAGE_DEAD 5u
+#define GRASS_GENE_TEMP_OPTIMUM 0u
+#define GRASS_GENE_TEMP_TOLERANCE 1u
+#define GRASS_GENE_MOISTURE_OPTIMUM 2u
+#define GRASS_GENE_MOISTURE_TOLERANCE 3u
+#define GRASS_GENE_LIGHT_AFFINITY 4u
+#define GRASS_GENE_REPRODUCTION 5u
+#define GRASS_GENE_METABOLIC 6u
+#define GRASS_GENE_BLADE_HEIGHT 7u
+#define GRASS_GENE_BLADE_COLOR 8u
+#define GRASS_GENE_FLOWER_SIZE 9u
+#define GRASS_GENE_ROOT_AFFINITY 10u
+#define GRASS_GENE_MUTATION 11u
+#define GRASS_ROOT_DEMAND_WATER 0
+#define GRASS_ROOT_DEMAND_NUTRIENT 1
+#define GRASS_ROOT_DEMAND_TAPS 2
+#define GRASS_CLAIM_EMPTY 0xffffffffu
+
+bool IsDetritusMaterial(uint material)
+{
+    return material == DETRITUS_ID;
+}
+
+bool IsGrassAnchor(uint material)
+{
+    return material == 7u;
+}
+
+bool GrassStageOccupied(uint stage)
+{
+    return stage != GRASS_STAGE_EMPTY && stage != GRASS_STAGE_DEAD;
+}
+
+bool GrassStageLiving(uint stage)
+{
+    return stage == GRASS_STAGE_SEEDLING || stage == GRASS_STAGE_ADULT
+        || stage == GRASS_STAGE_FLOWERING || stage == GRASS_STAGE_SEEDING;
+}
+
+uint GrassStage(uint4 genome)
+{
+    return genome.w & 255u;
+}
+
+uint4 SanitizeGrassGenome(uint4 genome)
+{
+    uint stage = GrassStage(genome);
+    if (stage > GRASS_STAGE_DEAD)
+        stage = GRASS_STAGE_EMPTY;
+    genome.w = PackFloraMeta(stage, FloraGeneration(genome), FloraLineage(genome), FloraToxinDose(genome));
+    return genome;
+}
+
+float4 SanitizeGrassLife(float4 life)
+{
+    float4 value = max(SafeFinite4(life, 0.0), 0.0);
+    value.x = saturate(value.x);
+    value.y = saturate(value.y);
+    value.z = saturate(value.z);
+    return value;
+}
+
+int GrassSlice(uint slot, uint offset)
+{
+    return (int)(min(slot, 2u) * (uint)GRASS_SLICES_PER_SLOT + offset);
+}
+
+float4 SampleGrassLife(Texture2DArray<float4> tex, int2 cell, uint slot)
+{
+    return tex.Load(int4(cell, GrassSlice(slot, GRASS_LIFE_OFFSET), 0));
+}
+
+uint4 SampleGrassGenome(Texture2DArray<float4> tex, int2 cell, uint slot)
+{
+    return asuint(tex.Load(int4(cell, GrassSlice(slot, GRASS_GENOME_OFFSET), 0)));
+}
+
+float4 SampleGrassPhenology(Texture2DArray<float4> tex, int2 cell, uint slot)
+{
+    return tex.Load(int4(cell, GrassSlice(slot, GRASS_PHENOLOGY_OFFSET), 0));
+}
+
+uint4 SampleGrassDonor(Texture2DArray<float4> tex, int2 cell, uint slot)
+{
+    return asuint(tex.Load(int4(cell, GrassSlice(slot, GRASS_DONOR_OFFSET), 0)));
+}
+
+void WriteGrassSlot(RWTexture2DArray<float4> tex, int2 cell, uint slot, float4 life, uint4 genome, float4 phenology, uint4 donor)
+{
+    tex[uint3((uint2)cell, (uint)GrassSlice(slot, GRASS_LIFE_OFFSET))] = SanitizeGrassLife(life);
+    tex[uint3((uint2)cell, (uint)GrassSlice(slot, GRASS_GENOME_OFFSET))] = asfloat(SanitizeGrassGenome(genome));
+    tex[uint3((uint2)cell, (uint)GrassSlice(slot, GRASS_PHENOLOGY_OFFSET))] = SafeFinite4(phenology, 0.0);
+    tex[uint3((uint2)cell, (uint)GrassSlice(slot, GRASS_DONOR_OFFSET))] = asfloat(donor);
+}
+
+void ClearGrassSlot(RWTexture2DArray<float4> tex, int2 cell, uint slot)
+{
+    WriteGrassSlot(tex, cell, slot, 0.0, 0, 0.0, 0);
+}
+
+float GrassTotalBiomass(Texture2DArray<float4> tex, int2 cell)
+{
+    float biomass = 0.0;
+    [unroll]
+    for (uint slot = 0u; slot < 3u; slot++)
+    {
+        uint stage = GrassStage(SampleGrassGenome(tex, cell, slot));
+        if (GrassStageLiving(stage))
+            biomass += saturate(SampleGrassLife(tex, cell, slot).x);
+    }
+    return saturate(biomass);
+}
+
+float GrassNectar(Texture2DArray<float4> tex, int2 cell, uint slot)
+{
+    uint stage = GrassStage(SampleGrassGenome(tex, cell, slot));
+    if (stage != GRASS_STAGE_FLOWERING && stage != GRASS_STAGE_SEEDING)
+        return 0.0;
+    return saturate(SampleGrassLife(tex, cell, slot).z);
+}
+
+int GrassOccupiedSlots(Texture2DArray<float4> tex, int2 cell)
+{
+    int count = 0;
+    [unroll]
+    for (uint slot = 0u; slot < 3u; slot++)
+        if (GrassStageOccupied(GrassStage(SampleGrassGenome(tex, cell, slot))))
+            count++;
+    return count;
+}
+
+int GrassFirstEmptySlot(Texture2DArray<float4> tex, int2 cell)
+{
+    [unroll]
+    for (uint slot = 0u; slot < 3u; slot++)
+        if (!GrassStageOccupied(GrassStage(SampleGrassGenome(tex, cell, slot))))
+            return (int)slot;
+    return -1;
+}
+
+uint GrassRootCount(uint4 genome)
+{
+    uint gene = DecodeGene(genome, GRASS_GENE_ROOT_AFFINITY);
+    return 1u + min(2u, gene * 3u / 256u);
+}
+
+uint GrassRootMask(uint4 genome, int2 cell, uint slot, int seed)
+{
+    uint count = GrassRootCount(genome);
+    uint h = Hash((uint)cell.x * 73856093u + (uint)cell.y * 19349663u + slot * 83492791u + (uint)seed * 31337u + FloraLineage(genome));
+    uint order = h % 6u;
+    uint a = 0u;
+    uint b = 1u;
+    uint c = 2u;
+    if (order == 1u) { b = 2u; c = 1u; }
+    else if (order == 2u) { a = 1u; b = 0u; c = 2u; }
+    else if (order == 3u) { a = 1u; b = 2u; c = 0u; }
+    else if (order == 4u) { a = 2u; b = 0u; c = 1u; }
+    else if (order == 5u) { a = 2u; b = 1u; c = 0u; }
+    uint mask = 0u;
+    if (count >= 1u) mask |= 1u << a;
+    if (count >= 2u) mask |= 1u << b;
+    if (count >= 3u) mask |= 1u << c;
+    return mask;
+}
+
+int2 GrassRootTarget(int2 cell, uint bit, int2 size)
+{
+    int theta = cell.x;
+    if (bit == 1u) theta -= 1;
+    else if (bit == 2u) theta += 1;
+    return ClampCell(int2(theta, cell.y - 1), size);
+}
+
+float GrassFuel(Texture2DArray<float4> tex, uint material, int2 cell)
+{
+    if (!IsGrassAnchor(material))
+        return 0.0;
+    return GrassTotalBiomass(tex, cell);
+}
+
+float DetritusFuel(uint material, float4 aux)
+{
+    return IsDetritusMaterial(material) ? saturate(aux.z + 0.35) : 0.0;
+}
+
+uint4 RandomGrassGenome(uint2 cell, uint slot, int seed, int tick)
+{
+    uint4 genome = 0;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float h = Hash01(cell.x * 73856093u + cell.y * 19349663u + slot * 6151u + i * 83492791u + (uint)seed * 31337u + (uint)tick * 7919u);
+        EncodeGene(genome, i, (uint)round(h * 255.0));
+    }
+    uint lineage = (uint)round(Hash01(cell.x * 19349663u + cell.y * 73856093u + slot * 2707u + (uint)seed * 7919u + (uint)tick) * 255.0);
+    genome.w = PackFloraMeta(GRASS_STAGE_SEEDLING, 0u, lineage, 0u);
+    return genome;
+}
+
+uint4 MutateGrassGenome(uint4 genome, float baseMutationRate, float toxinMutationScale, uint salt)
+{
+    genome = SanitizeGrassGenome(genome);
+    float toxin = FloraToxinDose(genome) / 255.0;
+    float mutationGene = FloraExpressFactor(DecodeGene(genome, GRASS_GENE_MUTATION), 1.0);
+    float rate = max(0.0, baseMutationRate) * (1.0 + toxin * max(0.0, toxinMutationScale)) * mutationGene;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float unit = Hash01(salt + i * 83492791u + DecodeGene(genome, i) * 747796405u);
+        int step = (int)round((unit * 2.0 - 1.0) * rate * 255.0);
+        int next = clamp((int)DecodeGene(genome, i) + step, 0, 255);
+        EncodeGene(genome, i, (uint)next);
+    }
+    return genome;
+}
+
+float4 SamplePropaguleLoad(Texture2DArray<float4> tex, int2 cell)
+{
+    return max(SafeFinite4(tex.Load(int4(cell, PROPAGULE_LOAD_SLICE, 0)), 0.0), 0.0);
+}
+
+uint4 SamplePropaguleGenome(Texture2DArray<float4> tex, int2 cell, int slice)
+{
+    return asuint(tex.Load(int4(cell, slice, 0)));
+}
+
+void WritePropagule(RWTexture2DArray<float4> tex, int2 cell, float4 load, uint4 maternal, uint4 pollen, uint4 mixedDonor)
+{
+    tex[uint3((uint2)cell, PROPAGULE_LOAD_SLICE)] = max(SafeFinite4(load, 0.0), 0.0);
+    tex[uint3((uint2)cell, PROPAGULE_MATERNAL_SLICE)] = asfloat(maternal);
+    tex[uint3((uint2)cell, PROPAGULE_POLLEN_SLICE)] = asfloat(pollen);
+    tex[uint3((uint2)cell, PROPAGULE_MIXED_SLICE)] = asfloat(mixedDonor);
+}
+
 #define FAUNA_CRICKET_ID 129u
 #define FAUNA_EGG_ID 130u
 #define FAUNA_STAGE_EMPTY 0u
@@ -565,6 +820,7 @@ bool IsFaunaSupport(uint material)
 {
     return material == 4u || material == 5u || material == 7u || material == 8u
         || material == 9u || material == 10u || material == 12u || material == 13u
+        || material == 131u
         || material == FLORA_ALGAE_ID || IsFaunaMaterial(material);
 }
 
@@ -726,6 +982,11 @@ uint4 CombineFaunaGenomes(uint4 mother, uint4 partner, uint salt)
         EncodeGene(child, i, gene);
     }
     return child;
+}
+
+uint4 CombineGrassGenomes(uint4 mother, uint4 donor, uint salt)
+{
+    return CombineFaunaGenomes(mother, donor, salt);
 }
 
 uint4 RandomFloraGenome(uint2 cell, int seed, int tick)
