@@ -217,7 +217,9 @@ namespace GeneSys.Tests
         [Test]
         public void LifeBrushModeExistsAndMapsAfterIgnite()
         {
+            Assert.That(System.Enum.GetNames(typeof(BrushMode)), Does.Contain("Off"));
             Assert.That(System.Enum.GetNames(typeof(BrushMode)), Does.Contain("Life"));
+            Assert.That((int)BrushMode.Off, Is.EqualTo(0));
             Assert.That((int)BrushMode.Life, Is.EqualTo((int)BrushMode.Ignite + 1));
         }
 

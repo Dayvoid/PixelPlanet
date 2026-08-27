@@ -282,7 +282,8 @@ namespace GeneSys.UI
             if (mode != null)
             {
                 mode.choices = new List<string>(Enum.GetNames(typeof(BrushMode)));
-                mode.index = 0;
+                mode.index = (int)BrushMode.Off;
+                tools.Mode = BrushMode.Off;
                 mode.RegisterValueChangedCallback(_ => tools.Mode = (BrushMode)mode.index);
             }
             var material = root.Q<DropdownField>("material");
@@ -703,7 +704,7 @@ namespace GeneSys.UI
                 "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Wind, Vapor, Groundwater, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, and the others reveal the systems those settings drive.");
             AttachNamedSettingTooltip(root, "brush-mode",
                 "Brush Mode",
-                "Selects what left-drag paints: material, heat, water, pressure, vapor, ignition, or life spores. Hold right-click to inspect the cell under the cursor.");
+                "Selects what left-drag paints. Off (default) does nothing; otherwise material, heat, water, pressure, vapor, ignition, or life spores. Hold right-click to inspect the cell under the cursor.");
             AttachNamedSettingTooltip(root, "material",
                 "Material",
                 "Material the brush paints, and whose properties appear below. Changing density, conductivity, or absorbency immediately affects gravity, weather, hydrology, and phase changes for that pixel type.");

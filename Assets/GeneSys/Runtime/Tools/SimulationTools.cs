@@ -11,7 +11,7 @@ using UnityEngine.Rendering;
 
 namespace GeneSys.Tools
 {
-    public enum BrushMode { Material, Heat, Water, Pressure, Vapor, Ignite, Life }
+    public enum BrushMode { Off, Material, Heat, Water, Pressure, Vapor, Ignite, Life }
 
     public sealed class SimulationTools : MonoBehaviour
     {
@@ -19,7 +19,7 @@ namespace GeneSys.Tools
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private SimulationUIController ui;
 
-        public BrushMode Mode { get; set; }
+        public BrushMode Mode { get; set; } = BrushMode.Off;
         public uint SelectedMaterialId { get; set; } = MaterialIds.Soil;
         public int Radius { get; set; } = 5;
         public float Strength { get; set; } = 1f;
@@ -35,7 +35,7 @@ namespace GeneSys.Tools
             Vector2 pointer = Mouse.current.position.ReadValue();
             if (ui != null && ui.IsPointerOverUi(pointer)) return;
 
-            if (Mouse.current.leftButton.isPressed && display.TryScreenToCell(pointer, out Vector2Int cell))
+            if (Mode != BrushMode.Off && Mouse.current.leftButton.isPressed && display.TryScreenToCell(pointer, out Vector2Int cell))
             {
                 Vector4 values = Mode switch
                 {
