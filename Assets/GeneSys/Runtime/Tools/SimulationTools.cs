@@ -44,6 +44,7 @@ namespace GeneSys.Tools
                     BrushMode.Pressure => new Vector4(3f, Strength, 0f, 0f),
                     BrushMode.Vapor => new Vector4(6f, Strength, 0f, 0f),
                     BrushMode.Ignite => new Vector4(9f, Strength, 0f, 0f),
+                    BrushMode.Life when SelectedMaterialId == MaterialIds.Cricket || SelectedMaterialId == MaterialIds.CricketEgg => Vector4.zero,
                     BrushMode.Life => new Vector4(14f, Strength, 0f, 0f),
                     _ => Vector4.zero
                 };
@@ -51,7 +52,9 @@ namespace GeneSys.Tools
                 {
                     center = cell,
                     radius = Mathf.Max(1, Radius),
-                    materialId = SelectedMaterialId,
+                    materialId = Mode == BrushMode.Life && (SelectedMaterialId == MaterialIds.Cricket || SelectedMaterialId == MaterialIds.CricketEgg)
+                        ? SelectedMaterialId
+                        : SelectedMaterialId,
                     values = values
                 });
             }
@@ -146,8 +149,33 @@ namespace GeneSys.Tools
                                                             NativeArray<float> data = lightRequest.GetData<float>();
                                                             if (data.Length > 0) inspection.light = data[0];
                                                         }
-                                                        readbackPending = false;
-                                                        Inspected?.Invoke(inspection);
+                                                        AsyncGPUReadback.Request(host.Resources.FaunaRead, 0, cell.x, 1, cell.y, 1, 0, 1, faunaRequest =>
+                                                        {
+                                                            if (!faunaRequest.hasError)
+                                                            {
+                                                                NativeArray<Vector4> data = faunaRequest.GetData<Vector4>();
+                                                                if (data.Length > 0) inspection.faunaVitals = data[0];
+                                                            }
+                                                            AsyncGPUReadback.Request(host.Resources.FaunaRead, 0, cell.x, 1, cell.y, 1, 2, 1, faunaGenomeRequest =>
+                                                            {
+                                                                if (!faunaGenomeRequest.hasError)
+                                                                {
+                                                                    NativeArray<Vector4> data = faunaGenomeRequest.GetData<Vector4>();
+                                                                    if (data.Length > 0)
+                                                                        inspection.faunaGenome = FaunaGenome.Sanitize(FaunaGenome.FromFloatBits(data[0]));
+                                                                }
+                                                                AsyncGPUReadback.Request(host.Resources.AcousticRead, 0, cell.x, 1, cell.y, 1, 0, 1, acousticRequest =>
+                                                                {
+                                                                    if (!acousticRequest.hasError)
+                                                                    {
+                                                                        NativeArray<Vector2> data = acousticRequest.GetData<Vector2>();
+                                                                        if (data.Length > 0) inspection.acoustic = data[0];
+                                                                    }
+                                                                    readbackPending = false;
+                                                                    Inspected?.Invoke(inspection);
+                                                                });
+                                                            });
+                                                        });
                                                     });
                                                 });
                                             });
@@ -173,6 +201,9 @@ namespace GeneSys.Tools
         public Vector4 storm;
         public Vector4 life;
         public FloraGenome.Packed genome;
+        public Vector4 faunaVitals;
+        public FaunaGenome.Packed faunaGenome;
+        public Vector2 acoustic;
         public float light;
         public Vector2 flow;
     }

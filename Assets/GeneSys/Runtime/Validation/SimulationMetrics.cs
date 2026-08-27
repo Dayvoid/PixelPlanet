@@ -59,6 +59,17 @@ namespace GeneSys.Validation
         public float[] GeneVariance;
     }
 
+    public struct FaunaMetrics
+    {
+        public int AdultCount;
+        public int JuvenileCount;
+        public int EggCount;
+        public double TotalCalories;
+        public double TotalHydration;
+        public float MeanAge;
+        public float MeanGeneration;
+    }
+
     public static class SimulationMetrics
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
@@ -282,7 +293,7 @@ namespace GeneSys.Validation
                         sampleCount++;
                     }
 
-                    if (material == MaterialIds.Algae)
+                    if (material == MaterialIds.Algae || material == MaterialIds.Cricket || material == MaterialIds.CricketEgg)
                         metrics.OrganismCount++;
 
                     if (flow != null && (material == MaterialIds.Air || material == MaterialIds.Vapor))
@@ -327,6 +338,68 @@ namespace GeneSys.Validation
                 metrics.MeanWindSpeed = (float)(windSpeedSum / windSampleCount);
             if (oxygenSampleCount > 0)
                 metrics.MeanOxygen = (float)(oxygenSum / oxygenSampleCount);
+            return metrics;
+        }
+
+        public static void MeasureFaunaAsync(SimulationHost host, Action<FaunaMetrics> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            RenderTexture materialTex = host.Resources.MaterialRead;
+            RenderTexture faunaTex = host.Resources.FaunaRead;
+            if (materialTex == null || faunaTex == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            Action fail = () => completed?.Invoke(default);
+            RequestField(materialTex, fail, materialRequest =>
+            {
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                RequestFieldSlice(faunaTex, 0, fail, vitalsRequest =>
+                {
+                    Vector4[] vitals = vitalsRequest.GetData<Vector4>().ToArray();
+                    RequestFieldSlice(faunaTex, 2, fail, genomeRequest =>
+                    {
+                        Vector4[] genomeBits = genomeRequest.GetData<Vector4>().ToArray();
+                        var genomes = new FaunaGenome.Packed[genomeBits.Length];
+                        for (int i = 0; i < genomeBits.Length; i++)
+                            genomes[i] = FaunaGenome.FromFloatBits(genomeBits[i]);
+                        completed?.Invoke(ComputeFaunaMetrics(materials, vitals, genomes));
+                    });
+                });
+            });
+        }
+
+        public static FaunaMetrics ComputeFaunaMetrics(uint[] materials, Vector4[] vitals, FaunaGenome.Packed[] genomes)
+        {
+            var metrics = new FaunaMetrics();
+            int count = Math.Min(materials.Length, Math.Min(vitals.Length, genomes.Length));
+            int living = 0;
+            double ageSum = 0d;
+            double generationSum = 0d;
+            for (int i = 0; i < count; i++)
+            {
+                if (materials[i] != MaterialIds.Cricket && materials[i] != MaterialIds.CricketEgg) continue;
+                FaunaGenome.Packed genome = FaunaGenome.Sanitize(genomes[i]);
+                uint stage = FaunaGenome.Stage(genome);
+                if (stage == FaunaGenome.StageAdult) metrics.AdultCount++;
+                else if (stage == FaunaGenome.StageJuvenile) metrics.JuvenileCount++;
+                else if (stage == FaunaGenome.StageEgg) metrics.EggCount++;
+                metrics.TotalCalories += Math.Max(0d, vitals[i].x);
+                metrics.TotalHydration += Math.Max(0d, vitals[i].y);
+                ageSum += Math.Max(0f, vitals[i].z);
+                generationSum += FaunaGenome.Generation(genome);
+                living++;
+            }
+            if (living > 0)
+            {
+                metrics.MeanAge = (float)(ageSum / living);
+                metrics.MeanGeneration = (float)(generationSum / living);
+            }
             return metrics;
         }
 

@@ -31,6 +31,12 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture GenomeRead => LifeGenomeRead;
         public RenderTexture GenomeWrite => LifeGenomeWrite;
         public RenderTexture LightField { get; private set; }
+        public RenderTexture FaunaRead { get; private set; }
+        public RenderTexture FaunaWrite { get; private set; }
+        public RenderTexture AcousticRead { get; private set; }
+        public RenderTexture AcousticWrite { get; private set; }
+        public RenderTexture AcousticPrev { get; private set; }
+        public RenderTexture FaunaClaims { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -61,6 +67,38 @@ namespace GeneSys.Simulation.Gpu
             LifeGenomeRead = CreateTextureArray("GeneSys LifeGenome A", GraphicsFormat.R32G32B32A32_SFloat, 2);
             LifeGenomeWrite = CreateTextureArray("GeneSys LifeGenome B", GraphicsFormat.R32G32B32A32_SFloat, 2);
             LightField = CreateTexture("GeneSys Light", GraphicsFormat.R32_SFloat);
+            FaunaRead = CreateTextureArray("GeneSys Fauna A", GraphicsFormat.R32G32B32A32_SFloat, 4);
+            FaunaWrite = CreateTextureArray("GeneSys Fauna B", GraphicsFormat.R32G32B32A32_SFloat, 4);
+            AcousticRead = CreateTexture("GeneSys Acoustic A", GraphicsFormat.R32G32_SFloat);
+            AcousticWrite = CreateTexture("GeneSys Acoustic B", GraphicsFormat.R32G32_SFloat);
+            AcousticPrev = CreateTexture("GeneSys Acoustic Prev", GraphicsFormat.R32G32_SFloat);
+            FaunaClaims = CreateTextureArray("GeneSys Fauna Claims", GraphicsFormat.R32_UInt, 4);
+            ClearFaunaAndAcoustic();
+        }
+
+        public void ClearFaunaAndAcoustic()
+        {
+            ClearRenderTarget(FaunaRead);
+            ClearRenderTarget(FaunaWrite);
+            ClearRenderTarget(AcousticRead);
+            ClearRenderTarget(AcousticWrite);
+            ClearRenderTarget(AcousticPrev);
+            ClearRenderTarget(FaunaClaims);
+        }
+
+        private static void ClearRenderTarget(RenderTexture texture)
+        {
+            if (texture == null) return;
+            int slices = texture.dimension == UnityEngine.Rendering.TextureDimension.Tex2DArray
+                ? Mathf.Max(1, texture.volumeDepth)
+                : 1;
+            RenderTexture previous = RenderTexture.active;
+            for (int slice = 0; slice < slices; slice++)
+            {
+                Graphics.SetRenderTarget(texture, 0, CubemapFace.Unknown, slice);
+                GL.Clear(false, true, Color.clear);
+            }
+            RenderTexture.active = previous;
         }
 
         private RenderTexture CreateTexture(string name, GraphicsFormat format)
@@ -123,13 +161,25 @@ namespace GeneSys.Simulation.Gpu
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
             (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
-            // Storm is excluded: other kernels do not copy it through WriteCell.
-            // Light is derived each tick and is not ping-ponged.
+            // Storm, Light, Fauna, Acoustic, and Claims are excluded: other kernels do not copy them through WriteCell.
         }
 
         public void SwapStorm()
         {
             (StormRead, StormWrite) = (StormWrite, StormRead);
+        }
+
+        public void SwapFauna()
+        {
+            (FaunaRead, FaunaWrite) = (FaunaWrite, FaunaRead);
+        }
+
+        public void SwapAcoustic()
+        {
+            RenderTexture oldPrev = AcousticPrev;
+            AcousticPrev = AcousticRead;
+            AcousticRead = AcousticWrite;
+            AcousticWrite = oldPrev;
         }
 
         public void CopyReadToWrite()
@@ -143,6 +193,8 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(CombustionRead, CombustionWrite);
             Graphics.CopyTexture(StormRead, StormWrite);
             Graphics.CopyTexture(LifeGenomeRead, LifeGenomeWrite);
+            Graphics.CopyTexture(FaunaRead, FaunaWrite);
+            Graphics.CopyTexture(AcousticRead, AcousticWrite);
         }
 
         public void Dispose()
@@ -157,6 +209,9 @@ namespace GeneSys.Simulation.Gpu
             Release(StormRead); Release(StormWrite);
             Release(LifeGenomeRead); Release(LifeGenomeWrite);
             Release(LightField);
+            Release(FaunaRead); Release(FaunaWrite);
+            Release(AcousticRead); Release(AcousticWrite); Release(AcousticPrev);
+            Release(FaunaClaims);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -165,6 +220,9 @@ namespace GeneSys.Simulation.Gpu
             StormRead = StormWrite = null;
             LifeGenomeRead = LifeGenomeWrite = null;
             LightField = null;
+            FaunaRead = FaunaWrite = null;
+            AcousticRead = AcousticWrite = AcousticPrev = null;
+            FaunaClaims = null;
         }
 
         private static void Release(RenderTexture texture)

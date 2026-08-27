@@ -49,6 +49,8 @@ Shader "GeneSys/Planetoid Display"
                 Texture2D<float4> _CombustionTex;
             Texture2D<float4> _StormTex;
             Texture2DArray<float4> _LifeGenomeTex;
+            Texture2DArray<float4> _FaunaTex;
+            Texture2D<float2> _AcousticTex;
             Texture2D<float> _LightTex;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
@@ -109,6 +111,9 @@ Shader "GeneSys/Planetoid Display"
                 float4 life = _LifeGenomeTex.Load(int4(cell, 0, 0));
                 uint4 genome = asuint(_LifeGenomeTex.Load(int4(cell, 1, 0)));
                 float lightField = _LightTex.Load(int3(cell, 0));
+                float4 faunaVitals = _FaunaTex.Load(int4(cell, 0, 0));
+                uint4 faunaGenome = asuint(_FaunaTex.Load(int4(cell, 2, 0)));
+                float2 acoustic = _AcousticTex.Load(int3(cell, 0));
                 float category = _Categories.Load(int3((int)material, 0, 0)).x;
                 if (!IsMottledCategory(category)) shade = 0u;
                 float4 baseColor = _Palette.Load(int3((int)material, (int)shade, 0));
@@ -139,6 +144,19 @@ Shader "GeneSys/Planetoid Display"
                             frac(simulationRadius * height));
                         float disc = saturate((radius - length(cellUv - 0.5)) * 8.0);
                         color = lerp(color * 0.45, stageColor, lerp(0.35, 0.95, disc));
+                    }
+                    else if (material == 129u || material == 130u)
+                    {
+                        uint stage = faunaGenome.w & 255u;
+                        float3 stageColor = material == 130u || stage == 1u ? float3(0.82, 0.74, 0.48)
+                            : stage == 2u ? float3(0.55, 0.38, 0.16)
+                            : float3(0.42, 0.26, 0.10);
+                        float2 cellUv = float2(
+                            frac(angle / 6.28318530718 * width),
+                            frac(simulationRadius * height));
+                        float radius = material == 130u ? 0.22 : 0.38;
+                        float disc = saturate((radius - length(cellUv - 0.5)) * 8.0);
+                        color = lerp(color * 0.4, stageColor, lerp(0.4, 0.95, disc));
                     }
 
                     if (cloud > 0.02)
@@ -284,6 +302,28 @@ Shader "GeneSys/Planetoid Display"
                         color = lerp(float3(0.05, 0.05, 0.08), color, 0.9);
                     else
                         color = lerp(float3(0.04, 0.03, 0.04), color, saturate(life.x));
+                }
+                else if (_OverlayMode == 23)
+                {
+                    uint stage = faunaGenome.w & 255u;
+                    color = lerp(float3(0.05, 0.04, 0.03), float3(0.55, 0.32, 0.1), saturate(faunaVitals.x));
+                    if (material == 130u || stage == 1u)
+                        color = lerp(color, float3(0.82, 0.74, 0.48), 0.7);
+                    else if (stage == 2u)
+                        color = lerp(color, float3(0.55, 0.38, 0.16), 0.45);
+                    color = lerp(color, float3(0.2, 0.55, 0.9), saturate(faunaVitals.y) * 0.35);
+                    if (material == 129u)
+                        color = lerp(color, float3(0.45, 0.28, 0.12), 0.25);
+                }
+                else if (_OverlayMode == 24)
+                {
+                    float feed = clamp(acoustic.x, -1.0, 1.0);
+                    float mate = clamp(acoustic.y, -1.0, 1.0);
+                    color = float3(0.04, 0.04, 0.06);
+                    color = lerp(color, float3(0.15, 0.85, 0.35), saturate(feed));
+                    color = lerp(color, float3(0.95, 0.45, 0.15), saturate(mate));
+                    if (feed < 0.0) color = lerp(color, float3(0.1, 0.2, 0.45), saturate(-feed));
+                    if (mate < 0.0) color = lerp(color, float3(0.35, 0.1, 0.4), saturate(-mate));
                 }
 
                 float radialGrid = frac(simulationRadius * height);

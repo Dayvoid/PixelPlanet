@@ -57,7 +57,9 @@ namespace GeneSys.Editor
                 Define(11, "Vapor", MaterialCategory.Gas, new Color(0.75f,0.82f,0.9f,1), 0.0006f, 0, 0, 1, 1, 0.025f, 1.9f, 0, 0, 0, 0, 100, 0.05f, 0, 10, 9, 11, false),
                 Define(12, "Ash", MaterialCategory.Granular, new Color(0.45f,0.42f,0.38f,1), 0.55f, 0.03f, 22, 0.15f, 0.95f, 0.08f, 0.9f, 0.02f, 0.55f, 0.7f, 1100, 2600, 0.01f, 0, 12, 12, 12, true, false, 0.08f, 0.55f),
                 Define(13, "Metal", MaterialCategory.Solid, new Color(0.75f,0.78f,0.82f,1), 7.8f, 0.98f, 70, 1.5f, 0, 8f, 0.45f, 8f, 0, 0.01f, 1450, 2800, 0.008f, 0.015f, 13, 13, 11, false, true),
-                Define(128, "AlgaeMoss", MaterialCategory.Biological, new Color(0.18f,0.55f,0.22f,1), 0.45f, 0.95f, 40, 0.6f, 0.6f, 0.18f, 1.6f, 0.03f, 0.8f, 0.4f, 90, 180, 0.02f, 0, 128, 128, 11, true, true, 0, 0.85f, 220f, 180f, 0.7f, 0.5f)
+                Define(128, "AlgaeMoss", MaterialCategory.Biological, new Color(0.18f,0.55f,0.22f,1), 0.45f, 0.95f, 40, 0.6f, 0.6f, 0.18f, 1.6f, 0.03f, 0.8f, 0.4f, 90, 180, 0.02f, 0, 128, 128, 11, true, true, 0, 0.85f, 220f, 180f, 0.7f, 0.5f),
+                Define(129, "Cricket", MaterialCategory.Biological, new Color(0.42f,0.28f,0.12f,1), 0.8f, 0.99f, 80, 0.5f, 0.1f, 0.12f, 1.4f, 0.02f, 0.3f, 0.2f, 90, 180, 0.02f, 0, 129, 129, 11, true, false, 0, 0.7f, 200f, 170f, 0.75f, 0.45f),
+                Define(130, "CricketEgg", MaterialCategory.Biological, new Color(0.78f,0.72f,0.48f,1), 0.9f, 0.99f, 80, 0.35f, 0.05f, 0.14f, 1.5f, 0.01f, 0.6f, 0.25f, 80, 160, 0.02f, 0, 130, 130, 11, true, false, 0, 0.5f, 180f, 150f, 0.65f, 0.4f)
             };
 
             MaterialRegistry registry = LoadOrCreate<MaterialRegistry>(DataRoot + "/MaterialRegistry.asset");
@@ -161,6 +163,7 @@ namespace GeneSys.Editor
             SetObject(host, "weather", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Weather.compute"));
             SetObject(host, "mycology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mycology.compute"));
             SetObject(host, "flora", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Flora.compute"));
+            SetObject(host, "fauna", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Fauna.compute"));
             SetObject(host, "combustion", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Combustion.compute"));
             SetObject(host, "storm", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Storm.compute"));
             SetObject(host, "display", display);
@@ -203,6 +206,7 @@ namespace GeneSys.Editor
             SetObject(host, "config", config);
             SetObject(host, "materialRegistry", registry);
             SetObject(host, "flora", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Flora.compute"));
+            SetObject(host, "fauna", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Fauna.compute"));
             document.panelSettings = panelSettings;
             EditorUtility.SetDirty(document);
             EditorSceneManager.MarkSceneDirty(host.gameObject.scene);

@@ -338,6 +338,89 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.floraAnchorGrip)] =
                 "How much local biomass resists wind and rain shear. Higher grip keeps thick mats intact; lower grip lets weather tear even dense colonies.",
 
+            [nameof(SimulationConfig.faunaSeedAtWorldgen)] =
+                "When enabled, worldgen can initialize cricket state on painted biological cells. Off keeps existing worlds deterministic until you place crickets with the Life brush.",
+            [nameof(SimulationConfig.faunaInitialCalories)] =
+                "Starting calorie reserve for a newly painted or hatched cricket. Higher values delay the first forage; lower values make new insects hunt immediately.",
+            [nameof(SimulationConfig.faunaInitialHydration)] =
+                "Starting internal water for a newly spawned cricket or egg yolk. Lower values make desiccation a near-term threat.",
+            [nameof(SimulationConfig.faunaMaturityTicks)] =
+                "Age in simulation ticks before a juvenile can mate or lay eggs. Default 2000 ticks is about 100 seconds at 20 ticks per second.",
+            [nameof(SimulationConfig.faunaDecisionInterval)] =
+                "How often grounded crickets re-evaluate forage, flee, wander, and reproduction. Airborne ballistic motion still runs every tick.",
+            [nameof(SimulationConfig.faunaMaintenanceRate)] =
+                "Calorie drain per second from basal metabolism, scaled by the metabolism gene. Higher values force more frequent feeding.",
+            [nameof(SimulationConfig.faunaHydrationDrain)] =
+                "Steady internal water loss per second, reduced by the hydration-retention gene. Crickets must drink from eaten algae to survive.",
+            [nameof(SimulationConfig.faunaCalorieCapacity)] =
+                "Baseline stomach size. The calorie-capacity gene scales this; meals cannot exceed the expressed cap.",
+            [nameof(SimulationConfig.faunaFullThreshold)] =
+                "Calorie level at which feeding calls are ignored. Sated adults can still answer mating calls.",
+            [nameof(SimulationConfig.faunaHungerThreshold)] =
+                "Calorie level that promotes urgent foraging even without acoustic cues, following algae exudate and nutrient gradients.",
+            [nameof(SimulationConfig.faunaReproductionCalorieThreshold)] =
+                "Calories required before an adult may deposit a clutch. Spending on hops and maintenance can delay laying.",
+            [nameof(SimulationConfig.faunaHopImpulse)] =
+                "Baseline launch impulse. Strength and inverse effective mass (dry mass, calories, and carried moisture) scale the actual hop.",
+            [nameof(SimulationConfig.faunaHopCost)] =
+                "Calories spent per launch, scaled by effective mass. Heavier, wetter crickets pay more to jump.",
+            [nameof(SimulationConfig.faunaFeedCost)] =
+                "Calories spent chewing a meal. Remaining algae calories and moisture still transfer to the winner of a feeding claim.",
+            [nameof(SimulationConfig.faunaDryMass)] =
+                "Baseline body mass used in hop physics. Heavier insects jump shorter distances for the same strength gene.",
+            [nameof(SimulationConfig.faunaDrag)] =
+                "Air resistance during flight. Combined with the drag gene and wind, it shortens hops into a headwind.",
+            [nameof(SimulationConfig.faunaWindResistance)] =
+                "How strongly local angular wind accelerates an airborne cricket. Higher values make weather steer ballistic paths.",
+            [nameof(SimulationConfig.faunaMoistureMass)] =
+                "How much internal hydration adds to effective mass. Wet crickets jump shorter and spend more calories launching.",
+            [nameof(SimulationConfig.faunaSupportBoost)] =
+                "How much rigid, dry landing ground increases takeoff impulse. Soft or wet surfaces cut jump strength.",
+            [nameof(SimulationConfig.faunaWetPenalty)] =
+                "How much surface film and groundwater reduce takeoff. Couples hydrology to hopping range.",
+            [nameof(SimulationConfig.faunaGeneExpressionRange)] =
+                "How far cricket genes may deviate from these baselines. 0 ignores genetics; higher values make strength, mass, and sensing matter more.",
+            [nameof(SimulationConfig.faunaBaseMutationRate)] =
+                "Per-gene walk applied when eggs are produced, whether cloned asexually or mixed with a retained partner genome.",
+            [nameof(SimulationConfig.faunaSenseRadius)] =
+                "How many cells nutrient and acoustic gradients are sampled across. Larger radii let crickets home in from farther away.",
+            [nameof(SimulationConfig.faunaHearingRange)] =
+                "Scales sensitivity to feeding and mating pressure waves. Combined with the hearing gene.",
+            [nameof(SimulationConfig.faunaThreatTemperature)] =
+                "Temperature above which nearby heat and flame drive a flee hop away from the hazard.",
+            [nameof(SimulationConfig.faunaAcousticSpeed)] =
+                "Propagation speed of the dedicated feeding/mating wave field. Faster waves notify distant crickets sooner.",
+            [nameof(SimulationConfig.faunaAcousticDamping)] =
+                "How quickly chirps decay toward silence. Higher damping keeps calls local; lower values let rings travel farther.",
+            [nameof(SimulationConfig.faunaFeedCallAmplitude)] =
+                "Pulse written to the feeding channel while foraging. Hungry crickets seek this signature unless they are full.",
+            [nameof(SimulationConfig.faunaMateCallAmplitude)] =
+                "Pulse written to the mating channel while seeking a partner. Juveniles and adults on cooldown ignore it.",
+            [nameof(SimulationConfig.faunaMateCooldownTicks)] =
+                "Ticks after mating before another partner genome can be stored. Prevents instant re-pairing.",
+            [nameof(SimulationConfig.faunaReproduceCooldownTicks)] =
+                "Ticks after laying a clutch before the next clutch can be claimed.",
+            [nameof(SimulationConfig.faunaClutchMin)] =
+                "Smallest egg count an adult will try to place, before the fertility gene scales toward the maximum.",
+            [nameof(SimulationConfig.faunaClutchMax)] =
+                "Largest egg count an adult will try to place. Default range is 2–4 neighboring supported air cells.",
+            [nameof(SimulationConfig.faunaHatchTicksMin)] =
+                "Shortest egg incubation in ticks. Each egg hashes a target between min and max (default 1000–1500).",
+            [nameof(SimulationConfig.faunaHatchTicksMax)] =
+                "Longest egg incubation in ticks. Eggs remain vulnerable to drying, fire, and wind the whole time.",
+            [nameof(SimulationConfig.faunaEggDesiccationMoisture)] =
+                "Internal hydration below which an egg dies of desiccation. Eggs exchange moisture with their cell.",
+            [nameof(SimulationConfig.faunaEggHeatDeath)] =
+                "Temperature at which eggs cook. Flame also kills eggs immediately.",
+            [nameof(SimulationConfig.faunaEggDisplacement)] =
+                "How strongly wind and runoff can claim a neighboring supported cell and blow an egg along the surface.",
+            [nameof(SimulationConfig.faunaWanderRate)] =
+                "Chance of an idle hop when no food, mate call, or threat is present.",
+            [nameof(SimulationConfig.faunaSurvivalTempMin)] =
+                "Lower air temperature adult and juvenile crickets can endure. Beyond this they die instead of hopping to safety.",
+            [nameof(SimulationConfig.faunaSurvivalTempMax)] =
+                "Upper air temperature adult and juvenile crickets can endure. Extreme heat kills even if they are not on fire.",
+
             [nameof(SimulationConfig.combustionAmbientOxygen)] =
                 "Target oxygen fill as a fraction of each cell's capacity. Atmosphere and porous ground relax toward this level; lowering it starves fire and favors smolder.",
             [nameof(SimulationConfig.combustionOxygenReplenishRate)] =

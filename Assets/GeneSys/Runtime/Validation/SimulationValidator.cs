@@ -128,12 +128,49 @@ namespace GeneSys.Validation
                                             if (!FloraGenome.IsValidStage(stage))
                                             { Complete(false, $"Invalid flora stage {stage} at cell {i}."); return; }
                                         }
-                                        if (host == null || !host.IsReady || host.Config == null)
-                                        { Complete(false, "Simulation host unavailable."); return; }
-                                        if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
-                                        double drift = Math.Abs(water - baselineWater) / baselineWater;
-                                        bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
-                                        Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                        RenderTexture faunaTex = host.Resources.FaunaRead;
+                                        AsyncGPUReadback.Request(faunaTex, 0, 0, faunaTex.width, 0, faunaTex.height, 0, 1, faunaRequest =>
+                                        {
+                                            if (faunaRequest.hasError) { Complete(false, "Fauna GPU readback failed."); return; }
+                                            NativeArray<Vector4> fauna = faunaRequest.GetData<Vector4>();
+                                            for (int i = 0; i < fauna.Length; i++)
+                                            {
+                                                Vector4 value = fauna[i];
+                                                if (!Finite(value)) { Complete(false, $"Non-finite fauna vitals at cell {i}."); return; }
+                                                if (value.x < -0.01f || value.x > 1.01f) { Complete(false, $"Fauna calories out of range at cell {i}."); return; }
+                                                if (value.y < -0.01f || value.y > 1.01f) { Complete(false, $"Fauna hydration out of range at cell {i}."); return; }
+                                            }
+                                            AsyncGPUReadback.Request(faunaTex, 0, 0, faunaTex.width, 0, faunaTex.height, 2, 1, faunaGenomeRequest =>
+                                            {
+                                                if (faunaGenomeRequest.hasError) { Complete(false, "Fauna genome GPU readback failed."); return; }
+                                                NativeArray<Vector4> faunaBits = faunaGenomeRequest.GetData<Vector4>();
+                                                for (int i = 0; i < faunaBits.Length; i++)
+                                                {
+                                                    uint faunaStage = FaunaGenome.Stage(FaunaGenome.FromFloatBits(faunaBits[i]));
+                                                    if (!FaunaGenome.IsValidStage(faunaStage))
+                                                    { Complete(false, $"Invalid fauna stage {faunaStage} at cell {i}."); return; }
+                                                }
+                                                AsyncGPUReadback.Request(host.Resources.AcousticRead, 0, acousticRequest =>
+                                                {
+                                                    if (acousticRequest.hasError) { Complete(false, "Acoustic GPU readback failed."); return; }
+                                                    NativeArray<Vector2> acoustic = acousticRequest.GetData<Vector2>();
+                                                    for (int i = 0; i < acoustic.Length; i++)
+                                                    {
+                                                        Vector2 value = acoustic[i];
+                                                        if (!float.IsFinite(value.x) || !float.IsFinite(value.y))
+                                                        { Complete(false, $"Non-finite acoustic field at cell {i}."); return; }
+                                                        if (Mathf.Abs(value.x) > 1.5f || Mathf.Abs(value.y) > 1.5f)
+                                                        { Complete(false, $"Runaway acoustic field at cell {i}."); return; }
+                                                    }
+                                                    if (host == null || !host.IsReady || host.Config == null)
+                                                    { Complete(false, "Simulation host unavailable."); return; }
+                                                    if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
+                                                    double drift = Math.Abs(water - baselineWater) / baselineWater;
+                                                    bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                                                    Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                                });
+                                            });
+                                        });
                                     });
                                 });
                             });

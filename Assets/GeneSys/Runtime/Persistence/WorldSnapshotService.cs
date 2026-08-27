@@ -20,12 +20,15 @@ namespace GeneSys.Persistence
         private const int Version6 = 6;
         private const int Version7 = 7;
         private const int Version8 = 8;
+        private const int Version9 = 9;
+        private const int PayloadCountV8 = 10;
+        private const int PayloadCountV9 = 16;
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            byte[][] payloads = new byte[10][];
-            int remaining = 10;
+            byte[][] payloads = new byte[PayloadCountV9][];
+            int remaining = PayloadCountV9;
             bool failed = false;
             RenderTexture[] textures =
             {
@@ -44,6 +47,16 @@ namespace GeneSys.Persistence
                 request => CompletePayload(8, request));
             AsyncGPUReadback.Request(lifeGenome, 0, 0, lifeGenome.width, 0, lifeGenome.height, 1, 1,
                 request => CompletePayload(9, request));
+            RenderTexture fauna = host.Resources.FaunaRead;
+            for (int slice = 0; slice < 4; slice++)
+            {
+                int index = 10 + slice;
+                int capture = slice;
+                AsyncGPUReadback.Request(fauna, 0, 0, fauna.width, 0, fauna.height, capture, 1,
+                    request => CompletePayload(index, request));
+            }
+            AsyncGPUReadback.Request(host.Resources.AcousticRead, 0, request => CompletePayload(14, request));
+            AsyncGPUReadback.Request(host.Resources.AcousticPrev, 0, request => CompletePayload(15, request));
 
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
             {
@@ -58,7 +71,7 @@ namespace GeneSys.Persistence
                     using var writer = new BinaryWriter(stream);
                     SimulationConfig config = host.Config;
                     writer.Write(Magic);
-                    writer.Write(Version8);
+                    writer.Write(Version9);
                     writer.Write(host.Resources.Grid.angularResolution);
                     writer.Write(host.Resources.Grid.radialResolution);
                     writer.Write(config.seed);
@@ -66,6 +79,7 @@ namespace GeneSys.Persistence
                     WriteConfig(writer, config);
                     WriteEcologyConfig(writer, config);
                     WriteFloraConfig(writer, config);
+                    WriteFaunaConfig(writer, config);
                     foreach (byte[] payload in payloads)
                     {
                         writer.Write(payload.Length);
@@ -83,7 +97,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7 && version != Version8) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7 && version != Version8 && version != Version9) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -98,6 +112,8 @@ namespace GeneSys.Persistence
                 ReadEcologyConfig(reader, host.Config);
             if (version >= Version7)
                 ReadFloraConfig(reader, host.Config, version);
+            if (version >= Version9)
+                ReadFaunaConfig(reader, host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -203,6 +219,43 @@ namespace GeneSys.Persistence
             else
             {
                 ClearFlora(host.Resources);
+            }
+
+            if (version >= Version9)
+            {
+                for (int slice = 0; slice < 4; slice++)
+                {
+                    int length = reader.ReadInt32();
+                    byte[] payload = reader.ReadBytes(length);
+                    if (payload.Length != length) return false;
+                    Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                    staging.LoadRawTextureData(payload);
+                    staging.Apply(false, false);
+                    Graphics.CopyTexture(staging, 0, 0, host.Resources.FaunaRead, slice, 0);
+                    UnityEngine.Object.Destroy(staging);
+                }
+
+                int acousticLength = reader.ReadInt32();
+                byte[] acousticPayload = reader.ReadBytes(acousticLength);
+                if (acousticPayload.Length != acousticLength) return false;
+                Texture2D acousticStaging = CreateStagingTexture(width, height, host.Resources.AcousticRead.graphicsFormat);
+                acousticStaging.LoadRawTextureData(acousticPayload);
+                acousticStaging.Apply(false, false);
+                Graphics.CopyTexture(acousticStaging, host.Resources.AcousticRead);
+                UnityEngine.Object.Destroy(acousticStaging);
+
+                int prevLength = reader.ReadInt32();
+                byte[] prevPayload = reader.ReadBytes(prevLength);
+                if (prevPayload.Length != prevLength) return false;
+                Texture2D prevStaging = CreateStagingTexture(width, height, host.Resources.AcousticPrev.graphicsFormat);
+                prevStaging.LoadRawTextureData(prevPayload);
+                prevStaging.Apply(false, false);
+                Graphics.CopyTexture(prevStaging, host.Resources.AcousticPrev);
+                UnityEngine.Object.Destroy(prevStaging);
+            }
+            else
+            {
+                host.Resources.ClearFaunaAndAcoustic();
             }
 
             host.Resources.CopyReadToWrite();
@@ -437,6 +490,96 @@ namespace GeneSys.Persistence
                 config.floraFragmentYield = reader.ReadSingle();
                 config.floraAnchorGrip = reader.ReadSingle();
             }
+        }
+
+        private static void WriteFaunaConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.faunaSeedAtWorldgen);
+            writer.Write(config.faunaInitialCalories);
+            writer.Write(config.faunaInitialHydration);
+            writer.Write(config.faunaMaturityTicks);
+            writer.Write(config.faunaDecisionInterval);
+            writer.Write(config.faunaMaintenanceRate);
+            writer.Write(config.faunaHydrationDrain);
+            writer.Write(config.faunaCalorieCapacity);
+            writer.Write(config.faunaFullThreshold);
+            writer.Write(config.faunaHungerThreshold);
+            writer.Write(config.faunaReproductionCalorieThreshold);
+            writer.Write(config.faunaHopImpulse);
+            writer.Write(config.faunaHopCost);
+            writer.Write(config.faunaFeedCost);
+            writer.Write(config.faunaDryMass);
+            writer.Write(config.faunaDrag);
+            writer.Write(config.faunaWindResistance);
+            writer.Write(config.faunaMoistureMass);
+            writer.Write(config.faunaSupportBoost);
+            writer.Write(config.faunaWetPenalty);
+            writer.Write(config.faunaGeneExpressionRange);
+            writer.Write(config.faunaBaseMutationRate);
+            writer.Write(config.faunaSenseRadius);
+            writer.Write(config.faunaHearingRange);
+            writer.Write(config.faunaThreatTemperature);
+            writer.Write(config.faunaAcousticSpeed);
+            writer.Write(config.faunaAcousticDamping);
+            writer.Write(config.faunaFeedCallAmplitude);
+            writer.Write(config.faunaMateCallAmplitude);
+            writer.Write(config.faunaMateCooldownTicks);
+            writer.Write(config.faunaReproduceCooldownTicks);
+            writer.Write(config.faunaClutchMin);
+            writer.Write(config.faunaClutchMax);
+            writer.Write(config.faunaHatchTicksMin);
+            writer.Write(config.faunaHatchTicksMax);
+            writer.Write(config.faunaEggDesiccationMoisture);
+            writer.Write(config.faunaEggHeatDeath);
+            writer.Write(config.faunaEggDisplacement);
+            writer.Write(config.faunaWanderRate);
+            writer.Write(config.faunaSurvivalTempMin);
+            writer.Write(config.faunaSurvivalTempMax);
+        }
+
+        private static void ReadFaunaConfig(BinaryReader reader, SimulationConfig config)
+        {
+            config.faunaSeedAtWorldgen = reader.ReadBoolean();
+            config.faunaInitialCalories = reader.ReadSingle();
+            config.faunaInitialHydration = reader.ReadSingle();
+            config.faunaMaturityTicks = reader.ReadInt32();
+            config.faunaDecisionInterval = reader.ReadInt32();
+            config.faunaMaintenanceRate = reader.ReadSingle();
+            config.faunaHydrationDrain = reader.ReadSingle();
+            config.faunaCalorieCapacity = reader.ReadSingle();
+            config.faunaFullThreshold = reader.ReadSingle();
+            config.faunaHungerThreshold = reader.ReadSingle();
+            config.faunaReproductionCalorieThreshold = reader.ReadSingle();
+            config.faunaHopImpulse = reader.ReadSingle();
+            config.faunaHopCost = reader.ReadSingle();
+            config.faunaFeedCost = reader.ReadSingle();
+            config.faunaDryMass = reader.ReadSingle();
+            config.faunaDrag = reader.ReadSingle();
+            config.faunaWindResistance = reader.ReadSingle();
+            config.faunaMoistureMass = reader.ReadSingle();
+            config.faunaSupportBoost = reader.ReadSingle();
+            config.faunaWetPenalty = reader.ReadSingle();
+            config.faunaGeneExpressionRange = reader.ReadSingle();
+            config.faunaBaseMutationRate = reader.ReadSingle();
+            config.faunaSenseRadius = reader.ReadInt32();
+            config.faunaHearingRange = reader.ReadSingle();
+            config.faunaThreatTemperature = reader.ReadSingle();
+            config.faunaAcousticSpeed = reader.ReadSingle();
+            config.faunaAcousticDamping = reader.ReadSingle();
+            config.faunaFeedCallAmplitude = reader.ReadSingle();
+            config.faunaMateCallAmplitude = reader.ReadSingle();
+            config.faunaMateCooldownTicks = reader.ReadInt32();
+            config.faunaReproduceCooldownTicks = reader.ReadInt32();
+            config.faunaClutchMin = reader.ReadInt32();
+            config.faunaClutchMax = reader.ReadInt32();
+            config.faunaHatchTicksMin = reader.ReadInt32();
+            config.faunaHatchTicksMax = reader.ReadInt32();
+            config.faunaEggDesiccationMoisture = reader.ReadSingle();
+            config.faunaEggHeatDeath = reader.ReadSingle();
+            config.faunaEggDisplacement = reader.ReadSingle();
+            config.faunaWanderRate = reader.ReadSingle();
+            config.faunaSurvivalTempMin = reader.ReadSingle();
+            config.faunaSurvivalTempMax = reader.ReadSingle();
         }
 
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)

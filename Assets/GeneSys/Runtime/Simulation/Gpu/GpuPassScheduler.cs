@@ -31,6 +31,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader weather;
         private readonly ComputeShader mycology;
         private readonly ComputeShader flora;
+        private readonly ComputeShader fauna;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
         private readonly GraphicsBuffer strikeSeedBuffer;
@@ -44,6 +45,7 @@ namespace GeneSys.Simulation.Gpu
         private const int MaxStrikeSeeds = 32;
         private const int StrikeSeedStride = 16;
         public const int OrganismHistoryGpuCapacity = 2048;
+        private readonly Dictionary<int, Vector2Int> threadGroups = new();
         private int tick;
 
         public int TickIndex => tick;
@@ -54,7 +56,7 @@ namespace GeneSys.Simulation.Gpu
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
             ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
-            ComputeShader combustion, ComputeShader storm)
+            ComputeShader fauna, ComputeShader combustion, ComputeShader storm)
         {
             this.config = config;
             this.resources = resources;
@@ -65,6 +67,7 @@ namespace GeneSys.Simulation.Gpu
             this.weather = weather;
             this.mycology = mycology;
             this.flora = flora;
+            this.fauna = fauna;
             this.combustion = combustion;
             this.storm = storm;
             materialBuffer = registry.CreateGpuBuffer();
@@ -133,6 +136,20 @@ namespace GeneSys.Simulation.Gpu
                     flora.SetTexture(seedFlora, "_LifeGenomeWrite", resources.LifeGenomeRead);
                     BindOrganismHistory(flora, seedFlora);
                     Dispatch(flora, seedFlora);
+                }
+            }
+            resources.ClearFaunaAndAcoustic();
+            if (fauna != null)
+            {
+                int seedFauna = fauna.FindKernel("SeedFauna");
+                if (seedFauna >= 0)
+                {
+                    SetCommon(fauna, seedFauna, 0f);
+                    fauna.SetTexture(seedFauna, "_MaterialRead", resources.MaterialRead);
+                    fauna.SetTexture(seedFauna, "_FaunaRead", resources.FaunaRead);
+                    fauna.SetTexture(seedFauna, "_FaunaWrite", resources.FaunaRead);
+                    BindOrganismHistory(fauna, seedFauna);
+                    Dispatch(fauna, seedFauna);
                 }
             }
             resources.CopyReadToWrite();
@@ -242,6 +259,9 @@ namespace GeneSys.Simulation.Gpu
                 }
             }
 
+            if (fauna != null)
+                DispatchFauna(deltaTime);
+
             tick++;
             stopwatch.Stop();
             LastTickMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
@@ -308,6 +328,17 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_FloraG", new Vector4(config.floraMaintenanceRate, config.floraNightDrain, config.floraDormancyMetabolicScale, config.floraInitialSporeLoad));
             shader.SetVector("_FloraH", new Vector4(config.floraSeedAtWorldgen ? 1f : 0f, config.floraAnchorGrip, 0f, 0f));
             shader.SetVector("_FloraI", new Vector4(config.floraPoleDriftRate, config.floraWindShearRate, config.floraRainShearRate, config.floraFragmentYield));
+            shader.SetVector("_FaunaA", new Vector4(config.faunaInitialCalories, config.faunaInitialHydration, config.faunaMaturityTicks, config.faunaDecisionInterval));
+            shader.SetVector("_FaunaB", new Vector4(config.faunaMaintenanceRate, config.faunaHydrationDrain, config.faunaCalorieCapacity, config.faunaFullThreshold));
+            shader.SetVector("_FaunaC", new Vector4(config.faunaHungerThreshold, config.faunaReproductionCalorieThreshold, config.faunaHopImpulse, config.faunaHopCost));
+            shader.SetVector("_FaunaD", new Vector4(config.faunaFeedCost, config.faunaDryMass, config.faunaDrag, config.faunaWindResistance));
+            shader.SetVector("_FaunaE", new Vector4(config.faunaMoistureMass, config.faunaSupportBoost, config.faunaWetPenalty, config.faunaGeneExpressionRange));
+            shader.SetVector("_FaunaF", new Vector4(config.faunaBaseMutationRate, config.faunaSenseRadius, config.faunaHearingRange, config.faunaThreatTemperature));
+            shader.SetVector("_FaunaG", new Vector4(config.faunaAcousticSpeed, config.faunaAcousticDamping, config.faunaFeedCallAmplitude, config.faunaMateCallAmplitude));
+            shader.SetVector("_FaunaH", new Vector4(config.faunaMateCooldownTicks, config.faunaReproduceCooldownTicks, config.faunaClutchMin, config.faunaClutchMax));
+            shader.SetVector("_FaunaI", new Vector4(config.faunaHatchTicksMin, config.faunaHatchTicksMax, config.faunaEggDesiccationMoisture, config.faunaEggHeatDeath));
+            shader.SetVector("_FaunaJ", new Vector4(config.faunaEggDisplacement, config.faunaWanderRate, config.faunaSurvivalTempMin, config.faunaSurvivalTempMax));
+            shader.SetVector("_FaunaK", new Vector4(config.faunaSeedAtWorldgen ? 1f : 0f, 0f, 0f, 0f));
             shader.SetVector("_CombustionA", new Vector4(config.combustionAmbientOxygen, config.combustionOxygenReplenishRate, config.combustionOxygenDiffusionRate, config.combustionIgnitionAccumulationRate));
             shader.SetVector("_CombustionB", new Vector4(config.combustionIgnitionDecayRate, config.combustionSeedIntensity, config.combustionBurnRate, config.combustionHeatYield));
             shader.SetVector("_CombustionC", new Vector4(config.combustionPressureScale, config.combustionUpdraftStrength, config.combustionSmokeYield, config.combustionSootSettlingRate));
@@ -341,11 +372,13 @@ namespace GeneSys.Simulation.Gpu
             shader.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
             shader.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeWrite);
             shader.SetTexture(kernel, "_LightRead", resources.LightField);
+            if (shader == combustion)
+                shader.SetTexture(kernel, "_FaunaRead", resources.FaunaRead);
         }
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)
         {
-            if (shader != flora && shader != combustion && shader != materialSimulation)
+            if (shader != flora && shader != fauna && shader != combustion && shader != materialSimulation)
                 return;
             shader.SetBuffer(kernel, "_OrganismHistory", organismHistoryBuffer);
             shader.SetBuffer(kernel, "_OrganismHistoryCounter", organismHistoryCounterBuffer);
@@ -400,9 +433,15 @@ namespace GeneSys.Simulation.Gpu
 
         private void Dispatch(ComputeShader shader, int kernel)
         {
-            shader.GetKernelThreadGroupSizes(kernel, out uint x, out uint y, out _);
-            int groupsX = Mathf.CeilToInt(resources.Grid.angularResolution / (float)x);
-            int groupsY = Mathf.CeilToInt(resources.Grid.radialResolution / (float)y);
+            int key = shader.GetInstanceID() * 397 + kernel;
+            if (!threadGroups.TryGetValue(key, out Vector2Int size))
+            {
+                shader.GetKernelThreadGroupSizes(kernel, out uint x, out uint y, out _);
+                size = new Vector2Int(Mathf.Max(1, (int)x), Mathf.Max(1, (int)y));
+                threadGroups[key] = size;
+            }
+            int groupsX = Mathf.CeilToInt(resources.Grid.angularResolution / (float)size.x);
+            int groupsY = Mathf.CeilToInt(resources.Grid.radialResolution / (float)size.y);
             shader.Dispatch(kernel, groupsX, groupsY, 1);
         }
 
@@ -491,6 +530,107 @@ namespace GeneSys.Simulation.Gpu
             storm.SetTexture(kernel, "_StormWrite", resources.StormRead);
             storm.SetBuffer(kernel, "_StrikeSeeds", strikeSeedBuffer);
             storm.SetBuffer(kernel, "_StrikeCounter", strikeCounterBuffer);
+        }
+
+        private void DispatchFauna(float deltaTime)
+        {
+            int seed = fauna.FindKernel("SeedFauna");
+            int acoustic = fauna.FindKernel("AcousticPropagate");
+            int metabolism = fauna.FindKernel("FaunaMetabolism");
+            int clear = fauna.FindKernel("ClearFaunaClaims");
+            int claim = fauna.FindKernel("ClaimFaunaActions");
+            int applyWorld = fauna.FindKernel("ApplyFaunaWorld");
+            int applyState = fauna.FindKernel("ApplyFaunaState");
+            if (seed < 0 || acoustic < 0 || metabolism < 0 || clear < 0 || claim < 0 || applyWorld < 0 || applyState < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing fauna compute kernel. Skipping fauna pass.");
+                return;
+            }
+
+            SetCommon(fauna, seed, deltaTime);
+            fauna.SetTexture(seed, "_MaterialRead", resources.MaterialRead);
+            fauna.SetTexture(seed, "_FaunaRead", resources.FaunaRead);
+            fauna.SetTexture(seed, "_FaunaWrite", resources.FaunaWrite);
+            BindOrganismHistory(fauna, seed);
+            Dispatch(fauna, seed);
+            resources.SwapFauna();
+
+            SetCommon(fauna, acoustic, deltaTime);
+            fauna.SetBuffer(acoustic, "_MaterialDefinitions", materialBuffer);
+            fauna.SetTexture(acoustic, "_MaterialRead", resources.MaterialRead);
+            fauna.SetTexture(acoustic, "_FaunaRead", resources.FaunaRead);
+            fauna.SetTexture(acoustic, "_AcousticRead", resources.AcousticRead);
+            fauna.SetTexture(acoustic, "_AcousticPrev", resources.AcousticPrev);
+            fauna.SetTexture(acoustic, "_AcousticWrite", resources.AcousticWrite);
+            Dispatch(fauna, acoustic);
+            resources.SwapAcoustic();
+
+            SetCommon(fauna, metabolism, deltaTime);
+            fauna.SetBuffer(metabolism, "_MaterialDefinitions", materialBuffer);
+            BindFaunaWorldReads(metabolism);
+            fauna.SetTexture(metabolism, "_FaunaRead", resources.FaunaRead);
+            fauna.SetTexture(metabolism, "_FaunaWrite", resources.FaunaWrite);
+            fauna.SetTexture(metabolism, "_AcousticRead", resources.AcousticRead);
+            BindOrganismHistory(fauna, metabolism);
+            Dispatch(fauna, metabolism);
+            resources.SwapFauna();
+
+            SetCommon(fauna, clear, deltaTime);
+            fauna.SetTexture(clear, "_FaunaClaimsWrite", resources.FaunaClaims);
+            Dispatch(fauna, clear);
+
+            SetCommon(fauna, claim, deltaTime);
+            fauna.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
+            BindFaunaWorldReads(claim);
+            fauna.SetTexture(claim, "_FaunaRead", resources.FaunaRead);
+            fauna.SetTexture(claim, "_FaunaClaimsWrite", resources.FaunaClaims);
+            Dispatch(fauna, claim);
+
+            SetCommon(fauna, applyWorld, deltaTime);
+            fauna.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
+            fauna.SetTexture(applyWorld, "_MaterialRead", resources.MaterialRead);
+            fauna.SetTexture(applyWorld, "_MaterialWrite", resources.MaterialWrite);
+            fauna.SetTexture(applyWorld, "_StateRead", resources.StateRead);
+            fauna.SetTexture(applyWorld, "_StateWrite", resources.StateWrite);
+            fauna.SetTexture(applyWorld, "_FlowRead", resources.FlowRead);
+            fauna.SetTexture(applyWorld, "_FlowWrite", resources.FlowWrite);
+            fauna.SetTexture(applyWorld, "_AuxRead", resources.AuxRead);
+            fauna.SetTexture(applyWorld, "_AuxWrite", resources.AuxWrite);
+            fauna.SetTexture(applyWorld, "_ShadeRead", resources.ShadeRead);
+            fauna.SetTexture(applyWorld, "_ShadeWrite", resources.ShadeWrite);
+            fauna.SetTexture(applyWorld, "_EcologyRead", resources.EcologyRead);
+            fauna.SetTexture(applyWorld, "_EcologyWrite", resources.EcologyWrite);
+            fauna.SetTexture(applyWorld, "_CombustionRead", resources.CombustionRead);
+            fauna.SetTexture(applyWorld, "_CombustionWrite", resources.CombustionWrite);
+            fauna.SetTexture(applyWorld, "_LifeGenomeRead", resources.LifeGenomeRead);
+            fauna.SetTexture(applyWorld, "_LifeGenomeWrite", resources.LifeGenomeWrite);
+            fauna.SetTexture(applyWorld, "_FaunaRead", resources.FaunaRead);
+            fauna.SetTexture(applyWorld, "_FaunaClaims", resources.FaunaClaims);
+            BindOrganismHistory(fauna, applyWorld);
+            Dispatch(fauna, applyWorld);
+
+            SetCommon(fauna, applyState, deltaTime);
+            fauna.SetBuffer(applyState, "_MaterialDefinitions", materialBuffer);
+            BindFaunaWorldReads(applyState);
+            fauna.SetTexture(applyState, "_FaunaRead", resources.FaunaRead);
+            fauna.SetTexture(applyState, "_FaunaWrite", resources.FaunaWrite);
+            fauna.SetTexture(applyState, "_FaunaClaims", resources.FaunaClaims);
+            BindOrganismHistory(fauna, applyState);
+            Dispatch(fauna, applyState);
+
+            resources.Swap();
+            resources.SwapFauna();
+        }
+
+        private void BindFaunaWorldReads(int kernel)
+        {
+            fauna.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            fauna.SetTexture(kernel, "_StateRead", resources.StateRead);
+            fauna.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            fauna.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            fauna.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
+            fauna.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            fauna.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
         }
 
         public void Dispose()

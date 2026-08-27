@@ -26,6 +26,7 @@ namespace GeneSys.UI
             { "Solar and weather", "weather" },
             { "Ecology - Mycology", "ecology" },
             { "Ecology - Flora", "ecology" },
+            { "Ecology - Fauna", "ecology" },
             { "Combustion", "combustion" },
             { "Storm and lightning", "storm" },
             { "Graphics", "performance" },
@@ -259,7 +260,7 @@ namespace GeneSys.UI
                     "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor",
                     "Groundwater", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories", "Composite Water",
                     "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only", "Mycology",
-                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome"
+                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
@@ -906,7 +907,11 @@ namespace GeneSys.UI
                     $"Flora spores {inspection.life.x:F3}  biomass {inspection.life.y:F3}\n" +
                     $"Energy {inspection.life.z:F3}  exudate {inspection.life.w:F3}\n" +
                     $"Stage {FloraGenome.DescribeStage(FloraGenome.Stage(inspection.genome))}  gen {FloraGenome.Generation(inspection.genome)}  toxin {FloraGenome.ToxinDose(inspection.genome)}\n" +
-                    FloraGenome.DescribeGenes(inspection.genome, geneRange);
+                    FloraGenome.DescribeGenes(inspection.genome, geneRange) + "\n" +
+                    $"Fauna cal {inspection.faunaVitals.x:F3}  hyd {inspection.faunaVitals.y:F3}  age {inspection.faunaVitals.z:F0}  cd {inspection.faunaVitals.w:F0}\n" +
+                    $"Fauna {FaunaGenome.DescribeStage(FaunaGenome.Stage(inspection.faunaGenome))} / {FaunaGenome.DescribeBehavior(FaunaGenome.Behavior(inspection.faunaGenome))}  gen {FaunaGenome.Generation(inspection.faunaGenome)}\n" +
+                    $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
+                    FaunaGenome.DescribeGenes(inspection.faunaGenome, host.Config != null ? host.Config.faunaGeneExpressionRange : 0.45f);
             }
         }
 
@@ -967,25 +972,29 @@ namespace GeneSys.UI
             metricsRefreshTimer = MetricsRefreshIntervalSeconds();
             SimulationMetrics.MeasureAsync(host, metrics =>
             {
-                metricsReadbackPending = false;
-                if (worldMetricsLabel != null)
+                SimulationMetrics.MeasureFaunaAsync(host, fauna =>
                 {
-                    worldMetricsLabel.text =
-                        $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
-                        $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
-                }
-                if (simulationStatusLabel != null)
-                {
-                    simulationStatusLabel.text =
-                        $"Grid {metrics.AngularResolution}×{metrics.RadialResolution}\n" +
-                        $"Ocean {metrics.OceanCoverage:P1}  |  Basins {metrics.BasinCount}\n" +
-                        $"Water  surface {metrics.SurfaceWaterMass:F1}  ground {metrics.GroundwaterMass:F1}  vapor {metrics.VaporMass:F1}\n" +
-                        $"Total tracked water {metrics.TotalTrackedWaterMass:F1}\n" +
-                        $"Mean T {metrics.MeanTemperature:F2}  P {metrics.MeanPressure:F3}  moisture {metrics.MeanMoisture:F3}\n" +
-                        $"Mean wind speed {metrics.MeanWindSpeed:F3}\n" +
-                        $"Fire cells {metrics.BurningCellCount}  intensity {metrics.TotalFireIntensity:F2}  O2 {metrics.MeanOxygen:F2}  soot {metrics.SootMass:F2}\n" +
-                        $"Organisms {metrics.OrganismCount}";
-                }
+                    metricsReadbackPending = false;
+                    if (worldMetricsLabel != null)
+                    {
+                        worldMetricsLabel.text =
+                            $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
+                            $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
+                    }
+                    if (simulationStatusLabel != null)
+                    {
+                        simulationStatusLabel.text =
+                            $"Grid {metrics.AngularResolution}×{metrics.RadialResolution}\n" +
+                            $"Ocean {metrics.OceanCoverage:P1}  |  Basins {metrics.BasinCount}\n" +
+                            $"Water  surface {metrics.SurfaceWaterMass:F1}  ground {metrics.GroundwaterMass:F1}  vapor {metrics.VaporMass:F1}\n" +
+                            $"Total tracked water {metrics.TotalTrackedWaterMass:F1}\n" +
+                            $"Mean T {metrics.MeanTemperature:F2}  P {metrics.MeanPressure:F3}  moisture {metrics.MeanMoisture:F3}\n" +
+                            $"Mean wind speed {metrics.MeanWindSpeed:F3}\n" +
+                            $"Fire cells {metrics.BurningCellCount}  intensity {metrics.TotalFireIntensity:F2}  O2 {metrics.MeanOxygen:F2}  soot {metrics.SootMass:F2}\n" +
+                            $"Organisms {metrics.OrganismCount}  cricket {fauna.AdultCount}  nymph {fauna.JuvenileCount}  eggs {fauna.EggCount}\n" +
+                            $"Fauna cal {fauna.TotalCalories:F2}  hyd {fauna.TotalHydration:F2}";
+                    }
+                });
             });
         }
 

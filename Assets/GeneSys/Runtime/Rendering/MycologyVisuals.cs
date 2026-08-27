@@ -41,4 +41,20 @@ namespace GeneSys.Rendering
             return 2;
         }
     }
+
+    public static class FaunaVisuals
+    {
+        public static readonly Color Juvenile = new Color(0.55f, 0.38f, 0.16f, 1f);
+        public static readonly Color Adult = new Color(0.42f, 0.26f, 0.10f, 1f);
+        public static readonly Color Egg = new Color(0.82f, 0.74f, 0.48f, 1f);
+        public const int OverlayMode = 23;
+        public const int AcousticOverlayMode = 24;
+
+        public static Color StageColor(uint stage)
+        {
+            if (stage == 3) return Adult;
+            if (stage == 2) return Juvenile;
+            return Egg;
+        }
+    }
 }

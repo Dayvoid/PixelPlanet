@@ -1,0 +1,823 @@
+#pragma kernel SeedFauna
+#pragma kernel AcousticPropagate
+#pragma kernel FaunaMetabolism
+#pragma kernel ClearFaunaClaims
+#pragma kernel ClaimFaunaActions
+#pragma kernel ApplyFaunaWorld
+#pragma kernel ApplyFaunaState
+#pragma target 5.1
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+Texture2D<uint> _ShadeRead;
+RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2DArray<float4> _LifeGenomeWrite;
+Texture2DArray<float4> _FaunaRead;
+RWTexture2DArray<float4> _FaunaWrite;
+Texture2D<float2> _AcousticRead;
+Texture2D<float2> _AcousticPrev;
+RWTexture2D<float2> _AcousticWrite;
+Texture2DArray<uint> _FaunaClaims;
+RWTexture2DArray<uint> _FaunaClaimsWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _Mechanics;
+float4 _FaunaA; // initialCalories, initialHydration, maturityTicks, decisionInterval
+float4 _FaunaB; // maintenance, hydrationDrain, calorieCapacity, fullThreshold
+float4 _FaunaC; // hungerThreshold, reproductionCalorie, hopImpulse, hopCost
+float4 _FaunaD; // feedCost, dryMass, drag, windResistance
+float4 _FaunaE; // moistureMass, supportBoost, wetPenalty, geneExpressionRange
+float4 _FaunaF; // mutationRate, senseRadius, hearingRange, threatTemperature
+float4 _FaunaG; // acousticSpeed, acousticDamping, feedCallAmplitude, mateCallAmplitude
+float4 _FaunaH; // mateCooldown, reproduceCooldown, clutchMin, clutchMax
+float4 _FaunaI; // hatchMin, hatchMax, eggDesiccationMoisture, eggHeatDeath
+float4 _FaunaJ; // eggDisplacement, wanderRate, survivalTempMin, survivalTempMax
+float4 _FaunaK; // seedAtWorldgen, unused, unused, unused
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+float4 Eco(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
+float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
+float4 L(int2 value) { return SampleLife(_LifeGenomeRead, C(value)); }
+uint4 G(int2 value) { return SampleGenome(_LifeGenomeRead, C(value)); }
+float4 VitalsOf(int2 value) { return SampleFaunaVitals(_FaunaRead, C(value)); }
+float4 MotionOf(int2 value) { return SampleFaunaMotion(_FaunaRead, C(value)); }
+uint4 FaunaG(int2 value) { return SampleFaunaGenome(_FaunaRead, C(value)); }
+uint4 PartnerOf(int2 value) { return SampleFaunaPartner(_FaunaRead, C(value)); }
+float2 AcousticOf(int2 value) { return _AcousticRead.Load(int3(C(value), 0)); }
+float2 AcousticPrevOf(int2 value) { return _AcousticPrev.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+uint ClaimAt(int2 cell, uint slice)
+{
+    return _FaunaClaims.Load(int4(C(cell), (int)slice, 0));
+}
+
+void WriteWorld(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome)
+{
+    uint oldMaterial = M(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(D(material).metadata.x, (uint2)cell, material, _Seed);
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
+}
+
+float CellHash(int2 cell, uint salt)
+{
+    return Hash01((uint)cell.x * 73856093u + (uint)cell.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + salt);
+}
+
+bool HasLandingSupport(int2 cell)
+{
+    if (cell.y <= 0) return false;
+    return IsFaunaSupport(M(cell + int2(0, -1)));
+}
+
+bool CanOccupy(int2 cell)
+{
+    uint material = M(cell);
+    return IsFaunaOpenHabitat(material) && HasLandingSupport(cell);
+}
+
+
+float WetnessAt(int2 cell)
+{
+    float4 state = S(cell);
+    float4 aux = A(cell);
+    float below = cell.y > 0 ? S(cell + int2(0, -1)).z + A(cell + int2(0, -1)).y : 0.0;
+    return saturate(max(state.z, below));
+}
+
+float SupportFactor(int2 cell)
+{
+    if (cell.y <= 0) return 0.15;
+    uint below = M(cell + int2(0, -1));
+    float rigidity = saturate(D(below).physical.y);
+    float wet = WetnessAt(cell);
+    return saturate(0.35 + rigidity * max(0.0, _FaunaE.y) - wet * max(0.0, _FaunaE.z));
+}
+
+float EffectiveMass(uint4 genome, float4 vitals)
+{
+    float range = _FaunaE.w;
+    float dry = max(0.05, _FaunaD.y) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_DRY_MASS), range);
+    float moisture = max(0.0, _FaunaE.x) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_MOISTURE_LOAD), range) * saturate(vitals.y);
+    return max(0.12, dry + saturate(vitals.x) * 0.25 + moisture);
+}
+
+float CalorieCap(uint4 genome)
+{
+    return saturate(max(0.05, _FaunaB.z) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_CALORIE_CAPACITY), _FaunaE.w));
+}
+
+int ClutchSizeOf(uint4 genome)
+{
+    int lo = (int)round(_FaunaH.z);
+    int hi = (int)round(_FaunaH.w);
+    lo = clamp(lo, 1, 8);
+    hi = max(lo, clamp(hi, 1, 8));
+    float range = _FaunaE.w;
+    float factor = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_FERTILITY), range);
+    float span = max(1e-4, 2.0 * max(0.05, range));
+    float t = saturate((factor - (1.0 - range)) / span);
+    return clamp(lo + (int)round(t * (float)(hi - lo)), lo, hi);
+}
+
+float NutrientCue(int2 cell)
+{
+    return saturate(L(cell).w) * 1.4 + saturate(L(cell).y) * 1.1 + saturate(A(cell).z) * 0.35
+        + (IsFloraMaterial(M(cell)) ? 2.0 : 0.0);
+}
+
+float2 SenseGradient(int2 cell, uint mode, uint4 genome)
+{
+    float range = _FaunaE.w;
+    float sense = FaunaExpressFactor(DecodeGene(genome, mode == 0u ? FAUNA_GENE_NUTRIENT_SENSE : FAUNA_GENE_HEARING), range);
+    int radius = clamp((int)round(_FaunaF.y * (mode == 0u ? sense : 1.0)), 1, 8);
+    float2 grad = 0.0;
+    [loop]
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        [loop]
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            if (dx == 0 && dy == 0) continue;
+            int2 neighbor = C(cell + int2(dx, dy));
+            float weight = 1.0 / max(1.0, abs(dx) + abs(dy));
+            float value = 0.0;
+            if (mode == 0u)
+                value = NutrientCue(neighbor);
+            else if (mode == 1u)
+                value = AcousticOf(neighbor).x;
+            else
+                value = AcousticOf(neighbor).y;
+            grad.x += (float)dx * value * weight;
+            grad.y += (float)dy * value * weight;
+        }
+    }
+    float hearing = mode == 0u ? 1.0 : FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_HEARING), range);
+    return grad * sense * hearing;
+}
+
+float2 ThreatDir(int2 cell, uint4 genome)
+{
+    float threatTemp = max(20.0, _FaunaF.w);
+    float2 dir = 0.0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        float heat = S(neighbor).x;
+        float flame = Comb(neighbor).y;
+        float danger = max(0.0, heat - threatTemp) * 0.02 + flame;
+        dir -= float2(offsets[i]) * danger;
+    }
+    return dir * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_THREAT_RESPONSE), _FaunaE.w);
+}
+
+int2 NeighborAlgae(int2 cell)
+{
+    int2 best = cell;
+    float bestScore = -1.0;
+    int2 offsets[6] = { int2(0, -1), int2(-1, 0), int2(1, 0), int2(-1, -1), int2(1, -1), int2(0, 0) };
+    [unroll]
+    for (int i = 0; i < 6; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        if (!IsFloraMaterial(M(neighbor))) continue;
+        float score = saturate(L(neighbor).y) + 0.05 * CellHash(neighbor, 19u);
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = neighbor;
+        }
+    }
+    return best;
+}
+
+int2 AdjacentEligibleAdult(int2 cell)
+{
+    int2 n0 = C(cell + int2(-1, 0));
+    if (IsCricketMaterial(M(n0)) && FaunaStage(FaunaG(n0)) == FAUNA_STAGE_ADULT && VitalsOf(n0).w <= 0.5)
+        return n0;
+    int2 n1 = C(cell + int2(1, 0));
+    if (IsCricketMaterial(M(n1)) && FaunaStage(FaunaG(n1)) == FAUNA_STAGE_ADULT && VitalsOf(n1).w <= 0.5)
+        return n1;
+    int2 n2 = C(cell + int2(-2, 0));
+    if (IsCricketMaterial(M(n2)) && FaunaStage(FaunaG(n2)) == FAUNA_STAGE_ADULT && VitalsOf(n2).w <= 0.5)
+        return n2;
+    int2 n3 = C(cell + int2(2, 0));
+    if (IsCricketMaterial(M(n3)) && FaunaStage(FaunaG(n3)) == FAUNA_STAGE_ADULT && VitalsOf(n3).w <= 0.5)
+        return n3;
+    return cell;
+}
+
+bool EggReadyToHatch(uint4 genome, float4 vitals)
+{
+    if (FaunaStage(genome) != FAUNA_STAGE_EGG) return false;
+    float hatchAt = max(1.0, vitals.w);
+    return vitals.z >= hatchAt;
+}
+
+void Claim(int2 dest, uint slice, int2 source)
+{
+    dest = C(dest);
+    uint packed = PackFaunaCell(source, _GridSize);
+    uint original;
+    InterlockedMin(_FaunaClaimsWrite[uint3((uint2)dest, slice)], packed, original);
+}
+
+[numthreads(8, 8, 1)]
+void SeedFauna(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+    uint4 genome = FaunaG(cell);
+    uint4 partner = PartnerOf(cell);
+
+    if (!IsFaunaMaterial(material))
+    {
+        ClearFaunaState(_FaunaWrite, cell);
+        return;
+    }
+
+    uint stage = FaunaStage(genome);
+    if (stage == FAUNA_STAGE_EMPTY)
+    {
+        if (IsFaunaEggMaterial(material))
+        {
+            genome = RandomFaunaGenome((uint2)cell, _Seed, _Tick);
+            float hatchT = CellHash(cell, 41u);
+            float hatch = lerp(max(1.0, _FaunaI.x), max(_FaunaI.x, _FaunaI.y), hatchT);
+            vitals = float4(saturate(_FaunaA.x * 0.6), saturate(_FaunaA.y), 0.0, hatch);
+            motion = 0.0;
+            genome.w = PackFaunaMeta(FAUNA_STAGE_EGG, FAUNA_BEHAVIOR_IDLE, 0u, FaunaLineage(genome));
+            partner = 0;
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
+        }
+        else
+        {
+            genome = RandomFaunaGenome((uint2)cell, _Seed, _Tick);
+            vitals = float4(saturate(_FaunaA.x), saturate(_FaunaA.y), max(0.0, _FaunaA.z), 0.0);
+            motion = 0.0;
+            partner = 0;
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
+        }
+    }
+
+    WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+}
+
+[numthreads(8, 8, 1)]
+void AcousticPropagate(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float2 u = AcousticOf(cell);
+    float2 prev = AcousticPrevOf(cell);
+    bool conducts = IsFaunaOpenHabitat(material) || IsFaunaMaterial(material);
+    if (!conducts)
+    {
+        _AcousticWrite[cell] = 0.0;
+        return;
+    }
+
+    float c = saturate(_FaunaG.x);
+    float damp = saturate(_FaunaG.y);
+    float2 lap = 0.0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = cell + offsets[i];
+        if (offsets[i].y != 0 && (neighbor.y < 0 || neighbor.y >= _GridSize.y))
+            continue;
+        neighbor = C(neighbor);
+        uint nm = M(neighbor);
+        if (!IsFaunaOpenHabitat(nm) && !IsFaunaMaterial(nm))
+            continue;
+        float w = offsets[i].x != 0 ? TangentialEdgeWeight(cell.y, _GridSize.y) : 1.0;
+        lap += (AcousticOf(neighbor) - u) * w;
+    }
+
+    float2 next = (2.0 - damp) * u - (1.0 - damp * 0.5) * prev + c * c * lap;
+    next -= damp * u;
+    next = clamp(next / (1.0 + abs(next)), -1.0, 1.0);
+
+    if (IsCricketMaterial(material))
+    {
+        uint4 genome = FaunaG(cell);
+        uint behavior = FaunaBehavior(genome);
+        uint stage = FaunaStage(genome);
+        float4 vitals = VitalsOf(cell);
+        if (stage == FAUNA_STAGE_ADULT || stage == FAUNA_STAGE_JUVENILE)
+        {
+            if (vitals.x < _FaunaC.x)
+                next.x += max(0.0, _FaunaG.z);
+            if (behavior == FAUNA_BEHAVIOR_MATE_SEEK && stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5)
+                next.y += max(0.0, _FaunaG.w);
+        }
+        next = clamp(next, -1.0, 1.0);
+    }
+
+    _AcousticWrite[cell] = next;
+}
+
+[numthreads(8, 8, 1)]
+void FaunaMetabolism(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+    uint4 genome = FaunaG(cell);
+    uint4 partner = PartnerOf(cell);
+
+    if (!IsFaunaMaterial(material))
+    {
+        ClearFaunaState(_FaunaWrite, cell);
+        return;
+    }
+
+    uint stage = FaunaStage(genome);
+    uint behavior = FaunaBehavior(genome);
+    float dt = max(1e-4, _DeltaTime);
+    float range = _FaunaE.w;
+    float temp = S(cell).x;
+    float flame = Comb(cell).y;
+
+    if (stage == FAUNA_STAGE_EGG)
+    {
+        float retention = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_HYDRATION_RETENTION), range);
+        float envMoist = WetnessAt(cell);
+        float exchange = (envMoist - vitals.y) * 0.15 * dt;
+        vitals.y = saturate(vitals.y + exchange * retention);
+        vitals.x = saturate(vitals.x - 0.002 * dt);
+        vitals.z += 1.0;
+        if (flame > 0.05 || temp >= _FaunaI.w)
+        {
+            genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_FIRE);
+        }
+        else if (vitals.y < _FaunaI.z)
+        {
+            genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_DESICCATION);
+        }
+        WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+        return;
+    }
+
+    if (stage != FAUNA_STAGE_JUVENILE && stage != FAUNA_STAGE_ADULT)
+    {
+        ClearFaunaState(_FaunaWrite, cell);
+        return;
+    }
+
+    float metabolic = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_METABOLISM), range);
+    float retention = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_HYDRATION_RETENTION), range);
+    float cap = CalorieCap(genome);
+    vitals.x = saturate(min(cap, vitals.x) - max(0.0, _FaunaB.x) * metabolic * dt);
+    vitals.y = saturate(vitals.y - max(0.0, _FaunaB.y) * dt / max(0.25, retention));
+    vitals.z += 1.0;
+    vitals.w = max(0.0, vitals.w - 1.0);
+
+    if (stage == FAUNA_STAGE_JUVENILE && vitals.z >= max(1.0, _FaunaA.z))
+        stage = FAUNA_STAGE_ADULT;
+
+    uint cause = ORGANISM_CAUSE_NONE;
+    if (flame > 0.08)
+        cause = ORGANISM_CAUSE_FIRE;
+    else if (temp < _FaunaJ.z || temp > _FaunaJ.w)
+        cause = ORGANISM_CAUSE_FIRE;
+    else if (vitals.x <= 1e-4)
+        cause = ORGANISM_CAUSE_STARVATION;
+    else if (vitals.y <= 1e-4)
+        cause = ORGANISM_CAUSE_DEHYDRATION;
+
+    if (cause != ORGANISM_CAUSE_NONE)
+    {
+        genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), cause);
+        WriteFaunaState(_FaunaWrite, cell, vitals, 0.0, genome, partner);
+        return;
+    }
+
+    if (behavior == FAUNA_BEHAVIOR_AIRBORNE)
+    {
+        float drag = max(0.0, _FaunaD.z) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_DRAG), range);
+        float wind = F(cell).x * max(0.0, _FaunaD.w) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_DRAG), range);
+        float mass = EffectiveMass(genome, vitals);
+        motion.x += (wind - motion.x * drag) * dt / mass;
+        motion.y -= max(0.0, _Mechanics.x) * dt;
+        motion.x = clamp(motion.x, -4.0, 4.0);
+        motion.y = clamp(motion.y, -4.0, 4.0);
+        genome.w = PackFaunaMeta(stage, FAUNA_BEHAVIOR_AIRBORNE, FaunaGeneration(genome), FaunaLineage(genome));
+        WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+        return;
+    }
+
+    float2 threat = ThreatDir(cell, genome);
+    float2 food = SenseGradient(cell, 0u, genome);
+    float2 feedWave = SenseGradient(cell, 1u, genome);
+    float2 mateWave = SenseGradient(cell, 2u, genome);
+    bool hungry = vitals.x < _FaunaC.x;
+    bool full = vitals.x >= _FaunaB.w;
+    bool canMate = stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5;
+    int2 algae = NeighborAlgae(cell);
+
+    if (length(threat) > 0.05)
+        behavior = FAUNA_BEHAVIOR_FLEE;
+    else if (!full && (hungry || any(abs(feedWave) > 0.02) || !all(algae == cell) || any(abs(food) > 0.02)))
+        behavior = FAUNA_BEHAVIOR_FORAGE;
+    else if (canMate && any(abs(mateWave) > 0.02))
+        behavior = FAUNA_BEHAVIOR_MATE_SEEK;
+    else if (CellHash(cell, 7u) < saturate(_FaunaJ.y) * dt * 8.0)
+        behavior = FAUNA_BEHAVIOR_WANDER;
+    else
+        behavior = FAUNA_BEHAVIOR_IDLE;
+
+    if (full && behavior == FAUNA_BEHAVIOR_FORAGE && all(algae == cell))
+        behavior = canMate && any(abs(mateWave) > 0.02) ? FAUNA_BEHAVIOR_MATE_SEEK : FAUNA_BEHAVIOR_IDLE;
+
+    float2 launchDir = 0.0;
+    if (behavior == FAUNA_BEHAVIOR_FLEE)
+        launchDir = threat;
+    else if (behavior == FAUNA_BEHAVIOR_FORAGE)
+        launchDir = length(feedWave) > 0.02 && !full ? feedWave : food;
+    else if (behavior == FAUNA_BEHAVIOR_MATE_SEEK)
+        launchDir = mateWave;
+    else if (behavior == FAUNA_BEHAVIOR_WANDER)
+    {
+        float ang = CellHash(cell, 29u) * 6.2831853;
+        launchDir = float2(cos(ang), sin(ang) * 0.25);
+    }
+
+    bool decisionDue = ((uint)_Tick % (uint)max(1, (int)round(_FaunaA.w))) == 0u;
+    if (decisionDue && length(launchDir) > 1e-4 && behavior != FAUNA_BEHAVIOR_IDLE && all(algae == cell))
+    {
+        float mass = EffectiveMass(genome, vitals);
+        float strength = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_JUMP_STRENGTH), range);
+        float impulse = max(0.0, _FaunaC.z) * strength * SupportFactor(cell) / mass;
+        if (impulse > 1e-4)
+        {
+            float2 ndir = launchDir / max(length(launchDir), 1e-4);
+            motion.x = ndir.x * impulse;
+            motion.y = ndir.y * impulse * 0.35 + impulse * 0.15;
+            vitals.x = saturate(vitals.x - max(0.0, _FaunaC.w) * mass);
+            behavior = FAUNA_BEHAVIOR_AIRBORNE;
+        }
+    }
+
+    genome.w = PackFaunaMeta(stage, behavior, FaunaGeneration(genome), FaunaLineage(genome));
+    WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+}
+
+[numthreads(8, 8, 1)]
+void ClearFaunaClaims(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    uint2 cell = id.xy;
+    [unroll]
+    for (uint slice = 0u; slice < 4u; slice++)
+        _FaunaClaimsWrite[uint3(cell, slice)] = FAUNA_CLAIM_EMPTY;
+}
+
+[numthreads(8, 8, 1)]
+void ClaimFaunaActions(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    uint4 genome = FaunaG(cell);
+    uint stage = FaunaStage(genome);
+    uint behavior = FaunaBehavior(genome);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+
+    if (IsFaunaEggMaterial(material) && stage == FAUNA_STAGE_EGG)
+    {
+        float wind = abs(F(cell).x) + abs(F(cell).y) * 0.35;
+        if (wind * max(0.0, _FaunaJ.x) * _DeltaTime > 0.08)
+        {
+            int dir = F(cell).x >= 0.0 ? 1 : -1;
+            int2 dest = C(cell + int2(dir, 0));
+            if (CanOccupy(dest))
+                Claim(dest, FAUNA_CLAIM_MOVE, cell);
+        }
+        return;
+    }
+
+    if (!IsCricketMaterial(material) || (stage != FAUNA_STAGE_JUVENILE && stage != FAUNA_STAGE_ADULT))
+        return;
+
+    int2 algae = NeighborAlgae(cell);
+    if (behavior == FAUNA_BEHAVIOR_FORAGE && !all(algae == cell) && vitals.x < _FaunaB.w)
+        Claim(algae, FAUNA_CLAIM_FEED, cell);
+
+    if (stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5)
+    {
+        int2 mate = AdjacentEligibleAdult(cell);
+        if (!all(mate == cell))
+            Claim(mate, FAUNA_CLAIM_MATE, cell);
+    }
+
+    bool canLay = stage == FAUNA_STAGE_ADULT && vitals.z >= max(1.0, _FaunaA.z)
+        && vitals.x >= _FaunaC.y && vitals.w <= 0.5;
+    if (canLay)
+    {
+        int clutch = ClutchSizeOf(genome);
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+        int laid = 0;
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            if (laid >= clutch) break;
+            int2 dest = C(cell + offsets[i]);
+            if (!CanOccupy(dest)) continue;
+            Claim(dest, FAUNA_CLAIM_EGG, cell);
+            laid++;
+        }
+    }
+
+    float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+    int2 step = int2(0, 0);
+    if (abs(nextFrac.x) >= 0.5)
+        step.x = nextFrac.x > 0.0 ? 1 : -1;
+    else if (abs(nextFrac.y) >= 0.5)
+        step.y = nextFrac.y > 0.0 ? 1 : -1;
+    if (behavior == FAUNA_BEHAVIOR_AIRBORNE && any(step != int2(0, 0)))
+    {
+        int2 dest = C(cell + step);
+        if (CanOccupy(dest) || (step.y < 0 && IsFaunaSupport(M(dest))))
+        {
+            if (!IsFaunaOpenHabitat(M(dest)) && step.y < 0)
+                dest = cell;
+            else
+                Claim(dest, FAUNA_CLAIM_MOVE, cell);
+        }
+        else if (CanOccupy(C(cell + int2(step.x, 0))))
+            Claim(C(cell + int2(step.x, 0)), FAUNA_CLAIM_MOVE, cell);
+    }
+}
+
+[numthreads(8, 8, 1)]
+void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = Eco(cell);
+    float4 combustion = Comb(cell);
+    float4 life = L(cell);
+    uint4 genome = G(cell);
+    uint4 faunaGenome = FaunaG(cell);
+    uint packedSelf = PackFaunaCell(cell, _GridSize);
+
+    uint feedWinner = ClaimAt(cell, FAUNA_CLAIM_FEED);
+    if (feedWinner != FAUNA_CLAIM_EMPTY && IsFloraMaterial(material))
+    {
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_CONSUMED);
+        material = 1u;
+        life = float4(0.0, 0.0, 0.0, life.w * 0.15);
+        genome = uint4(0u, 0u, 0u, PackFloraMeta(FLORA_STAGE_DEAD, 0u, 0u, 0u));
+        aux.z += 0.04;
+    }
+
+    uint moveWinner = ClaimAt(cell, FAUNA_CLAIM_MOVE);
+    uint eggWinner = ClaimAt(cell, FAUNA_CLAIM_EGG);
+    bool vacated = false;
+
+    if (IsFaunaMaterial(material) && FaunaStage(faunaGenome) == FAUNA_STAGE_DEAD)
+    {
+        material = 12u;
+        vacated = true;
+    }
+    else if (IsCricketMaterial(material) || IsFaunaEggMaterial(material))
+    {
+        int2 dest = cell;
+        float4 motion = MotionOf(cell);
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        if (any(step != int2(0, 0))) dest = C(cell + step);
+        if (IsFaunaEggMaterial(material) && abs(F(cell).x) * max(0.0, _FaunaJ.x) * _DeltaTime > 0.08)
+            dest = C(cell + int2(F(cell).x >= 0.0 ? 1 : -1, 0));
+        if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
+        {
+            material = 1u;
+            vacated = true;
+        }
+        else if (IsFaunaEggMaterial(material) && EggReadyToHatch(faunaGenome, VitalsOf(cell)))
+        {
+            material = FAUNA_CRICKET_ID;
+        }
+    }
+
+    if (!vacated && moveWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material))
+    {
+        int2 source = UnpackFaunaCell(moveWinner, _GridSize);
+        uint srcMat = M(source);
+        if (IsFaunaMaterial(srcMat))
+            material = srcMat;
+    }
+    else if (!vacated && eggWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material) && HasLandingSupport(cell))
+    {
+        material = FAUNA_EGG_ID;
+    }
+
+    WriteWorld(cell, material, state, flow, aux, ecology, combustion, life, genome);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+    uint4 genome = FaunaG(cell);
+    uint4 partner = PartnerOf(cell);
+    uint packedSelf = PackFaunaCell(cell, _GridSize);
+
+    uint moveWinner = ClaimAt(cell, FAUNA_CLAIM_MOVE);
+    uint eggWinner = ClaimAt(cell, FAUNA_CLAIM_EGG);
+
+    if (moveWinner != FAUNA_CLAIM_EMPTY)
+    {
+        int2 source = UnpackFaunaCell(moveWinner, _GridSize);
+        vitals = VitalsOf(source);
+        motion = MotionOf(source);
+        genome = FaunaG(source);
+        partner = PartnerOf(source);
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        if (abs(nextFrac.x) >= 0.5) nextFrac.x -= sign(nextFrac.x);
+        if (abs(nextFrac.y) >= 0.5) nextFrac.y -= sign(nextFrac.y);
+        motion.zw = nextFrac;
+        if (HasLandingSupport(cell) && motion.y <= 0.05)
+        {
+            motion = float4(0.0, 0.0, 0.0, 0.0);
+            uint stage = FaunaStage(genome);
+            genome.w = PackFaunaMeta(stage, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+        }
+        WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+        return;
+    }
+
+    if (eggWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material) && FaunaStage(genome) != FAUNA_STAGE_EGG)
+    {
+        int2 parent = UnpackFaunaCell(eggWinner, _GridSize);
+        uint4 parentGenome = FaunaG(parent);
+        uint4 parentPartner = PartnerOf(parent);
+        uint salt = packedSelf * 17u + (uint)_Tick * 31u + (uint)_Seed;
+        uint4 child = FaunaHasPartner(parentPartner)
+            ? CombineFaunaGenomes(parentGenome, parentPartner, salt)
+            : parentGenome;
+        child = MutateFaunaGenome(child, _FaunaF.x, salt + 17u);
+        float hatchT = CellHash(cell, 41u);
+        float hatch = lerp(max(1.0, _FaunaI.x), max(_FaunaI.x, _FaunaI.y), hatchT);
+        float4 eggVitals = float4(saturate(VitalsOf(parent).x * 0.2 + 0.15), saturate(VitalsOf(parent).y * 0.5 + 0.3), 0.0, hatch);
+        child.w = PackFaunaMeta(FAUNA_STAGE_EGG, FAUNA_BEHAVIOR_IDLE, (FaunaGeneration(parentGenome) + 1u) & 255u, FaunaLineage(parentGenome));
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_REPRODUCE, FaunaGeneration(parentGenome), FaunaLineage(parentGenome), ORGANISM_CAUSE_LAID);
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FaunaGeneration(child), FaunaLineage(child), ORGANISM_CAUSE_NONE);
+        WriteFaunaState(_FaunaWrite, cell, eggVitals, 0.0, child, uint4(0, 0, 0, 0));
+        return;
+    }
+
+    if (!IsFaunaMaterial(material) && FaunaStage(genome) != FAUNA_STAGE_EMPTY)
+    {
+        ClearFaunaState(_FaunaWrite, cell);
+        return;
+    }
+    if (!IsFaunaMaterial(material))
+    {
+        ClearFaunaState(_FaunaWrite, cell);
+        return;
+    }
+
+    bool vacated = false;
+    if (IsFaunaMaterial(material))
+    {
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        int2 dest = any(step != int2(0, 0)) ? C(cell + step) : cell;
+        if (IsFaunaEggMaterial(material) && abs(F(cell).x) * max(0.0, _FaunaJ.x) * _DeltaTime > 0.08)
+            dest = C(cell + int2(F(cell).x >= 0.0 ? 1 : -1, 0));
+        if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
+            vacated = true;
+    }
+
+    if (vacated || FaunaStage(genome) == FAUNA_STAGE_DEAD)
+    {
+        ClearFaunaState(_FaunaWrite, cell);
+        return;
+    }
+
+    int2 algae = NeighborAlgae(cell);
+    if (IsCricketMaterial(material) && !all(algae == cell) && ClaimAt(algae, FAUNA_CLAIM_FEED) == packedSelf)
+    {
+        float meal = saturate(L(algae).y) * max(0.05, D(M(algae)).biology.y);
+        float moisture = saturate(S(algae).z + L(algae).y * 0.25);
+        vitals.x = saturate(min(CalorieCap(genome), vitals.x + meal) - max(0.0, _FaunaD.x));
+        vitals.y = saturate(vitals.y + moisture);
+    }
+
+    uint mateWinner = ClaimAt(cell, FAUNA_CLAIM_MATE);
+    if (IsCricketMaterial(material) && FaunaStage(genome) == FAUNA_STAGE_ADULT)
+    {
+        int2 mateDest = AdjacentEligibleAdult(cell);
+        bool received = mateWinner != FAUNA_CLAIM_EMPTY;
+        bool sent = !all(mateDest == cell) && ClaimAt(mateDest, FAUNA_CLAIM_MATE) == packedSelf;
+        if (received || sent)
+        {
+            int2 other = received ? UnpackFaunaCell(mateWinner, _GridSize) : mateDest;
+            if (IsCricketMaterial(M(other)) && FaunaStage(FaunaG(other)) == FAUNA_STAGE_ADULT)
+            {
+                uint4 otherGenome = FaunaG(other);
+                partner = otherGenome;
+                partner.w = 1u;
+                vitals.w = max(vitals.w, _FaunaH.x);
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_MATE, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_MATED);
+            }
+        }
+    }
+
+    bool laid = false;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 dest = C(cell + offsets[i]);
+        if (ClaimAt(dest, FAUNA_CLAIM_EGG) == packedSelf)
+            laid = true;
+    }
+    if (laid)
+    {
+        vitals.x = saturate(vitals.x * 0.7);
+        vitals.w = max(vitals.w, _FaunaH.y);
+    }
+
+    if (IsFaunaEggMaterial(material) && EggReadyToHatch(genome, vitals))
+    {
+        genome.w = PackFaunaMeta(FAUNA_STAGE_JUVENILE, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+        vitals.z = 0.0;
+        vitals.w = 0.0;
+        vitals.x = saturate(max(vitals.x, 0.35));
+        vitals.y = saturate(max(vitals.y, 0.45));
+        motion = 0.0;
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_HATCHED);
+    }
+
+    motion.zw = motion.zw + motion.xy * _DeltaTime;
+    motion.zw = clamp(motion.zw, -0.49, 0.49);
+    if (FaunaBehavior(genome) == FAUNA_BEHAVIOR_AIRBORNE && HasLandingSupport(cell) && abs(motion.x) < 0.05 && motion.y <= 0.05)
+    {
+        motion = 0.0;
+        genome.w = PackFaunaMeta(FaunaStage(genome), FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+    }
+
+    WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+}

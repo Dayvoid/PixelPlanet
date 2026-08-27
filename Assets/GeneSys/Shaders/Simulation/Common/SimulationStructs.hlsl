@@ -22,6 +22,7 @@
 //   combustion.z = soot / smoke mass (airborne tracer; settles into aux.z)
 //   combustion.w = ignition accumulator in [0, 1]
 // Milestone 1 fuel is ecology.y on Soil/Sediment plus life.y on Algae (ID 128).
+// Milestone 2 also burns cricket/egg calories sampled from the dedicated fauna field.
 // Burning consumes that biomass locally and writes heat/pressure/updraft/steam
 // into the existing weather chain.
 // Combustion never invents water: flashpoint vaporization only moves state.z -> aux.x.
@@ -43,6 +44,14 @@
 //             negative is post-strike cooldown climbing back to 0
 // Storm values do not follow cell-moving kernels (MaterialMotion, LiquidDensityExchange)
 // because charge lives in non-moving Air and the channel/flash channels are transient.
+// Fauna (dedicated Tex2DArray RGBA32F, swapped like Storm, excluded from WriteCell):
+//   slice 0 vitals: calories, hydration, age ticks, reproduction/mate cooldown ticks
+//   slice 1 motion: vel.theta, vel.radius, subcell.theta, subcell.radius
+//   slice 2 genome: 12×8-bit genes + stage|behavior|generation|lineage
+//   slice 3 partner genome (x/y/z genes, w = 1 when a mate has been retained)
+// Acoustic (dedicated RG32F current/previous pair, excluded from WriteCell):
+//   .x feeding call, .y mating call; signed damped waves, never physical state.y
+// Claims (transient R32_UInt Tex2DArray depth 4): move, feed, mate, egg destinations.
 // Atmosphere representation:
 //   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
 //   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
@@ -408,11 +417,18 @@ uint PackFloraMeta(uint stage, uint generation, uint lineage, uint toxinDose)
 #define ORGANISM_KIND_BIRTH 0u
 #define ORGANISM_KIND_REPRODUCE 1u
 #define ORGANISM_KIND_DEATH 2u
+#define ORGANISM_KIND_MATE 3u
 #define ORGANISM_CAUSE_NONE 0u
 #define ORGANISM_CAUSE_DESICCATION 1u
 #define ORGANISM_CAUSE_TOXIN 2u
 #define ORGANISM_CAUSE_FIRE 3u
 #define ORGANISM_CAUSE_PAINTED 4u
+#define ORGANISM_CAUSE_CONSUMED 5u
+#define ORGANISM_CAUSE_STARVATION 6u
+#define ORGANISM_CAUSE_DEHYDRATION 7u
+#define ORGANISM_CAUSE_LAID 8u
+#define ORGANISM_CAUSE_MATED 9u
+#define ORGANISM_CAUSE_HATCHED 10u
 
 struct OrganismHistoryEvent
 {
@@ -488,6 +504,228 @@ float FloraFuel(uint material, float4 life, uint stage)
     if (stage == FLORA_STAGE_SPORE || stage == FLORA_STAGE_DEAD)
         return 0.0;
     return saturate(life.y);
+}
+
+#define FAUNA_CRICKET_ID 129u
+#define FAUNA_EGG_ID 130u
+#define FAUNA_STAGE_EMPTY 0u
+#define FAUNA_STAGE_EGG 1u
+#define FAUNA_STAGE_JUVENILE 2u
+#define FAUNA_STAGE_ADULT 3u
+#define FAUNA_STAGE_DEAD 4u
+#define FAUNA_BEHAVIOR_IDLE 0u
+#define FAUNA_BEHAVIOR_WANDER 1u
+#define FAUNA_BEHAVIOR_FORAGE 2u
+#define FAUNA_BEHAVIOR_MATE_SEEK 3u
+#define FAUNA_BEHAVIOR_FLEE 4u
+#define FAUNA_BEHAVIOR_AIRBORNE 5u
+#define FAUNA_GENE_JUMP_STRENGTH 0u
+#define FAUNA_GENE_DRY_MASS 1u
+#define FAUNA_GENE_DRAG 2u
+#define FAUNA_GENE_MOISTURE_LOAD 3u
+#define FAUNA_GENE_HYDRATION_RETENTION 4u
+#define FAUNA_GENE_METABOLISM 5u
+#define FAUNA_GENE_CALORIE_CAPACITY 6u
+#define FAUNA_GENE_NUTRIENT_SENSE 7u
+#define FAUNA_GENE_HEARING 8u
+#define FAUNA_GENE_THREAT_RESPONSE 9u
+#define FAUNA_GENE_FERTILITY 10u
+#define FAUNA_GENE_MUTATION 11u
+#define FAUNA_VITALS_SLICE 0
+#define FAUNA_MOTION_SLICE 1
+#define FAUNA_GENOME_SLICE 2
+#define FAUNA_PARTNER_SLICE 3
+#define FAUNA_CLAIM_MOVE 0
+#define FAUNA_CLAIM_FEED 1
+#define FAUNA_CLAIM_MATE 2
+#define FAUNA_CLAIM_EGG 3
+#define FAUNA_CLAIM_EMPTY 0xffffffffu
+
+bool IsCricketMaterial(uint material)
+{
+    return material == FAUNA_CRICKET_ID;
+}
+
+bool IsFaunaEggMaterial(uint material)
+{
+    return material == FAUNA_EGG_ID;
+}
+
+bool IsFaunaMaterial(uint material)
+{
+    return IsCricketMaterial(material) || IsFaunaEggMaterial(material);
+}
+
+bool IsFaunaOpenHabitat(uint material)
+{
+    return material == 0u || material == 1u || material == 11u;
+}
+
+bool IsFaunaSupport(uint material)
+{
+    return material == 4u || material == 5u || material == 7u || material == 8u
+        || material == 9u || material == 10u || material == 12u || material == 13u
+        || material == FLORA_ALGAE_ID || IsFaunaMaterial(material);
+}
+
+uint FaunaStage(uint4 genome)
+{
+    return genome.w & 255u;
+}
+
+uint FaunaBehavior(uint4 genome)
+{
+    return (genome.w >> 8) & 255u;
+}
+
+uint FaunaGeneration(uint4 genome)
+{
+    return (genome.w >> 16) & 255u;
+}
+
+uint FaunaLineage(uint4 genome)
+{
+    return (genome.w >> 24) & 255u;
+}
+
+uint PackFaunaMeta(uint stage, uint behavior, uint generation, uint lineage)
+{
+    return (stage & 255u) | ((behavior & 255u) << 8) | ((generation & 255u) << 16) | ((lineage & 255u) << 24);
+}
+
+uint4 SanitizeFaunaGenome(uint4 genome)
+{
+    uint stage = FaunaStage(genome);
+    if (stage > FAUNA_STAGE_DEAD)
+        stage = FAUNA_STAGE_EMPTY;
+    uint behavior = FaunaBehavior(genome);
+    if (behavior > FAUNA_BEHAVIOR_AIRBORNE)
+        behavior = FAUNA_BEHAVIOR_IDLE;
+    genome.w = PackFaunaMeta(stage, behavior, FaunaGeneration(genome), FaunaLineage(genome));
+    return genome;
+}
+
+float4 SanitizeFaunaVitals(float4 vitals)
+{
+    float4 value = max(SafeFinite4(vitals, 0.0), 0.0);
+    value.x = saturate(value.x);
+    value.y = saturate(value.y);
+    return value;
+}
+
+float4 SanitizeFaunaMotion(float4 motion)
+{
+    float4 value = SafeFinite4(motion, 0.0);
+    value.xy = clamp(value.xy, -8.0, 8.0);
+    value.zw = clamp(value.zw, -1.5, 1.5);
+    return value;
+}
+
+float4 SampleFaunaVitals(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, FAUNA_VITALS_SLICE, 0));
+}
+
+float4 SampleFaunaMotion(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, FAUNA_MOTION_SLICE, 0));
+}
+
+uint4 SampleFaunaGenome(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, FAUNA_GENOME_SLICE, 0)));
+}
+
+uint4 SampleFaunaPartner(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, FAUNA_PARTNER_SLICE, 0)));
+}
+
+void WriteFaunaState(RWTexture2DArray<float4> tex, int2 cell, float4 vitals, float4 motion, uint4 genome, uint4 partner)
+{
+    tex[uint3((uint2)cell, FAUNA_VITALS_SLICE)] = SanitizeFaunaVitals(vitals);
+    tex[uint3((uint2)cell, FAUNA_MOTION_SLICE)] = SanitizeFaunaMotion(motion);
+    tex[uint3((uint2)cell, FAUNA_GENOME_SLICE)] = asfloat(SanitizeFaunaGenome(genome));
+    tex[uint3((uint2)cell, FAUNA_PARTNER_SLICE)] = asfloat(partner);
+}
+
+void ClearFaunaState(RWTexture2DArray<float4> tex, int2 cell)
+{
+    WriteFaunaState(tex, cell, 0.0, 0.0, uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u));
+}
+
+float FaunaExpressFactor(uint gene, float range)
+{
+    return 1.0 + ((gene / 255.0) - 0.5) * 2.0 * saturate(range);
+}
+
+bool FaunaHasPartner(uint4 partner)
+{
+    return partner.w != 0u;
+}
+
+float FaunaFuel(uint material, float4 vitals, uint stage)
+{
+    if (!IsFaunaMaterial(material))
+        return 0.0;
+    if (stage == FAUNA_STAGE_EMPTY || stage == FAUNA_STAGE_DEAD)
+        return 0.0;
+    return saturate(vitals.x);
+}
+
+uint PackFaunaCell(int2 cell, int2 size)
+{
+    return 1u + (uint)cell.y * (uint)max(1, size.x) + (uint)cell.x;
+}
+
+int2 UnpackFaunaCell(uint packed, int2 size)
+{
+    uint idx = packed - 1u;
+    uint width = (uint)max(1, size.x);
+    return int2((int)(idx % width), (int)(idx / width));
+}
+
+uint4 RandomFaunaGenome(uint2 cell, int seed, int tick)
+{
+    uint4 genome = 0;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float h = Hash01(cell.x * 19349663u + cell.y * 73856093u + i * 83492791u + (uint)seed * 6151u + (uint)tick * 31337u);
+        EncodeGene(genome, i, (uint)round(h * 255.0));
+    }
+    uint lineage = (uint)round(Hash01(cell.x * 73856093u + cell.y * 19349663u + (uint)seed * 9829u + (uint)tick) * 255.0);
+    genome.w = PackFaunaMeta(FAUNA_STAGE_ADULT, FAUNA_BEHAVIOR_IDLE, 0u, lineage);
+    return genome;
+}
+
+uint4 MutateFaunaGenome(uint4 genome, float baseMutationRate, uint salt)
+{
+    genome = SanitizeFaunaGenome(genome);
+    float mutationGene = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_MUTATION), 1.0);
+    float rate = max(0.0, baseMutationRate) * mutationGene;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float unit = Hash01(salt + i * 83492791u + DecodeGene(genome, i) * 747796405u);
+        int step = (int)round((unit * 2.0 - 1.0) * rate * 255.0);
+        int next = clamp((int)DecodeGene(genome, i) + step, 0, 255);
+        EncodeGene(genome, i, (uint)next);
+    }
+    return genome;
+}
+
+uint4 CombineFaunaGenomes(uint4 mother, uint4 partner, uint salt)
+{
+    uint4 child = 0;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float unit = Hash01(salt + i * 83492791u);
+        uint gene = unit < 0.5 ? DecodeGene(mother, i) : DecodeGene(partner, i);
+        EncodeGene(child, i, gene);
+    }
+    return child;
 }
 
 uint4 RandomFloraGenome(uint2 cell, int seed, int tick)

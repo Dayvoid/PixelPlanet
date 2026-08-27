@@ -20,6 +20,7 @@ Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
+Texture2DArray<float4> _FaunaRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -43,6 +44,8 @@ float4 ReadEcology(int2 cell) { cell = ClampCell(cell, _GridSize); return _Ecolo
 float4 ReadCombustion(int2 cell) { cell = ClampCell(cell, _GridSize); return _CombustionRead.Load(int3(cell, 0)); }
 float4 ReadLife(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleLife(_LifeGenomeRead, cell); }
 uint4 ReadGenome(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleGenome(_LifeGenomeRead, cell); }
+float4 ReadFaunaVitals(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleFaunaVitals(_FaunaRead, cell); }
+uint4 ReadFaunaGenome(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleFaunaGenome(_FaunaRead, cell); }
 MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
 
 void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome)
@@ -96,7 +99,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
     float capacity = OxygenCapacity(material, definition);
     combustion.x = min(max(0.0, combustion.x), capacity);
 
-    float fuel = MycologyFuel(material, ecology) + FloraFuel(material, life, FloraStage(genome));
+    float fuel = MycologyFuel(material, ecology) + FloraFuel(material, life, FloraStage(genome))
+        + FaunaFuel(material, ReadFaunaVitals(cell), FaunaStage(ReadFaunaGenome(cell)));
     float wetness = max(0.0, state.z) + max(0.0, aux.y) + max(0.0, aux.x) * steamSuppression;
     uint traits = DecodeMycologyTraits(ecology.z);
     float threshold = TraitModulatedIgnition(definition.combustion.x, traits, _MycologyE.z) + wetness * moisturePenalty;
@@ -133,6 +137,11 @@ void Combustion(uint3 id : SV_DispatchThreadID)
         {
             float floraShare = min(burn, saturate(life.y));
             life.y = saturate(life.y - floraShare);
+        }
+        if (IsFaunaMaterial(material))
+        {
+            float faunaShare = min(burn, saturate(ReadFaunaVitals(cell).x));
+            burn = max(burn, faunaShare);
         }
         combustion.x = max(0.0, combustion.x - burn * oxygenDemand);
         state.x += burn * calories * heatYield * 60.0;
@@ -187,6 +196,15 @@ void Combustion(uint3 id : SV_DispatchThreadID)
         material = 12u;
         life = float4(0.0, 0.0, 0.0, life.w * 0.25);
         genome = uint4(0u, 0u, 0u, PackFloraMeta(FLORA_STAGE_DEAD, 0u, 0u, 0u));
+        combustion.y = 0.0;
+        definition = Mat(material);
+    }
+    if (IsFaunaMaterial(material) && combustion.y > 0.15)
+    {
+        uint4 faunaGenome = ReadFaunaGenome(cell);
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(faunaGenome), FaunaLineage(faunaGenome), ORGANISM_CAUSE_FIRE);
+        aux.z += max(0.05, ReadFaunaVitals(cell).x) * max(0.15, pyroFertility);
+        material = 12u;
         combustion.y = 0.0;
         definition = Mat(material);
     }

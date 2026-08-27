@@ -8,7 +8,8 @@ namespace GeneSys.Simulation
     {
         Birth = 0,
         Reproduce = 1,
-        Death = 2
+        Death = 2,
+        Mate = 3
     }
 
     public enum OrganismHistoryCause : uint
@@ -17,7 +18,13 @@ namespace GeneSys.Simulation
         Desiccation = 1,
         Toxin = 2,
         Fire = 3,
-        Painted = 4
+        Painted = 4,
+        Consumed = 5,
+        Starvation = 6,
+        Dehydration = 7,
+        Laid = 8,
+        Mated = 9,
+        Hatched = 10
     }
 
     public sealed class OrganismHistoryLog
@@ -62,6 +69,7 @@ namespace GeneSys.Simulation
                     OrganismHistoryKind.Birth => "Birth",
                     OrganismHistoryKind.Reproduce => "Reproduce",
                     OrganismHistoryKind.Death => "Death",
+                    OrganismHistoryKind.Mate => "Mate",
                     _ => Kind.ToString()
                 };
                 string causeLabel = Cause switch
@@ -71,6 +79,12 @@ namespace GeneSys.Simulation
                     OrganismHistoryCause.Toxin => "toxin",
                     OrganismHistoryCause.Fire => "fire",
                     OrganismHistoryCause.Painted => "painted",
+                    OrganismHistoryCause.Consumed => "consumed",
+                    OrganismHistoryCause.Starvation => "starvation",
+                    OrganismHistoryCause.Dehydration => "dehydration",
+                    OrganismHistoryCause.Laid => "laid",
+                    OrganismHistoryCause.Mated => "mated",
+                    OrganismHistoryCause.Hatched => "hatched",
                     _ => Cause.ToString().ToLowerInvariant()
                 };
                 string action = causeLabel == null ? kindLabel : $"{kindLabel} ({causeLabel})";
