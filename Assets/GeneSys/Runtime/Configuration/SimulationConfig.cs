@@ -321,6 +321,13 @@ namespace GeneSys.Configuration
         [Range(1, 64)] public int probeDepositRadius = 4;
         [Range(0f, 45f)] public float probeLeadDegrees = 2f;
         [Range(0.75f, 20f)] public float probeFollowZoom = 2.5f;
+        [Min(1f)] public float probeEnergyMax = 100f;
+        [Range(0f, 20f)] public float probeEnergyActionDrain = 3f;
+        [Min(0f)] public float probeEnergyRegenPerSecond = 10f;
+        [Min(0.1f)] public float probeLifeSeedIntervalSeconds = 3f;
+        [Range(1, 8)] public int probeLifeSeedMinCount = 1;
+        [Range(1, 8)] public int probeLifeSeedMaxCount = 5;
+        [Range(0f, 1f)] public float probeLifeSeedSporeLoad = 0.5f;
 
         public void RestoreDefaults()
         {
@@ -589,6 +596,13 @@ namespace GeneSys.Configuration
             probeDepositRadius = Mathf.Clamp(probeDepositRadius, 1, 64);
             probeLeadDegrees = Mathf.Clamp(probeLeadDegrees, 0f, 45f);
             probeFollowZoom = Mathf.Clamp(probeFollowZoom, 0.75f, 20f);
+            probeEnergyMax = Mathf.Max(1f, probeEnergyMax);
+            probeEnergyActionDrain = Mathf.Max(0f, probeEnergyActionDrain);
+            probeEnergyRegenPerSecond = Mathf.Max(0f, probeEnergyRegenPerSecond);
+            probeLifeSeedIntervalSeconds = Mathf.Max(0.1f, probeLifeSeedIntervalSeconds);
+            probeLifeSeedMinCount = Mathf.Clamp(probeLifeSeedMinCount, 1, 8);
+            probeLifeSeedMaxCount = Mathf.Clamp(probeLifeSeedMaxCount, probeLifeSeedMinCount, 8);
+            probeLifeSeedSporeLoad = Mathf.Clamp01(probeLifeSeedSporeLoad);
         }
     }
 }

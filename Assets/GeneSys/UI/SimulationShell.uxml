@@ -67,13 +67,23 @@
         </ui:VisualElement>
 
         <ui:VisualElement name="probe-dock" class="probe-dock" picking-mode="Ignore">
-            <ui:VisualElement name="probe-dock-balance" class="probe-dock-balance" picking-mode="Ignore" />
+            <ui:VisualElement name="probe-steer-card" class="probe-steer-card" picking-mode="Position">
+                <ui:Button name="probe-steer-left" class="probe-camera-button probe-steer-left" tooltip="Reverse probe" />
+                <ui:Button name="probe-steer-stop" class="probe-camera-button probe-steer-stop" tooltip="Hold station" />
+                <ui:Button name="probe-steer-right" class="probe-camera-button probe-steer-right probe-camera-last probe-camera-button--active" tooltip="Clockwise flight" />
+            </ui:VisualElement>
             <ui:VisualElement name="probe-tools-card" class="probe-tools-card" picking-mode="Position">
-                <ui:Button name="probe-action-vapor" class="probe-tool-button probe-tool-vapor" tooltip="Hold to seed vapor" />
-                <ui:Button name="probe-action-water" class="probe-tool-button probe-tool-water" tooltip="Hold to add water" />
-                <ui:Button name="probe-action-soil" class="probe-tool-button probe-tool-soil" tooltip="Hold to drop soil" />
-                <ui:Button name="probe-action-cool" class="probe-tool-button probe-tool-cool" tooltip="Hold to cool" />
-                <ui:Button name="probe-action-heat" class="probe-tool-button probe-tool-heat probe-tool-last" tooltip="Hold to heat" />
+                <ui:VisualElement name="probe-energy-bar" class="probe-energy-bar" picking-mode="Position">
+                    <ui:VisualElement name="probe-energy-fill" class="probe-energy-fill" picking-mode="Ignore" />
+                </ui:VisualElement>
+                <ui:VisualElement name="probe-tools-row" class="probe-tools-row" picking-mode="Ignore">
+                    <ui:Button name="probe-action-vapor" class="probe-tool-button probe-tool-vapor" tooltip="Hold to seed vapor" />
+                    <ui:Button name="probe-action-water" class="probe-tool-button probe-tool-water" tooltip="Hold to add water" />
+                    <ui:Button name="probe-action-soil" class="probe-tool-button probe-tool-soil" tooltip="Hold to drop soil" />
+                    <ui:Button name="probe-action-cool" class="probe-tool-button probe-tool-cool" tooltip="Hold to cool" />
+                    <ui:Button name="probe-action-heat" class="probe-tool-button probe-tool-heat" tooltip="Hold to heat" />
+                    <ui:Button name="probe-action-life" class="probe-tool-button probe-tool-life probe-tool-last" tooltip="Toggle life seed" />
+                </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement name="probe-camera-card" class="probe-camera-card" picking-mode="Position">
                 <ui:Button name="probe-camera-follow" class="probe-camera-button probe-camera-follow" tooltip="Follow probe" />
@@ -146,7 +156,7 @@
 
                     <ui:VisualElement name="page-probe" class="settings-page hidden">
                         <ui:Label text="Probe" class="section-title" />
-                        <ui:Label text="The probe orbits clockwise along the atmosphere glow, opposite the sun. Hold HUD icons to deposit vapor, water, soil, heat, or cool at the outer ring ahead of its path. Use the camera card to follow the orbiter or return to the globe view." class="help" />
+                        <ui:Label text="The probe orbits along the atmosphere glow, opposite the sun. Hold HUD icons to deposit vapor, water, soil, heat, or cool at the outer ring ahead of its path. Toggle life seed to drop mixed dormant organisms. Steer left, stop, or right from the side card; stopping also pauses energy regen. Use the camera card to follow the orbiter or return to the globe view." class="help" />
                         <ui:ScrollView name="settings-probe" class="settings-scroll" />
                     </ui:VisualElement>
 

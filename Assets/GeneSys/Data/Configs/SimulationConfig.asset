@@ -221,3 +221,10 @@ MonoBehaviour:
   probeDepositRadius: 4
   probeLeadDegrees: 2
   probeFollowZoom: 2.5
+  probeEnergyMax: 100
+  probeEnergyActionDrain: 3
+  probeEnergyRegenPerSecond: 10
+  probeLifeSeedIntervalSeconds: 3
+  probeLifeSeedMinCount: 1
+  probeLifeSeedMaxCount: 5
+  probeLifeSeedSporeLoad: 0.5

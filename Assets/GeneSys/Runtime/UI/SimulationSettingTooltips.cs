@@ -577,6 +577,20 @@ namespace GeneSys.UI
                 "How many degrees ahead of the probe heading deposits land. A small lead lets vapor and water trail into the clockwise path instead of sitting under the sprite.",
             [nameof(SimulationConfig.probeFollowZoom)] =
                 "Orthographic size applied when switching to the probe camera. Smaller values frame the orbiter tightly; larger values keep more of the planetoid in view.",
+            [nameof(SimulationConfig.probeEnergyMax)] =
+                "Maximum probe energy shown on the HUD bar. Drain and regen clamp to this cap. Actions still fire when the bar is empty.",
+            [nameof(SimulationConfig.probeEnergyActionDrain)] =
+                "Energy subtracted each sim tick while a hold tool or life seed is active. Future builds will use per-action costs; empty energy does not block tools.",
+            [nameof(SimulationConfig.probeEnergyRegenPerSecond)] =
+                "Energy restored per simulation second while no tool is active and the probe is not stopped. Scales with tick rate and sim speed; pause and hold-station both freeze regen.",
+            [nameof(SimulationConfig.probeLifeSeedIntervalSeconds)] =
+                "Simulation seconds between life-seed bursts while the plants toggle is on. Each burst drops 1-5 mixed dormant organisms one tick apart from the probe aim cell.",
+            [nameof(SimulationConfig.probeLifeSeedMinCount)] =
+                "Minimum organisms in a life-seed burst. Each spawn is independently an algae spore or a cricket egg.",
+            [nameof(SimulationConfig.probeLifeSeedMaxCount)] =
+                "Maximum organisms in a life-seed burst. Spawns are sequential ticks, not a same-tick clump.",
+            [nameof(SimulationConfig.probeLifeSeedSporeLoad)] =
+                "Spore load written when life seed drops flora. Eggs use the cricket-egg material instead of this value.",
         };
 
         public static bool TryGet(string fieldName, out string tooltip)

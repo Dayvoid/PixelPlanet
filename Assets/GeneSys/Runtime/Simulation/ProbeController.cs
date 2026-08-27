@@ -16,6 +16,13 @@ namespace GeneSys.Simulation
         Heat
     }
 
+    public enum ProbeFlightMode
+    {
+        Clockwise,
+        Counterclockwise,
+        Stopped
+    }
+
     /// <summary>
     /// Clockwise orbiter opposite the sun. HUD hold actions deposit at the outer sim ring ahead of its path.
     /// </summary>
@@ -25,6 +32,7 @@ namespace GeneSys.Simulation
         public const float DefaultLeadDegrees = 2f;
         public const int DefaultDepositRadius = 4;
         public const float FollowLockBearingDegrees = 90f;
+        public const float DefaultEnergyMax = 100f;
 
         [SerializeField] private SimulationHost host;
         [SerializeField] private PlanetoidDisplayRenderer display;
@@ -33,25 +41,39 @@ namespace GeneSys.Simulation
         private Transform probeRoot;
         private SpriteRenderer probeRenderer;
         private ProbeAction action;
+        private ProbeFlightMode flightMode = ProbeFlightMode.Clockwise;
+        private ProbeFlightMode lastTravelMode = ProbeFlightMode.Clockwise;
+        private bool lifeSeedActive;
+        private float orbitAngle01;
+        private float energy = DefaultEnergyMax;
+        private long lastProcessedTick;
+        private int pendingLifeSeeds;
+        private int ticksUntilLifeBurst;
         private bool warnedMissingSprite;
 
         public ProbeAction ActiveAction => action;
+        public ProbeFlightMode FlightMode => flightMode;
+        public ProbeFlightMode TravelMode => lastTravelMode;
+        public bool LifeSeedActive => lifeSeedActive;
+        public float Energy => energy;
         public Vector3 WorldPosition => probeRenderer != null ? probeRenderer.transform.position : Vector3.zero;
 
-        public float ProbeAngle01
+        public float EnergyNormalized
         {
             get
             {
-                if (host == null || host.Config == null) return 0f;
-                float periodTicks = host.Config.ticksPerSecond * Mathf.Max(1f, host.Config.probeOrbitPeriodSeconds);
-                return Mathf.Repeat(host.Clock.TickCount / Mathf.Max(1f, periodTicks), 1f);
+                float max = host != null && host.Config != null ? Mathf.Max(1f, host.Config.probeEnergyMax) : DefaultEnergyMax;
+                return Mathf.Clamp01(energy / max);
             }
         }
+
+        public float ProbeAngle01 => orbitAngle01;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer planetoidDisplay)
         {
             host = simulationHost;
             display = planetoidDisplay;
+            ResetRuntimeState();
             SyncPose();
         }
 
@@ -62,6 +84,27 @@ namespace GeneSys.Simulation
         }
 
         public void SetAction(ProbeAction probeAction) => action = probeAction;
+
+        public void SetFlightMode(ProbeFlightMode mode)
+        {
+            flightMode = mode;
+            if (mode != ProbeFlightMode.Stopped)
+                lastTravelMode = mode;
+        }
+
+        public void SetLifeSeedActive(bool active)
+        {
+            lifeSeedActive = active;
+            if (active)
+            {
+                pendingLifeSeeds = 0;
+                ticksUntilLifeBurst = 0;
+            }
+            else
+            {
+                pendingLifeSeeds = 0;
+            }
+        }
 
         public static Vector2 ProbeDirectionFromAngle01(float probeAngle01)
         {
@@ -75,12 +118,59 @@ namespace GeneSys.Simulation
             return FollowLockBearingDegrees - probeLocalDegrees;
         }
 
-        public static float SpriteRotationZ(float probeAngle01, float rotationOffsetDegrees)
+        public static float SpriteRotationZ(float probeAngle01, float rotationOffsetDegrees) =>
+            SpriteRotationZ(probeAngle01, rotationOffsetDegrees, reverse: false);
+
+        public static float SpriteRotationZ(float probeAngle01, float rotationOffsetDegrees, bool reverse)
         {
             float angle = -Mathf.Repeat(probeAngle01, 1f) * Mathf.PI * 2f;
             // Clockwise tangent: d/dt of (cos(-ωt), sin(-ωt)) points along (sin(a), -cos(a)).
             float heading = Mathf.Atan2(-Mathf.Cos(angle), Mathf.Sin(angle)) * Mathf.Rad2Deg;
+            if (reverse) heading += 180f;
             return heading - 90f + rotationOffsetDegrees;
+        }
+
+        public static float AdvanceOrbitAngle01(float currentAngle01, ProbeFlightMode mode, int ticks, float periodTicks)
+        {
+            if (mode == ProbeFlightMode.Stopped || ticks == 0 || periodTicks <= 0f)
+                return Mathf.Repeat(currentAngle01, 1f);
+            float delta = ticks / periodTicks;
+            if (mode == ProbeFlightMode.Counterclockwise) delta = -delta;
+            return Mathf.Repeat(currentAngle01 + delta, 1f);
+        }
+
+        public static float ApplyEnergyTick(
+            float currentEnergy,
+            bool actionActive,
+            bool regenAllowed,
+            float drainPerTick,
+            float regenPerSecond,
+            float tickDuration,
+            float maxEnergy)
+        {
+            float next = currentEnergy;
+            if (actionActive)
+                next -= Mathf.Max(0f, drainPerTick);
+            else if (regenAllowed)
+                next += Mathf.Max(0f, regenPerSecond) * Mathf.Max(0f, tickDuration);
+            return Mathf.Clamp(next, 0f, Mathf.Max(0f, maxEnergy));
+        }
+
+        public static float AimLeadSign(ProbeFlightMode travelMode) =>
+            travelMode == ProbeFlightMode.Counterclockwise ? -1f : 1f;
+
+        public static int LifeSeedBurstCount(long tick, int minCount, int maxCount)
+        {
+            int min = Mathf.Max(1, minCount);
+            int max = Mathf.Max(min, maxCount);
+            uint x = HashTick(tick, 0x9E3779B9u);
+            return min + (int)(x % (uint)(max - min + 1));
+        }
+
+        public static bool LifeSeedSpawnsFlora(long tick, int spawnIndex)
+        {
+            uint x = HashTick(tick, (uint)spawnIndex * 0x85EBCA6Bu + 1u);
+            return (x & 1u) == 0u;
         }
 
         public Vector3 LocalOrbitPosition
@@ -98,7 +188,7 @@ namespace GeneSys.Simulation
         public Vector2Int AimCell(PolarGridDefinition grid)
         {
             float leadDegrees = host != null && host.Config != null ? host.Config.probeLeadDegrees : DefaultLeadDegrees;
-            float leadTurns = leadDegrees / 360f;
+            float leadTurns = AimLeadSign(lastTravelMode) * leadDegrees / 360f;
             float theta01 = Mathf.Repeat(-ProbeAngle01 - leadTurns, 1f);
             int angular = Mathf.FloorToInt(theta01 * Mathf.Max(1, grid.angularResolution));
             return new Vector2Int(grid.WrapTheta(angular), Mathf.Max(0, grid.radialResolution - 1));
@@ -141,7 +231,99 @@ namespace GeneSys.Simulation
 
         private void LateUpdate()
         {
+            ProcessSimTicks();
             SyncPose();
+        }
+
+        private void ResetRuntimeState()
+        {
+            flightMode = ProbeFlightMode.Clockwise;
+            lastTravelMode = ProbeFlightMode.Clockwise;
+            lifeSeedActive = false;
+            pendingLifeSeeds = 0;
+            ticksUntilLifeBurst = 0;
+            action = ProbeAction.None;
+            if (host != null && host.Config != null)
+            {
+                float periodTicks = host.Config.ticksPerSecond * Mathf.Max(1f, host.Config.probeOrbitPeriodSeconds);
+                lastProcessedTick = host.Clock != null ? host.Clock.TickCount : 0L;
+                orbitAngle01 = Mathf.Repeat(lastProcessedTick / Mathf.Max(1f, periodTicks), 1f);
+                energy = Mathf.Max(0f, host.Config.probeEnergyMax);
+            }
+            else
+            {
+                lastProcessedTick = 0L;
+                orbitAngle01 = 0f;
+                energy = DefaultEnergyMax;
+            }
+        }
+
+        private void ProcessSimTicks()
+        {
+            if (host == null || !host.IsReady || host.Config == null || host.Clock == null) return;
+
+            long current = host.Clock.TickCount;
+            if (current < lastProcessedTick)
+            {
+                ResetRuntimeState();
+                return;
+            }
+
+            long delta = current - lastProcessedTick;
+            if (delta <= 0) return;
+            if (delta > 8)
+            {
+                lastProcessedTick = current;
+                return;
+            }
+
+            SimulationConfig config = host.Config;
+            float periodTicks = config.ticksPerSecond * Mathf.Max(1f, config.probeOrbitPeriodSeconds);
+            float tickDuration = 1f / Mathf.Max(1f, config.ticksPerSecond);
+            bool actionActive = action != ProbeAction.None || lifeSeedActive;
+            bool regenAllowed = flightMode != ProbeFlightMode.Stopped;
+            for (int i = 0; i < delta; i++)
+            {
+                lastProcessedTick++;
+                orbitAngle01 = AdvanceOrbitAngle01(orbitAngle01, flightMode, 1, periodTicks);
+                energy = ApplyEnergyTick(
+                    energy,
+                    actionActive,
+                    regenAllowed,
+                    config.probeEnergyActionDrain,
+                    config.probeEnergyRegenPerSecond,
+                    tickDuration,
+                    config.probeEnergyMax);
+                if (lifeSeedActive)
+                    StepLifeSeed(config);
+            }
+        }
+
+        private void StepLifeSeed(SimulationConfig config)
+        {
+            if (host == null || !host.IsReady) return;
+
+            if (pendingLifeSeeds <= 0 && ticksUntilLifeBurst <= 0)
+            {
+                pendingLifeSeeds = LifeSeedBurstCount(
+                    lastProcessedTick,
+                    config.probeLifeSeedMinCount,
+                    config.probeLifeSeedMaxCount);
+                ticksUntilLifeBurst = Mathf.Max(1, Mathf.RoundToInt(config.ticksPerSecond * Mathf.Max(0.1f, config.probeLifeSeedIntervalSeconds)));
+            }
+
+            if (pendingLifeSeeds > 0)
+            {
+                Vector2Int cell = AimCell(host.Grid);
+                if (LifeSeedSpawnsFlora(lastProcessedTick, pendingLifeSeeds))
+                    host.QueueFloraSeed(cell, 0, config.probeLifeSeedSporeLoad);
+                else
+                    host.QueueFaunaSeed(cell, 0, MaterialIds.CricketEgg);
+                pendingLifeSeeds--;
+            }
+
+            if (ticksUntilLifeBurst > 0)
+                ticksUntilLifeBurst--;
         }
 
         private void EnsureBuilt()
@@ -185,7 +367,19 @@ namespace GeneSys.Simulation
             probeRenderer.transform.localPosition = new Vector3(direction.x * radius, direction.y * radius, -0.05f);
             probeRenderer.transform.localScale = Vector3.one * Mathf.Clamp(config.probeSpriteScale, 0.01f, 1f);
             probeRenderer.transform.localRotation = Quaternion.Euler(0f, 0f,
-                SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset));
+                SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset, lastTravelMode == ProbeFlightMode.Counterclockwise));
+        }
+
+        private static uint HashTick(long tick, uint salt)
+        {
+            unchecked
+            {
+                uint x = (uint)tick * 747796405u + salt;
+                x ^= x >> 16;
+                x *= 0x7FEB352Du;
+                x ^= x >> 15;
+                return x;
+            }
         }
 
         private void OnDestroy()

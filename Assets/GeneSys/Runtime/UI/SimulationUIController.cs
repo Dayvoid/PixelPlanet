@@ -97,6 +97,11 @@ namespace GeneSys.UI
         private VisualElement settingsOverlay;
         private Button followCameraButton;
         private Button globeCameraButton;
+        private Button lifeSeedButton;
+        private Button steerLeftButton;
+        private Button steerStopButton;
+        private Button steerRightButton;
+        private VisualElement probeEnergyFill;
         private bool initialized;
         private bool metricsReadbackPending;
         private float metricsRefreshTimer;
@@ -349,15 +354,32 @@ namespace GeneSys.UI
             if (display != null) display.FollowProbe = probe;
 
             VisualElement toolsCard = root.Q("probe-tools-card");
+            VisualElement steerCard = root.Q("probe-steer-card");
             VisualElement cameraCard = root.Q("probe-camera-card");
             if (toolsCard != null) toolsCard.pickingMode = PickingMode.Position;
+            if (steerCard != null) steerCard.pickingMode = PickingMode.Position;
             if (cameraCard != null) cameraCard.pickingMode = PickingMode.Position;
 
+            probeEnergyFill = root.Q("probe-energy-fill");
             BindProbeActionButton(root.Q<Button>("probe-action-vapor"), ProbeAction.Vapor);
             BindProbeActionButton(root.Q<Button>("probe-action-water"), ProbeAction.Water);
             BindProbeActionButton(root.Q<Button>("probe-action-soil"), ProbeAction.Soil);
             BindProbeActionButton(root.Q<Button>("probe-action-cool"), ProbeAction.Cool);
             BindProbeActionButton(root.Q<Button>("probe-action-heat"), ProbeAction.Heat);
+
+            lifeSeedButton = root.Q<Button>("probe-action-life");
+            lifeSeedButton?.UnregisterCallback<ClickEvent>(OnLifeSeedClicked);
+            lifeSeedButton?.RegisterCallback<ClickEvent>(OnLifeSeedClicked);
+
+            steerLeftButton = root.Q<Button>("probe-steer-left");
+            steerStopButton = root.Q<Button>("probe-steer-stop");
+            steerRightButton = root.Q<Button>("probe-steer-right");
+            steerLeftButton?.UnregisterCallback<ClickEvent>(OnSteerLeftClicked);
+            steerStopButton?.UnregisterCallback<ClickEvent>(OnSteerStopClicked);
+            steerRightButton?.UnregisterCallback<ClickEvent>(OnSteerRightClicked);
+            steerLeftButton?.RegisterCallback<ClickEvent>(OnSteerLeftClicked);
+            steerStopButton?.RegisterCallback<ClickEvent>(OnSteerStopClicked);
+            steerRightButton?.RegisterCallback<ClickEvent>(OnSteerRightClicked);
 
             followCameraButton = root.Q<Button>("probe-camera-follow");
             globeCameraButton = root.Q<Button>("probe-camera-globe");
@@ -365,12 +387,58 @@ namespace GeneSys.UI
             globeCameraButton?.UnregisterCallback<ClickEvent>(OnGlobeCameraClicked);
             followCameraButton?.RegisterCallback<ClickEvent>(OnFollowCameraClicked);
             globeCameraButton?.RegisterCallback<ClickEvent>(OnGlobeCameraClicked);
+            RefreshLifeSeedButton();
+            RefreshSteerButtons();
             RefreshCameraModeButtons();
+            RefreshProbeEnergy();
         }
 
         private void OnFollowCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.ProbeFollow);
 
         private void OnGlobeCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.Globe);
+
+        private void OnLifeSeedClicked(ClickEvent evt)
+        {
+            probe?.SetLifeSeedActive(probe == null || !probe.LifeSeedActive);
+            RefreshLifeSeedButton();
+            evt.StopImmediatePropagation();
+        }
+
+        private void OnSteerLeftClicked(ClickEvent _) => SetProbeFlightMode(ProbeFlightMode.Counterclockwise);
+
+        private void OnSteerStopClicked(ClickEvent _) => SetProbeFlightMode(ProbeFlightMode.Stopped);
+
+        private void OnSteerRightClicked(ClickEvent _) => SetProbeFlightMode(ProbeFlightMode.Clockwise);
+
+        private void SetProbeFlightMode(ProbeFlightMode mode)
+        {
+            probe?.SetFlightMode(mode);
+            RefreshSteerButtons();
+        }
+
+        private void RefreshLifeSeedButton()
+        {
+            lifeSeedButton?.EnableInClassList("probe-tool-life--on", probe != null && probe.LifeSeedActive);
+        }
+
+        private void RefreshSteerButtons()
+        {
+            ProbeFlightMode mode = probe != null ? probe.FlightMode : ProbeFlightMode.Clockwise;
+            steerLeftButton?.EnableInClassList("probe-camera-button--active", mode == ProbeFlightMode.Counterclockwise);
+            steerStopButton?.EnableInClassList("probe-camera-button--active", mode == ProbeFlightMode.Stopped);
+            steerRightButton?.EnableInClassList("probe-camera-button--active", mode == ProbeFlightMode.Clockwise);
+        }
+
+        private void RefreshProbeEnergy()
+        {
+            if (probeEnergyFill == null) return;
+            float t = probe != null ? probe.EnergyNormalized : 1f;
+            probeEnergyFill.style.width = Length.Percent(t * 100f);
+            probeEnergyFill.style.backgroundColor = Color.Lerp(
+                new Color(0.78f, 0.2f, 0.16f, 1f),
+                new Color(0.28f, 0.78f, 0.35f, 1f),
+                t);
+        }
 
         private void BindProbeActionButton(Button button, ProbeAction action)
         {
@@ -725,6 +793,21 @@ namespace GeneSys.UI
             AttachNamedSettingTooltip(root, "probe-action-heat",
                 "Heat",
                 "Hold to raise temperatures at the outer ring ahead of the probe. Heating the column warms atmosphere and surface along the heading.");
+            AttachNamedSettingTooltip(root, "probe-action-life",
+                "Life Seed",
+                "Toggle to drop mixed dormant organisms from the probe aim cell: algae spores and cricket eggs, one per tick in small bursts about every three seconds.");
+            AttachNamedSettingTooltip(root, "probe-steer-left",
+                "Reverse Probe",
+                "Flies the probe counterclockwise. Deposits stay ahead of the new heading, and the sprite faces along reverse travel.");
+            AttachNamedSettingTooltip(root, "probe-steer-stop",
+                "Hold Station",
+                "Hovers the probe in place. Energy does not regenerate while stopped; hold tools and life seed still drain and still fire.");
+            AttachNamedSettingTooltip(root, "probe-steer-right",
+                "Clockwise Flight",
+                "Resumes the default clockwise orbit along the atmosphere glow, opposite the sun.");
+            AttachNamedSettingTooltip(root, "probe-energy-bar",
+                "Probe Energy",
+                "Starts at 100. Active tools and life seed drain 3 per sim tick; otherwise it regenerates 10 per sim second. Stopped flight pauses regen. Actions still fire at 0.");
             AttachNamedSettingTooltip(root, "probe-camera-follow",
                 "Probe Camera",
                 "Centers the view on the probe and rotates the planetoid with its orbit so the orbiter stays pinned while the surface scrolls underneath.");
@@ -868,6 +951,10 @@ namespace GeneSys.UI
 
             if (historyBody != null && !historyBody.ClassListContains("collapsed"))
                 RefreshHistory(force: false);
+
+            RefreshLifeSeedButton();
+            RefreshSteerButtons();
+            RefreshProbeEnergy();
         }
 
         public static Vector2 ToUiToolkitScreenPosition(Vector2 screenPosition, float screenHeight) =>

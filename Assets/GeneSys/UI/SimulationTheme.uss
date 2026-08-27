@@ -557,15 +557,9 @@
     align-items: flex-end;
 }
 
-.probe-dock-balance {
-    width: 128px;
-    height: 1px;
-    visibility: hidden;
-}
-
 .probe-tools-card,
+.probe-steer-card,
 .probe-camera-card {
-    flex-direction: row;
     align-items: center;
     background-color: rgba(8, 16, 32, 0.94);
     border-width: 1px;
@@ -574,9 +568,49 @@
     padding: 8px;
 }
 
+.probe-tools-card {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.probe-tools-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.probe-energy-bar {
+    height: 10px;
+    margin-bottom: 6px;
+    flex-direction: row;
+    background-color: rgba(12, 20, 36, 0.98);
+    border-width: 1px;
+    border-color: rgb(40, 90, 140);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.probe-energy-fill {
+    height: 100%;
+    width: 100%;
+    background-color: rgb(72, 200, 90);
+    border-radius: 4px;
+}
+
+.probe-steer-card,
+.probe-camera-card {
+    flex-direction: row;
+    min-width: 168px;
+    padding: 6px;
+}
+
+.probe-steer-card {
+    margin-right: 8px;
+    justify-content: flex-end;
+}
+
 .probe-camera-card {
     margin-left: 8px;
-    padding: 6px;
+    justify-content: flex-start;
 }
 
 .unity-button.probe-tool-button {
@@ -656,6 +690,18 @@
     background-image: url("project://database/Assets/Concept/Art/Heat-Button.png");
 }
 
+.unity-button.probe-tool-life,
+.unity-button.probe-tool-life:hover,
+.unity-button.probe-tool-life:active {
+    background-image: url("project://database/Assets/Concept/Art/Plants-Button.png");
+}
+
+.unity-button.probe-tool-life.probe-tool-life--on,
+.unity-button.probe-tool-life.probe-tool-life--on:hover,
+.unity-button.probe-tool-life.probe-tool-life--on:active {
+    background-image: url("project://database/Assets/Concept/Art/PlantsActivated-Button.png");
+}
+
 .unity-button.probe-camera-follow,
 .unity-button.probe-camera-follow:hover,
 .unity-button.probe-camera-follow:active,
@@ -670,6 +716,27 @@
     background-image: url("project://database/Assets/Concept/Art/Globe-Button.png");
 }
 
+.unity-button.probe-steer-left,
+.unity-button.probe-steer-left:hover,
+.unity-button.probe-steer-left:active,
+.unity-button.probe-steer-left.probe-camera-button--active {
+    background-image: url("project://database/Assets/Concept/Art/ProbeLeft-Button.png");
+}
+
+.unity-button.probe-steer-stop,
+.unity-button.probe-steer-stop:hover,
+.unity-button.probe-steer-stop:active,
+.unity-button.probe-steer-stop.probe-camera-button--active {
+    background-image: url("project://database/Assets/Concept/Art/ProbeStop-Button.png");
+}
+
+.unity-button.probe-steer-right,
+.unity-button.probe-steer-right:hover,
+.unity-button.probe-steer-right:active,
+.unity-button.probe-steer-right.probe-camera-button--active {
+    background-image: url("project://database/Assets/Concept/Art/ProbeRight-Button.png");
+}
+
 .unity-button.probe-tool-button:hover,
 .unity-button.probe-camera-button:hover {
     background-color: rgba(72, 210, 230, 0.12);
@@ -681,6 +748,7 @@
 
 .unity-button.probe-tool-button:active,
 .unity-button.probe-tool-button.probe-tool-button--held,
+.unity-button.probe-tool-button.probe-tool-life--on,
 .unity-button.probe-camera-button:active,
 .unity-button.probe-camera-button.probe-camera-button--active {
     background-color: rgba(72, 210, 230, 0.22);

@@ -24,6 +24,13 @@ namespace GeneSys.Tests
             Assert.That(config.probeDepositRadius, Is.EqualTo(4));
             Assert.That(config.probeLeadDegrees, Is.EqualTo(2f).Within(0.001f));
             Assert.That(config.probeFollowZoom, Is.EqualTo(2.5f).Within(0.001f));
+            Assert.That(config.probeEnergyMax, Is.EqualTo(100f).Within(0.001f));
+            Assert.That(config.probeEnergyActionDrain, Is.EqualTo(3f).Within(0.001f));
+            Assert.That(config.probeEnergyRegenPerSecond, Is.EqualTo(10f).Within(0.001f));
+            Assert.That(config.probeLifeSeedIntervalSeconds, Is.EqualTo(3f).Within(0.001f));
+            Assert.That(config.probeLifeSeedMinCount, Is.EqualTo(1));
+            Assert.That(config.probeLifeSeedMaxCount, Is.EqualTo(5));
+            Assert.That(config.probeLifeSeedSporeLoad, Is.EqualTo(0.5f).Within(0.001f));
             Object.DestroyImmediate(config);
         }
 
@@ -42,6 +49,13 @@ namespace GeneSys.Tests
             config.probeDepositRadius = 32;
             config.probeLeadDegrees = 20f;
             config.probeFollowZoom = 8f;
+            config.probeEnergyMax = 40f;
+            config.probeEnergyActionDrain = 9f;
+            config.probeEnergyRegenPerSecond = 1f;
+            config.probeLifeSeedIntervalSeconds = 12f;
+            config.probeLifeSeedMinCount = 4;
+            config.probeLifeSeedMaxCount = 4;
+            config.probeLifeSeedSporeLoad = 0.1f;
             config.RestoreDefaults();
             Assert.That(config.probeOrbitRadius, Is.EqualTo(1.28f).Within(0.001f));
             Assert.That(config.probeSpriteScale, Is.EqualTo(0.08f).Within(0.001f));
@@ -54,6 +68,13 @@ namespace GeneSys.Tests
             Assert.That(config.probeDepositRadius, Is.EqualTo(4));
             Assert.That(config.probeLeadDegrees, Is.EqualTo(2f).Within(0.001f));
             Assert.That(config.probeFollowZoom, Is.EqualTo(2.5f).Within(0.001f));
+            Assert.That(config.probeEnergyMax, Is.EqualTo(100f).Within(0.001f));
+            Assert.That(config.probeEnergyActionDrain, Is.EqualTo(3f).Within(0.001f));
+            Assert.That(config.probeEnergyRegenPerSecond, Is.EqualTo(10f).Within(0.001f));
+            Assert.That(config.probeLifeSeedIntervalSeconds, Is.EqualTo(3f).Within(0.001f));
+            Assert.That(config.probeLifeSeedMinCount, Is.EqualTo(1));
+            Assert.That(config.probeLifeSeedMaxCount, Is.EqualTo(5));
+            Assert.That(config.probeLifeSeedSporeLoad, Is.EqualTo(0.5f).Within(0.001f));
             Object.DestroyImmediate(config);
         }
 
@@ -129,6 +150,106 @@ namespace GeneSys.Tests
             Assert.That(SimulationUIController.ShouldBlockWorldBrush(false, ProbeAction.None), Is.False);
             Assert.That(SimulationUIController.ShouldBlockWorldBrush(true, ProbeAction.None), Is.True);
             Assert.That(SimulationUIController.ShouldBlockWorldBrush(false, ProbeAction.Heat), Is.True);
+        }
+
+        [Test]
+        public void ProbeStartsFullEnergyOnClockwiseFlight()
+        {
+            var probe = new GameObject("Probe").AddComponent<ProbeController>();
+            Assert.That(probe.Energy, Is.EqualTo(ProbeController.DefaultEnergyMax).Within(0.001f));
+            Assert.That(probe.EnergyNormalized, Is.EqualTo(1f).Within(0.001f));
+            Assert.That(probe.FlightMode, Is.EqualTo(ProbeFlightMode.Clockwise));
+            Assert.That(probe.LifeSeedActive, Is.False);
+            Object.DestroyImmediate(probe.gameObject);
+        }
+
+        [Test]
+        public void EnergyDrainsWhileActiveAndClampsAtZero()
+        {
+            float drained = ProbeController.ApplyEnergyTick(100f, true, true, 3f, 10f, 0.05f, 100f);
+            Assert.That(drained, Is.EqualTo(97f).Within(0.001f));
+
+            float empty = ProbeController.ApplyEnergyTick(2f, true, true, 3f, 10f, 0.05f, 100f);
+            Assert.That(empty, Is.EqualTo(0f).Within(0.001f));
+
+            float stillEmpty = ProbeController.ApplyEnergyTick(0f, true, true, 3f, 10f, 0.05f, 100f);
+            Assert.That(stillEmpty, Is.EqualTo(0f).Within(0.001f));
+        }
+
+        [Test]
+        public void EnergyRegensWhenIdleUnlessStopped()
+        {
+            float regen = ProbeController.ApplyEnergyTick(50f, false, true, 3f, 10f, 0.05f, 100f);
+            Assert.That(regen, Is.EqualTo(50.5f).Within(0.001f));
+
+            float stopped = ProbeController.ApplyEnergyTick(50f, false, false, 3f, 10f, 0.05f, 100f);
+            Assert.That(stopped, Is.EqualTo(50f).Within(0.001f));
+
+            float capped = ProbeController.ApplyEnergyTick(99.9f, false, true, 3f, 10f, 1f, 100f);
+            Assert.That(capped, Is.EqualTo(100f).Within(0.001f));
+        }
+
+        [Test]
+        public void FlightModeAdvancesReversesAndHoldsOrbitPhase()
+        {
+            const float periodTicks = 3600f;
+            float clockwise = ProbeController.AdvanceOrbitAngle01(0f, ProbeFlightMode.Clockwise, 1, periodTicks);
+            Assert.That(clockwise, Is.EqualTo(1f / periodTicks).Within(1e-6f));
+
+            float reversed = ProbeController.AdvanceOrbitAngle01(clockwise, ProbeFlightMode.Counterclockwise, 1, periodTicks);
+            Assert.That(reversed, Is.EqualTo(0f).Within(1e-6f));
+
+            float held = ProbeController.AdvanceOrbitAngle01(0.4f, ProbeFlightMode.Stopped, 10, periodTicks);
+            Assert.That(held, Is.EqualTo(0.4f).Within(1e-6f));
+
+            float wrapped = ProbeController.AdvanceOrbitAngle01(0.99f, ProbeFlightMode.Clockwise, 1, 10f);
+            Assert.That(wrapped, Is.EqualTo(0.09f).Within(1e-5f));
+        }
+
+        [Test]
+        public void ReverseFlightFlipsLeadAndSpriteFacing()
+        {
+            Assert.That(ProbeController.AimLeadSign(ProbeFlightMode.Clockwise), Is.EqualTo(1f));
+            Assert.That(ProbeController.AimLeadSign(ProbeFlightMode.Stopped), Is.EqualTo(1f));
+            Assert.That(ProbeController.AimLeadSign(ProbeFlightMode.Counterclockwise), Is.EqualTo(-1f));
+
+            float clockwise = ProbeController.SpriteRotationZ(0.25f, 0f);
+            Assert.That(ProbeController.SpriteRotationZ(0.25f, 0f, true), Is.EqualTo(clockwise + 180f).Within(0.001f));
+
+            PolarGridDefinition grid = PolarGridDefinition.Validation;
+            var probe = new GameObject("Probe").AddComponent<ProbeController>();
+            probe.SetFlightMode(ProbeFlightMode.Counterclockwise);
+            Vector2Int cell = probe.AimCell(grid);
+            float leadTurns = ProbeController.AimLeadSign(probe.TravelMode) * ProbeController.DefaultLeadDegrees / 360f;
+            float theta01 = Mathf.Repeat(-probe.ProbeAngle01 - leadTurns, 1f);
+            int expectedAngular = grid.WrapTheta(Mathf.FloorToInt(theta01 * grid.angularResolution));
+            Assert.That(cell.x, Is.EqualTo(expectedAngular));
+            Assert.That(probe.TravelMode, Is.EqualTo(ProbeFlightMode.Counterclockwise));
+
+            probe.SetFlightMode(ProbeFlightMode.Stopped);
+            Assert.That(probe.FlightMode, Is.EqualTo(ProbeFlightMode.Stopped));
+            Assert.That(probe.TravelMode, Is.EqualTo(ProbeFlightMode.Counterclockwise));
+            Object.DestroyImmediate(probe.gameObject);
+        }
+
+        [Test]
+        public void LifeSeedBurstMixesFloraAndFaunaWithoutClumpingCounts()
+        {
+            for (int i = 0; i < 64; i++)
+            {
+                int count = ProbeController.LifeSeedBurstCount(i, 1, 5);
+                Assert.That(count, Is.InRange(1, 5));
+            }
+
+            bool sawFlora = false;
+            bool sawFauna = false;
+            for (int i = 0; i < 32; i++)
+            {
+                if (ProbeController.LifeSeedSpawnsFlora(i, 1)) sawFlora = true;
+                else sawFauna = true;
+            }
+            Assert.That(sawFlora, Is.True);
+            Assert.That(sawFauna, Is.True);
         }
     }
 }
