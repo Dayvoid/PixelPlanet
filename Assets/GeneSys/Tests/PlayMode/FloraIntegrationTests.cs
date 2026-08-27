@@ -236,13 +236,6 @@ namespace GeneSys.Tests
             host.Config.floraSurvivalMoistureMax = 2f;
             host.Config.floraMinLight = 0.08f;
             host.Config.floraGerminationSporeThreshold = 0.08f;
-            host.Config.grassSeedAtWorldgen = false;
-            host.Config.grassRootUptakeRate = 0f;
-            host.Config.detritusVaporAbsorbRate = 0f;
-            host.Config.detritusEvaporationScale = 0f;
-            host.Config.detritusMoistureShareRate = 0f;
-            host.Config.detritusNutrientLeachRate = 0f;
-            host.Config.detritusDecayRate = 0f;
         }
 
         private static void StampSurfacePlot(SimulationHost host, int x, int y)

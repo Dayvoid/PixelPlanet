@@ -79,7 +79,6 @@ namespace GeneSys.Materials
         public const uint Algae = 128;
         public const uint Cricket = 129;
         public const uint CricketEgg = 130;
-        public const uint Detritus = 131;
         public const uint BiologicalStart = 128;
     }
 }

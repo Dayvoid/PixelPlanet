@@ -1037,7 +1037,6 @@ namespace GeneSys.UI
         {
             float floraGeneRange = host.Config != null ? host.Config.floraGeneExpressionRange : 0.45f;
             float faunaGeneRange = host.Config != null ? host.Config.faunaGeneExpressionRange : 0.45f;
-            float grassGeneRange = host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f;
             string header =
                 $"Spores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\n" +
                 $"Strain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\n" +
@@ -1054,20 +1053,7 @@ namespace GeneSys.UI
                    $"Fauna cal {inspection.faunaVitals.x:F3}  hyd {inspection.faunaVitals.y:F3}  age {inspection.faunaVitals.z:F0}  cd {inspection.faunaVitals.w:F0}\n" +
                    $"Fauna {FaunaGenome.DescribeStage(FaunaGenome.Stage(inspection.faunaGenome))} / {FaunaGenome.DescribeBehavior(FaunaGenome.Behavior(inspection.faunaGenome))}  gen {FaunaGenome.Generation(inspection.faunaGenome)}\n" +
                    $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
-                   FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange) + "\n" +
-                   FormatGrassSlot(0, inspection.grassLife0, inspection.grassGenome0, inspection.grassPhenology0, grassGeneRange) + "\n" +
-                   FormatGrassSlot(1, inspection.grassLife1, inspection.grassGenome1, inspection.grassPhenology1, grassGeneRange) + "\n" +
-                   FormatGrassSlot(2, inspection.grassLife2, inspection.grassGenome2, inspection.grassPhenology2, grassGeneRange);
-        }
-
-        private static string FormatGrassSlot(int slot, Vector4 life, GrassGenome.Packed genome, Vector4 phenology, float range)
-        {
-            uint stage = GrassGenome.Stage(genome);
-            if (!GrassGenome.IsOccupied(stage))
-                return $"Grass {slot} empty";
-            uint traits = (unchecked((uint)BitConverter.SingleToInt32Bits(phenology.w)) >> 24) & 255u;
-            return $"Grass {slot} {GrassGenome.DescribeStage(stage)}  bio {life.x:F2}  energy {life.y:F2}  nectar {life.z:F3}  age {phenology.z:F2}d  roots {unchecked((uint)BitConverter.SingleToInt32Bits(phenology.w)) & 7u}  strain {traits}\n" +
-                   GrassGenome.DescribeGenes(genome, range);
+                   FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange);
         }
 
         private void RefreshPlayLabel()

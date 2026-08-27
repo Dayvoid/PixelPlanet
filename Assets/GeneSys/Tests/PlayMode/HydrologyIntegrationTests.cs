@@ -78,12 +78,7 @@ namespace GeneSys.Tests
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.targetOceanCoverage = 0.5f;
-            host.Config.seed = 4242;
-            host.Config.grassSeedAtWorldgen = false;
-            host.Regenerate();
-            for (int i = 0; i < 8; i++) yield return null;
 
             WorldWaterMetrics metrics = default;
             yield return MeasureMetrics(host, result => metrics = result);
@@ -217,13 +212,6 @@ namespace GeneSys.Tests
             host.Config.rainPixelFormationThreshold = 0.35f;
             host.Config.surfaceWaterPixelThreshold = 0.55f;
             host.Config.slowPassInterval = 2;
-            host.Config.grassSeedAtWorldgen = false;
-            host.Config.grassRootUptakeRate = 0f;
-            host.Config.detritusVaporAbsorbRate = 0f;
-            host.Config.detritusEvaporationScale = 0f;
-            host.Config.detritusMoistureShareRate = 0f;
-            host.Config.detritusNutrientLeachRate = 0f;
-            host.Config.detritusDecayRate = 0f;
             host.Regenerate();
             host.Clock.SetRunning(false);
             for (int i = 0; i < 5; i++) yield return null;
@@ -400,21 +388,6 @@ namespace GeneSys.Tests
             host.Config.densityExchangeRate = 0f;
             host.Config.rainPixelFormationThreshold = 0f;
             host.Config.surfaceWaterPixelThreshold = 0f;
-            host.Config.floraSeedAtWorldgen = false;
-            host.Config.faunaSeedAtWorldgen = false;
-            host.Config.grassSeedAtWorldgen = false;
-            host.Config.grassRootUptakeRate = 0f;
-            host.Config.detritusVaporAbsorbRate = 0f;
-            host.Config.detritusEvaporationScale = 0f;
-            host.Config.detritusMoistureShareRate = 0f;
-            host.Config.detritusNutrientLeachRate = 0f;
-            host.Config.detritusDecayRate = 0f;
-            host.Config.phaseHysteresis = 50f;
-            host.Config.combustionIgnitionAccumulationRate = 0f;
-            host.Config.combustionBurnRate = 0f;
-            host.Config.combustionHeatYield = 0f;
-            host.Config.combustionOxygenReplenishRate = 0f;
-            host.Config.combustionOxygenDiffusionRate = 0f;
         }
 
         private static void PaintSoakColumn(SimulationHost host, int x, int y)

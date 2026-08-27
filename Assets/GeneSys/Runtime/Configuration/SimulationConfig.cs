@@ -193,47 +193,6 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float floraFragmentYield = 0.25f;
         [Range(0f, 4f)] public float floraAnchorGrip = 1f;
 
-        [Header("Ecology - Grass")]
-        public bool grassSeedAtWorldgen = false;
-        [Range(0f, 1f)] public float grassInitialBiomass = 0.35f;
-        [Range(0f, 4f)] public float grassGrowthRate = 0.14f;
-        [Range(0f, 4f)] public float grassDecayRate = 0.1f;
-        [Range(0f, 4f)] public float grassPhotosynthesisRate = 0.32f;
-        [Range(0f, 4f)] public float grassOxygenYield = 0.18f;
-        [Range(0f, 4f)] public float grassExudationRate = 0.08f;
-        [Range(0.05f, 1f)] public float grassReproductionThreshold = 0.5f;
-        [Range(0f, 1f)] public float grassGeneExpressionRange = 0.45f;
-        [Range(-40f, 80f)] public float grassGrowthTempMin = 6f;
-        [Range(-40f, 120f)] public float grassGrowthTempMax = 36f;
-        [Range(0f, 2f)] public float grassGrowthMoistureMin = 0.08f;
-        [Range(0f, 2f)] public float grassGrowthMoistureMax = 1.1f;
-        [Range(-80f, 80f)] public float grassSurvivalTempMin = -10f;
-        [Range(-40f, 160f)] public float grassSurvivalTempMax = 70f;
-        [Range(0f, 2f)] public float grassSurvivalMoistureMin = 0.02f;
-        [Range(0f, 2f)] public float grassSurvivalMoistureMax = 1.4f;
-        [Range(0f, 2f)] public float grassMinLight = 0.08f;
-        [Range(0f, 4f)] public float grassMaintenanceRate = 0.05f;
-        [Range(0f, 4f)] public float grassNightDrain = 0.035f;
-        [Range(0f, 4f)] public float grassRootUptakeRate = 0.25f;
-        [Range(0f, 1f)] public float grassRootCohesionScale = 0.1f;
-        [Range(0f, 4f)] public float grassPollenEmitRate = 0.08f;
-        [Range(0f, 4f)] public float grassPollenAirRate = 0.12f;
-        [Range(0f, 4f)] public float grassPollenWaterRate = 0.15f;
-        [Range(0f, 4f)] public float grassPollenSettlingRate = 0.2f;
-        [Range(0f, 4f)] public float grassSeedAirRate = 0.08f;
-        [Range(0f, 4f)] public float grassSeedWaterRate = 0.2f;
-        [Range(0f, 4f)] public float grassSeedGravityRate = 0.35f;
-        [Range(0f, 2f)] public float grassSeedDiffusionRate = 0.03f;
-        [Range(0f, 4f)] public float grassNectarRate = 0.2f;
-        [Range(0f, 1f)] public float grassCanopyOpacity = 0.1f;
-        [Range(0f, 4f)] public float detritusVaporAbsorbRate = 0.12f;
-        [Range(0f, 1f)] public float detritusEvaporationScale = 0.15f;
-        [Range(0f, 4f)] public float detritusMoistureShareRate = 0.2f;
-        [Range(0f, 4f)] public float detritusNutrientLeachRate = 0.08f;
-        [Range(0f, 4f)] public float detritusDecayRate = 0.04f;
-        [Range(0f, 1f)] public float detritusInitialNutrient = 0.55f;
-        [Range(0f, 1f)] public float detritusInitialMoisture = 0.35f;
-
         [Header("Ecology - Fauna")]
         public bool faunaSeedAtWorldgen = false;
         [Range(0f, 1f)] public float faunaInitialCalories = 0.45f;
@@ -515,64 +474,6 @@ namespace GeneSys.Configuration
             floraRainShearRate = Mathf.Max(0f, floraRainShearRate);
             floraFragmentYield = Mathf.Clamp01(floraFragmentYield);
             floraAnchorGrip = Mathf.Max(0f, floraAnchorGrip);
-            grassInitialBiomass = Mathf.Clamp01(grassInitialBiomass);
-            grassGrowthRate = Mathf.Max(0f, grassGrowthRate);
-            grassDecayRate = Mathf.Max(0f, grassDecayRate);
-            grassPhotosynthesisRate = Mathf.Max(0f, grassPhotosynthesisRate);
-            grassOxygenYield = Mathf.Max(0f, grassOxygenYield);
-            grassExudationRate = Mathf.Max(0f, grassExudationRate);
-            grassReproductionThreshold = Mathf.Clamp(grassReproductionThreshold, 0.05f, 1f);
-            grassGeneExpressionRange = Mathf.Clamp01(grassGeneExpressionRange);
-            if (grassGrowthTempMax < grassGrowthTempMin)
-            {
-                float swap = grassGrowthTempMin;
-                grassGrowthTempMin = grassGrowthTempMax;
-                grassGrowthTempMax = swap;
-            }
-            if (grassSurvivalTempMax < grassSurvivalTempMin)
-            {
-                float swap = grassSurvivalTempMin;
-                grassSurvivalTempMin = grassSurvivalTempMax;
-                grassSurvivalTempMax = swap;
-            }
-            grassSurvivalTempMin = Mathf.Min(grassSurvivalTempMin, grassGrowthTempMin);
-            grassSurvivalTempMax = Mathf.Max(grassSurvivalTempMax, grassGrowthTempMax);
-            if (grassGrowthMoistureMax < grassGrowthMoistureMin)
-            {
-                float swap = grassGrowthMoistureMin;
-                grassGrowthMoistureMin = grassGrowthMoistureMax;
-                grassGrowthMoistureMax = swap;
-            }
-            if (grassSurvivalMoistureMax < grassSurvivalMoistureMin)
-            {
-                float swap = grassSurvivalMoistureMin;
-                grassSurvivalMoistureMin = grassSurvivalMoistureMax;
-                grassSurvivalMoistureMax = swap;
-            }
-            grassSurvivalMoistureMin = Mathf.Min(grassSurvivalMoistureMin, grassGrowthMoistureMin);
-            grassSurvivalMoistureMax = Mathf.Max(grassSurvivalMoistureMax, grassGrowthMoistureMax);
-            grassMinLight = Mathf.Max(0f, grassMinLight);
-            grassMaintenanceRate = Mathf.Max(0f, grassMaintenanceRate);
-            grassNightDrain = Mathf.Max(0f, grassNightDrain);
-            grassRootUptakeRate = Mathf.Max(0f, grassRootUptakeRate);
-            grassRootCohesionScale = Mathf.Clamp01(grassRootCohesionScale);
-            grassPollenEmitRate = Mathf.Max(0f, grassPollenEmitRate);
-            grassPollenAirRate = Mathf.Max(0f, grassPollenAirRate);
-            grassPollenWaterRate = Mathf.Max(0f, grassPollenWaterRate);
-            grassPollenSettlingRate = Mathf.Max(0f, grassPollenSettlingRate);
-            grassSeedAirRate = Mathf.Max(0f, grassSeedAirRate);
-            grassSeedWaterRate = Mathf.Max(0f, grassSeedWaterRate);
-            grassSeedGravityRate = Mathf.Max(0f, grassSeedGravityRate);
-            grassSeedDiffusionRate = Mathf.Max(0f, grassSeedDiffusionRate);
-            grassNectarRate = Mathf.Max(0f, grassNectarRate);
-            grassCanopyOpacity = Mathf.Clamp01(grassCanopyOpacity);
-            detritusVaporAbsorbRate = Mathf.Max(0f, detritusVaporAbsorbRate);
-            detritusEvaporationScale = Mathf.Clamp01(detritusEvaporationScale);
-            detritusMoistureShareRate = Mathf.Max(0f, detritusMoistureShareRate);
-            detritusNutrientLeachRate = Mathf.Max(0f, detritusNutrientLeachRate);
-            detritusDecayRate = Mathf.Max(0f, detritusDecayRate);
-            detritusInitialNutrient = Mathf.Clamp01(detritusInitialNutrient);
-            detritusInitialMoisture = Mathf.Clamp01(detritusInitialMoisture);
             faunaInitialCalories = Mathf.Clamp01(faunaInitialCalories);
             faunaInitialHydration = Mathf.Clamp01(faunaInitialHydration);
             faunaMaturityTicks = Mathf.Clamp(faunaMaturityTicks, 1, 20000);

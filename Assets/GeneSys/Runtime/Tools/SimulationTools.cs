@@ -45,7 +45,6 @@ namespace GeneSys.Tools
                     BrushMode.Vapor => new Vector4(6f, Strength, 0f, 0f),
                     BrushMode.Ignite => new Vector4(9f, Strength, 0f, 0f),
                     BrushMode.Life when SelectedMaterialId == MaterialIds.Cricket || SelectedMaterialId == MaterialIds.CricketEgg => Vector4.zero,
-                    BrushMode.Life when SelectedMaterialId == MaterialIds.Soil => new Vector4(15f, Strength, 0f, 0f),
                     BrushMode.Life => new Vector4(14f, Strength, 0f, 0f),
                     _ => Vector4.zero
                 };
@@ -172,53 +171,8 @@ namespace GeneSys.Tools
                                                                         NativeArray<Vector2> data = acousticRequest.GetData<Vector2>();
                                                                         if (data.Length > 0) inspection.acoustic = data[0];
                                                                     }
-                                                                    if (host.Resources.GrassRead == null)
-                                                                    {
-                                                                        readbackPending = false;
-                                                                        Inspected?.Invoke(inspection);
-                                                                        return;
-                                                                    }
-                                                                    AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 0, 1, g0 =>
-                                                                    {
-                                                                        if (!g0.hasError && g0.GetData<Vector4>().Length > 0) inspection.grassLife0 = g0.GetData<Vector4>()[0];
-                                                                        AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 1, 1, g0g =>
-                                                                        {
-                                                                            if (!g0g.hasError && g0g.GetData<Vector4>().Length > 0)
-                                                                                inspection.grassGenome0 = GrassGenome.Sanitize(GrassGenome.FromFloatBits(g0g.GetData<Vector4>()[0]));
-                                                                            AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 2, 1, g0p =>
-                                                                            {
-                                                                                if (!g0p.hasError && g0p.GetData<Vector4>().Length > 0) inspection.grassPhenology0 = g0p.GetData<Vector4>()[0];
-                                                                                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 4, 1, g1 =>
-                                                                                {
-                                                                                    if (!g1.hasError && g1.GetData<Vector4>().Length > 0) inspection.grassLife1 = g1.GetData<Vector4>()[0];
-                                                                                    AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 5, 1, g1g =>
-                                                                                    {
-                                                                                        if (!g1g.hasError && g1g.GetData<Vector4>().Length > 0)
-                                                                                            inspection.grassGenome1 = GrassGenome.Sanitize(GrassGenome.FromFloatBits(g1g.GetData<Vector4>()[0]));
-                                                                                        AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 6, 1, g1p =>
-                                                                                        {
-                                                                                            if (!g1p.hasError && g1p.GetData<Vector4>().Length > 0) inspection.grassPhenology1 = g1p.GetData<Vector4>()[0];
-                                                                                            AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 8, 1, g2 =>
-                                                                                            {
-                                                                                                if (!g2.hasError && g2.GetData<Vector4>().Length > 0) inspection.grassLife2 = g2.GetData<Vector4>()[0];
-                                                                                                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 9, 1, g2g =>
-                                                                                                {
-                                                                                                    if (!g2g.hasError && g2g.GetData<Vector4>().Length > 0)
-                                                                                                        inspection.grassGenome2 = GrassGenome.Sanitize(GrassGenome.FromFloatBits(g2g.GetData<Vector4>()[0]));
-                                                                                                    AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, 10, 1, g2p =>
-                                                                                                    {
-                                                                                                        if (!g2p.hasError && g2p.GetData<Vector4>().Length > 0) inspection.grassPhenology2 = g2p.GetData<Vector4>()[0];
-                                                                                                        readbackPending = false;
-                                                                                                        Inspected?.Invoke(inspection);
-                                                                                                    });
-                                                                                                });
-                                                                                            });
-                                                                                        });
-                                                                                    });
-                                                                                });
-                                                                            });
-                                                                        });
-                                                                    });
+                                                                    readbackPending = false;
+                                                                    Inspected?.Invoke(inspection);
                                                                 });
                                                             });
                                                         });
@@ -252,14 +206,5 @@ namespace GeneSys.Tools
         public Vector2 acoustic;
         public float light;
         public Vector2 flow;
-        public Vector4 grassLife0;
-        public Vector4 grassLife1;
-        public Vector4 grassLife2;
-        public GrassGenome.Packed grassGenome0;
-        public GrassGenome.Packed grassGenome1;
-        public GrassGenome.Packed grassGenome2;
-        public Vector4 grassPhenology0;
-        public Vector4 grassPhenology1;
-        public Vector4 grassPhenology2;
     }
 }

@@ -7,6 +7,7 @@
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
 
 Texture2D<uint> _MaterialRead;
 RWTexture2D<uint> _MaterialWrite;
@@ -26,7 +27,6 @@ Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
 Texture2D<float> _LightRead;
 RWTexture2D<float> _LightWrite;
-Texture2DArray<float4> _GrassRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -47,7 +47,6 @@ float4 _FloraE; // growthMoistureMin, growthMoistureMax, survivalTempMin, surviv
 float4 _FloraF; // survivalMoistureMin, survivalMoistureMax, minLight, germinationSporeThreshold
 float4 _FloraG; // maintenanceRate, nightDrain, dormancyMetabolicScale, initialSporeLoad
 float4 _FloraH; // seedAtWorldgen, anchorGrip, unused, unused
-float4 _GrassH; // nectarRate, seedAtWorldgen, geneExpressionRange, canopyOpacity
 float4 _FloraI; // poleDriftRate, windShearRate, rainShearRate, fragmentYield
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
@@ -421,8 +420,6 @@ void LightAttenuation(uint3 id : SV_DispatchThreadID)
         else if (category >= 3.0)
         {
             opacity += lerp(0.55, 0.95, 1.0 - saturate(definition.biology.z));
-            if (IsGrassAnchor(material))
-                opacity += saturate(GrassTotalBiomass(_GrassRead, cell) * saturate(_GrassH.w));
         }
         else if (category == 2.0)
         {
@@ -741,6 +738,7 @@ void FloraLifecycle(uint3 id : SV_DispatchThreadID)
         life.z = saturate(parentLife.z * 0.5);
         life.x = max(life.x, 0.02);
         life.w = parentLife.w * 0.5;
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_REPRODUCE, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_NONE);
         Write(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
@@ -766,6 +764,7 @@ void FloraLifecycle(uint3 id : SV_DispatchThreadID)
             life.y = saturate(max(life.y, 0.12 + saturate(life.x) * 0.25));
             life.z = saturate(max(life.z, 0.05));
             life.x = max(0.0, life.x * 0.35);
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_NONE);
         }
         Write(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
@@ -790,6 +789,8 @@ void FloraLifecycle(uint3 id : SV_DispatchThreadID)
         life.y = max(0.0, life.y - decayRate * 0.15 * _DeltaTime);
         if (life.y <= 1e-4)
         {
+            uint deathCause = (dose / 255.0 > toxinTol) ? ORGANISM_CAUSE_TOXIN : ORGANISM_CAUSE_DESICCATION;
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), deathCause);
             aux.z += 0.08;
             material = 12u;
             stage = FLORA_STAGE_DEAD;
