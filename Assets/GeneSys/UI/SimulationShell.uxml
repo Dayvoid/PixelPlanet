@@ -52,13 +52,17 @@
         </ui:VisualElement>
 
         <ui:VisualElement name="inspect-bar" class="inspect-bar hidden" picking-mode="Ignore">
-            <ui:VisualElement name="env-inspect-panel" class="inspect-panel inspect-panel--env">
-                <ui:Label text="Environment" class="section-title inspector-title" />
-                <ui:Label name="env-inspection" text="" class="inspection" />
+            <ui:VisualElement name="env-inspect-panel" class="inspect-panel inspect-panel--env" picking-mode="Position">
+                <ui:VisualElement class="inspect-header" picking-mode="Ignore">
+                    <ui:Label name="env-inspect-title" text="Environment ▸" class="section-title inspector-title" picking-mode="Ignore" />
+                </ui:VisualElement>
+                <ui:Label name="env-inspection" text="" class="inspection" picking-mode="Ignore" />
             </ui:VisualElement>
-            <ui:VisualElement name="life-inspect-panel" class="inspect-panel inspect-panel--life">
-                <ui:Label text="Life" class="section-title inspector-title" />
-                <ui:Label name="life-inspection" text="" class="inspection" />
+            <ui:VisualElement name="life-inspect-panel" class="inspect-panel inspect-panel--life" picking-mode="Position">
+                <ui:VisualElement class="inspect-header" picking-mode="Ignore">
+                    <ui:Label name="life-inspect-title" text="Life ▸" class="section-title inspector-title" picking-mode="Ignore" />
+                </ui:VisualElement>
+                <ui:Label name="life-inspection" text="" class="inspection" picking-mode="Ignore" />
             </ui:VisualElement>
         </ui:VisualElement>
 

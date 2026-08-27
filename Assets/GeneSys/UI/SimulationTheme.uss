@@ -74,10 +74,17 @@
 
 .inspector-title {
     margin-top: 0;
+    margin-bottom: 0;
+}
+
+.inspect-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
 }
 
 .inspection {
-    min-height: 112px;
+    min-height: 48px;
     padding: 8px;
     white-space: normal;
     background-color: rgba(4, 10, 22, 0.9);
@@ -105,6 +112,10 @@
     width: 300px;
     flex-grow: 0;
     flex-shrink: 0;
+}
+
+.inspect-panel--expanded .inspection {
+    min-height: 112px;
 }
 
 .inspect-panel--env {

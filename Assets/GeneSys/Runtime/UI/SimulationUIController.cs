@@ -71,6 +71,14 @@ namespace GeneSys.UI
         private Label statusLabel;
         private Label envInspectLabel;
         private Label lifeInspectLabel;
+        private Label envInspectTitle;
+        private Label lifeInspectTitle;
+        private VisualElement envInspectPanel;
+        private VisualElement lifeInspectPanel;
+        private CellInspection lastInspection;
+        private bool hasInspection;
+        private bool envInspectExpanded;
+        private bool lifeInspectExpanded;
         private Label worldMetricsLabel;
         private Label simulationStatusLabel;
         private Button playButton;
@@ -126,6 +134,10 @@ namespace GeneSys.UI
             settingsOverlay = root.Q("settings-overlay");
             inspectBar = root.Q("inspect-bar");
             statusLabel = root.Q<Label>("status");
+            envInspectPanel = root.Q("env-inspect-panel");
+            lifeInspectPanel = root.Q("life-inspect-panel");
+            envInspectTitle = root.Q<Label>("env-inspect-title");
+            lifeInspectTitle = root.Q<Label>("life-inspect-title");
             envInspectLabel = root.Q<Label>("env-inspection");
             lifeInspectLabel = root.Q<Label>("life-inspection");
             worldMetricsLabel = root.Q<Label>("world-metrics");
@@ -162,6 +174,7 @@ namespace GeneSys.UI
             SetupTabs(root);
             BuildSettings(root);
             SetupProbeHud(root);
+            SetupInspectPanels();
             AttachStaticSettingTooltips(root);
             tools.Inspected -= SetInspection;
             tools.Inspected += SetInspection;
@@ -876,43 +889,83 @@ namespace GeneSys.UI
             return ShouldBlockWorldBrush(overInteractive, action);
         }
 
+        private void SetupInspectPanels()
+        {
+            envInspectPanel?.RegisterCallback<ClickEvent>(evt =>
+            {
+                envInspectExpanded = !envInspectExpanded;
+                RefreshInspectionDisplay();
+                evt.StopPropagation();
+            });
+            lifeInspectPanel?.RegisterCallback<ClickEvent>(evt =>
+            {
+                lifeInspectExpanded = !lifeInspectExpanded;
+                RefreshInspectionDisplay();
+                evt.StopPropagation();
+            });
+        }
+
         private void SetInspection(CellInspection inspection)
         {
-            if (envInspectLabel == null && lifeInspectLabel == null) return;
+            lastInspection = inspection;
+            hasInspection = true;
             inspectBar?.RemoveFromClassList("hidden");
+            RefreshInspectionDisplay();
+        }
+
+        private void RefreshInspectionDisplay()
+        {
+            if (!hasInspection) return;
+            envInspectPanel?.EnableInClassList("inspect-panel--expanded", envInspectExpanded);
+            lifeInspectPanel?.EnableInClassList("inspect-panel--expanded", lifeInspectExpanded);
+            if (envInspectTitle != null)
+                envInspectTitle.text = envInspectExpanded ? "Environment ▾" : "Environment ▸";
+            if (lifeInspectTitle != null)
+                lifeInspectTitle.text = lifeInspectExpanded ? "Life ▾" : "Life ▸";
+            if (envInspectLabel != null)
+                envInspectLabel.text = FormatEnvironmentInspection(lastInspection, envInspectExpanded);
+            if (lifeInspectLabel != null)
+                lifeInspectLabel.text = FormatLifeInspection(lastInspection, lifeInspectExpanded);
+        }
+
+        private string FormatEnvironmentInspection(CellInspection inspection, bool expanded)
+        {
             GeneSys.Materials.MaterialDefinition definition = host.MaterialRegistry.Get((int)inspection.materialId);
             string materialName = definition != null ? definition.displayName : inspection.materialId.ToString();
-            if (envInspectLabel != null)
-            {
-                envInspectLabel.text =
-                    $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\n" +
-                    $"Material: {materialName}\n" +
-                    $"T {inspection.state.x:F2}  P {inspection.state.y:F3}\n" +
-                    $"Water {inspection.state.z:F3}  Charge {inspection.state.w:F3}\n" +
-                    $"Vapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\n" +
-                    $"Nutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\n" +
-                    $"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n" +
-                    $"Light {inspection.light:F3}";
-            }
-            if (lifeInspectLabel != null)
-            {
-                float geneRange = host.Config != null ? host.Config.floraGeneExpressionRange : 0.45f;
-                lifeInspectLabel.text =
-                    $"Spores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\n" +
-                    $"Strain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\n" +
-                    $"O2 {inspection.combustion.x:F3}  Flame {inspection.combustion.y:F3}\n" +
-                    $"Soot {inspection.combustion.z:F3}  Ignite {inspection.combustion.w:F3}\n" +
-                    $"Storm Q {inspection.storm.x:F3}  Bolt {inspection.storm.y:F3}\n" +
-                    $"Flash {inspection.storm.z:F3}  Break {inspection.storm.w:F3}\n" +
-                    $"Flora spores {inspection.life.x:F3}  biomass {inspection.life.y:F3}\n" +
-                    $"Energy {inspection.life.z:F3}  exudate {inspection.life.w:F3}\n" +
-                    $"Stage {FloraGenome.DescribeStage(FloraGenome.Stage(inspection.genome))}  gen {FloraGenome.Generation(inspection.genome)}  toxin {FloraGenome.ToxinDose(inspection.genome)}\n" +
-                    FloraGenome.DescribeGenes(inspection.genome, geneRange) + "\n" +
-                    $"Fauna cal {inspection.faunaVitals.x:F3}  hyd {inspection.faunaVitals.y:F3}  age {inspection.faunaVitals.z:F0}  cd {inspection.faunaVitals.w:F0}\n" +
-                    $"Fauna {FaunaGenome.DescribeStage(FaunaGenome.Stage(inspection.faunaGenome))} / {FaunaGenome.DescribeBehavior(FaunaGenome.Behavior(inspection.faunaGenome))}  gen {FaunaGenome.Generation(inspection.faunaGenome)}\n" +
-                    $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
-                    FaunaGenome.DescribeGenes(inspection.faunaGenome, host.Config != null ? host.Config.faunaGeneExpressionRange : 0.45f);
-            }
+            string header =
+                $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\n" +
+                $"Material: {materialName}\n" +
+                $"T {inspection.state.x:F2}  P {inspection.state.y:F3}";
+            if (!expanded) return header;
+            return header +
+                   $"\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\n" +
+                   $"Vapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\n" +
+                   $"Nutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\n" +
+                   $"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n" +
+                   $"Light {inspection.light:F3}";
+        }
+
+        private string FormatLifeInspection(CellInspection inspection, bool expanded)
+        {
+            float floraGeneRange = host.Config != null ? host.Config.floraGeneExpressionRange : 0.45f;
+            float faunaGeneRange = host.Config != null ? host.Config.faunaGeneExpressionRange : 0.45f;
+            string header =
+                $"Spores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\n" +
+                $"Strain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\n" +
+                $"Stage {FloraGenome.DescribeStage(FloraGenome.Stage(inspection.genome))}  gen {FloraGenome.Generation(inspection.genome)}  toxin {FloraGenome.ToxinDose(inspection.genome)}";
+            if (!expanded) return header;
+            return header +
+                   $"\nO2 {inspection.combustion.x:F3}  Flame {inspection.combustion.y:F3}\n" +
+                   $"Soot {inspection.combustion.z:F3}  Ignite {inspection.combustion.w:F3}\n" +
+                   $"Storm Q {inspection.storm.x:F3}  Bolt {inspection.storm.y:F3}\n" +
+                   $"Flash {inspection.storm.z:F3}  Break {inspection.storm.w:F3}\n" +
+                   $"Flora spores {inspection.life.x:F3}  biomass {inspection.life.y:F3}\n" +
+                   $"Energy {inspection.life.z:F3}  exudate {inspection.life.w:F3}\n" +
+                   FloraGenome.DescribeGenes(inspection.genome, floraGeneRange) + "\n" +
+                   $"Fauna cal {inspection.faunaVitals.x:F3}  hyd {inspection.faunaVitals.y:F3}  age {inspection.faunaVitals.z:F0}  cd {inspection.faunaVitals.w:F0}\n" +
+                   $"Fauna {FaunaGenome.DescribeStage(FaunaGenome.Stage(inspection.faunaGenome))} / {FaunaGenome.DescribeBehavior(FaunaGenome.Behavior(inspection.faunaGenome))}  gen {FaunaGenome.Generation(inspection.faunaGenome)}\n" +
+                   $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
+                   FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange);
         }
 
         private void RefreshPlayLabel()
