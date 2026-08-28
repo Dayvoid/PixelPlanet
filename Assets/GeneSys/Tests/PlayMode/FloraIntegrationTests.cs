@@ -7,6 +7,7 @@ using GeneSys.Persistence;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
+using GeneSys.Tools;
 using GeneSys.Validation;
 using NUnit.Framework;
 using UnityEngine;
@@ -376,7 +377,10 @@ namespace GeneSys.Tests
             int x = DayX(host);
             int y = SurfaceY(host);
             StampSurfacePlot(host, x, y);
-            host.QueueFloraSeed(new Vector2Int(x, y + 1), 0, 1f);
+            Assert.That(SimulationTools.TryBuildBrushCommand(
+                BrushMode.Life, MaterialIds.Algae, new Vector2Int(x, y + 1), 0, 1f, out var command, out bool grassSeed), Is.True);
+            Assert.That(grassSeed, Is.False);
+            host.QueueBrush(command);
             host.Config.floraSettlingRate = 4f;
             host.Config.floraDiffusionRate = 2f;
             Paint(host, x + 1, y + 1, MaterialIds.Air);

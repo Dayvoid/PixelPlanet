@@ -37,26 +37,11 @@ namespace GeneSys.Tools
 
             if (Mode != BrushMode.Off && Mouse.current.leftButton.isPressed && display.TryScreenToCell(pointer, out Vector2Int cell))
             {
-                Vector4 values = Mode switch
+                if (TryBuildBrushCommand(Mode, SelectedMaterialId, cell, Mathf.Max(1, Radius), Strength, out var command, out bool grassSeed))
                 {
-                    BrushMode.Heat => new Vector4(1f, Strength, 0f, 0f),
-                    BrushMode.Water => new Vector4(2f, Strength, 0f, 0f),
-                    BrushMode.Pressure => new Vector4(3f, Strength, 0f, 0f),
-                    BrushMode.Vapor => new Vector4(6f, Strength, 0f, 0f),
-                    BrushMode.Ignite => new Vector4(9f, Strength, 0f, 0f),
-                    BrushMode.Life when SelectedMaterialId == MaterialIds.Cricket || SelectedMaterialId == MaterialIds.CricketEgg => Vector4.zero,
-                    BrushMode.Life => new Vector4(14f, Strength, 0f, 0f),
-                    _ => Vector4.zero
-                };
-                host.QueueBrush(new GpuPassScheduler.BrushCommand
-                {
-                    center = cell,
-                    radius = Mathf.Max(1, Radius),
-                    materialId = Mode == BrushMode.Life && (SelectedMaterialId == MaterialIds.Cricket || SelectedMaterialId == MaterialIds.CricketEgg)
-                        ? SelectedMaterialId
-                        : SelectedMaterialId,
-                    values = values
-                });
+                    if (grassSeed) host.QueueGrassSeed(command.center, command.radius);
+                    else host.QueueBrush(command);
+                }
             }
 
             if (Mouse.current.rightButton.isPressed)
@@ -72,6 +57,46 @@ namespace GeneSys.Tools
             {
                 inspectPollTimer = 0f;
             }
+        }
+
+        public static bool TryBuildBrushCommand(
+            BrushMode mode,
+            uint selectedMaterialId,
+            Vector2Int cell,
+            int radius,
+            float strength,
+            out GpuPassScheduler.BrushCommand command,
+            out bool grassSeed)
+        {
+            command = default;
+            grassSeed = false;
+            if (mode == BrushMode.Off) return false;
+
+            command.center = cell;
+            command.radius = radius;
+            command.materialId = selectedMaterialId;
+            if (mode == BrushMode.Life && selectedMaterialId == BrushSelectionIds.GrassSeeds)
+            {
+                grassSeed = true;
+                command.materialId = MaterialIds.Soil;
+                command.values = Vector4.zero;
+                return true;
+            }
+
+            command.values = mode switch
+            {
+                BrushMode.Heat => new Vector4(1f, strength, 0f, 0f),
+                BrushMode.Water => new Vector4(2f, strength, 0f, 0f),
+                BrushMode.Pressure => new Vector4(3f, strength, 0f, 0f),
+                BrushMode.Vapor => new Vector4(6f, strength, 0f, 0f),
+                BrushMode.Ignite => new Vector4(9f, strength, 0f, 0f),
+                BrushMode.Life when selectedMaterialId == MaterialIds.Cricket || selectedMaterialId == MaterialIds.CricketEgg => Vector4.zero,
+                BrushMode.Life when selectedMaterialId == BrushSelectionIds.MycoSpores =>
+                    new Vector4(7f, strength, 0f, BrushSelectionIds.MycoRandomTraitSentinel),
+                BrushMode.Life => new Vector4(14f, strength, 0f, 0f),
+                _ => Vector4.zero
+            };
+            return true;
         }
 
         private void Inspect(Vector2Int cell)

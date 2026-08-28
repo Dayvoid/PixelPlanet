@@ -104,7 +104,7 @@ The left/right hemisphere approach should be adopted when developing behavior tr
 - derived `LightField` R32F, recomputed each tick by a radial inward march (cloud condensate, soot, water depth, material opacity); not ping-ponged
 - life stages: `SPORE`, `ACTIVE` (growth envelope + light, accumulate energy, divide with mutation), `DORMANT` (survival envelope, biomass kept, revival), `DESICCATED` (outside survival: dry fuel with a lowered ignition threshold so fire can consume the mat), `DEAD` → Ash `12` plus `aux.z` fertility
 - race-free division is a gather from Read-state on one neighbor direction per slow tick
-- brush mode `Life` (GPU 14) seeds spores plus a randomized genome; painting material 128 plants an active organism
+- brush mode `Material` paints IDs 0–13 plus `131 Detritus`; `Life` reuses the Material dropdown for `128–130`, Myco Spores (GPU 7, rare strains at `mycologyRareStrainChance`), and Grass Seeds (`PaintGrass`). Algae still seeds flora spores (GPU 14); painting material 128 plants an active organism
 - worldgen flora seeding is off by default (`floraSeedAtWorldgen`) so existing determinism tests stay green
 - snapshots are Version7 with Life/Genome payloads; Light is derived and omitted
 - Version9 adds cricket fauna (`129 Cricket`, `130 Cricket Egg`), a dedicated fauna Tex2DArray (vitals/motion/genome/partner), a two-channel acoustic field, and fauna config. Crickets occupy surface-adjacent air cells, hop with gene- and environment-scaled impulse, graze algae, retain partner genomes, lay 2–4 eggs, and chirp on feeding/mating channels.

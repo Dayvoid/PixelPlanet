@@ -48,6 +48,8 @@ float4 _EruptionB;
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _PressureB; // gas, fluid, porous, rigid diffusivities
 float4 _DensityExchange; // rate, epsilon, unused, unused
+float4 _MycologyA; // initialSporeLoad, rareStrainChance, airTransport, waterTransport
+float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMoisture
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -107,6 +109,11 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         if (mode == 0)
         {
             material = command.materialId;
+            if (IsDetritusMaterial(material))
+            {
+                aux.y = max(aux.y, max(0.25, saturate(_GrassI.w)));
+                aux.z = max(aux.z, max(0.45, saturate(_GrassI.z)));
+            }
             if (IsFloraMaterial(material) && life.y <= 1e-6)
             {
                 genome = RandomFloraGenome((uint2)cell, _Seed, _Tick);
@@ -125,9 +132,19 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
         else if (mode == 6) aux.x = max(0.0, aux.x + command.values.y * max(0.1, falloff));
         else if (mode == 7)
         {
-            ecology.x = max(0.0, command.values.y);
-            ecology.y = saturate(command.values.z);
-            ecology.z = (float)SanitizeMycologyTraits((uint)round(command.values.w));
+            ecology.x = max(0.0, command.values.y * max(0.1, falloff));
+            if (command.values.w < 0.0)
+            {
+                uint traits = 0u;
+                if (Hash01((uint)cell.x * 19349663u + (uint)cell.y * 83492791u + (uint)_Seed * 6151u) < saturate(_MycologyA.y))
+                    traits = PickRareMycologyTraits((uint2)cell, _Seed);
+                ecology.z = (float)traits;
+            }
+            else
+            {
+                ecology.y = saturate(command.values.z);
+                ecology.z = (float)SanitizeMycologyTraits((uint)round(command.values.w));
+            }
         }
         else if (mode == 8) state.w += command.values.y * max(0.1, falloff);
         else if (mode == 9) combustion.y = saturate(max(combustion.y, command.values.y * max(0.1, falloff)));

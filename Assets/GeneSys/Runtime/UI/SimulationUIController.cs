@@ -114,6 +114,12 @@ namespace GeneSys.UI
         private VisualElement tooltipAnchor;
         private IVisualElementScheduledItem tooltipShow;
         private EventCallback<GeometryChangedEvent> tooltipLaidOut;
+        private DropdownField materialDropdown;
+        private readonly List<BrushSelection> materialChoices = new();
+        private BrushMode materialCatalogMode = BrushMode.Material;
+        private int lastMaterialBrushIndex = -1;
+        private int lastLifeBrushIndex = -1;
+        private bool suppressingMaterialCallback;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer renderer, SimulationTools simulationTools)
         {
@@ -291,26 +297,79 @@ namespace GeneSys.UI
                 mode.choices = new List<string>(Enum.GetNames(typeof(BrushMode)));
                 mode.index = (int)BrushMode.Off;
                 tools.Mode = BrushMode.Off;
-                mode.RegisterValueChangedCallback(_ => tools.Mode = (BrushMode)mode.index);
-            }
-            var material = root.Q<DropdownField>("material");
-            if (material != null)
-            {
-                var names = new List<string>();
-                foreach (GeneSys.Materials.MaterialDefinition definition in host.MaterialRegistry.materials) names.Add($"{definition.stableId}: {definition.displayName}");
-                material.choices = names;
-                material.index = Mathf.Min(7, names.Count - 1);
-                if (material.index >= 0)
-                    BuildMaterialSettings(root.Q<ScrollView>("material-settings"), host.MaterialRegistry.materials[material.index]);
-                material.RegisterValueChangedCallback(_ =>
+                mode.RegisterValueChangedCallback(_ =>
                 {
-                    if (material.index >= 0 && material.index < host.MaterialRegistry.materials.Count)
-                    {
-                        tools.SelectedMaterialId = (uint)host.MaterialRegistry.materials[material.index].stableId;
-                        BuildMaterialSettings(root.Q<ScrollView>("material-settings"), host.MaterialRegistry.materials[material.index]);
-                    }
+                    tools.Mode = (BrushMode)mode.index;
+                    if (tools.Mode == BrushMode.Material || tools.Mode == BrushMode.Life)
+                        RefreshMaterialDropdown(root, tools.Mode);
                 });
             }
+            materialDropdown = root.Q<DropdownField>("material");
+            if (materialDropdown != null)
+            {
+                materialDropdown.RegisterValueChangedCallback(_ =>
+                {
+                    if (suppressingMaterialCallback) return;
+                    ApplyMaterialChoice(root, materialDropdown.index);
+                    RememberBrushMaterialIndex(materialCatalogMode, materialDropdown.index);
+                });
+                RefreshMaterialDropdown(root, BrushMode.Material);
+            }
+        }
+
+        private void RefreshMaterialDropdown(VisualElement root, BrushMode catalogMode)
+        {
+            if (materialDropdown == null || host?.MaterialRegistry == null) return;
+            materialCatalogMode = catalogMode;
+            materialChoices.Clear();
+            materialChoices.AddRange(BrushSelectionCatalog.BuildChoices(catalogMode, host.MaterialRegistry));
+            var names = new List<string>(materialChoices.Count);
+            foreach (BrushSelection choice in materialChoices) names.Add(choice.Label);
+
+            int remembered = catalogMode == BrushMode.Life ? lastLifeBrushIndex : lastMaterialBrushIndex;
+            if (remembered < 0 || remembered >= names.Count)
+            {
+                uint fallback = catalogMode == BrushMode.Life ? MaterialIds.Algae : MaterialIds.Soil;
+                remembered = BrushSelectionCatalog.IndexOf(materialChoices, fallback);
+                if (remembered < 0) remembered = 0;
+            }
+
+            suppressingMaterialCallback = true;
+            materialDropdown.choices = names;
+            if (names.Count > 0)
+                materialDropdown.SetValueWithoutNotify(names[remembered]);
+            suppressingMaterialCallback = false;
+            ApplyMaterialChoice(root, remembered);
+            RememberBrushMaterialIndex(catalogMode, remembered);
+        }
+
+        private void ApplyMaterialChoice(VisualElement root, int index)
+        {
+            if (index < 0 || index >= materialChoices.Count || tools == null) return;
+            BrushSelection choice = materialChoices[index];
+            tools.SelectedMaterialId = choice.Id;
+            var settings = root.Q<ScrollView>("material-settings");
+            if (BrushSelectionCatalog.IsRegistryMaterial(choice.Id))
+                BuildMaterialSettings(settings, host.MaterialRegistry.Get((int)choice.Id));
+            else
+                BuildVirtualBrushSettings(settings, choice);
+        }
+
+        private void RememberBrushMaterialIndex(BrushMode catalogMode, int index)
+        {
+            if (catalogMode == BrushMode.Life) lastLifeBrushIndex = index;
+            else if (catalogMode == BrushMode.Material) lastMaterialBrushIndex = index;
+        }
+
+        private void BuildVirtualBrushSettings(ScrollView container, BrushSelection choice)
+        {
+            if (container == null) return;
+            HideSettingTooltip();
+            container.Clear();
+            string hint = choice.Id == BrushSelectionIds.MycoSpores
+                ? "Paints mycology spore load. Rare strains roll per cell at the configured worldgen rate. Radius and Strength still apply."
+                : "Plants adult grass in free slots on Soil. Radius still applies.";
+            container.Add(new Label(hint));
         }
 
         private void RefreshPresetDropdown(VisualElement root)
@@ -774,10 +833,10 @@ namespace GeneSys.UI
                 "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Wind, Vapor, Groundwater, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, and the others reveal the systems those settings drive.");
             AttachNamedSettingTooltip(root, "brush-mode",
                 "Brush Mode",
-                "Selects what left-drag paints. Off (default) does nothing; otherwise material, heat, water, pressure, vapor, ignition, or life spores. Hold right-click to inspect the cell under the cursor.");
+                "Selects what left-drag paints. Off does nothing; Material paints geology and Detritus; Life uses the Material field as a type picker for organisms and seeds; otherwise heat, water, pressure, vapor, or ignition. Hold right-click to inspect the cell under the cursor.");
             AttachNamedSettingTooltip(root, "material",
                 "Material",
-                "Material the brush paints, and whose properties appear below. Changing density, conductivity, or absorbency immediately affects gravity, weather, hydrology, and phase changes for that pixel type.");
+                "Material the brush paints in Material mode (0–13 plus Detritus). In Life mode this field picks the organism or seed type: Algae/Moss spores, Cricket, Cricket Egg, Myco Spores, or Grass Seeds. Registry materials still expose editable properties below.");
             AttachNamedSettingTooltip(root, "brush-radius", nameof(SimulationConfig.brushRadius));
             AttachNamedSettingTooltip(root, "brush-strength", nameof(SimulationConfig.brushStrength));
             AttachNamedSettingTooltip(root, "probe-action-vapor",
