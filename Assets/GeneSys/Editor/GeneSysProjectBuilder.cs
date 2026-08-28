@@ -38,7 +38,7 @@ namespace GeneSys.Editor
             config.minOceanBasins = 2;
             config.maxOceanBasins = 3;
             config.initialGroundwaterSaturation = 0.65f;
-            config.initialAtmosphericHumidity = 0.08f;
+            config.initialAtmosphericHumidity = 0.7f;
             EditorUtility.SetDirty(config);
 
             var definitions = new List<MaterialDefinition>

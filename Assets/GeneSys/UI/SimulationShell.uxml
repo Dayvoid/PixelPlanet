@@ -175,7 +175,7 @@
                             <ui:Button name="load-preset" text="Load Preset" class="row-last" />
                         </ui:VisualElement>
                         <ui:Button name="restore-defaults" text="Restore Default Settings" />
-                        <ui:Label text="Restores all simulation settings to their initial values and regenerates the world. Use the Validation preset for fast iteration." class="help" />
+                        <ui:Label text="Restores all simulation settings to the current defaults and regenerates the world. Load the defaultsOLD1 preset to recover the previous default set. Use the Validation grid preset for fast iteration." class="help" />
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>

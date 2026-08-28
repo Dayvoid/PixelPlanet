@@ -16,8 +16,8 @@ namespace GeneSys.Configuration
     public sealed class SimulationConfig : ScriptableObject
     {
         [Header("Grid and timing")]
-        public SimulationPreset preset = SimulationPreset.Validation;
-        public PolarGridDefinition grid = PolarGridDefinition.Validation;
+        public SimulationPreset preset = SimulationPreset.Standard;
+        public PolarGridDefinition grid = PolarGridDefinition.Standard;
         [Min(1f)] public float ticksPerSecond = 20f;
         [Range(0.05f, 16f)] public float simulationSpeed = 1f;
         [Range(1, 8)] public int materialSubsteps = 1;
@@ -28,7 +28,7 @@ namespace GeneSys.Configuration
 
         [Header("World generation")]
         [Range(0.05f, 0.5f)] public float coreRatio = 0.24f;
-        [Range(0.05f, 0.6f)] public float mantleRatio = 0.42f;
+        [Range(0.05f, 0.6f)] public float mantleRatio = 0.38f;
         [Range(0.01f, 0.25f)] public float crustRatio = 0.13f;
         [Range(0.001f, 0.1f)] public float soilRatio = 0.025f;
         [Range(0f, 0.2f)] public float borderNoise = 0.035f;
@@ -44,14 +44,14 @@ namespace GeneSys.Configuration
         [Range(0f, 0.15f)] public float terrainRelief = 0.045f;
         [Range(0f, 0.08f)] public float coastRoughness = 0.025f;
         [Range(0f, 1f)] public float initialGroundwaterSaturation = 0.65f;
-        [Range(0f, 0.5f)] public float initialAtmosphericHumidity = 0.08f;
+        [Range(0f, 1f)] public float initialAtmosphericHumidity = 0.7f;
         [Range(0, 64)] public int metalVeinCount = 12;
-        [Range(0.005f, 0.08f)] public float metalVeinMinSize = 0.012f;
-        [Range(0.01f, 0.15f)] public float metalVeinMaxSize = 0.045f;
-        [Range(0f, 1f)] public float metalVeinProtrusionChance = 0.35f;
-        [Range(0f, 0.08f)] public float metalVeinProtrusionDistance = 0.025f;
-        [Range(0.02f, 0.25f)] public float iceCapRadius = 0.08f;
-        [Range(0.005f, 0.06f)] public float iceCapHeight = 0.018f;
+        [Range(0.001f, 0.08f)] public float metalVeinMinSize = 0.002f;
+        [Range(0.01f, 0.15f)] public float metalVeinMaxSize = 0.01f;
+        [Range(0f, 1f)] public float metalVeinProtrusionChance = 0f;
+        [Range(0f, 0.08f)] public float metalVeinProtrusionDistance = 0.02f;
+        [Range(0.001f, 0.25f)] public float iceCapRadius = 0.001f;
+        [Range(0.001f, 0.06f)] public float iceCapHeight = 0.003f;
         [Range(0f, 0.5f)] public float iceCapRadiusVariation = 0.25f;
         [Range(0f, 0.5f)] public float iceCapHeightVariation = 0.3f;
 
@@ -66,53 +66,53 @@ namespace GeneSys.Configuration
         [Header("Geology")]
         [Range(0f, 4f)] public float mantlePressure = 0.7f;
         [Range(0f, 4f)] public float fractureRate = 0.2f;
-        [Range(0f, 4f)] public float extrusionRate = 0.3f;
+        [Range(0f, 4f)] public float extrusionRate = 0.4f;
         [Range(0f, 2f)] public float volcanicCooling = 0.15f;
         [Range(0f, 2f)] public float magmaViscosity = 0.5f;
         [Range(0f, 4f)] public float hydrothermalStrength = 0.35f;
         [Range(0f, 4f)] public float ventChemicalRate = 0.12f;
-        [Range(0f, 1f)] public float magmaEruption = 0f;
-        [Range(0f, 4f)] public float eruptionPressureStrength = 1f;
-        [Range(0f, 4f)] public float eruptionFlowStrength = 1f;
-        [Range(1, 16)] public int eruptionBurdenDepth = 4;
+        [Range(0f, 1f)] public float magmaEruption = 1f;
+        [Range(0f, 4f)] public float eruptionPressureStrength = 3f;
+        [Range(0f, 8f)] public float eruptionFlowStrength = 5f;
+        [Range(1, 16)] public int eruptionBurdenDepth = 10;
         [Range(0.05f, 4f)] public float eruptionBlastThreshold = 1.25f;
-        [Range(0f, 4f)] public float ashUpdraftStrength = 1f;
-        [Range(0f, 4f)] public float ashSettlingStrength = 1f;
+        [Range(0f, 4f)] public float ashUpdraftStrength = 0.4f;
+        [Range(0f, 4f)] public float ashSettlingStrength = 2f;
         [Range(0f, 4f)] public float ashFertilityStrength = 1f;
-        [Range(0, 10000)] public int coreReactionFrequency = 400;
+        [Range(0, 10000)] public int coreReactionFrequency = 2000;
         [Range(0f, 500f)] public float coreReactionMagnitude = 8f;
 
         [Header("Hydrology and erosion")]
-        [Range(0f, 4f)] public float infiltrationRate = 0.3f;
-        [Range(0f, 4f)] public float groundwaterRate = 0.18f;
-        [Range(0f, 1f)] public float fieldCapacityFraction = 0.45f;
+        [Range(0f, 4f)] public float infiltrationRate = 0.5f;
+        [Range(0f, 4f)] public float groundwaterRate = 0.35f;
+        [Range(0f, 1f)] public float fieldCapacityFraction = 0.7f;
         [Range(0f, 2f)] public float dissolutionRate = 0.03f;
         [Range(0f, 2f)] public float collapseRate = 0.03f;
-        [Range(0f, 2f)] public float erosionRate = 0.06f;
-        [Range(0f, 2f)] public float baseSoilCohesion = 0.45f;
+        [Range(0f, 2f)] public float erosionRate = 0.04f;
+        [Range(0f, 2f)] public float baseSoilCohesion = 0.75f;
         [Range(0f, 2f)] public float stressDecayRate = 0.02f;
         [Range(0.01f, 1f)] public float dryMoistureThreshold = 0.08f;
         [Range(0f, 2f)] public float moistureCohesionStrength = 0.85f;
-        [Range(0f, 1f)] public float capillaryEvaporationFraction = 0.35f;
+        [Range(0f, 1f)] public float capillaryEvaporationFraction = 0.5f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
-        [Range(0f, 4f)] public float pondingRate = 0.25f;
-        [Range(0f, 1f)] public float surfaceWaterPixelThreshold = 0.55f;
-        [Range(0f, 1f)] public float springHeadThreshold = 0.55f;
-        [Range(0f, 4f)] public float springDischargeRate = 0.35f;
-        [Range(0f, 4f)] public float geyserHeatThreshold = 120f;
+        [Range(0f, 4f)] public float pondingRate = 0.05f;
+        [Range(0f, 1f)] public float surfaceWaterPixelThreshold = 0.2f;
+        [Range(0f, 1f)] public float springHeadThreshold = 0.9f;
+        [Range(0f, 4f)] public float springDischargeRate = 0.9f;
+        [Range(0f, 500f)] public float geyserHeatThreshold = 320f;
         [Range(0f, 4f)] public float geyserDischargeRate = 0.5f;
         [Range(0f, 8f)] public float geyserCooldownSeconds = 2.5f;
 
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
         [Range(0f, 4f)] public float solarIntensity = 0.8f;
-        [Range(-100f, 100f)] public float spaceTemperature = -25f;
-        [Range(0f, 4f)] public float radiativeCooling = 0.2f;
-        [Range(0f, 4f)] public float windStrength = 0.35f;
-        [Range(0f, 1f)] public float windDamping = 0.06f;
-        [Range(0f, 4f)] public float evaporationRate = 0.1f;
-        [Range(0f, 4f)] public float condensationRate = 0.12f;
-        [Range(0f, 4f)] public float precipitationRate = 0.2f;
+        [Range(-100f, 100f)] public float spaceTemperature = 0f;
+        [Range(0f, 4f)] public float radiativeCooling = 0.25f;
+        [Range(0f, 4f)] public float windStrength = 2f;
+        [Range(0f, 1f)] public float windDamping = 0.001f;
+        [Range(0f, 4f)] public float evaporationRate = 0.5f;
+        [Range(0f, 4f)] public float condensationRate = 0.0125f;
+        [Range(0f, 4f)] public float precipitationRate = 0.125f;
         [Range(0f, 4f)] public float vaporPressureScale = 0.25f;
         [Range(0f, 4f)] public float pressureRate = 0.4f;
         [Range(0f, 4f)] public float pressureDiffusionRate = 0.5f;
@@ -122,19 +122,19 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float rigidPressureDiffusivity = 0.02f;
         [Range(0f, 8f)] public float pressureEquilibriumGradient = 2f;
         [Range(0f, 8f)] public float pressureEquilibriumMaximum = 2f;
-        [Range(0f, 4f)] public float atmosphericAdvectionRate = 0.85f;
-        [Range(0f, 2f)] public float vaporDiffusionRate = 0.05f;
-        [Range(0f, 4f)] public float atmosphericBuoyancy = 0.4f;
-        [Range(0f, 4f)] public float humidityBuoyancy = 0.25f;
-        [Range(0.01f, 2f)] public float saturationCapacityScale = 0.55f;
-        [Range(0.01f, 1f)] public float cloudPrecipitationThreshold = 0.05f;
-        [Range(0f, 1f)] public float rainPixelFormationThreshold = 0.35f;
-        [Range(0f, 4f)] public float surfaceAirHeatExchange = 0.45f;
-        [Range(0f, 4f)] public float temperatureAdvectionRate = 0.55f;
-        [Range(0f, 4f)] public float pressureCompressibility = 0.45f;
+        [Range(0f, 4f)] public float atmosphericAdvectionRate = 0.8f;
+        [Range(0f, 2f)] public float vaporDiffusionRate = 0.33f;
+        [Range(0f, 4f)] public float atmosphericBuoyancy = 0.9f;
+        [Range(0f, 4f)] public float humidityBuoyancy = 0.8f;
+        [Range(0.01f, 2f)] public float saturationCapacityScale = 0.01f;
+        [Range(0.01f, 1f)] public float cloudPrecipitationThreshold = 0.9f;
+        [Range(0f, 1f)] public float rainPixelFormationThreshold = 0.7f;
+        [Range(0f, 4f)] public float surfaceAirHeatExchange = 1f;
+        [Range(0f, 4f)] public float temperatureAdvectionRate = 0.8f;
+        [Range(0f, 4f)] public float pressureCompressibility = 0.6f;
         [Range(0.05f, 1f)] public float atmosphericCflLimit = 0.4f;
-        [Range(-20f, 40f)] public float surfaceAirTemperature = 18f;
-        [Range(0f, 40f)] public float atmosphericLapseRate = 12f;
+        [Range(-20f, 40f)] public float surfaceAirTemperature = 25f;
+        [Range(0f, 40f)] public float atmosphericLapseRate = 10f;
 
         [Header("Ecology - Mycology")]
         [Range(0f, 1f)] public float mycologyInitialSporeLoad = 0.08f;
@@ -147,11 +147,11 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float mycologyGrowthRate = 0.18f;
         [Range(0f, 4f)] public float mycologyDecayRate = 0.22f;
         [Range(-40f, 80f)] public float mycologyGrowthTempMin = 5f;
-        [Range(-40f, 120f)] public float mycologyGrowthTempMax = 32f;
+        [Range(-40f, 120f)] public float mycologyGrowthTempMax = 90f;
         [Range(0f, 2f)] public float mycologyGrowthMoistureMin = 0.08f;
         [Range(0f, 2f)] public float mycologyGrowthMoistureMax = 0.85f;
         [Range(-80f, 80f)] public float mycologySurvivalTempMin = -5f;
-        [Range(-40f, 160f)] public float mycologySurvivalTempMax = 45f;
+        [Range(-40f, 160f)] public float mycologySurvivalTempMax = 100f;
         [Range(0f, 2f)] public float mycologySurvivalMoistureMin = 0.02f;
         [Range(0f, 2f)] public float mycologySurvivalMoistureMax = 1.2f;
         [Range(0f, 8f)] public float mycologyElectricalTolerance = 0.65f;
@@ -175,11 +175,11 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float floraToxinMutationScale = 1.2f;
         [Range(0f, 1f)] public float floraGeneExpressionRange = 0.45f;
         [Range(-40f, 80f)] public float floraGrowthTempMin = 8f;
-        [Range(-40f, 120f)] public float floraGrowthTempMax = 34f;
+        [Range(-40f, 120f)] public float floraGrowthTempMax = 75f;
         [Range(0f, 2f)] public float floraGrowthMoistureMin = 0.1f;
         [Range(0f, 2f)] public float floraGrowthMoistureMax = 1.15f;
         [Range(-80f, 80f)] public float floraSurvivalTempMin = -8f;
-        [Range(-40f, 160f)] public float floraSurvivalTempMax = 72f;
+        [Range(-40f, 160f)] public float floraSurvivalTempMax = 80f;
         [Range(0f, 2f)] public float floraSurvivalMoistureMin = 0.02f;
         [Range(0f, 2f)] public float floraSurvivalMoistureMax = 1.5f;
         [Range(0f, 2f)] public float floraMinLight = 0.08f;
@@ -205,7 +205,7 @@ namespace GeneSys.Configuration
         [Range(0.05f, 1f)] public float faunaFullThreshold = 0.7f;
         [Range(0.05f, 1f)] public float faunaHungerThreshold = 0.35f;
         [Range(0.05f, 1f)] public float faunaReproductionCalorieThreshold = 0.55f;
-        [Range(0f, 8f)] public float faunaHopImpulse = 2.2f;
+        [Range(0f, 16f)] public float faunaHopImpulse = 10f;
         [Range(0f, 1f)] public float faunaHopCost = 0.04f;
         [Range(0f, 1f)] public float faunaFeedCost = 0.015f;
         [Range(0.05f, 4f)] public float faunaDryMass = 0.35f;
@@ -218,7 +218,7 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float faunaBaseMutationRate = 0.05f;
         [Range(1, 16)] public int faunaSenseRadius = 6;
         [Range(0f, 16f)] public float faunaHearingRange = 8f;
-        [Range(20f, 200f)] public float faunaThreatTemperature = 80f;
+        [Range(20f, 200f)] public float faunaThreatTemperature = 90f;
         [Range(0f, 2f)] public float faunaAcousticSpeed = 0.45f;
         [Range(0f, 2f)] public float faunaAcousticDamping = 0.12f;
         [Range(0f, 2f)] public float faunaFeedCallAmplitude = 0.55f;
@@ -230,11 +230,11 @@ namespace GeneSys.Configuration
         [Range(1, 8000)] public int faunaHatchTicksMin = 1000;
         [Range(1, 8000)] public int faunaHatchTicksMax = 1500;
         [Range(0f, 1f)] public float faunaEggDesiccationMoisture = 0.04f;
-        [Range(20f, 200f)] public float faunaEggHeatDeath = 70f;
+        [Range(20f, 200f)] public float faunaEggHeatDeath = 90f;
         [Range(0f, 4f)] public float faunaEggDisplacement = 0.25f;
         [Range(0f, 4f)] public float faunaWanderRate = 0.35f;
         [Range(-80f, 80f)] public float faunaSurvivalTempMin = -12f;
-        [Range(-40f, 160f)] public float faunaSurvivalTempMax = 52f;
+        [Range(-40f, 160f)] public float faunaSurvivalTempMax = 75f;
 
         [Header("Ecology - Grass")]
         public bool grassSeedAtWorldgen = false;
@@ -251,11 +251,11 @@ namespace GeneSys.Configuration
         [Range(0.05f, 1f)] public float grassFlowerEnergyThreshold = 0.45f;
         [Range(0f, 1f)] public float grassGeneExpressionRange = 0.45f;
         [Range(-40f, 80f)] public float grassGrowthTempMin = 6f;
-        [Range(-40f, 120f)] public float grassGrowthTempMax = 36f;
+        [Range(-40f, 120f)] public float grassGrowthTempMax = 75f;
         [Range(0f, 2f)] public float grassGrowthMoistureMin = 0.08f;
         [Range(0f, 2f)] public float grassGrowthMoistureMax = 1.2f;
         [Range(-80f, 80f)] public float grassSurvivalTempMin = -10f;
-        [Range(-40f, 160f)] public float grassSurvivalTempMax = 70f;
+        [Range(-40f, 160f)] public float grassSurvivalTempMax = 80f;
         [Range(0f, 2f)] public float grassSurvivalMoistureMin = 0.02f;
         [Range(0f, 2f)] public float grassSurvivalMoistureMax = 1.5f;
         [Range(0f, 2f)] public float grassMinLight = 0.06f;
@@ -287,8 +287,8 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float combustionOxygenDiffusionRate = 0.35f;
         [Range(0f, 8f)] public float combustionIgnitionAccumulationRate = 2.5f;
         [Range(0f, 8f)] public float combustionIgnitionDecayRate = 1.2f;
-        [Range(0f, 1f)] public float combustionSeedIntensity = 0.55f;
-        [Range(0f, 4f)] public float combustionBurnRate = 0.45f;
+        [Range(0f, 1f)] public float combustionSeedIntensity = 0.25f;
+        [Range(0f, 4f)] public float combustionBurnRate = 0.2f;
         [Range(0f, 8f)] public float combustionHeatYield = 2.8f;
         [Range(0f, 8f)] public float combustionPressureScale = 2.5f;
         [Range(0f, 12f)] public float combustionUpdraftStrength = 6f;
@@ -309,7 +309,7 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float stormChargeDiffusionRate = 0.12f;
         [Range(0f, 4f)] public float stormChargeAdvectionRate = 0.45f;
         [Range(-80f, 40f)] public float stormRimingTempMin = -25f;
-        [Range(-40f, 40f)] public float stormRimingTempMax = 5f;
+        [Range(-40f, 400f)] public float stormRimingTempMax = 300f;
         [Range(0.01f, 4f)] public float stormBreakdownThreshold = 1.6f;
         [Range(0f, 8f)] public float stormBreakdownAccumulationRate = 0.85f;
         [Range(0f, 8f)] public float stormChannelDecay = 2.5f;
@@ -327,26 +327,26 @@ namespace GeneSys.Configuration
         [Range(4, 128)] public int stormMaxChannelLength = 48;
         [Range(0, 32)] public int stormMaxStrikesPerTick = 4;
         [Range(0f, 1f)] public float stormStrikeBranchChance = 0.12f;
-        [Range(0f, 1f)] public float stormSheetBranchChance = 0.45f;
-        [Range(0, 2048)] public int stormMinimumHeight = 415;
+        [Range(0f, 1f)] public float stormSheetBranchChance = 0.65f;
+        [Range(0, 2048)] public int stormMinimumHeight = 425;
 
         [Header("Graphics")]
         [Range(0, 1)] public int enableStarfield = 1;
         [Range(32, 512)] public int starCount = 300;
-        [Range(0f, 2f)] public float starfieldStrength = 0.15f;
+        [Range(0f, 2f)] public float starfieldStrength = 0.1f;
         [Range(0f, 2f)] public float starTwinkleStrength = 0.65f;
         [Range(0, 1)] public int enableNebula = 1;
         [Range(4, 48)] public int nebulaCount = 12;
         [Range(0f, 2f)] public float nebulaStrength = 0.45f;
         [Range(0, 1)] public int enableAtmosphereGlow = 1;
         [Range(0f, 2f)] public float atmosphereGlowStrength = 0.7f;
-        [Range(4f, 48f)] public float atmosphereGlowPixelScale = 18f;
+        [Range(4f, 48f)] public float atmosphereGlowPixelScale = 48f;
         [Range(1f, 24f)] public float atmosphereGlowRayCount = 7f;
         [Range(0, 1)] public int enableSolarBody = 1;
         [Range(0f, 2f)] public float solarBodyStrength = 1f;
         [Range(0f, 2f)] public float solarCoronaStrength = 0.85f;
         [Range(0.5f, 2f)] public float solarOrbitRadius = 1.35f;
-        [Range(0f, 2f)] public float dayNightLightingStrength = 0.85f;
+        [Range(0f, 2f)] public float dayNightLightingStrength = 1f;
 
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;
@@ -355,11 +355,11 @@ namespace GeneSys.Configuration
         [Range(0.0001f, 0.1f)] public float conservationTolerance = 0.02f;
 
         [Header("Probe")]
-        [Range(0.8f, 2f)] public float probeOrbitRadius = 1.28f;
-        [Range(0.01f, 1f)] public float probeSpriteScale = 0.08f;
-        [Range(-180f, 180f)] public float probeSpriteRotationOffset = 0f;
-        [Min(1f)] public float probeOrbitPeriodSeconds = 180f;
-        [Range(0f, 10f)] public float probeVaporRate = 1f;
+        [Range(0.8f, 2f)] public float probeOrbitRadius = 1.012f;
+        [Range(0.01f, 1f)] public float probeSpriteScale = 0.025f;
+        [Range(-180f, 180f)] public float probeSpriteRotationOffset = 93f;
+        [Min(1f)] public float probeOrbitPeriodSeconds = 600f;
+        [Range(0f, 10f)] public float probeVaporRate = 2f;
         [Range(0f, 10f)] public float probeWaterRate = 1f;
         [Range(0f, 10f)] public float probeHeatRate = 1f;
         [Range(0f, 10f)] public float probeCoolRate = 1f;
@@ -368,7 +368,7 @@ namespace GeneSys.Configuration
         [Range(0.75f, 20f)] public float probeFollowZoom = 2.5f;
         [Min(1f)] public float probeEnergyMax = 100f;
         [Range(0f, 20f)] public float probeEnergyActionDrain = 3f;
-        [Min(0f)] public float probeEnergyRegenPerSecond = 10f;
+        [Min(0f)] public float probeEnergyRegenPerSecond = 15f;
         [Min(0.1f)] public float probeLifeSeedIntervalSeconds = 3f;
         [Range(1, 8)] public int probeLifeSeedMinCount = 1;
         [Range(1, 8)] public int probeLifeSeedMaxCount = 5;
@@ -409,7 +409,7 @@ namespace GeneSys.Configuration
             metalVeinMaxSize = Mathf.Max(metalVeinMinSize, metalVeinMaxSize);
             metalVeinProtrusionChance = Mathf.Clamp01(metalVeinProtrusionChance);
             metalVeinProtrusionDistance = Mathf.Max(0f, metalVeinProtrusionDistance);
-            iceCapRadius = Mathf.Clamp(iceCapRadius, 0.01f, 0.35f);
+            iceCapRadius = Mathf.Clamp(iceCapRadius, 0.001f, 0.35f);
             iceCapHeight = Mathf.Clamp(iceCapHeight, 0.001f, 0.1f);
             iceCapRadiusVariation = Mathf.Clamp01(iceCapRadiusVariation);
             iceCapHeightVariation = Mathf.Clamp01(iceCapHeightVariation);

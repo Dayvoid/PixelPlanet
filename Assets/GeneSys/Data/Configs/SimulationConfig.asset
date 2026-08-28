@@ -46,11 +46,11 @@ MonoBehaviour:
   initialAtmosphericHumidity: 0.7
   metalVeinCount: 12
   metalVeinMinSize: 0.002
-  metalVeinMaxSize: 0.015
+  metalVeinMaxSize: 0.01
   metalVeinProtrusionChance: 0
   metalVeinProtrusionDistance: 0.02
-  iceCapRadius: 0.08
-  iceCapHeight: 0.008
+  iceCapRadius: 0.001
+  iceCapHeight: 0.003
   iceCapRadiusVariation: 0.25
   iceCapHeightVariation: 0.3
   gravityStrength: 1
@@ -83,7 +83,7 @@ MonoBehaviour:
   collapseRate: 0.03
   erosionRate: 0.04
   baseSoilCohesion: 0.75
-  stressDecayRate: 0.01
+  stressDecayRate: 0.02
   dryMoistureThreshold: 0.08
   moistureCohesionStrength: 0.85
   capillaryEvaporationFraction: 0.5
@@ -98,12 +98,12 @@ MonoBehaviour:
   dayLengthSeconds: 180
   solarIntensity: 0.8
   spaceTemperature: 0
-  radiativeCooling: 0.2
+  radiativeCooling: 0.25
   windStrength: 2
-  windDamping: 0.00001
+  windDamping: 0.001
   evaporationRate: 0.5
-  condensationRate: 0.01
-  precipitationRate: 0.1
+  condensationRate: 0.0125
+  precipitationRate: 0.125
   vaporPressureScale: 0.25
   pressureRate: 0.4
   pressureDiffusionRate: 0.5
@@ -119,11 +119,11 @@ MonoBehaviour:
   humidityBuoyancy: 0.8
   saturationCapacityScale: 0.01
   cloudPrecipitationThreshold: 0.9
-  rainPixelFormationThreshold: 0.999
+  rainPixelFormationThreshold: 0.7
   surfaceAirHeatExchange: 1
   temperatureAdvectionRate: 0.8
   pressureCompressibility: 0.6
-  atmosphericCflLimit: 0.5
+  atmosphericCflLimit: 0.4
   surfaceAirTemperature: 25
   atmosphericLapseRate: 10
   mycologyInitialSporeLoad: 0.08
@@ -145,6 +145,122 @@ MonoBehaviour:
   mycologySurvivalMoistureMax: 1.2
   mycologyElectricalTolerance: 0.65
   mycologyTraitEffectStrength: 0.35
+  floraSeedAtWorldgen: 0
+  floraInitialSporeLoad: 0.06
+  floraAirTransportRate: 0.5
+  floraWaterTransportRate: 0.65
+  floraDiffusionRate: 0.07
+  floraSettlingRate: 0.4
+  floraSporulationRate: 0.1
+  floraGrowthRate: 0.16
+  floraDecayRate: 0.12
+  floraPhotosynthesisRate: 0.35
+  floraOxygenYield: 0.2
+  floraExudationRate: 0.12
+  floraReproductionThreshold: 0.55
+  floraBaseMutationRate: 0.04
+  floraToxinMutationScale: 1.2
+  floraGeneExpressionRange: 0.45
+  floraGrowthTempMin: 8
+  floraGrowthTempMax: 75
+  floraGrowthMoistureMin: 0.1
+  floraGrowthMoistureMax: 1.15
+  floraSurvivalTempMin: -8
+  floraSurvivalTempMax: 80
+  floraSurvivalMoistureMin: 0.02
+  floraSurvivalMoistureMax: 1.5
+  floraMinLight: 0.08
+  floraGerminationSporeThreshold: 0.08
+  floraMaintenanceRate: 0.06
+  floraNightDrain: 0.04
+  floraDormancyMetabolicScale: 0.12
+  floraPoleDriftRate: 0.35
+  floraWindShearRate: 0.5
+  floraRainShearRate: 0.4
+  floraFragmentYield: 0.25
+  floraAnchorGrip: 1
+  faunaSeedAtWorldgen: 0
+  faunaInitialCalories: 0.45
+  faunaInitialHydration: 0.7
+  faunaMaturityTicks: 2000
+  faunaDecisionInterval: 2
+  faunaMaintenanceRate: 0.04
+  faunaHydrationDrain: 0.03
+  faunaCalorieCapacity: 1
+  faunaFullThreshold: 0.7
+  faunaHungerThreshold: 0.35
+  faunaReproductionCalorieThreshold: 0.55
+  faunaHopImpulse: 10
+  faunaHopCost: 0.04
+  faunaFeedCost: 0.015
+  faunaDryMass: 0.35
+  faunaDrag: 0.45
+  faunaWindResistance: 0.5
+  faunaMoistureMass: 0.4
+  faunaSupportBoost: 0.35
+  faunaWetPenalty: 0.4
+  faunaGeneExpressionRange: 0.45
+  faunaBaseMutationRate: 0.05
+  faunaSenseRadius: 6
+  faunaHearingRange: 8
+  faunaThreatTemperature: 90
+  faunaAcousticSpeed: 0.45
+  faunaAcousticDamping: 0.12
+  faunaFeedCallAmplitude: 0.55
+  faunaMateCallAmplitude: 0.65
+  faunaMateCooldownTicks: 400
+  faunaReproduceCooldownTicks: 800
+  faunaClutchMin: 2
+  faunaClutchMax: 4
+  faunaHatchTicksMin: 1000
+  faunaHatchTicksMax: 1500
+  faunaEggDesiccationMoisture: 0.04
+  faunaEggHeatDeath: 90
+  faunaEggDisplacement: 0.25
+  faunaWanderRate: 0.35
+  faunaSurvivalTempMin: -12
+  faunaSurvivalTempMax: 75
+  grassSeedAtWorldgen: 0
+  grassInitialBiomass: 0.4
+  grassInitialEnergy: 0.55
+  grassPhotosynthesisRate: 0.3
+  grassGrowthRate: 0.14
+  grassDecayRate: 0.1
+  grassMaintenanceRate: 0.05
+  grassNightDrain: 0.03
+  grassWaterUptakeRate: 0.25
+  grassNutrientUptakeRate: 0.18
+  grassRootCohesionBonus: 0.1
+  grassFlowerEnergyThreshold: 0.45
+  grassGeneExpressionRange: 0.45
+  grassGrowthTempMin: 6
+  grassGrowthTempMax: 75
+  grassGrowthMoistureMin: 0.08
+  grassGrowthMoistureMax: 1.2
+  grassSurvivalTempMin: -10
+  grassSurvivalTempMax: 80
+  grassSurvivalMoistureMin: 0.02
+  grassSurvivalMoistureMax: 1.5
+  grassMinLight: 0.06
+  grassAdultBiomass: 0.35
+  grassPollenEmitRate: 0.04
+  grassPollenTransportRate: 0.08
+  grassSeedTransportRate: 0.06
+  grassPollenWindRate: 0.12
+  grassPollenWaterRate: 0.1
+  grassPollenSettlingRate: 0.15
+  grassSeedWindRate: 0.08
+  grassSeedWaterRate: 0.12
+  grassSeedSettlingRate: 0.2
+  grassNectarAmount: 0.35
+  grassCanopyOpacity: 0.12
+  detritusVaporAbsorbRate: 0.08
+  detritusEvaporationRate: 0.015
+  detritusMoistureDistributeRate: 0.15
+  detritusNutrientLeachRate: 0.12
+  detritusDecompositionRate: 0.04
+  detritusInitialNutrient: 0.45
+  detritusInitialMoisture: 0.25
   combustionAmbientOxygen: 1
   combustionOxygenReplenishRate: 0.15
   combustionOxygenDiffusionRate: 0.35
@@ -170,7 +286,7 @@ MonoBehaviour:
   stormChargeDiffusionRate: 0.12
   stormChargeAdvectionRate: 0.45
   stormRimingTempMin: -25
-  stormRimingTempMax: 5
+  stormRimingTempMax: 300
   stormBreakdownThreshold: 1.6
   stormBreakdownAccumulationRate: 0.85
   stormChannelDecay: 2.5
@@ -188,8 +304,8 @@ MonoBehaviour:
   stormMaxChannelLength: 48
   stormMaxStrikesPerTick: 4
   stormStrikeBranchChance: 0.12
-  stormSheetBranchChance: 0.45
-  stormMinimumHeight: 415
+  stormSheetBranchChance: 0.65
+  stormMinimumHeight: 425
   enableStarfield: 1
   starCount: 300
   starfieldStrength: 0.1
@@ -210,11 +326,11 @@ MonoBehaviour:
   brushStrength: 1
   validationIntervalTicks: 1000
   conservationTolerance: 0.02
-  probeOrbitRadius: 1.28
-  probeSpriteScale: 0.08
-  probeSpriteRotationOffset: 0
-  probeOrbitPeriodSeconds: 180
-  probeVaporRate: 1
+  probeOrbitRadius: 1.012
+  probeSpriteScale: 0.025
+  probeSpriteRotationOffset: 93
+  probeOrbitPeriodSeconds: 600
+  probeVaporRate: 2
   probeWaterRate: 1
   probeHeatRate: 1
   probeCoolRate: 1
@@ -223,7 +339,7 @@ MonoBehaviour:
   probeFollowZoom: 2.5
   probeEnergyMax: 100
   probeEnergyActionDrain: 3
-  probeEnergyRegenPerSecond: 10
+  probeEnergyRegenPerSecond: 15
   probeLifeSeedIntervalSeconds: 3
   probeLifeSeedMinCount: 1
   probeLifeSeedMaxCount: 5
