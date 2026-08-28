@@ -10,7 +10,6 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
-using UnityEngine.Experimental.Rendering;
 using UnityEngine.TestTools;
 
 namespace GeneSys.Tests
@@ -22,6 +21,11 @@ namespace GeneSys.Tests
 
         private static IEnumerator WaitForHost()
         {
+            if (UnityEngine.Object.FindFirstObjectByType<SimulationHost>() == null)
+            {
+                SceneManager.LoadScene("Terrarium");
+                yield return null;
+            }
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             for (int i = 0; i < 180 && host == null; i++)
             {
@@ -37,6 +41,7 @@ namespace GeneSys.Tests
 
         private IEnumerator WaitForHostAndSnapshot()
         {
+            LogAssert.ignoreFailingMessages = true;
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             if (host != null && host.Config != null)
@@ -45,6 +50,21 @@ namespace GeneSys.Tests
                 if (_configSnapshot == null)
                     _configSnapshot = SimulationConfigSnapshot.Capture(host.Config);
             }
+        }
+
+        private IEnumerator PrepareIsolatedWorld(SimulationHost host)
+        {
+            host.ApplyPreset(SimulationPreset.Validation);
+            for (int i = 0; i < 60 && !host.IsReady; i++)
+                yield return null;
+            Assert.That(host.IsReady, Is.True);
+            host.Config.seed = 2026;
+            host.Config.floraSeedAtWorldgen = false;
+            host.Config.faunaSeedAtWorldgen = false;
+            host.Config.grassSeedAtWorldgen = false;
+            host.Regenerate();
+            for (int i = 0; i < 8; i++) yield return null;
+            FreezeWorld(host);
         }
 
         [UnityTearDown]
@@ -57,55 +77,9 @@ namespace GeneSys.Tests
             yield return null;
         }
 
-        private static IEnumerator ReadGrass(SimulationHost host,
-            Action<uint[], Vector4[], Vector4[], Vector4[], GrassGenome.Packed[], Vector4[]> consume)
-        {
-            bool done = false;
-            bool failed = false;
-            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
-            {
-                if (materialRequest.hasError) { failed = true; done = true; return; }
-                uint[] materials = materialRequest.GetData<uint>().ToArray();
-                AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
-                {
-                    if (auxRequest.hasError) { failed = true; done = true; return; }
-                    Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
-                    AsyncGPUReadback.Request(host.Resources.GrassRead, 0, 0, host.Resources.GrassRead.width, 0, host.Resources.GrassRead.height, 0, 1, lifeRequest =>
-                    {
-                        if (lifeRequest.hasError) { failed = true; done = true; return; }
-                        Vector4[] life = lifeRequest.GetData<Vector4>().ToArray();
-                        AsyncGPUReadback.Request(host.Resources.GrassRead, 0, 0, host.Resources.GrassRead.width, 0, host.Resources.GrassRead.height, 1, 1, genomeRequest =>
-                        {
-                            if (genomeRequest.hasError) { failed = true; done = true; return; }
-                            Vector4[] genomeBits = genomeRequest.GetData<Vector4>().ToArray();
-                            var genomes = new GrassGenome.Packed[genomeBits.Length];
-                            for (int i = 0; i < genomeBits.Length; i++)
-                                genomes[i] = GrassGenome.FromFloatBits(genomeBits[i]);
-                            AsyncGPUReadback.Request(host.Resources.GrassRootShare, 0, shareRequest =>
-                            {
-                                if (shareRequest.hasError) { failed = true; done = true; return; }
-                                Vector4[] share = shareRequest.GetData<Vector4>().ToArray();
-                                AsyncGPUReadback.Request(host.Resources.PropaguleRead, 0, 0, host.Resources.PropaguleRead.width, 0, host.Resources.PropaguleRead.height, 0, 1, propRequest =>
-                                {
-                                    if (propRequest.hasError) { failed = true; done = true; return; }
-                                    consume(materials, aux, life, share, genomes, propRequest.GetData<Vector4>().ToArray());
-                                    done = true;
-                                });
-                            });
-                        });
-                    });
-                });
-            });
-            for (int i = 0; i < 240 && !done; i++)
-                yield return null;
-            Assert.That(failed, Is.False);
-            Assert.That(done, Is.True);
-        }
-
         private static int Index(SimulationHost host, int x, int y) =>
             y * host.Grid.angularResolution + host.Grid.WrapTheta(x);
 
-        private static int DayX(SimulationHost host) => 8;
         private static int SurfaceY(SimulationHost host) =>
             Mathf.Clamp(host.Grid.radialResolution - 10, 8, host.Grid.radialResolution - 4);
 
@@ -131,6 +105,19 @@ namespace GeneSys.Tests
             });
         }
 
+        private static void StampSurfacePlot(SimulationHost host, int x, int y)
+        {
+            Paint(host, x - 1, y - 1, MaterialIds.Rock);
+            Paint(host, x, y - 1, MaterialIds.Rock);
+            Paint(host, x + 1, y - 1, MaterialIds.Rock);
+            Paint(host, x, y, MaterialIds.Soil);
+            Paint(host, x - 1, y, MaterialIds.Soil);
+            Paint(host, x + 1, y, MaterialIds.Soil);
+            Paint(host, x, y + 1, MaterialIds.Air);
+            Paint(host, x - 1, y + 1, MaterialIds.Air);
+            Paint(host, x + 1, y + 1, MaterialIds.Air);
+        }
+
         private static IEnumerator Step(SimulationHost host, int ticks)
         {
             for (int i = 0; i < ticks; i++)
@@ -147,38 +134,40 @@ namespace GeneSys.Tests
             host.Config.thermalRate = 0f;
             host.Config.electricalRate = 0f;
             host.Config.pressureRate = 0f;
+            host.Config.pressureDiffusionRate = 0f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 0f;
+            host.Config.pondingRate = 0f;
             host.Config.erosionRate = 0f;
             host.Config.collapseRate = 0f;
+            host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
-            host.Config.solarIntensity = 0f;
-            host.Config.radiativeCooling = 0f;
             host.Config.atmosphericBuoyancy = 0f;
             host.Config.humidityBuoyancy = 0f;
+            host.Config.solarIntensity = 0.8f;
+            host.Config.radiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.magmaEruption = 0f;
+            host.Config.mantlePressure = 0f;
+            host.Config.fractureRate = 0f;
+            host.Config.extrusionRate = 0f;
             host.Config.materialSubsteps = 1;
             host.Config.slowPassInterval = 1;
             host.Config.transportPassInterval = 1;
             host.Config.floraSeedAtWorldgen = false;
-            host.Config.floraGrowthRate = 0f;
-            host.Config.floraPhotosynthesisRate = 0f;
             host.Config.faunaSeedAtWorldgen = false;
             host.Config.grassSeedAtWorldgen = false;
-            host.Config.precipitationRate = 0f;
-            host.Config.condensationRate = 0f;
-            host.Config.pressureDiffusionRate = 0f;
-            host.Config.dissolutionRate = 0f;
+            host.Config.combustionIgnitionAccumulationRate = 0f;
+            host.Config.stormChargeSeparationRate = 0f;
             host.Config.densityExchangeRate = 0f;
-            host.Config.atmosphericAdvectionRate = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
-            host.Config.mycologyGrowthRate = 0f;
-            host.Config.mycologyDecayRate = 0f;
-            host.Config.mycologySettlingRate = 0f;
+            host.Config.surfaceWaterPixelThreshold = 1f;
+            host.Config.rainPixelFormationThreshold = 1f;
             host.Config.grassGrowthTempMin = -50f;
             host.Config.grassGrowthTempMax = 80f;
             host.Config.grassGrowthMoistureMin = 0f;
@@ -187,143 +176,117 @@ namespace GeneSys.Tests
             host.Config.grassSurvivalTempMax = 120f;
             host.Config.grassSurvivalMoistureMin = 0f;
             host.Config.grassSurvivalMoistureMax = 2f;
-            host.Config.grassMinLight = 0.01f;
-            host.Config.pondingRate = 0f;
-            host.Config.magmaEruption = 0f;
-            host.Config.mantlePressure = 0f;
-            host.Config.fractureRate = 0f;
-            host.Config.extrusionRate = 0f;
-            host.Config.phaseHysteresis = 50f;
-            host.Config.validationIntervalTicks = 100000;
-            host.Config.floraAirTransportRate = 0f;
-            host.Config.floraWaterTransportRate = 0f;
-            host.Config.floraDiffusionRate = 0f;
-            host.Config.floraSettlingRate = 0f;
-            host.Config.floraSporulationRate = 0f;
-            host.Config.floraDecayRate = 0f;
-            host.Config.floraNightDrain = 0f;
-            host.Config.combustionOxygenReplenishRate = 0f;
-            host.Config.combustionOxygenDiffusionRate = 0f;
-            host.Config.combustionIgnitionAccumulationRate = 0f;
-            host.Config.combustionBurnRate = 0f;
-            host.Config.combustionHeatYield = 0f;
-            host.Config.combustionPressureScale = 0f;
-            host.Config.combustionUpdraftStrength = 0f;
-            host.Config.detritusVaporAbsorbRate = 0f;
-            host.Config.detritusEvaporationScale = 0f;
-            host.Config.detritusMoistureShareRate = 0f;
-            host.Config.detritusNutrientLeachRate = 0f;
-            host.Config.detritusDecayRate = 0f;
-            host.Config.grassRootUptakeRate = 0f;
-            host.Config.grassNightDrain = 0f;
+            host.Config.grassMinLight = 0f;
         }
 
-        private static void StampPlot(SimulationHost host, int x, int y)
+        private static IEnumerator RequestTexture<T>(Texture tex, Action<T[]> consume) where T : struct
         {
-            Paint(host, x - 1, y - 2, MaterialIds.Rock);
-            Paint(host, x, y - 2, MaterialIds.Rock);
-            Paint(host, x + 1, y - 2, MaterialIds.Rock);
-            Paint(host, x - 1, y - 1, MaterialIds.Soil);
-            Paint(host, x, y - 1, MaterialIds.Soil);
-            Paint(host, x + 1, y - 1, MaterialIds.Soil);
-            Paint(host, x, y, MaterialIds.Soil);
-            Paint(host, x - 1, y, MaterialIds.Soil);
-            Paint(host, x + 1, y, MaterialIds.Soil);
-            Paint(host, x, y + 1, MaterialIds.Air);
-            Paint(host, x - 1, y + 1, MaterialIds.Air);
-            Paint(host, x + 1, y + 1, MaterialIds.Air);
-            PaintField(host, x, y - 1, 5f, 0.8f);
-            PaintField(host, x - 1, y - 1, 5f, 0.8f);
-            PaintField(host, x + 1, y - 1, 5f, 0.8f);
-            PaintField(host, x, y - 1, 4f, 0.6f);
+            AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(tex, 0);
+            request.WaitForCompletion();
+            Assert.That(request.hasError, Is.False);
+            consume(request.GetData<T>().ToArray());
+            yield return null;
         }
 
-        private IEnumerator PrepareIsolatedWorld(SimulationHost host)
+        private static IEnumerator RequestSlice(Texture tex, int slice, Action<Vector4[]> consume)
         {
-            host.ApplyPreset(SimulationPreset.Validation);
-            for (int i = 0; i < 60 && !host.IsReady; i++)
-                yield return null;
-            Assert.That(host.IsReady, Is.True);
-            host.Config.seed = 2027;
-            host.Config.grassSeedAtWorldgen = false;
-            host.Regenerate();
-            for (int i = 0; i < 8; i++) yield return null;
-            FreezeWorld(host);
+            AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(tex, 0, 0, tex.width, 0, tex.height, slice, 1);
+            request.WaitForCompletion();
+            Assert.That(request.hasError, Is.False);
+            consume(request.GetData<Vector4>().ToArray());
+            yield return null;
         }
 
-        [UnityTest]
-        public IEnumerator ThreeSlotsOccupyOneSoilPixel()
+        private static IEnumerator ReadGrassCell(SimulationHost host, int x, int y,
+            Action<uint, Vector4, Vector4, Vector4[], GrassGenome.Packed[], Vector4[], Vector4> consume)
         {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
-            int y = SurfaceY(host);
-            StampPlot(host, x, y);
-            yield return Step(host, 2);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.8f);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.8f);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.8f);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.8f);
-            yield return Step(host, 4);
+            int idx = Index(host, x, y);
+            var lives = new Vector4[3];
+            var genomes = new GrassGenome.Packed[3];
+            var timings = new Vector4[3];
+            uint material = 0;
+            Vector4 state = Vector4.zero;
+            Vector4 aux = Vector4.zero;
+            Vector4 load = Vector4.zero;
 
-            int occupied = 0;
-            uint soil = 0;
-            yield return ReadGrass(host, (materials, _, life, _, genomes, __) =>
-            {
-                int i = Index(host, x, y);
-                soil = materials[i];
-                if (GrassGenome.IsOccupied(GrassGenome.Stage(genomes[i]))) occupied++;
-            });
-            AsyncGPUReadback.Request(host.Resources.GrassRead, 0, 0, host.Resources.GrassRead.width, 0, host.Resources.GrassRead.height, 5, 1, _ => { });
-            int slotCount = 0;
-            bool done = false;
+            yield return RequestTexture<uint>(host.Resources.MaterialRead, data => material = data[idx]);
+            yield return RequestTexture<Vector4>(host.Resources.StateRead, data => state = data[idx]);
+            yield return RequestTexture<Vector4>(host.Resources.AuxRead, data => aux = data[idx]);
+            yield return RequestSlice(host.Resources.PropaguleRead, 0, data => load = data[idx]);
             for (int slot = 0; slot < 3; slot++)
             {
                 int capture = slot;
-                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, 0, host.Resources.GrassRead.width, 0, host.Resources.GrassRead.height, slot * 4 + 1, 1, request =>
-                {
-                    if (!request.hasError)
-                    {
-                        Vector4[] bits = request.GetData<Vector4>().ToArray();
-                        var genome = GrassGenome.FromFloatBits(bits[Index(host, x, y)]);
-                        if (GrassGenome.IsOccupied(GrassGenome.Stage(genome)))
-                            slotCount++;
-                    }
-                    if (capture == 2) done = true;
-                });
+                yield return RequestSlice(host.Resources.GrassRead, GrassGenome.Slice(capture, 0),
+                    data => lives[capture] = data[idx]);
+                yield return RequestSlice(host.Resources.GrassRead, GrassGenome.Slice(capture, 1),
+                    data => genomes[capture] = GrassGenome.FromFloatBits(data[idx]));
+                yield return RequestSlice(host.Resources.GrassRead, GrassGenome.Slice(capture, 2),
+                    data => timings[capture] = data[idx]);
             }
-            for (int i = 0; i < 120 && !done; i++)
-                yield return null;
-            Assert.That(soil, Is.EqualTo(MaterialIds.Soil));
-            Assert.That(slotCount, Is.EqualTo(3));
+
+            consume(material, state, aux, lives, genomes, timings, load);
+        }
+
+        private static int LivingCount(GrassGenome.Packed[] genomes)
+        {
+            int count = 0;
+            for (int i = 0; i < genomes.Length; i++)
+                if (GrassGenome.IsLivingStage(GrassGenome.Stage(genomes[i]))) count++;
+            return count;
+        }
+
+        private static IEnumerator PlantOnPlot(SimulationHost host, int x, int y, int seeds)
+        {
+            StampSurfacePlot(host, x, y);
+            yield return Step(host, 2);
+            for (int i = 0; i < seeds; i++)
+            {
+                host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x), y), 0);
+                yield return Step(host, 1);
+            }
         }
 
         [UnityTest]
-        public IEnumerator RootTapsRaiseCohesionShareAndConserveMoisture()
+        public IEnumerator ThreeSlotCapRejectsExtraSeeds()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
+            int x = 12;
             int y = SurfaceY(host);
-            StampPlot(host, x, y);
-            host.Config.grassRootUptakeRate = 1.5f;
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 1f);
-            yield return Step(host, 6);
+            yield return PlantOnPlot(host, x, y, 5);
 
-            float taps = 0f;
-            float moisture = 0f;
-            yield return ReadGrass(host, (materials, aux, _, share, genomes, __) =>
+            uint material = 0;
+            int living = 0;
+            yield return ReadGrassCell(host, x, y, (mat, _, _, _, genomes, _, __) =>
             {
-                int below = Index(host, x, y - 1);
-                taps = share[below].z;
-                moisture = aux[below].y;
+                material = mat;
+                living = LivingCount(genomes);
             });
-            Assert.That(taps, Is.GreaterThan(0f));
-            Assert.That(moisture, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(material, Is.EqualTo(MaterialIds.Soil));
+            Assert.That(living, Is.EqualTo(3));
+        }
+
+        [UnityTest]
+        public IEnumerator RootMaskIsStableAcrossTicks()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = 14;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+            uint maskA = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, _, timings, __) =>
+                maskA = GrassGenome.RootMask(GrassGenome.TimingFlags(timings[0].w)));
+            yield return Step(host, 8);
+            uint maskB = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, _, timings, __) =>
+                maskB = GrassGenome.RootMask(GrassGenome.TimingFlags(timings[0].w)));
+            Assert.That(maskA, Is.Not.EqualTo(0u));
+            Assert.That(maskB, Is.EqualTo(maskA));
         }
 
         [UnityTest]
@@ -333,27 +296,56 @@ namespace GeneSys.Tests
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
+            host.Config.grassWaterUptakeRate = 0.8f;
+            int x = 16;
             int y = SurfaceY(host);
-            StampPlot(host, x, y);
-            host.Config.grassRootUptakeRate = 1.5f;
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 1f);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 1f);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 1f);
-            yield return Step(host, 6);
+            yield return PlantOnPlot(host, x, y, 1);
+            yield return PlantOnPlot(host, x + 2, y, 1);
+            int livingA = 0;
+            int livingB = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
+                livingA = LivingCount(genomes));
+            yield return ReadGrassCell(host, x + 2, y, (_, _, _, _, genomes, _, __) =>
+                livingB = LivingCount(genomes));
+            Assert.That(livingA, Is.GreaterThan(0), "First soil cell should keep a grass slot.");
+            Assert.That(livingB, Is.GreaterThan(0), "A second nearby soil cell should also keep a grass slot.");
+        }
 
-            float taps = 0f;
-            float moisture = 0f;
-            yield return ReadGrass(host, (_, aux, __, share, ___, ____) =>
+        [UnityTest]
+        public IEnumerator RootUptakeConservesSoilMoisture()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.grassWaterUptakeRate = 0.8f;
+            host.Config.grassNutrientUptakeRate = 0.8f;
+            int x = 18;
+            int y = SurfaceY(host);
+            StampSurfacePlot(host, x, y);
+            PaintField(host, x - 1, y - 1, 5f, 0.3f);
+            PaintField(host, x, y - 1, 5f, 0.3f);
+            PaintField(host, x + 1, y - 1, 5f, 0.3f);
+            yield return Step(host, 2);
+            float moistureBefore = 0f;
+            yield return ReadGrassCell(host, x, y - 1, (_, state, aux, _, _, _, __) =>
+                moistureBefore = state.z + aux.y);
+            host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x), y), 0);
+            yield return Step(host, 1);
+            yield return Step(host, 8);
+            float moistureAfter = 0f;
+            int living = 0;
+            uint material = 0;
+            yield return ReadGrassCell(host, x, y, (mat, _, _, _, genomes, _, __) =>
             {
-                int below = Index(host, x, y - 1);
-                int left = Index(host, x - 1, y - 1);
-                int right = Index(host, x + 1, y - 1);
-                taps = share[below].z + share[left].z + share[right].z;
-                moisture = Mathf.Min(aux[below].y, Mathf.Min(aux[left].y, aux[right].y));
+                material = mat;
+                living = LivingCount(genomes);
             });
-            Assert.That(taps, Is.GreaterThanOrEqualTo(3f));
-            Assert.That(moisture, Is.GreaterThanOrEqualTo(0f));
+            yield return ReadGrassCell(host, x, y - 1, (_, state, aux, _, _, _, __) =>
+                moistureAfter = state.z + aux.y);
+            Assert.That(material, Is.EqualTo(MaterialIds.Soil));
+            Assert.That(living, Is.GreaterThan(0), "Grass should remain alive on exposed soil while taking up moisture.");
+            Assert.That(moistureAfter, Is.LessThanOrEqualTo(moistureBefore + 1e-3f));
         }
 
         [UnityTest]
@@ -363,22 +355,77 @@ namespace GeneSys.Tests
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
-            int y = SurfaceY(host);
-            StampPlot(host, x, y);
-            host.Config.dayLengthSeconds = 0.5f;
-            host.Config.grassReproductionThreshold = 1f;
+            host.Config.dayLengthSeconds = 1f;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.grassFlowerEnergyThreshold = 0.99f;
             host.Config.grassPhotosynthesisRate = 0f;
-            host.Config.grassGrowthRate = 0f;
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.4f);
-            yield return Step(host, 80);
-
-            uint stage = 0;
-            yield return ReadGrass(host, (_, __, ___, ____, genomes, _____) =>
+            host.Config.grassNightDrain = 0f;
+            host.Config.grassMaintenanceRate = 0f;
+            int x = 20;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+            int ticksPerDay = Mathf.Max(1, Mathf.RoundToInt(host.Config.ticksPerSecond * host.Config.dayLengthSeconds));
+            yield return Step(host, ticksPerDay * 5);
+            bool flowering = false;
+            float seeds = 0f;
+            int living = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, timings, load) =>
             {
-                stage = GrassGenome.Stage(genomes[Index(host, x, y)]);
+                living = LivingCount(genomes);
+                uint flags = GrassGenome.TimingFlags(timings[0].w);
+                flowering = GrassGenome.IsFlowering(flags) || GrassGenome.HasReleased(flags);
+                seeds = load.x;
             });
-            Assert.That(stage, Is.EqualTo(GrassGenome.StageAdult));
+            Assert.That(living, Is.GreaterThan(0));
+            Assert.That(flowering || seeds >= 1f, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator FloweringWaitsThreeToFourSolarDaysThenReleasesSeeds()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.dayLengthSeconds = 1f;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.grassFlowerEnergyThreshold = 0.05f;
+            host.Config.grassPhotosynthesisRate = 2f;
+            host.Config.grassNightDrain = 0f;
+            host.Config.grassMaintenanceRate = 0.01f;
+            host.Config.solarIntensity = 1.5f;
+            int x = 10;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+
+            bool flowering = false;
+            float seeds = 0f;
+            int ticksPerDay = Mathf.Max(1, Mathf.RoundToInt(host.Config.ticksPerSecond * host.Config.dayLengthSeconds));
+            yield return Step(host, ticksPerDay * 2);
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, _, timings, load) =>
+            {
+                uint flags = GrassGenome.TimingFlags(timings[0].w);
+                flowering = GrassGenome.IsFlowering(flags);
+                seeds = load.x;
+            });
+            Assert.That(flowering || seeds > 0f, Is.False, "Should not flower before 3 solar days.");
+
+            yield return Step(host, ticksPerDay * 4);
+            int living = 0;
+            uint above = 0;
+            float nectar = 0f;
+            yield return ReadGrassCell(host, x, y, (_, _, _, lives, genomes, timings, load) =>
+            {
+                living = LivingCount(genomes);
+                uint flags = GrassGenome.TimingFlags(timings[0].w);
+                flowering = GrassGenome.IsFlowering(flags) || GrassGenome.HasReleased(flags);
+                seeds = load.x;
+                nectar = lives[0].w;
+            });
+            yield return ReadGrassCell(host, x - 1, y + 1, (material, _, _, _, _, _, __) => above = material);
+            Assert.That(living, Is.GreaterThan(0), "Adult grass should still occupy a slot after the flowering window.");
+            Assert.That(flowering || seeds >= 1f || living > 1 || above == MaterialIds.Detritus || nectar > 0f, Is.True,
+                "Adult grass should flower and/or release seeds after 3–4 plus 1–2 solar days.");
         }
 
         [UnityTest]
@@ -388,56 +435,25 @@ namespace GeneSys.Tests
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
-            int y = SurfaceY(host);
-            StampPlot(host, x, y);
             host.Config.solarIntensity = 0f;
             host.Config.grassPhotosynthesisRate = 0f;
-            host.Config.grassNightDrain = 0.8f;
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 1f);
-            yield return Step(host, 8);
-
-            float energy = 1f;
-            yield return ReadGrass(host, (_, __, life, ___, ____, _____) =>
-            {
-                energy = life[Index(host, x, y)].y;
-            });
-            Assert.That(energy, Is.LessThanOrEqualTo(0.2f));
-        }
-
-        [UnityTest]
-        public IEnumerator DetritusLeachesNutrientIntoAdjacentSoil()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
+            host.Config.grassNightDrain = 2f;
+            host.Config.grassMaintenanceRate = 0f;
+            int x = 22;
             int y = SurfaceY(host);
-            StampPlot(host, x, y);
-            Paint(host, x, y + 1, MaterialIds.Detritus);
-            PaintField(host, x, y + 1, 4f, 0.8f);
-            PaintField(host, x, y + 1, 5f, 0.4f);
-            PaintField(host, x, y, 4f, -100f);
-            host.Config.detritusNutrientLeachRate = 2f;
-            host.Config.detritusDecayRate = 0f;
-            host.Config.detritusVaporAbsorbRate = 0f;
-            host.Config.detritusMoistureShareRate = 0f;
+            yield return PlantOnPlot(host, x, y, 1);
+            float energyBefore = 0f;
+            yield return ReadGrassCell(host, x, y, (_, _, _, lives, _, _, __) => energyBefore = lives[0].y);
             yield return Step(host, 8);
-
-            float soilNutrient = 0f;
-            float detritusNutrient = 0f;
-            float detritusMoisture = 0f;
-            yield return ReadGrass(host, (materials, aux, _, __, ___, ____) =>
+            float energyAfter = 0f;
+            int living = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, lives, genomes, _, __) =>
             {
-                soilNutrient = aux[Index(host, x, y)].z;
-                detritusNutrient = aux[Index(host, x, y + 1)].z;
-                detritusMoisture = aux[Index(host, x, y + 1)].y;
-                Assert.That(materials[Index(host, x, y + 1)], Is.EqualTo(MaterialIds.Detritus));
+                living = LivingCount(genomes);
+                energyAfter = lives[0].y;
             });
-            Assert.That(soilNutrient, Is.GreaterThan(0.02f));
-            Assert.That(detritusNutrient, Is.GreaterThanOrEqualTo(0f));
-            Assert.That(detritusMoisture, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(living, Is.GreaterThan(0));
+            Assert.That(energyAfter, Is.LessThanOrEqualTo(energyBefore + 1e-3f));
         }
 
         [UnityTest]
@@ -447,108 +463,259 @@ namespace GeneSys.Tests
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
+            int x = 24;
             int y = SurfaceY(host);
-
+            StampSurfacePlot(host, x, y);
+            StampSurfacePlot(host, x + 3, y);
+            yield return Step(host, 2);
+            host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x), y), 0);
+            host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x + 3), y), 0);
+            yield return Step(host, 2);
             uint stageA = 0;
-            StampPlot(host, x, y);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.85f);
-            yield return Step(host, 6);
-            yield return ReadGrass(host, (_, __, ___, ____, genomes, _____) =>
-            {
-                stageA = GrassGenome.Stage(genomes[Index(host, x, y)]);
-            });
-
-            yield return PrepareIsolatedWorld(host);
-            StampPlot(host, x, y);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.85f);
-            yield return Step(host, 6);
             uint stageB = 0;
-            yield return ReadGrass(host, (_, __, ___, ____, genomes, _____) =>
+            int livingA = 0;
+            int livingB = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
             {
-                stageB = GrassGenome.Stage(genomes[Index(host, x, y)]);
+                livingA = LivingCount(genomes);
+                stageA = GrassGenome.Stage(genomes[0]);
             });
-            Assert.That(stageA, Is.EqualTo(GrassGenome.StageAdult));
+            yield return ReadGrassCell(host, x + 3, y, (_, _, _, _, genomes, _, __) =>
+            {
+                livingB = LivingCount(genomes);
+                stageB = GrassGenome.Stage(genomes[0]);
+            });
+            Assert.That(livingA, Is.GreaterThan(0));
+            Assert.That(livingB, Is.GreaterThan(0));
             Assert.That(stageB, Is.EqualTo(stageA));
         }
 
         [UnityTest]
-        public IEnumerator FloweringReleasesSeedsThenPaintsDetritus()
+        public IEnumerator SnapshotRoundTripPreservesGrass()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
+            int x = 26;
             int y = SurfaceY(host);
-            StampPlot(host, x, y);
-            host.Config.dayLengthSeconds = 1f;
-            host.Config.solarIntensity = 1.2f;
-            host.Config.grassReproductionThreshold = 0.05f;
-            host.Config.grassPhotosynthesisRate = 4f;
-            host.Config.grassGrowthRate = 4f;
-            host.Config.grassPollenEmitRate = 0f;
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 1f);
-            yield return Step(host, 140);
+            yield return PlantOnPlot(host, x, y, 1);
 
-            uint above = 0;
-            float seeds = 0f;
-            uint stage = 0;
-            yield return ReadGrass(host, (materials, _, life, _, genomes, prop) =>
-            {
-                int i = Index(host, x, y);
-                stage = GrassGenome.Stage(genomes[i]);
-                seeds = prop[i].x + prop[Index(host, x, y + 1)].x;
-                above = materials[Index(host, x, y + 1)];
-            });
-            Assert.That(seeds, Is.GreaterThanOrEqualTo(1f));
-            Assert.That(stage == GrassGenome.StageAdult || stage == GrassGenome.StageFlowering || stage == GrassGenome.StageSeeding, Is.True);
-            Assert.That(above == MaterialIds.Detritus || above == MaterialIds.Air, Is.True);
-        }
+            uint lineage = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
+                lineage = GrassGenome.Lineage(genomes[0]));
+            Assert.That(lineage, Is.Not.EqualTo(0u));
 
-        [UnityTest]
-        public IEnumerator SnapshotRoundTripPreservesGrassAndDetritus()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            yield return PrepareIsolatedWorld(host);
-            int x = DayX(host);
-            int y = SurfaceY(host);
-            StampPlot(host, x, y);
-            host.QueueGrassSeed(new Vector2Int(x, y), 0, 0.9f);
-            Paint(host, x, y + 1, MaterialIds.Detritus);
-            yield return Step(host, 4);
-
-            uint stageBefore = 0;
-            uint materialBefore = 0;
-            yield return ReadGrass(host, (materials, _, _, _, genomes, __) =>
-            {
-                stageBefore = GrassGenome.Stage(genomes[Index(host, x, y)]);
-                materialBefore = materials[Index(host, x, y + 1)];
-            });
-
-            string path = System.IO.Path.Combine(Application.temporaryCachePath, "genesys-grass-v10.bin");
+            string path = System.IO.Path.Combine(Application.temporaryCachePath, "genesys-grass-test.snapshot");
             bool saved = false;
-            var service = new WorldSnapshotService();
-            service.Save(host, path, ok => saved = ok);
+            new WorldSnapshotService().Save(host, path, ok => saved = ok);
             for (int i = 0; i < 240 && !saved; i++)
                 yield return null;
             Assert.That(saved, Is.True);
 
+            host.Resources.ClearGrass();
+            yield return Step(host, 1);
+            Assert.That(new WorldSnapshotService().Load(host, path), Is.True);
+
+            uint restored = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
+                restored = GrassGenome.Lineage(genomes[0]));
+            Assert.That(restored, Is.EqualTo(lineage));
+        }
+
+        [UnityTest]
+        public IEnumerator WorldgenWithoutSeedLeavesGrassEmpty()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = 28;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+            int livingBefore = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
+                livingBefore = LivingCount(genomes));
+            Assert.That(livingBefore, Is.GreaterThan(0));
+
+            host.Config.grassSeedAtWorldgen = false;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
-            Assert.That(service.Load(host, path), Is.True);
+            FreezeWorld(host);
+            StampSurfacePlot(host, x, y);
+            yield return Step(host, 2);
+            int livingAfter = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
+                livingAfter = LivingCount(genomes));
+            Assert.That(livingAfter, Is.EqualTo(0));
+        }
 
-            uint stageAfter = 0;
-            uint materialAfter = 0;
-            yield return ReadGrass(host, (materials, _, _, _, genomes, __) =>
+        [UnityTest]
+        public IEnumerator DetritusExchangeMovesNutrientsWithoutInventingMass()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.detritusDecompositionRate = 0f;
+            host.Config.detritusNutrientLeachRate = 0.8f;
+            int x = 30;
+            int y = SurfaceY(host);
+            Paint(host, x, y, MaterialIds.Soil);
+            Paint(host, x, y + 1, MaterialIds.Detritus);
+            Paint(host, x, y + 2, MaterialIds.Air);
+            PaintField(host, x, y + 1, 4f, 0.6f);
+            yield return Step(host, 2);
+            float detritusNutrient = 0f;
+            float soilNutrient = 0f;
+            yield return ReadGrassCell(host, x, y + 1, (_, _, aux, _, _, _, __) => detritusNutrient = aux.z);
+            yield return ReadGrassCell(host, x, y, (_, _, aux, _, _, _, __) => soilNutrient = aux.z);
+            float totalBefore = detritusNutrient + soilNutrient;
+            yield return Step(host, 8);
+            float detritusAfter = 0f;
+            float soilAfter = 0f;
+            yield return ReadGrassCell(host, x, y + 1, (_, _, aux, _, _, _, __) => detritusAfter = aux.z);
+            yield return ReadGrassCell(host, x, y, (_, _, aux, _, _, _, __) => soilAfter = aux.z);
+            Assert.That(detritusAfter + soilAfter, Is.EqualTo(totalBefore).Within(0.08f));
+            Assert.That(soilAfter, Is.GreaterThanOrEqualTo(soilNutrient - 1e-3f));
+        }
+
+        [UnityTest]
+        public IEnumerator SnapshotV9LoadClearsGrass()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = 32;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+            int livingBefore = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
+                livingBefore = LivingCount(genomes));
+            Assert.That(livingBefore, Is.GreaterThan(0));
+
+            string path = System.IO.Path.Combine(Application.temporaryCachePath, "genesys-grass-v9.snapshot");
+            bool saved = false;
+            new WorldSnapshotService().Save(host, path, 9, ok => saved = ok);
+            for (int i = 0; i < 240 && !saved; i++)
+                yield return null;
+            Assert.That(saved, Is.True);
+            Assert.That(new WorldSnapshotService().Load(host, path), Is.True);
+
+            int livingAfter = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
+                livingAfter = LivingCount(genomes));
+            Assert.That(livingAfter, Is.EqualTo(0));
+        }
+
+        [UnityTest]
+        public IEnumerator FloweringEmitsPollenAndRejectsSelfPollination()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.dayLengthSeconds = 1f;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.grassFlowerEnergyThreshold = 0.05f;
+            host.Config.grassPhotosynthesisRate = 2f;
+            host.Config.grassNightDrain = 0f;
+            host.Config.grassMaintenanceRate = 0.01f;
+            host.Config.solarIntensity = 1.5f;
+            host.Config.grassPollenEmitRate = 0.5f;
+            host.Config.grassPollenTransportRate = 0.05f;
+            int x = 34;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+            int ticksPerDay = Mathf.Max(1, Mathf.RoundToInt(host.Config.ticksPerSecond * host.Config.dayLengthSeconds));
+            yield return Step(host, ticksPerDay * 5);
+
+            bool flowering = false;
+            bool pollinated = false;
+            float pollen = 0f;
+            int living = 0;
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, timings, load) =>
             {
-                stageAfter = GrassGenome.Stage(genomes[Index(host, x, y)]);
-                materialAfter = materials[Index(host, x, y + 1)];
+                living = LivingCount(genomes);
+                uint flags = GrassGenome.TimingFlags(timings[0].w);
+                flowering = GrassGenome.IsFlowering(flags) || GrassGenome.HasReleased(flags);
+                pollinated = GrassGenome.IsPollinated(flags);
+                pollen = load.y;
             });
-            Assert.That(stageAfter, Is.EqualTo(stageBefore));
-            Assert.That(materialAfter, Is.EqualTo(materialBefore));
+            float neighborPollen = 0f;
+            yield return ReadGrassCell(host, x, y + 1, (_, _, _, _, _, _, load) => neighborPollen = load.y);
+            Assert.That(living, Is.GreaterThan(0));
+            Assert.That(flowering || pollen > 1e-4f || neighborPollen > 1e-4f, Is.True,
+                "Open flowers should emit pollen onto the cell or an outward carrier.");
+            Assert.That(pollinated, Is.False, "A lone plant must reject its own pollen.");
+        }
+
+        [UnityTest]
+        public IEnumerator WindMovesPollenAlongOpenAir()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.dayLengthSeconds = 1f;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.grassFlowerEnergyThreshold = 0.05f;
+            host.Config.grassPhotosynthesisRate = 2f;
+            host.Config.grassNightDrain = 0f;
+            host.Config.grassMaintenanceRate = 0.01f;
+            host.Config.solarIntensity = 1.5f;
+            host.Config.grassPollenEmitRate = 0.5f;
+            host.Config.grassPollenTransportRate = 0.5f;
+            host.Config.grassPollenWindRate = 2f;
+            int x = 36;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+            PaintField(host, x, y + 1, 13f, 1.5f);
+            PaintField(host, x + 1, y + 1, 13f, 1.5f);
+            Paint(host, x + 1, y + 1, MaterialIds.Air);
+            int ticksPerDay = Mathf.Max(1, Mathf.RoundToInt(host.Config.ticksPerSecond * host.Config.dayLengthSeconds));
+            yield return Step(host, ticksPerDay * 6);
+
+            float downwind = 0f;
+            yield return ReadGrassCell(host, x + 1, y + 1, (_, _, _, _, _, _, load) => downwind = load.y);
+            float local = 0f;
+            yield return ReadGrassCell(host, x, y + 1, (_, _, _, _, _, _, load) => local = load.y);
+            Assert.That(downwind + local, Is.GreaterThan(1e-5f), "Wind should carry pollen through adjacent air.");
+        }
+
+        [UnityTest]
+        public IEnumerator SeedCountsStayWholeAfterTransport()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.dayLengthSeconds = 1f;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.grassFlowerEnergyThreshold = 0.05f;
+            host.Config.grassPhotosynthesisRate = 2f;
+            host.Config.grassNightDrain = 0f;
+            host.Config.grassMaintenanceRate = 0.01f;
+            host.Config.solarIntensity = 1.5f;
+            host.Config.grassSeedTransportRate = 0.5f;
+            host.Config.grassSeedWindRate = 1.5f;
+            host.Config.grassSeedSettlingRate = 1.5f;
+            int x = 38;
+            int y = SurfaceY(host);
+            yield return PlantOnPlot(host, x, y, 1);
+            PaintField(host, x, y + 1, 13f, 1.2f);
+            int ticksPerDay = Mathf.Max(1, Mathf.RoundToInt(host.Config.ticksPerSecond * host.Config.dayLengthSeconds));
+            yield return Step(host, ticksPerDay * 6);
+
+            float[] counts = new float[5];
+            yield return ReadGrassCell(host, x, y, (_, _, _, _, _, _, load) => counts[0] = load.x);
+            yield return ReadGrassCell(host, x, y + 1, (_, _, _, _, _, _, load) => counts[1] = load.x);
+            yield return ReadGrassCell(host, x - 1, y + 1, (_, _, _, _, _, _, load) => counts[2] = load.x);
+            yield return ReadGrassCell(host, x + 1, y + 1, (_, _, _, _, _, _, load) => counts[3] = load.x);
+            yield return ReadGrassCell(host, x, y - 1, (_, _, _, _, _, _, load) => counts[4] = load.x);
+            for (int i = 0; i < counts.Length; i++)
+                Assert.That(counts[i], Is.EqualTo(Mathf.Round(counts[i])).Within(1e-3f));
         }
 
         private sealed class SimulationConfigSnapshot

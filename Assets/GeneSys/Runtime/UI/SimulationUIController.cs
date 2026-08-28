@@ -27,6 +27,8 @@ namespace GeneSys.UI
             { "Ecology - Mycology", "ecology" },
             { "Ecology - Flora", "ecology" },
             { "Ecology - Fauna", "ecology" },
+            { "Ecology - Grass", "ecology" },
+            { "Detritus", "ecology" },
             { "Combustion", "combustion" },
             { "Storm and lightning", "storm" },
             { "Graphics", "performance" },
@@ -278,7 +280,7 @@ namespace GeneSys.UI
                     "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor",
                     "Groundwater", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories", "Composite Water",
                     "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only", "Mycology",
-                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic"
+                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
@@ -1037,7 +1039,6 @@ namespace GeneSys.UI
         {
             float floraGeneRange = host.Config != null ? host.Config.floraGeneExpressionRange : 0.45f;
             float faunaGeneRange = host.Config != null ? host.Config.faunaGeneExpressionRange : 0.45f;
-            float grassGeneRange = host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f;
             string header =
                 $"Spores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\n" +
                 $"Strain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\n" +
@@ -1054,25 +1055,36 @@ namespace GeneSys.UI
                    $"Fauna cal {inspection.faunaVitals.x:F3}  hyd {inspection.faunaVitals.y:F3}  age {inspection.faunaVitals.z:F0}  cd {inspection.faunaVitals.w:F0}\n" +
                    $"Fauna {FaunaGenome.DescribeStage(FaunaGenome.Stage(inspection.faunaGenome))} / {FaunaGenome.DescribeBehavior(FaunaGenome.Behavior(inspection.faunaGenome))}  gen {FaunaGenome.Generation(inspection.faunaGenome)}\n" +
                    $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
-                   FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange) + "\n" +
-                   FormatGrassSlot(0, inspection.grassLife0, inspection.grassGenome0, inspection.grassPhenology0, grassGeneRange) + "\n" +
-                   FormatGrassSlot(1, inspection.grassLife1, inspection.grassGenome1, inspection.grassPhenology1, grassGeneRange) + "\n" +
-                   FormatGrassSlot(2, inspection.grassLife2, inspection.grassGenome2, inspection.grassPhenology2, grassGeneRange);
-        }
-
-        private static string FormatGrassSlot(int slot, Vector4 life, GrassGenome.Packed genome, Vector4 phenology, float range)
-        {
-            uint stage = GrassGenome.Stage(genome);
-            if (!GrassGenome.IsOccupied(stage))
-                return $"Grass {slot} empty";
-            uint traits = (unchecked((uint)BitConverter.SingleToInt32Bits(phenology.w)) >> 24) & 255u;
-            return $"Grass {slot} {GrassGenome.DescribeStage(stage)}  bio {life.x:F2}  energy {life.y:F2}  nectar {life.z:F3}  age {phenology.z:F2}d  roots {unchecked((uint)BitConverter.SingleToInt32Bits(phenology.w)) & 7u}  strain {traits}\n" +
-                   GrassGenome.DescribeGenes(genome, range);
+                   FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange) +
+                   FormatGrassInspection(inspection, host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f);
         }
 
         private void RefreshPlayLabel()
         {
             if (playButton != null) playButton.text = host.Clock.IsRunning ? "Pause" : "Play";
+        }
+
+        private static string FormatGrassInspection(CellInspection inspection, float expressionRange)
+        {
+            if (inspection.grassGenomes == null || inspection.grassLife == null) return "";
+            var text = new System.Text.StringBuilder();
+            for (int slot = 0; slot < inspection.grassGenomes.Length; slot++)
+            {
+                GrassGenome.Packed genome = inspection.grassGenomes[slot];
+                uint stage = GrassGenome.Stage(genome);
+                if (!GrassGenome.IsLivingStage(stage)) continue;
+                Vector4 life = inspection.grassLife[slot];
+                Vector4 timing = inspection.grassTiming != null && slot < inspection.grassTiming.Length
+                    ? inspection.grassTiming[slot] : Vector4.zero;
+                uint flags = GrassGenome.TimingFlags(timing.w);
+                text.Append($"\nGrass {slot} {GrassGenome.DescribeStage(stage)} gen {GrassGenome.Generation(genome)} lin {GrassGenome.Lineage(genome)}");
+                text.Append($"\n  bio {life.x:F2}  energy {life.y:F2}  hyd {life.z:F2}  nectar {life.w:F2}");
+                text.Append($"\n  roots {GrassGenome.RootMask(flags)}  flower {(GrassGenome.IsFlowering(flags) ? "open" : "idle")}  pollen {(GrassGenome.IsPollinated(flags) ? "yes" : "no")}");
+                if (inspection.grassDonors != null && slot < inspection.grassDonors.Length && GrassGenome.HasDonor(inspection.grassDonors[slot]))
+                    text.Append($"\n  donor lin {GrassGenome.Lineage(inspection.grassDonors[slot])}");
+                text.Append($"\n  {GrassGenome.DescribeGenes(genome, expressionRange)}");
+            }
+            return text.ToString();
         }
 
         private float MetricsRefreshIntervalSeconds()

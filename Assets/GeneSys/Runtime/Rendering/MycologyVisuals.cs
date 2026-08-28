@@ -42,32 +42,6 @@ namespace GeneSys.Rendering
         }
     }
 
-    public static class GrassVisuals
-    {
-        public static readonly Color Blade = new Color(0.22f, 0.62f, 0.18f, 1f);
-        public static readonly Color Root = new Color(0.28f, 0.16f, 0.08f, 1f);
-        public static readonly Color Flower = new Color(0.92f, 0.82f, 0.35f, 1f);
-        public const int OverlayMode = 20;
-
-        public static Color BladeColor(byte gene)
-        {
-            float t = gene / 255f;
-            return Color.Lerp(new Color(0.16f, 0.48f, 0.14f, 1f), new Color(0.32f, 0.78f, 0.22f, 1f), t);
-        }
-
-        public static Color FlowerColor(uint traits)
-        {
-            Color color = Flower;
-            if ((traits & 16u) != 0u || (traits & 32u) != 0u)
-                color = Color.Lerp(color, new Color(1f, 0.35f, 0.12f, 1f), 0.55f);
-            if ((traits & 1u) != 0u || (traits & 2u) != 0u)
-                color = Color.Lerp(color, new Color(0.85f, 0.72f, 0.2f, 1f), 0.4f);
-            if ((traits & 4u) != 0u || (traits & 8u) != 0u)
-                color = Color.Lerp(color, new Color(0.25f, 0.85f, 1f, 1f), 0.4f);
-            return color;
-        }
-    }
-
     public static class FaunaVisuals
     {
         public static readonly Color Juvenile = new Color(0.55f, 0.38f, 0.16f, 1f);
@@ -75,12 +49,35 @@ namespace GeneSys.Rendering
         public static readonly Color Egg = new Color(0.82f, 0.74f, 0.48f, 1f);
         public const int OverlayMode = 23;
         public const int AcousticOverlayMode = 24;
+        public const int MaxOverlayMode = 25;
 
         public static Color StageColor(uint stage)
         {
             if (stage == 3) return Adult;
             if (stage == 2) return Juvenile;
             return Egg;
+        }
+    }
+
+    public static class GrassVisuals
+    {
+        public static readonly Color Blade = new Color(0.22f, 0.62f, 0.18f, 1f);
+        public static readonly Color Root = new Color(0.28f, 0.16f, 0.08f, 1f);
+        public static readonly Color Flower = new Color(0.86f, 0.32f, 0.42f, 1f);
+        public const int OverlayMode = 25;
+
+        public static Color StageColor(uint stage)
+        {
+            if (stage == 2) return Blade;
+            if (stage == 1) return new Color(0.32f, 0.55f, 0.2f, 1f);
+            return new Color(0.12f, 0.18f, 0.08f, 1f);
+        }
+
+        public static Vector2 SlotOffset(int slot)
+        {
+            if (slot == 0) return new Vector2(-0.28f, 0.1f);
+            if (slot == 2) return new Vector2(0.28f, 0.1f);
+            return new Vector2(0f, 0.22f);
         }
     }
 }

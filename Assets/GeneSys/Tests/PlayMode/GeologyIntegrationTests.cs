@@ -224,20 +224,6 @@ namespace GeneSys.Tests
             host.Config.pressureRate = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.vaporPressureScale = 0f;
-            host.Config.solarIntensity = 0f;
-            host.Config.radiativeCooling = 0f;
-            host.Config.densityExchangeRate = 0f;
-            host.Config.phaseHysteresis = 50f;
-            host.Config.grassSeedAtWorldgen = false;
-            host.Config.grassRootUptakeRate = 0f;
-            host.Config.detritusVaporAbsorbRate = 0f;
-            host.Config.detritusEvaporationScale = 0f;
-            host.Config.detritusMoistureShareRate = 0f;
-            host.Config.detritusNutrientLeachRate = 0f;
-            host.Config.detritusDecayRate = 0f;
-            host.Config.combustionIgnitionAccumulationRate = 0f;
-            host.Config.combustionBurnRate = 0f;
-            host.Config.combustionHeatYield = 0f;
         }
 
         private static void RestoreStressIsolation(SimulationHost host)

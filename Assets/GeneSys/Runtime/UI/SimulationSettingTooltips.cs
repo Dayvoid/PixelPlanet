@@ -338,85 +338,6 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.floraAnchorGrip)] =
                 "How much local biomass resists wind and rain shear. Higher grip keeps thick mats intact; lower grip lets weather tear even dense colonies.",
 
-            [nameof(SimulationConfig.grassSeedAtWorldgen)] =
-                "When enabled, worldgen sprinkles adult grass on a few exposed soil cells. Off keeps new worlds bare until you seed grass with the Life brush on Soil.",
-            [nameof(SimulationConfig.grassInitialBiomass)] =
-                "Starting blade biomass for painted or germinated grass. Higher values skip the seedling scramble for light; lower values make new plants fragile.",
-            [nameof(SimulationConfig.grassGrowthRate)] =
-                "How quickly grass converts photosynthate into blade biomass. Higher rates fill soil slots faster and raise canopy opacity over the light column.",
-            [nameof(SimulationConfig.grassDecayRate)] =
-                "How quickly grass biomass and energy drain when temperature or moisture leave the survival envelope. Higher decay kills stranded plants sooner.",
-            [nameof(SimulationConfig.grassPhotosynthesisRate)] =
-                "How fast grass stores energy from the shared light field while roots supply water and nutrients. Scales with light affinity and rare-myco bonuses.",
-            [nameof(SimulationConfig.grassOxygenYield)] =
-                "Reserved oxygen yield from grass photosynthesis for later atmospheric coupling. Currently energy-only; the field remains so snapshots and UI stay complete.",
-            [nameof(SimulationConfig.grassExudationRate)] =
-                "How strongly grass draws nutrients through root taps relative to biomass. Higher exudation depletes soil fertility faster around crowded stands.",
-            [nameof(SimulationConfig.grassReproductionThreshold)] =
-                "Stored-energy fraction required before a 3–4 day check can open a flower and start a seed batch. Lower values bloom more often in poor light.",
-            [nameof(SimulationConfig.grassGeneExpressionRange)] =
-                "How far each grass gene can push a trait away from the config baseline. Higher range makes height, color, roots, and flowering more heritable.",
-            [nameof(SimulationConfig.grassGrowthTempMin)] =
-                "Lower temperature bound for active grass growth before gene shifts. Colder soils stall photosynthesis even if survival still holds.",
-            [nameof(SimulationConfig.grassGrowthTempMax)] =
-                "Upper temperature bound for active grass growth before gene and heat-strain bonuses. Hot crests idle until night or rare myco heat resistance.",
-            [nameof(SimulationConfig.grassGrowthMoistureMin)] =
-                "Lower moisture bound for growth, sampled from tapped lower-Y cells. Drought-resistant myco colonies can shrink this floor while roots remain.",
-            [nameof(SimulationConfig.grassGrowthMoistureMax)] =
-                "Upper moisture bound for growth. Waterlogged root targets stall blades even when the soil surface looks dry.",
-            [nameof(SimulationConfig.grassSurvivalTempMin)] =
-                "Absolute lower temperature for grass survival. Below this, plants desiccate and free their soil slot regardless of energy stores.",
-            [nameof(SimulationConfig.grassSurvivalTempMax)] =
-                "Absolute upper temperature for grass survival before heat-strain modifiers. Crossing it kills the slot and drops occupancy.",
-            [nameof(SimulationConfig.grassSurvivalMoistureMin)] =
-                "Absolute lower moisture for survival on tapped cells. Drought-prone myco strains raise this floor and make thin soils lethal.",
-            [nameof(SimulationConfig.grassSurvivalMoistureMax)] =
-                "Absolute upper moisture for survival. Saturated root targets drown grass even if the canopy cell stays aerated.",
-            [nameof(SimulationConfig.grassMinLight)] =
-                "Photosynthetically active radiation required before grass stores energy. Below this the night-drain term applies even at noon in shade.",
-            [nameof(SimulationConfig.grassMaintenanceRate)] =
-                "Baseline energy drain while living. Higher maintenance demands richer light and root water to stay above the flowering threshold.",
-            [nameof(SimulationConfig.grassNightDrain)] =
-                "Extra energy loss when local light is below the minimum. Couples the day/night cycle to whether a stand can afford to bloom.",
-            [nameof(SimulationConfig.grassRootUptakeRate)] =
-                "How much water and nutrient each living root tap requests per tick. Competing taps on one soil pixel share that pool proportionally.",
-            [nameof(SimulationConfig.grassRootCohesionScale)] =
-                "Fraction of base soil cohesion added per active root tap in the target cell. Default 0.10 matches a 10% erosion-resistance bonus with no tap cap.",
-            [nameof(SimulationConfig.grassPollenEmitRate)] =
-                "How quickly an open flower sheds pollen into wind and water carriers. Keep low so environmental pollination is rare until pollinators arrive.",
-            [nameof(SimulationConfig.grassPollenAirRate)] =
-                "Angular wind transport rate for airborne pollen. Intentionally lower than flora spore air transport so most flowers self-clone unless pollen arrives.",
-            [nameof(SimulationConfig.grassPollenWaterRate)] =
-                "Waterborne pollen carriage on runoff and ponds. Low by default so rain assists pollination without flooding every stand.",
-            [nameof(SimulationConfig.grassPollenSettlingRate)] =
-                "How quickly pollen drops from air onto flowering soil anchors. Higher settling makes reception local; lower lets pollen travel farther.",
-            [nameof(SimulationConfig.grassSeedAirRate)] =
-                "Wind advection of released seed counts. Low rates keep batches near the parent while still allowing long-distance colonization.",
-            [nameof(SimulationConfig.grassSeedWaterRate)] =
-                "Runoff and pond carriage of seed counts. Couples hydrology to grassland spread along drainage without teleporting seeds.",
-            [nameof(SimulationConfig.grassSeedGravityRate)] =
-                "Inward/downslope settling of seeds under gravity. Moves batches toward lower-Y soil where free grass slots can germinate.",
-            [nameof(SimulationConfig.grassSeedDiffusionRate)] =
-                "Isotropic seed mixing between neighboring carriers. A small value blurs batch edges without erasing exact integer counts.",
-            [nameof(SimulationConfig.grassNectarRate)] =
-                "How much inspectable nectar an open flower holds from stored energy and flower-size genes. Exposed for a future pollinator, not cricket feeding.",
-            [nameof(SimulationConfig.grassCanopyOpacity)] =
-                "How strongly grass biomass attenuates the shared light column. Higher opacity shades algae and stacked plants beneath a thick stand.",
-            [nameof(SimulationConfig.detritusVaporAbsorbRate)] =
-                "How quickly fallen flower Detritus soaks atmospheric vapor from neighboring air. Makes detritus a surface moisture battery after bloom.",
-            [nameof(SimulationConfig.detritusEvaporationScale)] =
-                "Fraction of ordinary wet-surface evaporation applied to Detritus. Low values keep soaked detritus wet longer than bare soil or water films.",
-            [nameof(SimulationConfig.detritusMoistureShareRate)] =
-                "How quickly excess detritus moisture leaks into neighboring groundwater hosts. Distributes the battery without inventing water mass.",
-            [nameof(SimulationConfig.detritusNutrientLeachRate)] =
-                "How quickly finite detritus fertility leaches into adjacent soil. Feeds pedogenesis after flowers fall without creating nutrients.",
-            [nameof(SimulationConfig.detritusDecayRate)] =
-                "Local depletion of the detritus nutrient reserve each slow tick. Exhausted pixels become air when exposed or soil when buried.",
-            [nameof(SimulationConfig.detritusInitialNutrient)] =
-                "Starting fertility written into aux.z when a flower paints Detritus. Higher values fertilize longer before the material decomposes.",
-            [nameof(SimulationConfig.detritusInitialMoisture)] =
-                "Starting groundwater held in new Detritus. Also the hold-back threshold above which excess moisture is shared with neighbors.",
-
             [nameof(SimulationConfig.faunaSeedAtWorldgen)] =
                 "When enabled, worldgen can initialize cricket state on painted biological cells. Off keeps existing worlds deterministic until you place crickets with the Life brush.",
             [nameof(SimulationConfig.faunaInitialCalories)] =
@@ -499,6 +420,89 @@ namespace GeneSys.UI
                 "Lower air temperature adult and juvenile crickets can endure. Beyond this they die instead of hopping to safety.",
             [nameof(SimulationConfig.faunaSurvivalTempMax)] =
                 "Upper air temperature adult and juvenile crickets can endure. Extreme heat kills even if they are not on fire.",
+
+            [nameof(SimulationConfig.grassSeedAtWorldgen)] =
+                "When enabled, worldgen plants a sparse set of adult grasses on exposed soil. Off keeps worlds empty until you seed grass or wait for transported seeds.",
+            [nameof(SimulationConfig.grassInitialBiomass)] =
+                "Starting blade biomass for a newly germinated or painted grass slot.",
+            [nameof(SimulationConfig.grassInitialEnergy)] =
+                "Starting photosynthate reserve. Higher values let new plants flower sooner after the 3–4 day wait.",
+            [nameof(SimulationConfig.grassPhotosynthesisRate)] =
+                "How quickly grass converts light and root water into stored energy.",
+            [nameof(SimulationConfig.grassGrowthRate)] =
+                "How quickly stored energy becomes blade biomass in the growth niche.",
+            [nameof(SimulationConfig.grassDecayRate)] =
+                "Biomass and energy loss outside the growth band.",
+            [nameof(SimulationConfig.grassMaintenanceRate)] =
+                "Baseline energy drain while a grass slot is alive, paid every tick even in the growth band.",
+            [nameof(SimulationConfig.grassNightDrain)] =
+                "Extra energy drain when photosynthetically active radiation is near zero.",
+            [nameof(SimulationConfig.grassWaterUptakeRate)] =
+                "How aggressively each slot requests water from its root taps. Competing taps share available moisture.",
+            [nameof(SimulationConfig.grassNutrientUptakeRate)] =
+                "How aggressively each slot requests soil nutrients from tapped cells.",
+            [nameof(SimulationConfig.grassRootCohesionBonus)] =
+                "Added soil cohesion per active root tap targeting a cell, scaled by base soil cohesion (0.10 default).",
+            [nameof(SimulationConfig.grassFlowerEnergyThreshold)] =
+                "Stored energy required before an adult may open a flower at its 3–4 day mark.",
+            [nameof(SimulationConfig.grassGeneExpressionRange)] =
+                "How far grass genes can shift baseline rates, colors, and root architecture.",
+            [nameof(SimulationConfig.grassGrowthTempMin)] =
+                "Lower temperature of healthy grass growth.",
+            [nameof(SimulationConfig.grassGrowthTempMax)] =
+                "Upper temperature of healthy grass growth.",
+            [nameof(SimulationConfig.grassGrowthMoistureMin)] =
+                "Lower soil moisture of healthy grass growth.",
+            [nameof(SimulationConfig.grassGrowthMoistureMax)] =
+                "Upper soil moisture of healthy grass growth.",
+            [nameof(SimulationConfig.grassSurvivalTempMin)] =
+                "Lower temperature grass can endure before dying.",
+            [nameof(SimulationConfig.grassSurvivalTempMax)] =
+                "Upper temperature grass can endure before dying.",
+            [nameof(SimulationConfig.grassSurvivalMoistureMin)] =
+                "Lower moisture grass can endure before dying.",
+            [nameof(SimulationConfig.grassSurvivalMoistureMax)] =
+                "Upper moisture grass can endure before dying.",
+            [nameof(SimulationConfig.grassMinLight)] =
+                "Minimum PAR required for growth. Night and canopy shade drop plants toward maintenance-only.",
+            [nameof(SimulationConfig.grassAdultBiomass)] =
+                "Biomass at which a juvenile becomes an unflowered adult.",
+            [nameof(SimulationConfig.grassPollenEmitRate)] =
+                "Low-rate pollen mass emitted by an open flower into the local cell.",
+            [nameof(SimulationConfig.grassPollenTransportRate)] =
+                "Baseline pollen movement. Keep low so pollination stays rare without a pollinator.",
+            [nameof(SimulationConfig.grassSeedTransportRate)] =
+                "Baseline whole-seed movement. Keep low so stands expand slowly.",
+            [nameof(SimulationConfig.grassPollenWindRate)] =
+                "How strongly angular wind carries pollen between open carriers.",
+            [nameof(SimulationConfig.grassPollenWaterRate)] =
+                "How strongly runoff and water cells carry pollen.",
+            [nameof(SimulationConfig.grassPollenSettlingRate)] =
+                "Inward gravity/settling of pollen onto soil and carriers.",
+            [nameof(SimulationConfig.grassSeedWindRate)] =
+                "How strongly angular wind carries whole seeds.",
+            [nameof(SimulationConfig.grassSeedWaterRate)] =
+                "How strongly water and runoff carry whole seeds.",
+            [nameof(SimulationConfig.grassSeedSettlingRate)] =
+                "Inward gravity/settling of seeds onto exposed soil.",
+            [nameof(SimulationConfig.grassNectarAmount)] =
+                "Nectar written into an open flower. Inspectable now; a future pollinator can consume it.",
+            [nameof(SimulationConfig.grassCanopyOpacity)] =
+                "How much living grass biomass attenuates the shared flora light field.",
+            [nameof(SimulationConfig.detritusVaporAbsorbRate)] =
+                "How quickly fallen flowers soak atmospheric vapor into retained moisture.",
+            [nameof(SimulationConfig.detritusEvaporationRate)] =
+                "Detritus drying rate. Substantially slower than ordinary wet surfaces.",
+            [nameof(SimulationConfig.detritusMoistureDistributeRate)] =
+                "How quickly excess detritus moisture moves into neighboring groundwater hosts.",
+            [nameof(SimulationConfig.detritusNutrientLeachRate)] =
+                "How quickly the finite nutrient reserve leaches into adjacent soil.",
+            [nameof(SimulationConfig.detritusDecompositionRate)] =
+                "How quickly the nutrient reserve is exhausted. Empty exposed detritus becomes air; buried detritus becomes soil.",
+            [nameof(SimulationConfig.detritusInitialNutrient)] =
+                "Nutrient reserve written when a flower drops as detritus.",
+            [nameof(SimulationConfig.detritusInitialMoisture)] =
+                "Retained moisture written when a flower drops as detritus.",
 
             [nameof(SimulationConfig.combustionAmbientOxygen)] =
                 "Target oxygen fill as a fraction of each cell's capacity. Atmosphere and porous ground relax toward this level; lowering it starves fire and favors smolder.",

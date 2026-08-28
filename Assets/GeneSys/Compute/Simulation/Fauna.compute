@@ -287,6 +287,7 @@ void SeedFauna(uint3 id : SV_DispatchThreadID)
             motion = 0.0;
             genome.w = PackFaunaMeta(FAUNA_STAGE_EGG, FAUNA_BEHAVIOR_IDLE, 0u, FaunaLineage(genome));
             partner = 0;
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
         }
         else
         {
@@ -294,6 +295,7 @@ void SeedFauna(uint3 id : SV_DispatchThreadID)
             vitals = float4(saturate(_FaunaA.x), saturate(_FaunaA.y), max(0.0, _FaunaA.z), 0.0);
             motion = 0.0;
             partner = 0;
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
         }
     }
 
@@ -614,6 +616,7 @@ void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
     uint feedWinner = ClaimAt(cell, FAUNA_CLAIM_FEED);
     if (feedWinner != FAUNA_CLAIM_EMPTY && IsFloraMaterial(material))
     {
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_CONSUMED);
         material = 1u;
         life = float4(0.0, 0.0, 0.0, life.w * 0.15);
         genome = uint4(0u, 0u, 0u, PackFloraMeta(FLORA_STAGE_DEAD, 0u, 0u, 0u));

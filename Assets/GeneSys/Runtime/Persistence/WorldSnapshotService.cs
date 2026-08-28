@@ -24,14 +24,20 @@ namespace GeneSys.Persistence
         private const int Version10 = 10;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
-        private const int PayloadCountV10 = 32;
+        private const int PayloadCountV10 = 31;
 
-        public void Save(SimulationHost host, string path, Action<bool> completed = null)
+        public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
+            Save(host, path, Version10, completed);
+
+        public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
+            int writeVersion = version >= Version10 ? Version10 : Version9;
+            bool includeGrass = writeVersion >= Version10;
             byte[][] payloads = new byte[PayloadCountV10][];
-            int remaining = PayloadCountV10;
+            int remaining = PayloadCountV9;
             bool failed = false;
+            bool grassBatchStarted = !includeGrass;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -59,21 +65,25 @@ namespace GeneSys.Persistence
             }
             AsyncGPUReadback.Request(host.Resources.AcousticRead, 0, request => CompletePayload(14, request));
             AsyncGPUReadback.Request(host.Resources.AcousticPrev, 0, request => CompletePayload(15, request));
-            RenderTexture grass = host.Resources.GrassRead;
-            for (int slice = 0; slice < 12; slice++)
+
+            void RequestGrassBatch()
             {
-                int index = 16 + slice;
-                int capture = slice;
-                AsyncGPUReadback.Request(grass, 0, 0, grass.width, 0, grass.height, capture, 1,
-                    request => CompletePayload(index, request));
-            }
-            RenderTexture propagule = host.Resources.PropaguleRead;
-            for (int slice = 0; slice < 4; slice++)
-            {
-                int index = 28 + slice;
-                int capture = slice;
-                AsyncGPUReadback.Request(propagule, 0, 0, propagule.width, 0, propagule.height, capture, 1,
-                    request => CompletePayload(index, request));
+                RenderTexture grass = host.Resources.GrassRead;
+                for (int slice = 0; slice < 12; slice++)
+                {
+                    int index = 16 + slice;
+                    int capture = slice;
+                    AsyncGPUReadback.Request(grass, 0, 0, grass.width, 0, grass.height, capture, 1,
+                        request => CompletePayload(index, request));
+                }
+                RenderTexture propagule = host.Resources.PropaguleRead;
+                for (int slice = 0; slice < 3; slice++)
+                {
+                    int index = 28 + slice;
+                    int capture = slice;
+                    AsyncGPUReadback.Request(propagule, 0, 0, propagule.width, 0, propagule.height, capture, 1,
+                        request => CompletePayload(index, request));
+                }
             }
 
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
@@ -82,6 +92,13 @@ namespace GeneSys.Persistence
                 else payloads[index] = request.GetData<byte>().ToArray();
                 remaining--;
                 if (remaining != 0) return;
+                if (includeGrass && !grassBatchStarted)
+                {
+                    grassBatchStarted = true;
+                    remaining = PayloadCountV10 - PayloadCountV9;
+                    RequestGrassBatch();
+                    return;
+                }
                 if (!failed)
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
@@ -89,7 +106,7 @@ namespace GeneSys.Persistence
                     using var writer = new BinaryWriter(stream);
                     SimulationConfig config = host.Config;
                     writer.Write(Magic);
-                    writer.Write(Version10);
+                    writer.Write(writeVersion);
                     writer.Write(host.Resources.Grid.angularResolution);
                     writer.Write(host.Resources.Grid.radialResolution);
                     writer.Write(config.seed);
@@ -98,11 +115,13 @@ namespace GeneSys.Persistence
                     WriteEcologyConfig(writer, config);
                     WriteFloraConfig(writer, config);
                     WriteFaunaConfig(writer, config);
-                    WriteGrassConfig(writer, config);
-                    foreach (byte[] payload in payloads)
+                    if (includeGrass)
+                        WriteGrassConfig(writer, config);
+                    int payloadCount = includeGrass ? PayloadCountV10 : PayloadCountV9;
+                    for (int i = 0; i < payloadCount; i++)
                     {
-                        writer.Write(payload.Length);
-                        writer.Write(payload);
+                        writer.Write(payloads[i].Length);
+                        writer.Write(payloads[i]);
                     }
                 }
                 completed?.Invoke(!failed);
@@ -292,7 +311,8 @@ namespace GeneSys.Persistence
                     Graphics.CopyTexture(staging, 0, 0, host.Resources.GrassRead, slice, 0);
                     UnityEngine.Object.Destroy(staging);
                 }
-                for (int slice = 0; slice < 4; slice++)
+
+                for (int slice = 0; slice < 3; slice++)
                 {
                     int length = reader.ReadInt32();
                     byte[] payload = reader.ReadBytes(length);
@@ -637,12 +657,16 @@ namespace GeneSys.Persistence
         {
             writer.Write(config.grassSeedAtWorldgen);
             writer.Write(config.grassInitialBiomass);
+            writer.Write(config.grassInitialEnergy);
+            writer.Write(config.grassPhotosynthesisRate);
             writer.Write(config.grassGrowthRate);
             writer.Write(config.grassDecayRate);
-            writer.Write(config.grassPhotosynthesisRate);
-            writer.Write(config.grassOxygenYield);
-            writer.Write(config.grassExudationRate);
-            writer.Write(config.grassReproductionThreshold);
+            writer.Write(config.grassMaintenanceRate);
+            writer.Write(config.grassNightDrain);
+            writer.Write(config.grassWaterUptakeRate);
+            writer.Write(config.grassNutrientUptakeRate);
+            writer.Write(config.grassRootCohesionBonus);
+            writer.Write(config.grassFlowerEnergyThreshold);
             writer.Write(config.grassGeneExpressionRange);
             writer.Write(config.grassGrowthTempMin);
             writer.Write(config.grassGrowthTempMax);
@@ -653,25 +677,23 @@ namespace GeneSys.Persistence
             writer.Write(config.grassSurvivalMoistureMin);
             writer.Write(config.grassSurvivalMoistureMax);
             writer.Write(config.grassMinLight);
-            writer.Write(config.grassMaintenanceRate);
-            writer.Write(config.grassNightDrain);
-            writer.Write(config.grassRootUptakeRate);
-            writer.Write(config.grassRootCohesionScale);
+            writer.Write(config.grassAdultBiomass);
             writer.Write(config.grassPollenEmitRate);
-            writer.Write(config.grassPollenAirRate);
+            writer.Write(config.grassPollenTransportRate);
+            writer.Write(config.grassSeedTransportRate);
+            writer.Write(config.grassPollenWindRate);
             writer.Write(config.grassPollenWaterRate);
             writer.Write(config.grassPollenSettlingRate);
-            writer.Write(config.grassSeedAirRate);
+            writer.Write(config.grassSeedWindRate);
             writer.Write(config.grassSeedWaterRate);
-            writer.Write(config.grassSeedGravityRate);
-            writer.Write(config.grassSeedDiffusionRate);
-            writer.Write(config.grassNectarRate);
+            writer.Write(config.grassSeedSettlingRate);
+            writer.Write(config.grassNectarAmount);
             writer.Write(config.grassCanopyOpacity);
             writer.Write(config.detritusVaporAbsorbRate);
-            writer.Write(config.detritusEvaporationScale);
-            writer.Write(config.detritusMoistureShareRate);
+            writer.Write(config.detritusEvaporationRate);
+            writer.Write(config.detritusMoistureDistributeRate);
             writer.Write(config.detritusNutrientLeachRate);
-            writer.Write(config.detritusDecayRate);
+            writer.Write(config.detritusDecompositionRate);
             writer.Write(config.detritusInitialNutrient);
             writer.Write(config.detritusInitialMoisture);
         }
@@ -680,12 +702,16 @@ namespace GeneSys.Persistence
         {
             config.grassSeedAtWorldgen = reader.ReadBoolean();
             config.grassInitialBiomass = reader.ReadSingle();
+            config.grassInitialEnergy = reader.ReadSingle();
+            config.grassPhotosynthesisRate = reader.ReadSingle();
             config.grassGrowthRate = reader.ReadSingle();
             config.grassDecayRate = reader.ReadSingle();
-            config.grassPhotosynthesisRate = reader.ReadSingle();
-            config.grassOxygenYield = reader.ReadSingle();
-            config.grassExudationRate = reader.ReadSingle();
-            config.grassReproductionThreshold = reader.ReadSingle();
+            config.grassMaintenanceRate = reader.ReadSingle();
+            config.grassNightDrain = reader.ReadSingle();
+            config.grassWaterUptakeRate = reader.ReadSingle();
+            config.grassNutrientUptakeRate = reader.ReadSingle();
+            config.grassRootCohesionBonus = reader.ReadSingle();
+            config.grassFlowerEnergyThreshold = reader.ReadSingle();
             config.grassGeneExpressionRange = reader.ReadSingle();
             config.grassGrowthTempMin = reader.ReadSingle();
             config.grassGrowthTempMax = reader.ReadSingle();
@@ -696,25 +722,23 @@ namespace GeneSys.Persistence
             config.grassSurvivalMoistureMin = reader.ReadSingle();
             config.grassSurvivalMoistureMax = reader.ReadSingle();
             config.grassMinLight = reader.ReadSingle();
-            config.grassMaintenanceRate = reader.ReadSingle();
-            config.grassNightDrain = reader.ReadSingle();
-            config.grassRootUptakeRate = reader.ReadSingle();
-            config.grassRootCohesionScale = reader.ReadSingle();
+            config.grassAdultBiomass = reader.ReadSingle();
             config.grassPollenEmitRate = reader.ReadSingle();
-            config.grassPollenAirRate = reader.ReadSingle();
+            config.grassPollenTransportRate = reader.ReadSingle();
+            config.grassSeedTransportRate = reader.ReadSingle();
+            config.grassPollenWindRate = reader.ReadSingle();
             config.grassPollenWaterRate = reader.ReadSingle();
             config.grassPollenSettlingRate = reader.ReadSingle();
-            config.grassSeedAirRate = reader.ReadSingle();
+            config.grassSeedWindRate = reader.ReadSingle();
             config.grassSeedWaterRate = reader.ReadSingle();
-            config.grassSeedGravityRate = reader.ReadSingle();
-            config.grassSeedDiffusionRate = reader.ReadSingle();
-            config.grassNectarRate = reader.ReadSingle();
+            config.grassSeedSettlingRate = reader.ReadSingle();
+            config.grassNectarAmount = reader.ReadSingle();
             config.grassCanopyOpacity = reader.ReadSingle();
             config.detritusVaporAbsorbRate = reader.ReadSingle();
-            config.detritusEvaporationScale = reader.ReadSingle();
-            config.detritusMoistureShareRate = reader.ReadSingle();
+            config.detritusEvaporationRate = reader.ReadSingle();
+            config.detritusMoistureDistributeRate = reader.ReadSingle();
             config.detritusNutrientLeachRate = reader.ReadSingle();
-            config.detritusDecayRate = reader.ReadSingle();
+            config.detritusDecompositionRate = reader.ReadSingle();
             config.detritusInitialNutrient = reader.ReadSingle();
             config.detritusInitialMoisture = reader.ReadSingle();
         }

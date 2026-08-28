@@ -5,6 +5,7 @@
 #pragma kernel AshFertilization
 #pragma kernel WaterMaterialization
 #pragma kernel DetritusExchange
+#pragma kernel ApplyFlowerDrop
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -24,6 +25,8 @@ Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
+Texture2DArray<float4> _GrassRead;
+Texture2D<uint> _GrassDropClaims;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -47,10 +50,9 @@ float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, rainP
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
-float4 _GrassC; // minLight, rootUptake, rootCohesionScale, initialBiomass
-float4 _DetritusA; // vaporAbsorb, evaporationScale, moistureShare, nutrientLeach
-float4 _DetritusB; // decayRate, initialNutrient, initialMoisture, unused
-Texture2D<float4> _GrassRootShare;
+float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMoisture
+float4 _DetritusA; // vaporAbsorb, evaporate, distribute, leach
+float4 _DetritusB; // decomposition, unused
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -394,7 +396,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         + definition.physical.y
         + soilQuality * 0.35 * max(0.0, _EruptionB.w)
         + moistureProtection * max(0.0, _MoistureErosion.y)
-        + _GrassRootShare.Load(int3(cell, 0)).z * saturate(_GrassC.z) * max(0.0, _Erosion.z));
+        + (float)CountGrassRootTapsOnCell(_GrassRead, cell, _GridSize) * saturate(_GrassI.y) * _Erosion.z);
 
     // Continuous linear recovery for sediment-source solids. Sustained loading must
     // exceed stressDecayRate (_Erosion.w) on average to accumulate toward conversion.
@@ -579,93 +581,118 @@ void DetritusExchange(uint3 id : SV_DispatchThreadID)
     float4 ecology = E(cell);
     float4 combustion = Comb(cell);
     int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
-    float absorbRate = max(0.0, _DetritusA.x) * _DeltaTime;
-    float evapRate = max(0.0, _WeatherB.y) * saturate(_DetritusA.y) * _DeltaTime;
-    float shareRate = max(0.0, _DetritusA.z) * _DeltaTime;
-    float leachRate = max(0.0, _DetritusA.w) * _DeltaTime;
-    float decayRate = max(0.0, _DetritusB.x) * _DeltaTime;
+    float absorbRate = max(0.0, _DetritusA.x);
+    float evapRate = max(0.0, _DetritusA.y);
+    float distRate = max(0.0, _DetritusA.z);
+    float leachRate = max(0.0, _DetritusA.w);
+    float decayRate = max(0.0, _DetritusB.x);
+
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 offset = offsets[i];
+        if (offset.y != 0)
+        {
+            int ny = cell.y + offset.y;
+            if (ny < 0 || ny >= _GridSize.y) continue;
+        }
+        int2 neighbor = C(cell + offset);
+        uint nMat = M(neighbor);
+        float4 nAux = A(neighbor);
+        MaterialGpuData nDef = D(nMat);
+
+        if (IsDetritusMaterial(material) && IsAtmosphereCell(neighbor, nMat))
+        {
+            float room = max(0.0, 1.0 - aux.y);
+            float absorb = min(min(max(0.0, nAux.x), room), absorbRate * max(0.0, nAux.x) * _DeltaTime * 0.25);
+            aux.y += absorb;
+            float evap = min(max(0.0, aux.y), evapRate * max(0.0, aux.y) * _DeltaTime * 0.25);
+            aux.y -= evap;
+        }
+        else if (IsAtmosphereCell(cell, material) && IsDetritusMaterial(nMat))
+        {
+            float room = max(0.0, 1.0 - nAux.y);
+            float absorb = min(min(max(0.0, aux.x), room), absorbRate * max(0.0, aux.x) * _DeltaTime * 0.25);
+            aux.x = max(0.0, aux.x - absorb);
+            float evap = min(max(0.0, nAux.y), evapRate * max(0.0, nAux.y) * _DeltaTime * 0.25);
+            aux.x += evap;
+        }
+
+        if (IsDetritusMaterial(material) && IsGroundwaterHost(nMat, nDef))
+        {
+            float excess = max(0.0, aux.y - 0.45);
+            float nCap = max(0.0, GroundwaterCapacity(nDef) - nAux.y);
+            float give = min(excess, min(nCap, distRate * excess * _DeltaTime * 0.25));
+            aux.y -= give;
+        }
+        else if (IsGroundwaterHost(material, D(material)) && IsDetritusMaterial(nMat))
+        {
+            float excess = max(0.0, nAux.y - 0.45);
+            float cap = max(0.0, GroundwaterCapacity(D(material)) - aux.y);
+            float recv = min(excess, min(cap, distRate * excess * _DeltaTime * 0.25));
+            aux.y += recv;
+        }
+
+        if (IsDetritusMaterial(material) && nMat == 7u)
+        {
+            float leach = min(max(0.0, aux.z), leachRate * max(0.0, aux.z) * _DeltaTime * 0.25);
+            aux.z -= leach;
+        }
+        else if (material == 7u && IsDetritusMaterial(nMat))
+        {
+            float leach = min(max(0.0, nAux.z), leachRate * max(0.0, nAux.z) * _DeltaTime * 0.25);
+            aux.z += leach;
+        }
+    }
 
     if (IsDetritusMaterial(material))
     {
-        float vaporIn = 0.0;
-        float vaporOut = 0.0;
-        float moistureOut = 0.0;
-        float nutrientOut = 0.0;
-        float excess = max(0.0, aux.y - _DetritusB.z);
-        [unroll]
-        for (int i = 0; i < 4; i++)
+        aux.z = max(0.0, aux.z - decayRate * _DeltaTime);
+        if (aux.z <= 1e-4)
         {
-            int2 offset = offsets[i];
-            if (offset.y != 0)
-            {
-                int neighborY = cell.y + offset.y;
-                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
-            }
-            int2 neighbor = C(cell + offset);
-            uint nMat = M(neighbor);
-            float4 nAux = A(neighbor);
-            if (nMat == 1u || nMat == 11u)
-            {
-                vaporIn += min(max(0.0, nAux.x), absorbRate * 0.25);
-                vaporOut += min(max(0.0, aux.y), evapRate * 0.25);
-            }
-            if (IsGroundwaterHost(nMat, D(nMat)) && nMat != DETRITUS_ID)
-            {
-                float capacity = max(0.0, GroundwaterCapacity(D(nMat)) - nAux.y);
-                moistureOut += min(excess, min(capacity, shareRate * 0.25));
-            }
-            if (nMat == 7u)
-                nutrientOut += min(max(0.0, aux.z), leachRate * 0.25);
-        }
-        aux.y = max(0.0, aux.y + vaporIn - vaporOut - moistureOut);
-        aux.z = max(0.0, aux.z - nutrientOut - decayRate);
-        if (aux.z <= 0.02 && aux.y <= 0.02)
-        {
-            uint above = M(cell + int2(0, 1));
-            bool exposed = above == 0u || above == 1u || above == 11u;
+            bool exposed = IsExposedSurface(cell, material);
             material = exposed ? 1u : 7u;
             if (material == 1u)
             {
+                aux.x += aux.y;
                 aux.y = 0.0;
-                aux.z = 0.0;
             }
         }
-    }
-    else
-    {
-        float vaporDelta = 0.0;
-        float groundDelta = 0.0;
-        float nutrientDelta = 0.0;
-        [unroll]
-        for (int i = 0; i < 4; i++)
-        {
-            int2 offset = offsets[i];
-            if (offset.y != 0)
-            {
-                int neighborY = cell.y + offset.y;
-                if (neighborY < 0 || neighborY >= _GridSize.y) continue;
-            }
-            int2 neighbor = C(cell + offset);
-            if (!IsDetritusMaterial(M(neighbor))) continue;
-            float4 nAux = A(neighbor);
-            if (material == 1u || material == 11u)
-            {
-                vaporDelta -= min(max(0.0, aux.x), absorbRate * 0.25);
-                vaporDelta += min(max(0.0, nAux.y), evapRate * 0.25);
-            }
-            if (IsGroundwaterHost(material, D(material)) && material != DETRITUS_ID)
-            {
-                float excess = max(0.0, nAux.y - _DetritusB.z);
-                float capacity = max(0.0, GroundwaterCapacity(D(material)) - aux.y);
-                groundDelta += min(excess, min(capacity, shareRate * 0.25));
-            }
-            if (material == 7u)
-                nutrientDelta += min(max(0.0, nAux.z), leachRate * 0.25);
-        }
-        aux.x = max(0.0, aux.x + vaporDelta);
-        aux.y = max(0.0, aux.y + groundDelta);
-        aux.z = max(0.0, aux.z + nutrientDelta);
     }
 
+    Write(cell, material, state, flow, aux, ecology, combustion);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyFlowerDrop(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
+    uint claim = _GrassDropClaims[cell];
+    bool dropHere = claim != GRASS_CLAIM_EMPTY && IsOpenCarrier(material);
+    if (dropHere)
+    {
+        int2 source = UnpackFaunaCell(claim, _GridSize);
+        bool valid = false;
+        [unroll]
+        for (uint checkSlot = 0u; checkSlot < 3u; checkSlot++)
+        {
+            if (GrassHasReleased(SampleGrassTiming(_GrassRead, source, checkSlot)))
+                valid = true;
+        }
+        if (valid)
+        {
+            material = MATERIAL_DETRITUS;
+            aux.y = max(aux.y, saturate(_GrassI.w));
+            aux.z = max(aux.z, saturate(_GrassI.z));
+            combustion = SeedCombustion(material, D(material));
+        }
+    }
     Write(cell, material, state, flow, aux, ecology, combustion);
 }

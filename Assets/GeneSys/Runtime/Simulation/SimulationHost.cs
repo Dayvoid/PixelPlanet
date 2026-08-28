@@ -24,8 +24,8 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader weather;
         [SerializeField] private ComputeShader mycology;
         [SerializeField] private ComputeShader flora;
-        [SerializeField] private ComputeShader grass;
         [SerializeField] private ComputeShader fauna;
+        [SerializeField] private ComputeShader grass;
         [SerializeField] private ComputeShader combustion;
         [SerializeField] private ComputeShader storm;
         [Header("Scene")]
@@ -95,7 +95,7 @@ namespace GeneSys.Simulation
                 enabled = false;
                 return;
             }
-            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || flora == null || grass == null || fauna == null || combustion == null || storm == null)
+            if (config == null || materialRegistry == null || worldGeneration == null || materialSimulation == null || geology == null || hydrology == null || weather == null || mycology == null || flora == null || fauna == null || grass == null || combustion == null || storm == null)
             {
                 Debug.LogError("GeneSys bootstrap references are incomplete. Run Tools/GeneSys/Rebuild Phase 1 Scene.", this);
                 enabled = false;
@@ -103,7 +103,7 @@ namespace GeneSys.Simulation
             }
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, grass, fauna, combustion, storm);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, fauna, grass, combustion, storm);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
@@ -234,17 +234,6 @@ namespace GeneSys.Simulation
             });
         }
 
-        public void QueueGrassSeed(Vector2Int cell, int radius, float biomass)
-        {
-            QueueBrush(new GpuPassScheduler.BrushCommand
-            {
-                center = cell,
-                radius = Mathf.Max(0, radius),
-                materialId = MaterialIds.Void,
-                values = new Vector4(15f, biomass, 0f, 0f)
-            });
-        }
-
         public void QueueFaunaSeed(Vector2Int cell, int radius, uint materialId)
         {
             uint id = materialId == MaterialIds.CricketEgg ? MaterialIds.CricketEgg : MaterialIds.Cricket;
@@ -253,6 +242,18 @@ namespace GeneSys.Simulation
                 center = cell,
                 radius = Mathf.Max(0, radius),
                 materialId = id,
+                values = Vector4.zero
+            });
+        }
+
+        public void QueueGrassSeed(Vector2Int cell, int radius)
+        {
+            if (!IsReady) return;
+            scheduler.QueueGrassSeed(new GpuPassScheduler.BrushCommand
+            {
+                center = cell,
+                radius = Mathf.Max(0, radius),
+                materialId = MaterialIds.Soil,
                 values = Vector4.zero
             });
         }
