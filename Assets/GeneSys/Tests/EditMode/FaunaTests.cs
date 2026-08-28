@@ -144,7 +144,7 @@ namespace GeneSys.Tests
             renderer.SetOverlay(24);
             Assert.That(renderer.OverlayMode, Is.EqualTo(FaunaVisuals.AcousticOverlayMode));
             renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(25));
+            Assert.That(renderer.OverlayMode, Is.EqualTo(24));
             Object.DestroyImmediate(go);
         }
 

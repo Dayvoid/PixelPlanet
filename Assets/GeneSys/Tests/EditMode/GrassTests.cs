@@ -1,4 +1,3 @@
-using System.IO;
 using System.Reflection;
 using GeneSys.Configuration;
 using GeneSys.Materials;
@@ -20,14 +19,14 @@ namespace GeneSys.Tests
         {
             var config = ScriptableObject.CreateInstance<SimulationConfig>();
             Assert.That(config.grassSeedAtWorldgen, Is.False);
+            Assert.That(config.grassGrowthRate, Is.GreaterThan(0f));
             Assert.That(config.grassPhotosynthesisRate, Is.GreaterThan(0f));
-            Assert.That(config.grassWaterUptakeRate, Is.GreaterThan(0f));
-            Assert.That(config.grassPollenTransportRate, Is.LessThan(0.2f));
-            Assert.That(config.grassSeedTransportRate, Is.LessThan(0.2f));
-            Assert.That(config.grassRootCohesionBonus, Is.EqualTo(0.1f).Within(0.001f));
+            Assert.That(config.grassRootCohesionScale, Is.EqualTo(0.1f).Within(0.001f));
+            Assert.That(config.grassPollenAirRate, Is.GreaterThan(0f));
+            Assert.That(config.grassPollenAirRate, Is.LessThan(config.floraAirTransportRate));
             Assert.That(config.grassGrowthTempMin, Is.LessThan(config.grassGrowthTempMax));
             Assert.That(config.grassSurvivalTempMin, Is.LessThanOrEqualTo(config.grassGrowthTempMin));
-            Assert.That(config.detritusEvaporationRate, Is.LessThan(0.05f));
+            Assert.That(config.detritusEvaporationScale, Is.InRange(0f, 0.5f));
             Assert.That(config.detritusInitialNutrient, Is.GreaterThan(0f));
             Object.DestroyImmediate(config);
         }
@@ -40,16 +39,13 @@ namespace GeneSys.Tests
             config.grassGrowthTempMax = 10f;
             config.grassSurvivalTempMin = 12f;
             config.grassSurvivalTempMax = 15f;
-            config.grassGrowthMoistureMin = 0.8f;
-            config.grassGrowthMoistureMax = 0.2f;
-            config.grassPollenEmitRate = 2f;
-            config.grassRootCohesionBonus = 4f;
+            config.grassRootCohesionScale = 2f;
+            config.detritusEvaporationScale = 2f;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
             Assert.That(config.grassGrowthTempMin, Is.LessThan(config.grassGrowthTempMax));
             Assert.That(config.grassSurvivalTempMin, Is.LessThanOrEqualTo(config.grassGrowthTempMin));
-            Assert.That(config.grassSurvivalTempMax, Is.GreaterThanOrEqualTo(config.grassGrowthTempMax));
-            Assert.That(config.grassPollenEmitRate, Is.LessThanOrEqualTo(0.5f));
-            Assert.That(config.grassRootCohesionBonus, Is.InRange(0f, 1f));
+            Assert.That(config.grassRootCohesionScale, Is.InRange(0f, 1f));
+            Assert.That(config.detritusEvaporationScale, Is.InRange(0f, 1f));
             Object.DestroyImmediate(config);
         }
 
@@ -57,149 +53,137 @@ namespace GeneSys.Tests
         public void RestoreDefaultsResetsGrassFields()
         {
             var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            config.grassPhotosynthesisRate = 0f;
-            config.grassWaterUptakeRate = 0f;
-            config.detritusDecompositionRate = 0f;
+            config.grassGrowthRate = 0f;
+            config.grassRootCohesionScale = 0f;
+            config.detritusDecayRate = 0f;
             config.RestoreDefaults();
-            Assert.That(config.grassPhotosynthesisRate, Is.EqualTo(0.3f).Within(0.001f));
-            Assert.That(config.grassWaterUptakeRate, Is.EqualTo(0.25f).Within(0.001f));
-            Assert.That(config.detritusDecompositionRate, Is.EqualTo(0.04f).Within(0.001f));
+            Assert.That(config.grassGrowthRate, Is.EqualTo(0.14f).Within(0.001f));
+            Assert.That(config.grassRootCohesionScale, Is.EqualTo(0.1f).Within(0.001f));
+            Assert.That(config.detritusDecayRate, Is.EqualTo(0.04f).Within(0.001f));
             Object.DestroyImmediate(config);
         }
 
         [Test]
-        public void GeneEncodeDecodeCombineAndMutationStayInRange()
+        public void GeneEncodeDecodeRoundTripAndMutationStaysInRange()
         {
-            var mother = new GrassGenome.Packed();
-            var partner = new GrassGenome.Packed();
+            var genome = new GrassGenome.Packed();
             for (int i = 0; i < GrassGenome.GeneCount; i++)
-            {
-                mother = GrassGenome.EncodeGene(mother, i, (byte)(i * 18));
-                partner = GrassGenome.EncodeGene(partner, i, (byte)(255 - i * 10));
-            }
-            mother = GrassGenome.PackMeta(mother, GrassGenome.StageAdult, 4, 21, 180);
-            partner = GrassGenome.PackMeta(partner, GrassGenome.StageAdult, 2, 9, 40);
-            mother = GrassGenome.Sanitize(mother);
-            Assert.That(GrassGenome.Stage(mother), Is.EqualTo(GrassGenome.StageAdult));
-            Assert.That(GrassGenome.DecodeGene(mother, 2), Is.EqualTo((byte)36));
-
-            var mixed = GrassGenome.Combine(mother, partner, 42u);
+                genome = GrassGenome.EncodeGene(genome, i, (byte)(i * 18));
+            genome = GrassGenome.PackMeta(genome, GrassGenome.StageFlowering, 2, 9, 40);
+            genome = GrassGenome.Sanitize(genome);
+            Assert.That(GrassGenome.Stage(genome), Is.EqualTo(GrassGenome.StageFlowering));
+            Assert.That(GrassGenome.DecodeGene(genome, GrassGenome.GeneBladeHeight), Is.EqualTo((byte)126));
+            var mutated = GrassGenome.Mutate(genome, 0.2f, 1.2f, 11u);
             for (int i = 0; i < GrassGenome.GeneCount; i++)
-            {
-                byte gene = GrassGenome.DecodeGene(mixed, i);
-                Assert.That(gene == GrassGenome.DecodeGene(mother, i) || gene == GrassGenome.DecodeGene(partner, i), Is.True);
-            }
-
-            var child = GrassGenome.Inherit(mother, partner, true, 0.2f, 1.2f, 7u);
-            Assert.That(GrassGenome.Stage(child), Is.EqualTo(GrassGenome.StageJuvenile));
-            Assert.That(GrassGenome.Lineage(child), Is.EqualTo(GrassGenome.Lineage(mother)));
-            Assert.That(GrassGenome.Generation(child), Is.EqualTo(5u));
-            for (int i = 0; i < GrassGenome.GeneCount; i++)
-                Assert.That(GrassGenome.DecodeGene(child, i), Is.InRange(0, 255));
-            Assert.That(GrassGenome.FloweringDays(mother), Is.InRange(3f, 4f));
-            Assert.That(GrassGenome.SeedReleaseDays(mother), Is.InRange(1f, 2f));
+                Assert.That(GrassGenome.DecodeGene(mutated, i), Is.InRange(0, 255));
+            Assert.That(GrassGenome.IsValidStage(GrassGenome.Stage(mutated)), Is.True);
         }
 
         [Test]
-        public void RootMaskIsStableAndOccupiesOneToThreeTaps()
+        public void RootCountAndMaskStayWithinThreeTaps()
         {
-            var genome = GrassGenome.EncodeGene(default, GrassGenome.GeneRootArchitecture, 200);
-            uint maskA = GrassGenome.SelectRootMask(genome, 4, 9, 1);
-            uint maskB = GrassGenome.SelectRootMask(genome, 4, 9, 1);
-            Assert.That(maskA, Is.EqualTo(maskB));
+            var genome = new GrassGenome.Packed();
+            genome = GrassGenome.EncodeGene(genome, GrassGenome.GeneRootAffinity, 0);
+            Assert.That(GrassGenome.RootCount(genome), Is.EqualTo(1));
+            genome = GrassGenome.EncodeGene(genome, GrassGenome.GeneRootAffinity, 255);
+            Assert.That(GrassGenome.RootCount(genome), Is.EqualTo(3));
+            uint mask = GrassGenome.RootMask(genome, 4, 9, 1, 12345);
             int bits = 0;
             for (int i = 0; i < 3; i++)
-                if ((maskA & (1u << i)) != 0) bits++;
-            Assert.That(bits, Is.InRange(1, 3));
-            uint flags = GrassGenome.PackTimingFlags(maskA, true, true, false);
-            Assert.That(GrassGenome.IsFlowering(flags), Is.True);
-            Assert.That(GrassGenome.TimingFlags(5f), Is.EqualTo(5u));
-            Assert.That(GrassGenome.RootMask(GrassGenome.TimingFlags(5f)), Is.EqualTo(5u));
-            Assert.That(GrassGenome.IsPollinated(flags), Is.True);
-            Assert.That(GrassGenome.HasReleased(flags), Is.False);
-            Assert.That(GrassGenome.DominantRare(MycologyTraits.Basic), Is.EqualTo(0u));
-            Assert.That(GrassGenome.DominantRare(MycologyTraits.DroughtResistant | MycologyTraits.HeatProne),
-                Is.EqualTo(MycologyTraits.DroughtResistant));
-            Assert.That(GrassGenome.DominantRare(MycologyTraits.HeatResistant, MycologyTraits.ElectricResistant),
-                Is.EqualTo(MycologyTraits.HeatResistant));
+                if ((mask & (1u << i)) != 0) bits++;
+            Assert.That(bits, Is.EqualTo(3));
+            Assert.That(mask, Is.LessThanOrEqualTo(7u));
         }
 
         [Test]
-        public void InvalidStageSanitizesAndSliceLayoutMatchesResources()
+        public void CombineMixesMaternalAndDonorGenes()
+        {
+            var mother = new GrassGenome.Packed();
+            var donor = new GrassGenome.Packed();
+            for (int i = 0; i < GrassGenome.GeneCount; i++)
+            {
+                mother = GrassGenome.EncodeGene(mother, i, 0);
+                donor = GrassGenome.EncodeGene(donor, i, 255);
+            }
+            var child = GrassGenome.Combine(mother, donor, 99u);
+            bool sawMother = false;
+            bool sawDonor = false;
+            for (int i = 0; i < GrassGenome.GeneCount; i++)
+            {
+                byte gene = GrassGenome.DecodeGene(child, i);
+                if (gene == 0) sawMother = true;
+                if (gene == 255) sawDonor = true;
+            }
+            Assert.That(sawMother, Is.True);
+            Assert.That(sawDonor, Is.True);
+        }
+
+        [Test]
+        public void InvalidStageSanitizesAndDescribeContainsFlowering()
         {
             var genome = GrassGenome.PackMeta(default, 99u, 0, 0, 0);
             genome = GrassGenome.Sanitize(genome);
             Assert.That(GrassGenome.Stage(genome), Is.EqualTo(GrassGenome.StageEmpty));
-            Assert.That(GrassGenome.Slice(2, GrassGenome.DonorOffset), Is.EqualTo(11));
-            Assert.That(GrassGenome.GrassSliceCount, Is.EqualTo(12));
+            Assert.That(GrassGenome.DescribeStage(GrassGenome.StageFlowering), Does.Contain("Flowering"));
+            Assert.That(GrassGenome.IsLiving(GrassGenome.StageAdult), Is.True);
+            Assert.That(GrassGenome.IsOccupied(GrassGenome.StageEmpty), Is.False);
+        }
+
+        [Test]
+        public void GrassResourcesUseExpectedFormats()
+        {
             using var resources = new SimulationResources(PolarGridDefinition.Validation);
-            Assert.That(resources.GrassRead.volumeDepth, Is.EqualTo(12));
-            Assert.That(resources.PropaguleRead.volumeDepth, Is.EqualTo(3));
+            Assert.That(resources.GrassRead.volumeDepth, Is.EqualTo(GrassGenome.SliceCount));
+            Assert.That(resources.PropaguleRead.volumeDepth, Is.EqualTo(GrassGenome.PropaguleSliceCount));
+            Assert.That(resources.GrassRootDemand.volumeDepth, Is.EqualTo(3));
             Assert.That(resources.GrassRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
-            Assert.That(resources.GrassRootFlux.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
-            Assert.That(resources.GrassDropClaims.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_UInt));
+            Assert.That(resources.GrassClaims.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_UInt));
         }
 
         [Test]
-        public void OverlayModeIncludesGrass()
+        public void DetritusMaterialHasOrganicIdentityAndGpuPacking()
         {
-            var go = new GameObject("Grass Overlay Test");
-            var renderer = go.AddComponent<PlanetoidDisplayRenderer>();
-            renderer.SetOverlay(25);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(GrassVisuals.OverlayMode));
-            renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(25));
-            Assert.That(GrassVisuals.SlotOffset(0).x, Is.LessThan(0f));
-            Assert.That(GrassVisuals.StageColor(GrassGenome.StageAdult).g, Is.GreaterThan(0.4f));
-            Object.DestroyImmediate(go);
-        }
-
-        [Test]
-        public void DetritusMaterialHasPorousOrganicIdentity()
-        {
-            Assert.That(MaterialIds.Detritus, Is.EqualTo(131u));
             MaterialDefinition detritus = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/131_Detritus.asset");
             Assert.That(detritus, Is.Not.Null);
             Assert.That(detritus.stableId, Is.EqualTo((int)MaterialIds.Detritus));
             Assert.That(detritus.category, Is.EqualTo(MaterialCategory.Granular));
-            Assert.That(detritus.porosity, Is.GreaterThan(0.05f));
+            Assert.That(detritus.porosity, Is.GreaterThan(0.7f));
+            Assert.That(detritus.absorbency, Is.GreaterThan(0.7f));
             Assert.That(detritus.caloricContent, Is.GreaterThan(0f));
-            Assert.That(detritus.densityDisplaceable, Is.True);
 
             MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
             Assert.That(registry.Validate(out string error), Is.True, error);
             Assert.That(registry.Get((int)MaterialIds.Detritus), Is.Not.Null);
             MaterialGpuData[] gpu = registry.BuildGpuData();
-            Assert.That(gpu[(int)MaterialIds.Detritus].biology.z, Is.GreaterThan(0.05f));
+            Assert.That(gpu[(int)MaterialIds.Detritus].biology.z, Is.GreaterThan(0.7f));
         }
 
         [Test]
-        public void ShaderConstantsMatchCSharpLayouts()
+        public void GrassVisualsBladeAndFlowerColorsRespondToGenesAndTraits()
+        {
+            Assert.That(GrassVisuals.BladeColor(255).g, Is.GreaterThan(GrassVisuals.BladeColor(0).g));
+            Assert.That(GrassVisuals.FlowerColor(32).r, Is.GreaterThan(GrassVisuals.Flower.r * 0.5f));
+            Assert.That(GrassVisuals.Root.r, Is.GreaterThan(GrassVisuals.Root.g));
+        }
+
+        [Test]
+        public void ShaderConstantsMatchCpuLayout()
         {
             Assert.That(GrassGenome.SlotCount, Is.EqualTo(3));
             Assert.That(GrassGenome.SlicesPerSlot, Is.EqualTo(4));
-            Assert.That(GrassGenome.GeneBladeHeight, Is.EqualTo(5));
-            Assert.That(GrassGenome.GeneMutation, Is.EqualTo(11));
-            ComputeShader shader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Grass.compute");
+            Assert.That(GrassGenome.DetritusId, Is.EqualTo(MaterialIds.Detritus));
+            Assert.That(GrassGenome.GeneRootAffinity, Is.EqualTo(10));
+        }
+
+        [Test]
+        public void GrassComputeExposesRootShareAndLifecycleKernels()
+        {
+            var shader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Grass.compute");
             Assert.That(shader, Is.Not.Null);
-            Assert.That(shader.FindKernel("RootDemand"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("SoilDebit"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("PhotosynthesisLifecycle"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("PollenTransport"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("SeedTransport"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("Germination"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("PaintGrass"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("ClaimFlowerDrop"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("ApplyFlowerDrop"), Is.GreaterThanOrEqualTo(0));
-            ComputeShader hydrology = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
-            Assert.That(hydrology.FindKernel("ApplyFlowerDrop"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(hydrology.FindKernel("DetritusExchange"), Is.GreaterThanOrEqualTo(0));
-            string structs = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SimulationStructs.hlsl");
-            Assert.That(structs.Contains("SampleGrassNectar"));
-            Assert.That(structs.Contains("DominantRareMycology"));
-            string display = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");
-            Assert.That(display.Contains("FlowerHue"));
-            Assert.That(display.Contains("if (rare == 2u)"));
+            Assert.That(shader.FindKernel("ResolveRootShare"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("ApplyRootDebit"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("GrassLifecycle"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("GrassGermination"), Is.GreaterThanOrEqualTo(0));
         }
     }
 }

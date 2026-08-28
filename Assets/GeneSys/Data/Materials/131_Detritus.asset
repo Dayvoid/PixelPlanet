@@ -15,29 +15,30 @@ MonoBehaviour:
   stableId: 131
   displayName: Detritus
   category: 3
-  displayColor: {r: 0.38, g: 0.28, b: 0.14, a: 1}
-  density: 0.48
+  displayColor: {r: 0.28, g: 0.22, b: 0.12, a: 1}
+  shadeVariation: 0.2
+  density: 0.42
   rigidity: 0.04
   angleOfRepose: 28
   grainSize: 0.4
-  buoyancyBias: 0.85
+  buoyancyBias: 0.35
   densityDisplaceable: 1
-  thermalConductivity: 0.1
-  heatCapacity: 1.2
+  thermalConductivity: 0.09
+  heatCapacity: 1.4
   electricalConductivity: 0.02
-  absorbency: 0.7
-  porosity: 0.72
-  meltingTemperature: 280
-  boilingTemperature: 900
+  absorbency: 0.9
+  porosity: 0.85
+  meltingTemperature: 180
+  boilingTemperature: 400
   thermalExpansion: 0.02
   electricalExpansion: 0
   solidPhaseId: 131
   liquidPhaseId: 131
   gasPhaseId: 11
-  toxicity: 0.02
-  caloricContent: 0.55
+  toxicity: 0
+  caloricContent: 0.6
   ignitionTemperature: 220
-  flashPoint: 180
-  oxygenDemand: 0.65
-  smokeYield: 0.45
+  flashPoint: 170
+  oxygenDemand: 0.7
+  smokeYield: 0.55
   bioModifiable: 1

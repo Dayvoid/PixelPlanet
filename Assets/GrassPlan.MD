@@ -122,7 +122,7 @@ Bump snapshots to v10 in [Assets/GeneSys/Runtime/Persistence/WorldSnapshotServic
 
 Verification
 
-Ignore UAV limit warnings, targeting dx12 exclusively use above 8 is OK.
+
 
 
 

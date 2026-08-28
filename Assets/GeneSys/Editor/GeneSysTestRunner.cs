@@ -18,11 +18,6 @@ namespace GeneSys.Editor
         {
             GeneSysTestObserver.Run(TestMode.PlayMode);
         }
-
-        public static void RunPlayModeGroup(string groupName)
-        {
-            GeneSysTestObserver.Run(TestMode.PlayMode, groupName);
-        }
     }
 
     [InitializeOnLoad]
@@ -45,14 +40,11 @@ namespace GeneSys.Editor
             api.RegisterCallbacks(callback, 100);
         }
 
-        public static void Run(TestMode mode, string groupName = null)
+        public static void Run(TestMode mode)
         {
             EnsureRegistered();
-            File.AppendAllText(ResultPath, $"START {mode} {groupName} {System.DateTime.UtcNow:O}\n");
-            var filter = new Filter { testMode = mode };
-            if (!string.IsNullOrEmpty(groupName))
-                filter.groupNames = new[] { groupName };
-            api.Execute(new ExecutionSettings(filter));
+            File.AppendAllText(ResultPath, $"START {mode} {System.DateTime.UtcNow:O}\n");
+            api.Execute(new ExecutionSettings(new Filter { testMode = mode }));
         }
 
         private sealed class Callback : ICallbacks

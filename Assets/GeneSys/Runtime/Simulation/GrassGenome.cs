@@ -6,50 +6,47 @@ namespace GeneSys.Simulation
 {
     /// <summary>
     /// 12-gene, 8-bit-per-gene packing shared with HLSL. Expression matches flora:
-    /// 1 + (gene/255 - 0.5) * 2 * geneExpressionRange. Meta packing matches flora
-    /// (stage | generation | lineage | toxinDose). Recombination matches fauna Combine.
+    /// 1 + (gene/255 - 0.5) * 2 * geneExpressionRange.
     /// </summary>
     public static class GrassGenome
     {
         public const int GeneCount = 12;
         public const int SlotCount = 3;
         public const int SlicesPerSlot = 4;
-        public const int GrassSliceCount = SlotCount * SlicesPerSlot;
-        public const int PropaguleSliceCount = 3;
+        public const int SliceCount = SlotCount * SlicesPerSlot;
+        public const int PropaguleSliceCount = 4;
+        public const uint DetritusId = 131;
 
         public const int LifeOffset = 0;
         public const int GenomeOffset = 1;
-        public const int TimingOffset = 2;
+        public const int PhenologyOffset = 2;
         public const int DonorOffset = 3;
 
         public const uint StageEmpty = 0;
-        public const uint StageJuvenile = 1;
+        public const uint StageSeedling = 1;
         public const uint StageAdult = 2;
+        public const uint StageFlowering = 3;
+        public const uint StageSeeding = 4;
+        public const uint StageDead = 5;
 
         public const int GeneTempOptimum = 0;
         public const int GeneTempTolerance = 1;
         public const int GeneMoistureOptimum = 2;
         public const int GeneMoistureTolerance = 3;
         public const int GeneLightAffinity = 4;
-        public const int GeneBladeHeight = 5;
-        public const int GeneBladeColor = 6;
-        public const int GeneFlowerSize = 7;
-        public const int GeneFlowerColor = 8;
-        public const int GeneRootArchitecture = 9;
-        public const int GeneFloweringCadence = 10;
+        public const int GeneReproduction = 5;
+        public const int GeneMetabolic = 6;
+        public const int GeneBladeHeight = 7;
+        public const int GeneBladeColor = 8;
+        public const int GeneFlowerSize = 9;
+        public const int GeneRootAffinity = 10;
         public const int GeneMutation = 11;
-
-        public const uint TimingFloweringBit = 1u << 3;
-        public const uint TimingPollinatedBit = 1u << 4;
-        public const uint TimingReleasedBit = 1u << 5;
-        public const uint TimingRootMask = 7u;
-        public const uint DonorValidBit = 1u;
 
         public static readonly string[] GeneNames =
         {
             "Temp optimum", "Temp tolerance", "Moisture optimum", "Moisture tolerance",
-            "Light affinity", "Blade height", "Blade color", "Flower size",
-            "Flower color", "Root architecture", "Flowering cadence", "Mutation rate"
+            "Light affinity", "Reproduction", "Metabolic rate", "Blade height",
+            "Blade color", "Flower size", "Root affinity", "Mutation rate"
         };
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -71,9 +68,6 @@ namespace GeneSys.Simulation
                 W = unchecked((uint)BitConverter.SingleToInt32Bits(bits.w))
             };
         }
-
-        public static int Slice(int slot, int field) =>
-            System.Math.Clamp(slot, 0, SlotCount - 1) * SlicesPerSlot + System.Math.Clamp(field, 0, SlicesPerSlot - 1);
 
         public static byte DecodeGene(Packed genome, int index)
         {
@@ -111,12 +105,14 @@ namespace GeneSys.Simulation
         public static Packed Sanitize(Packed genome)
         {
             uint stage = Stage(genome);
-            if (stage > StageAdult) stage = StageEmpty;
+            if (stage > StageDead) stage = StageEmpty;
             return PackMeta(genome, stage, Generation(genome), Lineage(genome), ToxinDose(genome));
         }
 
-        public static bool IsValidStage(uint stage) => stage <= StageAdult;
-        public static bool IsLivingStage(uint stage) => stage == StageJuvenile || stage == StageAdult;
+        public static bool IsValidStage(uint stage) => stage <= StageDead;
+        public static bool IsOccupied(uint stage) => stage != StageEmpty && stage != StageDead;
+        public static bool IsLiving(uint stage) => stage == StageSeedling || stage == StageAdult
+            || stage == StageFlowering || stage == StageSeeding;
 
         public static float ExpressFactor(byte gene, float range)
         {
@@ -127,74 +123,30 @@ namespace GeneSys.Simulation
         public static float ExpressShift(byte gene, float range) =>
             (gene / 255f - 0.5f) * 2f * range;
 
-        public static uint SelectRootMask(Packed genome, int cellX, int cellY, int slot)
+        public static int RootCount(Packed genome)
         {
-            byte gene = DecodeGene(genome, GeneRootArchitecture);
-            uint count = 1u + (uint)(gene % 3);
-            uint start = (uint)((gene / 3 + cellX * 3 + cellY * 5 + slot * 7) % 3);
-            uint mask = 0u;
-            for (uint i = 0; i < count; i++)
-                mask |= 1u << (int)((start + i) % 3u);
-            return mask & TimingRootMask;
+            byte gene = DecodeGene(genome, GeneRootAffinity);
+            return 1 + (int)System.Math.Min(2, gene * 3 / 256);
         }
 
-        public static uint TimingFlags(float packed) => (uint)Mathf.Round(Mathf.Max(0f, packed));
-        public static uint RootMask(uint packedTiming) => packedTiming & TimingRootMask;
-        public static bool IsFlowering(uint packedTiming) => (packedTiming & TimingFloweringBit) != 0u;
-        public static bool IsPollinated(uint packedTiming) => (packedTiming & TimingPollinatedBit) != 0u;
-        public static bool HasReleased(uint packedTiming) => (packedTiming & TimingReleasedBit) != 0u;
-        public static bool HasDonor(Packed donor) => (donor.W & DonorValidBit) != 0u;
-
-        public static uint PackTimingFlags(uint rootMask, bool flowering, bool pollinated, bool released)
+        public static uint RootMask(Packed genome, int theta, int radius, int slot, int seed)
         {
-            uint packed = rootMask & TimingRootMask;
-            if (flowering) packed |= TimingFloweringBit;
-            if (pollinated) packed |= TimingPollinatedBit;
-            if (released) packed |= TimingReleasedBit;
-            return packed;
-        }
-
-        public static uint DominantRare(uint traitsA, uint traitsB = 0u, uint traitsC = 0u)
-        {
-            uint combined = MycologyTraits.Sanitize(traitsA | traitsB | traitsC);
-            if (combined == 0u) return 0u;
-            uint[] flags =
+            int count = RootCount(genome);
+            uint hash = Hash((uint)(theta * 73856093 + radius * 19349663 + slot * 83492791 + seed * 31337 + Lineage(genome)));
+            uint order = hash % 6u;
+            int[] permutation = order switch
             {
-                MycologyTraits.DroughtResistant, MycologyTraits.HeatResistant, MycologyTraits.ElectricResistant,
-                MycologyTraits.DroughtProne, MycologyTraits.HeatProne, MycologyTraits.ElectricProne
+                0 => new[] { 0, 1, 2 },
+                1 => new[] { 0, 2, 1 },
+                2 => new[] { 1, 0, 2 },
+                3 => new[] { 1, 2, 0 },
+                4 => new[] { 2, 0, 1 },
+                _ => new[] { 2, 1, 0 }
             };
-            uint best = 0u;
-            uint bestRank = 0u;
-            for (int i = 0; i < flags.Length; i++)
-            {
-                uint rank = 6u - (uint)i;
-                if ((combined & flags[i]) != 0u && rank > bestRank)
-                {
-                    best = flags[i];
-                    bestRank = rank;
-                }
-            }
-            return best;
-        }
-
-        public static float FloweringDays(Packed genome)
-        {
-            return 3f + DecodeGene(genome, GeneFloweringCadence) / 255f;
-        }
-
-        public static float SeedReleaseDays(Packed genome)
-        {
-            return 1f + DecodeGene(genome, GeneFloweringCadence) / 255f;
-        }
-
-        public static byte MutateGene(byte gene, float mutationRate, uint salt)
-        {
-            float rate = UnityEngine.Mathf.Max(0f, mutationRate);
-            if (rate <= 0f) return gene;
-            uint hashed = Hash(salt ^ (uint)(gene * 747796405 + 2891336453));
-            float unit = (hashed & 0x00ffffff) / 16777215f;
-            int step = (int)System.Math.Round((unit * 2f - 1f) * rate * 255f);
-            return (byte)System.Math.Clamp(gene + step, 0, 255);
+            uint mask = 0;
+            for (int i = 0; i < count; i++)
+                mask |= 1u << permutation[i];
+            return mask;
         }
 
         public static Packed Mutate(Packed genome, float baseMutationRate, float toxinMutationScale, uint salt)
@@ -211,26 +163,17 @@ namespace GeneSys.Simulation
             return genome;
         }
 
-        public static Packed Combine(Packed mother, Packed partner, uint salt)
+        public static Packed Combine(Packed mother, Packed donor, uint salt)
         {
-            mother = Sanitize(mother);
-            partner = Sanitize(partner);
             var child = new Packed();
             for (int i = 0; i < GeneCount; i++)
             {
-                float unit = (Hash(salt + (uint)i * 83492791u) & 0x00ffffff) / 16777215f;
-                byte gene = unit < 0.5f ? DecodeGene(mother, i) : DecodeGene(partner, i);
+                uint hashed = Hash(salt + (uint)i * 83492791u);
+                float unit = (hashed & 0x00ffffff) / 16777215f;
+                byte gene = unit < 0.5f ? DecodeGene(mother, i) : DecodeGene(donor, i);
                 child = EncodeGene(child, i, gene);
             }
             return child;
-        }
-
-        public static Packed Inherit(Packed mother, Packed partner, bool hasPartner, float baseMutationRate, float toxinMutationScale, uint salt)
-        {
-            Packed child = hasPartner ? Combine(mother, partner, salt) : mother;
-            child = Mutate(child, baseMutationRate, toxinMutationScale, salt + 17u);
-            uint generation = (Generation(mother) + 1u) & 255u;
-            return PackMeta(child, StageJuvenile, generation, Lineage(mother), ToxinDose(mother) / 2u);
         }
 
         public static Packed SaturateToxin(Packed genome, float addedDose)
@@ -241,8 +184,11 @@ namespace GeneSys.Simulation
 
         public static string DescribeStage(uint stage) => stage switch
         {
-            StageJuvenile => "Juvenile",
+            StageSeedling => "Seedling",
             StageAdult => "Adult",
+            StageFlowering => "Flowering",
+            StageSeeding => "Seeding",
+            StageDead => "Dead",
             _ => "Empty"
         };
 
@@ -260,6 +206,16 @@ namespace GeneSys.Simulation
                 text.Append('%');
             }
             return text.ToString();
+        }
+
+        public static byte MutateGene(byte gene, float mutationRate, uint salt)
+        {
+            float rate = UnityEngine.Mathf.Max(0f, mutationRate);
+            if (rate <= 0f) return gene;
+            uint hashed = Hash(salt ^ (uint)(gene * 747796405 + 2891336453));
+            float unit = (hashed & 0x00ffffff) / 16777215f;
+            int step = (int)System.Math.Round((unit * 2f - 1f) * rate * 255f);
+            return (byte)System.Math.Clamp(gene + step, 0, 255);
         }
 
         private static uint Hash(uint value)

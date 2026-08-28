@@ -181,7 +181,7 @@ namespace GeneSys.Tests
             renderer.SetOverlay(22);
             Assert.That(renderer.OverlayMode, Is.EqualTo(FloraVisuals.GenomeOverlayMode));
             renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(25));
+            Assert.That(renderer.OverlayMode, Is.EqualTo(24));
             Object.DestroyImmediate(go);
         }
 

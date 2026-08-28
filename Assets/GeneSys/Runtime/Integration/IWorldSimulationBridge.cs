@@ -39,6 +39,7 @@ namespace GeneSys.Integration
         void QueueFieldDeposit(Vector2Int cell, int radius, int channel, float amount);
         void QueueSporeSeed(Vector2Int cell, int radius, float sporeLoad, float mycoValue, uint traitFlags);
         void QueueFloraSeed(Vector2Int cell, int radius, float sporeLoad);
+        void QueueGrassSeed(Vector2Int cell, int radius, float biomass);
         void QueueIgnition(Vector2Int cell, int radius, float intensity);
     }
 }
