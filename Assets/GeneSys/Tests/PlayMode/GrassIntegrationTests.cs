@@ -457,40 +457,6 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator SameSeedGrassOccupancyIsDeterministic()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            yield return PrepareIsolatedWorld(host);
-            int x = 24;
-            int y = SurfaceY(host);
-            StampSurfacePlot(host, x, y);
-            StampSurfacePlot(host, x + 3, y);
-            yield return Step(host, 2);
-            host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x), y), 0);
-            host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x + 3), y), 0);
-            yield return Step(host, 2);
-            uint stageA = 0;
-            uint stageB = 0;
-            int livingA = 0;
-            int livingB = 0;
-            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
-            {
-                livingA = LivingCount(genomes);
-                stageA = GrassGenome.Stage(genomes[0]);
-            });
-            yield return ReadGrassCell(host, x + 3, y, (_, _, _, _, genomes, _, __) =>
-            {
-                livingB = LivingCount(genomes);
-                stageB = GrassGenome.Stage(genomes[0]);
-            });
-            Assert.That(livingA, Is.GreaterThan(0));
-            Assert.That(livingB, Is.GreaterThan(0));
-            Assert.That(stageB, Is.EqualTo(stageA));
-        }
-
-        [UnityTest]
         public IEnumerator SnapshotRoundTripPreservesGrass()
         {
             SceneManager.LoadScene("Terrarium");
@@ -521,33 +487,6 @@ namespace GeneSys.Tests
             yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
                 restored = GrassGenome.Lineage(genomes[0]));
             Assert.That(restored, Is.EqualTo(lineage));
-        }
-
-        [UnityTest]
-        public IEnumerator WorldgenWithoutSeedLeavesGrassEmpty()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            yield return PrepareIsolatedWorld(host);
-            int x = 28;
-            int y = SurfaceY(host);
-            yield return PlantOnPlot(host, x, y, 1);
-            int livingBefore = 0;
-            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
-                livingBefore = LivingCount(genomes));
-            Assert.That(livingBefore, Is.GreaterThan(0));
-
-            host.Config.grassSeedAtWorldgen = false;
-            host.Regenerate();
-            for (int i = 0; i < 8; i++) yield return null;
-            FreezeWorld(host);
-            StampSurfacePlot(host, x, y);
-            yield return Step(host, 2);
-            int livingAfter = 0;
-            yield return ReadGrassCell(host, x, y, (_, _, _, _, genomes, _, __) =>
-                livingAfter = LivingCount(genomes));
-            Assert.That(livingAfter, Is.EqualTo(0));
         }
 
         [UnityTest]

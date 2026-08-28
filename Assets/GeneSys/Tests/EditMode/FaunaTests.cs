@@ -1,11 +1,9 @@
 using System.Reflection;
 using GeneSys.Configuration;
 using GeneSys.Materials;
-using GeneSys.Rendering;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
-using GeneSys.Tools;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -15,24 +13,6 @@ namespace GeneSys.Tests
 {
     public sealed class FaunaTests
     {
-        [Test]
-        public void FaunaDefaultsAreConfiguredAndOrdered()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.faunaSeedAtWorldgen, Is.False);
-            Assert.That(config.faunaMaturityTicks, Is.EqualTo(2000));
-            Assert.That(config.faunaClutchMin, Is.EqualTo(2));
-            Assert.That(config.faunaClutchMax, Is.EqualTo(4));
-            Assert.That(config.faunaHatchTicksMin, Is.EqualTo(1000));
-            Assert.That(config.faunaHatchTicksMax, Is.EqualTo(1500));
-            Assert.That(config.faunaHatchTicksMin, Is.LessThanOrEqualTo(config.faunaHatchTicksMax));
-            Assert.That(config.faunaHungerThreshold, Is.LessThanOrEqualTo(config.faunaFullThreshold));
-            Assert.That(config.faunaHopImpulse, Is.GreaterThan(0f));
-            Assert.That(config.faunaHydrationDrain, Is.GreaterThan(0f));
-            Assert.That(config.faunaDecisionInterval, Is.GreaterThan(0));
-            Object.DestroyImmediate(config);
-        }
-
         [Test]
         public void FaunaOnValidateEnforcesRanges()
         {
@@ -52,20 +32,6 @@ namespace GeneSys.Tests
             Assert.That(config.faunaHungerThreshold, Is.LessThanOrEqualTo(config.faunaFullThreshold));
             Assert.That(config.faunaSurvivalTempMin, Is.LessThan(config.faunaSurvivalTempMax));
             Assert.That(config.faunaDecisionInterval, Is.InRange(1, 16));
-            Object.DestroyImmediate(config);
-        }
-
-        [Test]
-        public void RestoreDefaultsResetsFaunaFields()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            config.faunaHopImpulse = 0f;
-            config.faunaMaturityTicks = 1;
-            config.faunaClutchMax = 8;
-            config.RestoreDefaults();
-            Assert.That(config.faunaHopImpulse, Is.EqualTo(2.2f).Within(0.001f));
-            Assert.That(config.faunaMaturityTicks, Is.EqualTo(2000));
-            Assert.That(config.faunaClutchMax, Is.EqualTo(4));
             Object.DestroyImmediate(config);
         }
 
@@ -135,20 +101,6 @@ namespace GeneSys.Tests
         }
 
         [Test]
-        public void OverlayModeIncludesFaunaAndAcoustic()
-        {
-            var go = new GameObject("Fauna Overlay Test");
-            var renderer = go.AddComponent<PlanetoidDisplayRenderer>();
-            renderer.SetOverlay(23);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(FaunaVisuals.OverlayMode));
-            renderer.SetOverlay(24);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(FaunaVisuals.AcousticOverlayMode));
-            renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(25));
-            Object.DestroyImmediate(go);
-        }
-
-        [Test]
         public void CricketMaterialsHaveBiologicalIdentityWithoutGenericMotion()
         {
             MaterialDefinition cricket = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/129_Cricket.asset");
@@ -166,13 +118,6 @@ namespace GeneSys.Tests
             Assert.That(registry.Validate(out string error), Is.True, error);
             Assert.That(registry.Get((int)MaterialIds.Cricket), Is.Not.Null);
             Assert.That(registry.Get((int)MaterialIds.CricketEgg), Is.Not.Null);
-        }
-
-        [Test]
-        public void LifeBrushStillFollowsIgniteAndFaunaVisualsDifferentiateStages()
-        {
-            Assert.That((int)BrushMode.Life, Is.EqualTo((int)BrushMode.Ignite + 1));
-            Assert.That(FaunaVisuals.StageColor(FaunaGenome.StageAdult).r, Is.LessThan(FaunaVisuals.StageColor(FaunaGenome.StageEgg).r));
         }
     }
 }

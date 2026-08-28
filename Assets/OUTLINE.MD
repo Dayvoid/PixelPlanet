@@ -11,6 +11,17 @@ scale: 100s of complex active agents supported by an ecosystem consisting of com
 all relevant simulation settings tweakable via tab based settings menu UI  
 platform: Unity 6 - 7950x3d, 32GB DDR5 , RTX 4080 super
 
+## VALIDATION
+
+Limit automated validation to tests that are explicitly necessary for the change in hand. PlayMode fixtures load Terrarium and wait on GPU readback; they are not a default gate.
+
+- Run only the EditMode/PlayMode fixture that exercises the code you touched (e.g. flora kernel → `FloraTests` + `FloraIntegrationTests`). Filter by fixture name in the Test Runner, or `GeneSysTestRunner.RunPlayModeGroup("GeneSys.Tests.FloraIntegrationTests")`.
+- Do not run the full EditMode or PlayMode suite after ordinary edits. Broaden the run only when the change can break a cross-system contract: water/mass conservation, snapshot versioning, GPU resource layout, polar topology, or worldgen determinism.
+- Do not add tests that pin default slider values, `RestoreDefaults` literals, overlay enum numbers, visual tint constants, or smoke that the terrarium scene loads. Tune settings without fighting the suite.
+- Keep one PlayMode case per behavior, plus the invariant tests for that subsystem (mass/energy conservation, occupancy claims, genome packing, OnValidate envelope ordering, material GPU packing, snapshot round-trip).
+- Do not add a mirror-image, legacy-path, or second conservation test unless that path is still a user-facing contract.
+- Worldgen organism seeding (`floraSeedAtWorldgen`, `faunaSeedAtWorldgen`, `grassSeedAtWorldgen`) stays off by default so a generated world is abiotic until the Life brush introduces populations — not to keep determinism tests green.
+
 ## PHASE 1
 ### WORLD
 
@@ -105,7 +116,7 @@ The left/right hemisphere approach should be adopted when developing behavior tr
 - life stages: `SPORE`, `ACTIVE` (growth envelope + light, accumulate energy, divide with mutation), `DORMANT` (survival envelope, biomass kept, revival), `DESICCATED` (outside survival: dry fuel with a lowered ignition threshold so fire can consume the mat), `DEAD` → Ash `12` plus `aux.z` fertility
 - race-free division is a gather from Read-state on one neighbor direction per slow tick
 - brush mode `Material` paints IDs 0–13 plus `131 Detritus`; `Life` reuses the Material dropdown for `128–130`, Myco Spores (GPU 7, rare strains at `mycologyRareStrainChance`), and Grass Seeds (`PaintGrass`). Algae still seeds flora spores (GPU 14); painting material 128 plants an active organism
-- worldgen flora seeding is off by default (`floraSeedAtWorldgen`) so existing determinism tests stay green
+- worldgen flora seeding is off by default (`floraSeedAtWorldgen`); Life brush introduces spores/organisms
 - snapshots are Version7 with Life/Genome payloads; Light is derived and omitted
 - Version9 adds cricket fauna (`129 Cricket`, `130 Cricket Egg`), a dedicated fauna Tex2DArray (vitals/motion/genome/partner), a two-channel acoustic field, and fauna config. Crickets occupy surface-adjacent air cells, hop with gene- and environment-scaled impulse, graze algae, retain partner genomes, lay 2–4 eggs, and chirp on feeding/mating channels.
 

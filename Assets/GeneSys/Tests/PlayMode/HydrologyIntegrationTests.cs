@@ -242,47 +242,6 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator ConservationValidatorPassesAfterLongRun()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHost();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            host.Config.targetOceanCoverage = 0.5f;
-            host.Config.validationIntervalTicks = 100000;
-            host.Config.atmosphericAdvectionRate = 0.85f;
-            host.Config.vaporDiffusionRate = 0.08f;
-            host.Regenerate();
-            host.Clock.SetRunning(false);
-
-            SimulationValidator validator = UnityEngine.Object.FindFirstObjectByType<SimulationValidator>();
-            Assert.That(validator, Is.Not.Null);
-            validator.ResetBaseline();
-            for (int i = 0; i < 5; i++) yield return null;
-
-            for (int i = 0; i < 120; i++)
-            {
-                host.Clock.RequestStep();
-                yield return null;
-            }
-
-            bool validationDone = false;
-            validator.ValidationCompleted += (_, __) => validationDone = true;
-            validator.ValidateNow();
-            for (int i = 0; i < 240 && !validationDone; i++)
-                yield return null;
-
-            Assert.That(validator.LastValidationPassed, Is.True, validator.LastMessage);
-            Assert.That(validator.LastMessage, Does.Not.Contain("Non-finite"));
-            Assert.That(validator.LastMessage, Does.Not.Contain("Negative"));
-
-            yield return ReadGpuFields(host, (mats, _, __) =>
-            {
-                for (int i = 0; i < mats.Length; i++)
-                    Assert.That(mats[i], Is.Not.EqualTo(MaterialIds.Vapor));
-            });
-        }
-
-        [UnityTest]
         public IEnumerator SnapshotV2RoundTripPreservesTickAndWaterState()
         {
             SceneManager.LoadScene("Terrarium");

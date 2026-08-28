@@ -1,11 +1,9 @@
 using System.Reflection;
 using GeneSys.Configuration;
 using GeneSys.Materials;
-using GeneSys.Rendering;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
-using GeneSys.Tools;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -15,33 +13,6 @@ namespace GeneSys.Tests
 {
     public sealed class FloraTests
     {
-        [Test]
-        public void FloraDefaultsAreConfiguredAndOrdered()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.floraSeedAtWorldgen, Is.False);
-            Assert.That(config.floraInitialSporeLoad, Is.GreaterThan(0f));
-            Assert.That(config.floraAirTransportRate, Is.GreaterThan(0f));
-            Assert.That(config.floraWaterTransportRate, Is.GreaterThan(0f));
-            Assert.That(config.floraGrowthRate, Is.GreaterThan(0f));
-            Assert.That(config.floraPhotosynthesisRate, Is.GreaterThan(0f));
-            Assert.That(config.floraGrowthTempMin, Is.LessThan(config.floraGrowthTempMax));
-            Assert.That(config.floraSurvivalTempMin, Is.LessThanOrEqualTo(config.floraGrowthTempMin));
-            Assert.That(config.floraSurvivalTempMax, Is.GreaterThanOrEqualTo(config.floraGrowthTempMax));
-            Assert.That(config.floraGrowthMoistureMin, Is.LessThan(config.floraGrowthMoistureMax));
-            Assert.That(config.floraSurvivalMoistureMin, Is.LessThanOrEqualTo(config.floraGrowthMoistureMin));
-            Assert.That(config.floraSurvivalMoistureMax, Is.GreaterThanOrEqualTo(config.floraGrowthMoistureMax));
-            Assert.That(config.floraReproductionThreshold, Is.InRange(0.05f, 1f));
-            Assert.That(config.floraGeneExpressionRange, Is.InRange(0f, 1f));
-            Assert.That(config.floraPoleDriftRate, Is.GreaterThan(0f));
-            Assert.That(config.floraWindShearRate, Is.GreaterThan(0f));
-            Assert.That(config.floraRainShearRate, Is.GreaterThan(0f));
-            Assert.That(config.floraFragmentYield, Is.InRange(0f, 1f));
-            Assert.That(config.floraAnchorGrip, Is.GreaterThan(0f));
-            Assert.That(config.transportPassInterval, Is.EqualTo(2));
-            Object.DestroyImmediate(config);
-        }
-
         [Test]
         public void FloraOnValidateEnforcesSurvivalOutsideGrowth()
         {
@@ -66,26 +37,6 @@ namespace GeneSys.Tests
             Assert.That(config.floraPoleDriftRate, Is.GreaterThanOrEqualTo(0f));
             Assert.That(config.floraFragmentYield, Is.InRange(0f, 1f));
             Assert.That(config.transportPassInterval, Is.InRange(1, 8));
-            Object.DestroyImmediate(config);
-        }
-
-        [Test]
-        public void RestoreDefaultsResetsFloraFields()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            config.floraGrowthRate = 0f;
-            config.floraPhotosynthesisRate = 0f;
-            config.floraInitialSporeLoad = 0f;
-            config.floraPoleDriftRate = 0f;
-            config.floraAnchorGrip = 0f;
-            config.transportPassInterval = 8;
-            config.RestoreDefaults();
-            Assert.That(config.floraGrowthRate, Is.EqualTo(0.16f).Within(0.001f));
-            Assert.That(config.floraPhotosynthesisRate, Is.EqualTo(0.35f).Within(0.001f));
-            Assert.That(config.floraInitialSporeLoad, Is.EqualTo(0.06f).Within(0.001f));
-            Assert.That(config.floraPoleDriftRate, Is.EqualTo(0.35f).Within(0.001f));
-            Assert.That(config.floraAnchorGrip, Is.EqualTo(1f).Within(0.001f));
-            Assert.That(config.transportPassInterval, Is.EqualTo(2));
             Object.DestroyImmediate(config);
         }
 
@@ -170,22 +121,6 @@ namespace GeneSys.Tests
         }
 
         [Test]
-        public void OverlayModeIncludesFloraLightAndGenome()
-        {
-            var go = new GameObject("Flora Overlay Test");
-            var renderer = go.AddComponent<PlanetoidDisplayRenderer>();
-            renderer.SetOverlay(20);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(FloraVisuals.OverlayMode));
-            renderer.SetOverlay(21);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(FloraVisuals.LightOverlayMode));
-            renderer.SetOverlay(22);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(FloraVisuals.GenomeOverlayMode));
-            renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(25));
-            Object.DestroyImmediate(go);
-        }
-
-        [Test]
         public void AlgaeMaterialHasBiologicalIdentityAndGpuPacking()
         {
             MaterialDefinition algae = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/128_AlgaeMoss.asset");
@@ -203,24 +138,6 @@ namespace GeneSys.Tests
             MaterialGpuData[] gpu = registry.BuildGpuData();
             Assert.That(gpu[(int)MaterialIds.Algae].metadata.x, Is.EqualTo((float)MaterialCategory.Biological).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Algae].motion.x, Is.EqualTo(1f).Within(0.01f));
-        }
-
-        [Test]
-        public void FloraVisualsStageColorsAndSizeTiers()
-        {
-            Assert.That(FloraVisuals.StageColor(FloraGenome.StageActive).g, Is.GreaterThan(FloraVisuals.StageColor(FloraGenome.StageDesiccated).g));
-            Assert.That(FloraVisuals.SizeTier(0.1f), Is.EqualTo(0));
-            Assert.That(FloraVisuals.SizeTier(0.5f), Is.EqualTo(1));
-            Assert.That(FloraVisuals.SizeTier(0.9f), Is.EqualTo(2));
-        }
-
-        [Test]
-        public void LifeBrushModeExistsAndMapsAfterIgnite()
-        {
-            Assert.That(System.Enum.GetNames(typeof(BrushMode)), Does.Contain("Off"));
-            Assert.That(System.Enum.GetNames(typeof(BrushMode)), Does.Contain("Life"));
-            Assert.That((int)BrushMode.Off, Is.EqualTo(0));
-            Assert.That((int)BrushMode.Life, Is.EqualTo((int)BrushMode.Ignite + 1));
         }
 
         [Test]

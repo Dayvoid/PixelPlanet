@@ -1,4 +1,3 @@
-using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Validation;
 using NUnit.Framework;
@@ -122,47 +121,8 @@ namespace GeneSys.Tests
         }
 
         [Test]
-        public void WorldGenDefaultsPreferNewPipeline()
+        public void CombustionMaterialPackingIsConfigured()
         {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.useOgWorldgen, Is.False);
-            Assert.That(config.metalVeinCount, Is.EqualTo(12));
-            Assert.That(config.metalVeinMinSize, Is.GreaterThan(0f));
-            Assert.That(config.iceCapRadius, Is.GreaterThan(0f));
-            Assert.That(config.iceCapHeight, Is.GreaterThan(0f));
-            Object.DestroyImmediate(config);
-        }
-
-        [Test]
-        public void DensityExchangeDefaultsAreConfigured()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.densityExchangeRate, Is.GreaterThan(0f));
-            Assert.That(config.densityExchangeEpsilon, Is.GreaterThan(0f));
-            Object.DestroyImmediate(config);
-        }
-
-        [Test]
-        public void MagmaEruptionDefaultsPreserveLegacyBehavior()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.magmaEruption, Is.EqualTo(0f));
-            Assert.That(config.eruptionBurdenDepth, Is.GreaterThanOrEqualTo(1));
-            Assert.That(config.eruptionBlastThreshold, Is.GreaterThan(0f));
-            Assert.That(config.ashFertilityStrength, Is.GreaterThan(0f));
-            Object.DestroyImmediate(config);
-        }
-
-        [Test]
-        public void CombustionDefaultsAndMaterialPackingAreConfigured()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.combustionAmbientOxygen, Is.GreaterThan(0f));
-            Assert.That(config.combustionBurnRate, Is.GreaterThan(0f));
-            Assert.That(config.combustionHeatYield, Is.GreaterThan(0f));
-            Assert.That(config.combustionMinFuel, Is.InRange(0f, 1f));
-            Object.DestroyImmediate(config);
-
             MaterialDefinition soil = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/007_Soil.asset");
             MaterialDefinition water = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/009_Water.asset");
             Assert.That(soil, Is.Not.Null);
@@ -175,17 +135,6 @@ namespace GeneSys.Tests
             MaterialGpuData[] gpu = registry.BuildGpuData();
             Assert.That(gpu[(int)MaterialIds.Soil].combustion.x, Is.EqualTo(180f).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Water].combustion.y, Is.EqualTo(80f).Within(0.01f));
-        }
-
-        [Test]
-        public void MoistureErosionDefaultsAreConfigured()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.dryMoistureThreshold, Is.GreaterThan(0f));
-            Assert.That(config.moistureCohesionStrength, Is.GreaterThan(0f));
-            Assert.That(config.capillaryEvaporationFraction, Is.InRange(0f, 1f));
-            Assert.That(config.fieldCapacityFraction, Is.InRange(0.01f, 1f));
-            Object.DestroyImmediate(config);
         }
     }
 
@@ -206,19 +155,6 @@ namespace GeneSys.Tests
 
             int basins = SimulationMetrics.CountWrapAwareBasins(mask, width, height);
             Assert.That(basins, Is.EqualTo(2));
-        }
-
-        [Test]
-        public void ConfigMigrationPreservesGroundwaterDepthRange()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            config.groundwaterDepth = 0.42f;
-            config.targetOceanCoverage = 0.5f;
-            config.minOceanBasins = 2;
-            config.maxOceanBasins = 3;
-            Assert.That(config.groundwaterDepth, Is.InRange(0f, 1f));
-            Assert.That(config.targetOceanCoverage, Is.InRange(0.2f, 0.8f));
-            Object.DestroyImmediate(config);
         }
     }
 }

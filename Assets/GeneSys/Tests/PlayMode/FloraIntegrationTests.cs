@@ -907,39 +907,6 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator SnapshotRoundTripPreservesFloraMigrationConfig()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            yield return PrepareIsolatedWorld(host);
-            host.Config.floraPoleDriftRate = 1.25f;
-            host.Config.floraWindShearRate = 2.5f;
-            host.Config.floraRainShearRate = 1.75f;
-            host.Config.floraFragmentYield = 0.4f;
-            host.Config.floraAnchorGrip = 0.8f;
-
-            string path = System.IO.Path.Combine(Application.temporaryCachePath, "genesys-flora-migration.snapshot");
-            var snapshots = new WorldSnapshotService();
-            bool saved = false;
-            snapshots.Save(host, path, ok => saved = ok);
-            for (int i = 0; i < 240 && !saved; i++) yield return null;
-            Assert.That(saved, Is.True);
-
-            host.Config.floraPoleDriftRate = 0f;
-            host.Config.floraWindShearRate = 0f;
-            host.Config.floraRainShearRate = 0f;
-            host.Config.floraFragmentYield = 0f;
-            host.Config.floraAnchorGrip = 0f;
-            Assert.That(snapshots.Load(host, path), Is.True);
-            Assert.That(host.Config.floraPoleDriftRate, Is.EqualTo(1.25f).Within(0.001f));
-            Assert.That(host.Config.floraWindShearRate, Is.EqualTo(2.5f).Within(0.001f));
-            Assert.That(host.Config.floraRainShearRate, Is.EqualTo(1.75f).Within(0.001f));
-            Assert.That(host.Config.floraFragmentYield, Is.EqualTo(0.4f).Within(0.001f));
-            Assert.That(host.Config.floraAnchorGrip, Is.EqualTo(0.8f).Within(0.001f));
-        }
-
-        [UnityTest]
         public IEnumerator SnapshotRoundTripPreservesLifeAndGenome()
         {
             SceneManager.LoadScene("Terrarium");

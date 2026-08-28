@@ -2,7 +2,6 @@ using System.IO;
 using System.Reflection;
 using GeneSys.Configuration;
 using GeneSys.Materials;
-using GeneSys.Rendering;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
@@ -15,23 +14,6 @@ namespace GeneSys.Tests
 {
     public sealed class GrassTests
     {
-        [Test]
-        public void GrassDefaultsAreConfiguredAndOrdered()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.grassSeedAtWorldgen, Is.False);
-            Assert.That(config.grassPhotosynthesisRate, Is.GreaterThan(0f));
-            Assert.That(config.grassWaterUptakeRate, Is.GreaterThan(0f));
-            Assert.That(config.grassPollenTransportRate, Is.LessThan(0.2f));
-            Assert.That(config.grassSeedTransportRate, Is.LessThan(0.2f));
-            Assert.That(config.grassRootCohesionBonus, Is.EqualTo(0.1f).Within(0.001f));
-            Assert.That(config.grassGrowthTempMin, Is.LessThan(config.grassGrowthTempMax));
-            Assert.That(config.grassSurvivalTempMin, Is.LessThanOrEqualTo(config.grassGrowthTempMin));
-            Assert.That(config.detritusEvaporationRate, Is.LessThan(0.05f));
-            Assert.That(config.detritusInitialNutrient, Is.GreaterThan(0f));
-            Object.DestroyImmediate(config);
-        }
-
         [Test]
         public void GrassOnValidateEnforcesSurvivalOutsideGrowth()
         {
@@ -50,20 +32,6 @@ namespace GeneSys.Tests
             Assert.That(config.grassSurvivalTempMax, Is.GreaterThanOrEqualTo(config.grassGrowthTempMax));
             Assert.That(config.grassPollenEmitRate, Is.LessThanOrEqualTo(0.5f));
             Assert.That(config.grassRootCohesionBonus, Is.InRange(0f, 1f));
-            Object.DestroyImmediate(config);
-        }
-
-        [Test]
-        public void RestoreDefaultsResetsGrassFields()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            config.grassPhotosynthesisRate = 0f;
-            config.grassWaterUptakeRate = 0f;
-            config.detritusDecompositionRate = 0f;
-            config.RestoreDefaults();
-            Assert.That(config.grassPhotosynthesisRate, Is.EqualTo(0.3f).Within(0.001f));
-            Assert.That(config.grassWaterUptakeRate, Is.EqualTo(0.25f).Within(0.001f));
-            Assert.That(config.detritusDecompositionRate, Is.EqualTo(0.04f).Within(0.001f));
             Object.DestroyImmediate(config);
         }
 
@@ -138,20 +106,6 @@ namespace GeneSys.Tests
             Assert.That(resources.GrassRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.GrassRootFlux.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.GrassDropClaims.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_UInt));
-        }
-
-        [Test]
-        public void OverlayModeIncludesGrass()
-        {
-            var go = new GameObject("Grass Overlay Test");
-            var renderer = go.AddComponent<PlanetoidDisplayRenderer>();
-            renderer.SetOverlay(25);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(GrassVisuals.OverlayMode));
-            renderer.SetOverlay(99);
-            Assert.That(renderer.OverlayMode, Is.EqualTo(25));
-            Assert.That(GrassVisuals.SlotOffset(0).x, Is.LessThan(0f));
-            Assert.That(GrassVisuals.StageColor(GrassGenome.StageAdult).g, Is.GreaterThan(0.4f));
-            Object.DestroyImmediate(go);
         }
 
         [Test]
