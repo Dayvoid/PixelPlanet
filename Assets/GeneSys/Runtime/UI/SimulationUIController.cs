@@ -70,6 +70,23 @@ namespace GeneSys.UI
         private Button presetConfirm;
         private bool presetDialogIsSave;
         private List<string> presetNames = new();
+        private VisualElement worldOverlay;
+        private VisualElement worldSaveGroup;
+        private VisualElement worldLoadGroup;
+        private Label worldDialogTitle;
+        private Label worldError;
+        private Label worldEmpty;
+        private TextField worldFilename;
+        private ListView worldList;
+        private Button worldConfirm;
+        private Button worldSaveButton;
+        private Button worldSaveAsButton;
+        private bool worldDialogIsSave;
+        private bool worldSaveInProgress;
+        private string currentWorldFileName;
+        private List<string> worldNames = new();
+        private string worldStatusMessage;
+        private float worldStatusUntil;
         private Label statusLabel;
         private Label envInspectLabel;
         private Label lifeInspectLabel;
@@ -171,7 +188,17 @@ namespace GeneSys.UI
             root.Q<Button>("restore-defaults")?.RegisterCallback<ClickEvent>(_ => RestoreDefaultSettings(root));
             root.Q<Button>("save-preset")?.RegisterCallback<ClickEvent>(_ => ShowSavePresetDialog());
             root.Q<Button>("load-preset")?.RegisterCallback<ClickEvent>(_ => ShowLoadPresetDialog());
+            worldSaveButton = root.Q<Button>("world-save");
+            worldSaveAsButton = root.Q<Button>("world-save-as");
+            worldSaveButton?.RegisterCallback<ClickEvent>(_ => SaveCurrentWorld());
+            worldSaveAsButton?.RegisterCallback<ClickEvent>(_ =>
+            {
+                if (!worldSaveInProgress) ShowWorldSaveAsDialog();
+            });
+            root.Q<Button>("world-load")?.RegisterCallback<ClickEvent>(_ => ShowWorldLoadDialog());
             SetupPresetDialog(root);
+            SetupWorldDialog(root);
+            RefreshWorldSaveButton();
 
             var speed = root.Q<Slider>("speed");
             if (speed != null) { speed.value = host.Clock.Speed; speed.RegisterValueChangedCallback(evt => host.Clock.SetSpeed(evt.newValue)); }
@@ -230,6 +257,12 @@ namespace GeneSys.UI
             root.RegisterCallback<KeyDownEvent>(evt =>
             {
                 if (evt.keyCode != KeyCode.Escape) return;
+                if (worldOverlay != null && !worldOverlay.ClassListContains("hidden"))
+                {
+                    HideWorldDialog();
+                    evt.StopPropagation();
+                    return;
+                }
                 if (presetOverlay != null && !presetOverlay.ClassListContains("hidden"))
                 {
                     HidePresetDialog();
@@ -667,6 +700,174 @@ namespace GeneSys.UI
             RefreshHistory(force: true);
         }
 
+        private void SetupWorldDialog(VisualElement root)
+        {
+            worldOverlay = root.Q("world-overlay");
+            worldSaveGroup = root.Q("world-save-group");
+            worldLoadGroup = root.Q("world-load-group");
+            worldDialogTitle = root.Q<Label>("world-dialog-title");
+            worldError = root.Q<Label>("world-error");
+            worldEmpty = root.Q<Label>("world-empty");
+            worldFilename = root.Q<TextField>("world-filename");
+            worldList = root.Q<ListView>("world-list");
+            worldConfirm = root.Q<Button>("world-confirm");
+            root.Q<Button>("world-cancel")?.RegisterCallback<ClickEvent>(_ => HideWorldDialog());
+            worldConfirm?.RegisterCallback<ClickEvent>(_ => ConfirmWorldDialog());
+            if (worldList != null)
+            {
+                worldList.selectionType = SelectionType.Single;
+                worldList.fixedItemHeight = 22;
+                worldList.makeItem = () => new Label();
+                worldList.bindItem = (element, index) =>
+                {
+                    if (element is Label label && index >= 0 && index < worldNames.Count)
+                        label.text = worldNames[index];
+                };
+            }
+        }
+
+        private void ShowWorldSaveAsDialog()
+        {
+            worldDialogIsSave = true;
+            if (worldDialogTitle != null) worldDialogTitle.text = "Save World";
+            if (worldConfirm != null)
+            {
+                worldConfirm.text = "Save";
+                worldConfirm.SetEnabled(true);
+            }
+            worldSaveGroup?.RemoveFromClassList("hidden");
+            worldLoadGroup?.AddToClassList("hidden");
+            if (worldFilename != null) worldFilename.value = currentWorldFileName ?? string.Empty;
+            SetWorldError(null);
+            ShowWorldOverlay();
+        }
+
+        private void ShowWorldLoadDialog()
+        {
+            worldDialogIsSave = false;
+            if (worldDialogTitle != null) worldDialogTitle.text = "Load World";
+            if (worldConfirm != null) worldConfirm.text = "Load";
+            worldSaveGroup?.AddToClassList("hidden");
+            worldLoadGroup?.RemoveFromClassList("hidden");
+            SetWorldError(null);
+            worldNames = snapshots.ListWorlds();
+            bool empty = worldNames.Count == 0;
+            worldEmpty?.EnableInClassList("hidden", !empty);
+            if (worldList != null)
+            {
+                worldList.itemsSource = worldNames;
+                worldList.Rebuild();
+                worldList.selectedIndex = empty ? -1 : 0;
+            }
+            if (worldConfirm != null) worldConfirm.SetEnabled(!empty);
+            ShowWorldOverlay();
+        }
+
+        private void ShowWorldOverlay()
+        {
+            HideSettingTooltip();
+            worldOverlay?.RemoveFromClassList("hidden");
+        }
+
+        private void HideWorldDialog()
+        {
+            worldOverlay?.AddToClassList("hidden");
+            if (worldConfirm != null) worldConfirm.SetEnabled(true);
+        }
+
+        private void SetWorldError(string message)
+        {
+            if (worldError == null) return;
+            bool hasError = !string.IsNullOrEmpty(message);
+            worldError.text = message ?? string.Empty;
+            worldError.EnableInClassList("hidden", !hasError);
+        }
+
+        private void ConfirmWorldDialog()
+        {
+            if (worldDialogIsSave)
+            {
+                if (!WorldSnapshotService.TryNormalizeFileName(worldFilename != null ? worldFilename.value : string.Empty, out string fileName, out string error))
+                {
+                    SetWorldError(error);
+                    return;
+                }
+
+                worldConfirm?.SetEnabled(false);
+                BeginWorldSave(fileName, fromDialog: true);
+                return;
+            }
+
+            int index = worldList != null ? worldList.selectedIndex : -1;
+            if (index < 0 || index >= worldNames.Count)
+            {
+                SetWorldError("Select a world to load.");
+                return;
+            }
+
+            string name = worldNames[index];
+            if (!snapshots.Load(host, snapshots.GetPath(name)))
+            {
+                SetWorldError("File not found, invalid snapshot, or grid size does not match current world");
+                return;
+            }
+
+            currentWorldFileName = name;
+            RefreshWorldSaveButton();
+            RefreshHistory(force: true);
+            RefreshWorldMetrics(force: true);
+            HideWorldDialog();
+            SetWorldStatus($"Loaded world: {name}");
+        }
+
+        private void SaveCurrentWorld()
+        {
+            if (string.IsNullOrEmpty(currentWorldFileName) || worldSaveInProgress) return;
+            BeginWorldSave(currentWorldFileName, fromDialog: false);
+        }
+
+        private void BeginWorldSave(string name, bool fromDialog)
+        {
+            worldSaveInProgress = true;
+            RefreshWorldSaveButton();
+            worldSaveAsButton?.SetEnabled(false);
+            snapshots.Save(host, snapshots.GetPath(name), ok => OnWorldSaveComplete(name, ok, fromDialog));
+        }
+
+        private void OnWorldSaveComplete(string name, bool ok, bool fromDialog)
+        {
+            worldSaveInProgress = false;
+            worldSaveAsButton?.SetEnabled(true);
+            if (ok)
+            {
+                currentWorldFileName = name;
+                if (fromDialog) HideWorldDialog();
+                SetWorldStatus($"Saved world: {name}");
+            }
+            else if (fromDialog)
+            {
+                SetWorldError("Snapshot save failed.");
+                if (worldConfirm != null) worldConfirm.SetEnabled(true);
+            }
+            else
+            {
+                SetWorldStatus("World save failed.");
+            }
+            RefreshWorldSaveButton();
+        }
+
+        private void RefreshWorldSaveButton()
+        {
+            worldSaveButton?.SetEnabled(!string.IsNullOrEmpty(currentWorldFileName) && !worldSaveInProgress);
+        }
+
+        private void SetWorldStatus(string message)
+        {
+            worldStatusMessage = message;
+            worldStatusUntil = Time.unscaledTime + 3f;
+            if (statusLabel != null) statusLabel.text = message;
+        }
+
         private void RestoreDefaultSettings(VisualElement root)
         {
             host.RestoreDefaultSettings();
@@ -1001,7 +1202,13 @@ namespace GeneSys.UI
         private void Update()
         {
             if (!initialized || host == null || statusLabel == null) return;
-            statusLabel.text = $"Tick {host.Clock.TickCount:N0} | {(host.Clock.IsRunning ? "Running" : "Paused")} | {host.LastTickMilliseconds:F2} ms CPU dispatch";
+            if (!string.IsNullOrEmpty(worldStatusMessage) && Time.unscaledTime < worldStatusUntil)
+                statusLabel.text = worldStatusMessage;
+            else
+            {
+                worldStatusMessage = null;
+                statusLabel.text = $"Tick {host.Clock.TickCount:N0} | {(host.Clock.IsRunning ? "Running" : "Paused")} | {host.LastTickMilliseconds:F2} ms CPU dispatch";
+            }
 
             if (statusBody != null && !statusBody.ClassListContains("collapsed"))
             {

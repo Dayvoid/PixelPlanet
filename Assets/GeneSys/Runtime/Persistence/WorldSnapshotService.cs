@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using GeneSys.Configuration;
 using GeneSys.Simulation;
@@ -11,6 +12,9 @@ namespace GeneSys.Persistence
 {
     public sealed class WorldSnapshotService
     {
+        public const string Extension = ".snapshot";
+        public const string InvalidCharactersMessage = "Filename contains unacceptable characters.";
+
         private const uint Magic = 0x47535953;
         private const int Version1 = 1;
         private const int Version2 = 2;
@@ -25,6 +29,67 @@ namespace GeneSys.Persistence
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
+
+        private readonly string directoryOverride;
+        private string resolvedDirectory;
+
+        public string DirectoryPath => resolvedDirectory ??= string.IsNullOrWhiteSpace(directoryOverride)
+            ? Path.Combine(Application.persistentDataPath, "worlds")
+            : directoryOverride;
+
+        public WorldSnapshotService(string directoryPath = null)
+        {
+            directoryOverride = directoryPath;
+        }
+
+        public static bool TryNormalizeFileName(string input, out string name, out string error)
+        {
+            name = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                error = "Enter a filename.";
+                return false;
+            }
+
+            string trimmed = input.Trim();
+            if (trimmed.EndsWith(Extension, StringComparison.OrdinalIgnoreCase))
+                trimmed = trimmed.Substring(0, trimmed.Length - Extension.Length).Trim();
+
+            if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "." || trimmed == "..")
+            {
+                error = "Enter a valid filename.";
+                return false;
+            }
+
+            if (trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                error = InvalidCharactersMessage;
+                return false;
+            }
+
+            name = trimmed;
+            return true;
+        }
+
+        public string GetPath(string name) => Path.Combine(DirectoryPath, name + Extension);
+
+        public List<string> ListWorlds()
+        {
+            var names = new List<string>();
+            if (!Directory.Exists(DirectoryPath))
+                return names;
+
+            foreach (string file in Directory.GetFiles(DirectoryPath, "*" + Extension))
+            {
+                string name = Path.GetFileNameWithoutExtension(file);
+                if (!string.IsNullOrWhiteSpace(name))
+                    names.Add(name);
+            }
+
+            names.Sort(StringComparer.OrdinalIgnoreCase);
+            return names;
+        }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
             Save(host, path, Version10, completed);

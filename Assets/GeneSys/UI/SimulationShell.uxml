@@ -116,6 +116,12 @@
                         <ui:Label text="World" class="section-title" />
                         <ui:Label name="world-metrics" text="Ocean coverage -- | Basins --" class="help" />
                         <ui:ScrollView name="settings-container" class="settings-scroll" />
+                        <ui:VisualElement class="command-row">
+                            <ui:Button name="world-save" text="Save" />
+                            <ui:Button name="world-save-as" text="Save As" />
+                            <ui:Button name="world-load" text="Load" class="row-last" />
+                        </ui:VisualElement>
+                        <ui:Label text="Save the current world and organism state. Grid size must match when loading." class="help" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-geology" class="settings-page hidden">
@@ -171,6 +177,26 @@
                         <ui:Button name="restore-defaults" text="Restore Default Settings" />
                         <ui:Label text="Restores all simulation settings to their initial values and regenerates the world. Use the Validation preset for fast iteration." class="help" />
                     </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="world-overlay" class="preset-overlay hidden" picking-mode="Position">
+            <ui:VisualElement name="world-dialog" class="preset-dialog">
+                <ui:Label name="world-dialog-title" text="Save World" class="section-title" />
+                <ui:VisualElement name="world-save-group" class="preset-group">
+                    <ui:Label text="Enter a filename for the current world and organism state." class="help" />
+                    <ui:TextField name="world-filename" label="Filename" />
+                </ui:VisualElement>
+                <ui:VisualElement name="world-load-group" class="preset-group hidden">
+                    <ui:Label text="Select a saved world to load. Grid size must match the current simulation." class="help" />
+                    <ui:ListView name="world-list" class="preset-list" />
+                    <ui:Label name="world-empty" text="No world files found." class="help hidden" />
+                </ui:VisualElement>
+                <ui:Label name="world-error" text="" class="preset-error hidden" />
+                <ui:VisualElement class="command-row">
+                    <ui:Button name="world-cancel" text="Cancel" />
+                    <ui:Button name="world-confirm" text="Save" class="row-last" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
