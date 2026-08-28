@@ -34,6 +34,15 @@ float4 _WorldGenV2C; // iceCapHeightVariation, unused, unused, unused
 static const uint METAL_ID = 13u;
 static const uint ICE_ID = 10u;
 
+float CanonicalStandingWaterMass(uint y, float seaLevel)
+{
+    float inner = (float)y / max(1.0, (float)_GridSize.y);
+    float outer = (float)(y + 1) / max(1.0, (float)_GridSize.y);
+    if (outer <= seaLevel) return 1.0;
+    if (inner >= seaLevel) return 0.0;
+    return saturate((seaLevel - inner) / max(1e-6, outer - inner));
+}
+
 float AngularNoise(uint theta, uint salt)
 {
     uint coarse = theta / 8;
@@ -208,10 +217,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
 
     float surfaceWater = 0.0;
     if (material == 9u)
-    {
-        float column = saturate((seaLevel - radius) / max(0.01, seaLevel - max(terrainSurface, crustEdge)));
-        surfaceWater = lerp(0.35, 1.0, column);
-    }
+        surfaceWater = CanonicalStandingWaterMass(id.y, seaLevel);
     else if (material == 7u && radius > terrainSurface - 0.008)
         surfaceWater = ocean * 0.05;
 
@@ -334,10 +340,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
 
     float surfaceWater = 0.0;
     if (material == 9u)
-    {
-        float column = saturate((seaLevel - radius) / max(0.01, seaLevel - max(terrainSurface, crustEdge)));
-        surfaceWater = lerp(0.35, 1.0, column);
-    }
+        surfaceWater = CanonicalStandingWaterMass(id.y, seaLevel);
     else if (material == 7u && radius > terrainSurface - 0.008)
         surfaceWater = ocean * 0.05;
     else if (material == ICE_ID)

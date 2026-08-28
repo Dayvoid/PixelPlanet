@@ -1,11 +1,11 @@
 #pragma kernel Groundwater
-#pragma kernel RunoffAndDeposition
 #pragma kernel GeothermalDischarge
 #pragma kernel ErosionAndCollapse
 #pragma kernel AshFertilization
 #pragma kernel WaterMaterialization
 #pragma kernel DetritusExchange
 #pragma kernel ApplyFlowerDrop
+#pragma kernel ApplyHydrostaticColumns
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -27,6 +27,7 @@ Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
 Texture2DArray<float4> _GrassRead;
 Texture2D<uint> _GrassDropClaims;
+StructuredBuffer<float4> _WaterFaceFlux;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -94,32 +95,123 @@ bool IsFilmSubstrate(int2 cell, uint material)
     return material != 0u && material != 9u && material != 10u;
 }
 
-// Film one exposed cell pushes toward one angular neighbor, before the per-cell outflow cap.
-// Evaluated only from read fields so a donor and its receiver always compute the same mass.
-float LateralRunoffRaw(int2 from, int2 to)
+bool IsFallingLiquid(int2 cell, uint material)
 {
-    uint fromMaterial = M(from);
-    uint toMaterial = M(to);
-    if (!IsExposedSurface(from, fromMaterial) || !IsExposedSurface(to, toMaterial)) return 0.0;
-    float fromWater = S(from).z;
-    float toWater = S(to).z;
-    if (fromWater <= 0.02) return 0.0;
-    float delta = fromWater - toWater;
-    if (delta <= 0.0) return 0.0;
-    // Ponding holds film in place, so it throttles outflow instead of consuming mass.
-    float retention = saturate(max(0.0, _HydrologyC.y) * 0.15);
-    float amount = delta * 0.5 * max(0.0, _HydrologyC.x) * (1.0 - retention) * _DeltaTime;
-    return min(amount, max(0.0, 1.0 - toWater));
+    if (material != 9u && material != 10u) return false;
+    if (cell.y <= 0) return false;
+    return IsOpenCarrier(M(cell + int2(0, -1)));
 }
 
-// Runoff leaving one cell as (toward -theta, toward +theta), capped so it cannot overdraw.
-float2 LateralRunoffFaces(int2 cell)
+bool IsRewritableCarrier(uint material)
 {
-    float2 faces = float2(LateralRunoffRaw(cell, cell + int2(-1, 0)), LateralRunoffRaw(cell, cell + int2(1, 0)));
-    float total = faces.x + faces.y;
-    float cap = max(0.0, S(cell).z) * 0.35;
-    if (total > cap) faces *= cap / max(total, 1e-8);
-    return faces;
+    return material == 0u || material == 1u || material == 9u || material == 10u || material == 11u;
+}
+
+// Atmosphere-connected surface reservoir for one angular column. Ice lids and
+// enclosed cave water are excluded so only the free surface participates.
+void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float temperature, out float head, out int waterTop, out bool hadPixels)
+{
+    bedY = -1;
+    volume = 0.0;
+    temperature = 15.0;
+    head = 0.0;
+    waterTop = -1;
+    hadPixels = false;
+
+    float skyMass = 0.0;
+    float skyHeat = 0.0;
+    int fallTop = -1;
+    int y = _GridSize.y - 1;
+    [loop]
+    while (y >= 0)
+    {
+        int2 cell = int2(x, y);
+        uint material = M(cell);
+        if (IsAtmosphereCell(cell, material))
+        {
+            y--;
+            continue;
+        }
+        if (IsFallingLiquid(cell, material))
+        {
+            if (fallTop < 0) fallTop = y;
+            float4 fallState = S(cell);
+            float fallMass = max(0.0, fallState.z);
+            skyMass += fallMass;
+            skyHeat += fallMass * fallState.x;
+            y--;
+            continue;
+        }
+        break;
+    }
+    if (y < 0)
+        return;
+
+    uint surfaceMat = M(int2(x, y));
+    if (surfaceMat == 10u)
+    {
+        bedY = y;
+        waterTop = fallTop >= 0 ? max(y, fallTop) : y;
+        volume = skyMass;
+        if (volume > 1e-6)
+            temperature = skyHeat / volume;
+        if (skyMass > 1e-6) hadPixels = true;
+        head = (float)(bedY + 1) + volume;
+        return;
+    }
+
+    if (surfaceMat == 9u)
+    {
+        waterTop = y;
+        hadPixels = true;
+        float heat = 0.0;
+        [loop]
+        while (y >= 0 && M(int2(x, y)) == 9u)
+        {
+            float4 state = S(int2(x, y));
+            float mass = max(0.0, state.z);
+            volume += mass;
+            heat += mass * state.x;
+            y--;
+        }
+        bedY = y;
+        if (bedY >= 0)
+        {
+            int2 bed = int2(x, bedY);
+            uint bedMat = M(bed);
+            if (IsFilmSubstrate(bed, bedMat))
+            {
+                float4 bedState = S(bed);
+                float film = max(0.0, bedState.z);
+                volume += film;
+                heat += film * bedState.x;
+            }
+        }
+        temperature = volume > 1e-6 ? heat / volume : 15.0;
+        volume += skyMass;
+        if (volume > 1e-6 && skyMass > 1e-6)
+            temperature = (max(0.0, volume - skyMass) * temperature + skyHeat) / volume;
+        if (skyMass > 1e-6) hadPixels = true;
+        if (fallTop >= 0) waterTop = max(waterTop, fallTop);
+        head = (float)(bedY + 1) + volume;
+        return;
+    }
+
+    bedY = y;
+    waterTop = y;
+    int2 bed = int2(x, bedY);
+    if (IsFilmSubstrate(bed, surfaceMat))
+    {
+        float4 state = S(bed);
+        volume = max(0.0, state.z);
+        temperature = state.x;
+    }
+    volume += skyMass;
+    if (volume > 1e-6 && skyMass > 1e-6)
+        temperature = (max(0.0, volume - skyMass) * temperature + skyHeat) / volume;
+    if (skyMass > 1e-6) hadPixels = true;
+    if (fallTop >= 0) waterTop = max(waterTop, fallTop);
+    head = (float)(bedY + 1) + volume;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
@@ -282,45 +374,6 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
     flow.x += (leftWater - rightWater) * 0.25 * _DeltaTime;
     if (material == 9u || state.z > 0.05)
         flow.y -= state.z * _Mechanics.x * 0.1 * _DeltaTime;
-
-    Write(cell, material, state, flow, aux, ecology, combustion);
-}
-
-[numthreads(8, 8, 1)]
-void RunoffAndDeposition(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
-    int2 cell = id.xy;
-    uint material = M(cell);
-    float4 state = S(cell);
-    float2 flow = F(cell);
-    float4 aux = A(cell);
-    float4 ecology = E(cell);
-    float4 combustion = Comb(cell);
-    MaterialGpuData definition = D(material);
-    bool atmosphere = IsAtmosphereCell(cell, material);
-
-    // Runoff is a pairwise exchange: what this cell sends across a face is exactly what the
-    // neighbor on that face receives, so spreading film never creates or destroys mass.
-    float2 sendFaces = LateralRunoffFaces(cell);
-    float sent = sendFaces.x + sendFaces.y;
-    float received = LateralRunoffFaces(cell + int2(-1, 0)).y + LateralRunoffFaces(cell + int2(1, 0)).x;
-    if (sent > 0.0 || received > 0.0)
-    {
-        state.z += received - sent;
-        flow.x += (sendFaces.y - sendFaces.x) * 2.0;
-    }
-
-    // Ponding damps outward motion so depressions keep their water; the mass itself stays put.
-    if ((material == 7u || material == 8u) && state.z > 0.05 && definition.biology.z > 0.2)
-        flow *= saturate(1.0 - max(0.0, _HydrologyC.y) * 0.25 * _DeltaTime);
-
-    if (material == 9u && cell.y > 0)
-    {
-        uint belowMat = M(cell + int2(0, -1));
-        if (D(belowMat).metadata.x <= 1.0 && state.z > 0.2)
-            flow.y -= state.z * _Mechanics.x * 0.35 * _DeltaTime;
-    }
 
     Write(cell, material, state, flow, aux, ecology, combustion);
 }
@@ -695,4 +748,99 @@ void ApplyFlowerDrop(uint3 id : SV_DispatchThreadID)
         }
     }
     Write(cell, material, state, flow, aux, ecology, combustion);
+}
+
+[numthreads(64, 1, 1)]
+void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    int x = (int)id.x;
+    int bedY;
+    float volume;
+    float temperature;
+    float head;
+    int waterTop;
+    bool hadPixels;
+    ProfileSurfaceColumn(x, bedY, volume, temperature, head, waterTop, hadPixels);
+
+    float4 leftFlux = _WaterFaceFlux[WrapTheta(x - 1, _GridSize.x)];
+    float4 rightFlux = _WaterFaceFlux[x];
+    float incomingHeat = max(0.0, leftFlux.y) + max(0.0, -rightFlux.y);
+    float outgoing = max(0.0, rightFlux.x) + max(0.0, -leftFlux.x);
+    float stay = max(0.0, volume - outgoing);
+    float newVolume = max(0.0, volume + leftFlux.x - rightFlux.x);
+    float newTemp = newVolume > 1e-6 ? (stay * temperature + incomingHeat) / newVolume : temperature;
+    float net = leftFlux.x - rightFlux.x;
+
+    float threshold = _WeatherE.w;
+    bool canFilm = false;
+    uint bedMat = 0u;
+    if (bedY >= 0)
+    {
+        bedMat = M(int2(x, bedY));
+        canFilm = IsFilmSubstrate(int2(x, bedY), bedMat);
+    }
+    bool spawnPixels = false;
+    if (newVolume > 1e-6 && bedY >= 0)
+    {
+        if (!canFilm) spawnPixels = true;
+        else if (threshold < 1e-6) spawnPixels = hadPixels;
+        else spawnPixels = newVolume >= threshold || (hadPixels && newVolume >= 0.05);
+    }
+
+    int newCells = spawnPixels ? (int)ceil(newVolume - 1e-6) : 0;
+    int newTop = spawnPixels ? bedY + newCells : bedY;
+    int oldTop = hadPixels ? waterTop : bedY;
+    int rewriteMax = max(oldTop, newTop);
+    bool extraSky = waterTop > max(newTop, bedY);
+    bool idle = _HydrologyC.x <= 1e-8 || (!extraSky && abs(net) <= 1e-8 && outgoing <= 1e-8 && incomingHeat <= 1e-8);
+
+    [loop]
+    for (int y = 0; y < _GridSize.y; y++)
+    {
+        int2 cell = int2(x, y);
+        uint material = M(cell);
+        float4 state = S(cell);
+        float2 flow = F(cell);
+        float4 aux = A(cell);
+        float4 ecology = E(cell);
+        float4 combustion = Comb(cell);
+
+        bool rewrite = !idle && bedY >= 0 && y >= bedY && y <= rewriteMax;
+        if (rewrite && y == bedY)
+        {
+            if (canFilm)
+                state.z = spawnPixels ? 0.0 : newVolume;
+            flow.x += net * 2.0;
+            if ((material == 7u || material == 8u) && state.z > 0.05 && D(material).biology.z > 0.2)
+                flow *= saturate(1.0 - max(0.0, _HydrologyC.y) * 0.25 * _DeltaTime);
+        }
+        else if (rewrite && y > bedY && IsRewritableCarrier(material))
+        {
+            int slot = y - (bedY + 1);
+            float slotMass = 0.0;
+            if (spawnPixels && slot >= 0)
+                slotMass = min(1.0, max(0.0, newVolume - (float)slot));
+            if (slotMass > 1e-6)
+            {
+                float rescued = max(0.0, aux.x);
+                if (material == 0u || material == 1u || material == 11u)
+                    rescued += max(0.0, state.z);
+                material = LiquidPixelId(newTemp);
+                state.z = slotMass;
+                state.x = newTemp;
+                aux.x = rescued;
+                aux.y = 0.0;
+                flow.x += net * 0.35;
+            }
+            else if (material == 9u || material == 10u)
+            {
+                material = 1u;
+                state.z = 0.0;
+                aux.y = 0.0;
+            }
+        }
+
+        Write(cell, material, state, flow, aux, ecology, combustion);
+    }
 }

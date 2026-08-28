@@ -161,6 +161,7 @@ namespace GeneSys.Editor
             SetObject(host, "materialSimulation", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MaterialSimulation.compute"));
             SetObject(host, "geology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Geology.compute"));
             SetObject(host, "hydrology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrology.compute"));
+            SetObject(host, "hydrostatic", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrostatic.compute"));
             SetObject(host, "weather", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Weather.compute"));
             SetObject(host, "mycology", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mycology.compute"));
             SetObject(host, "flora", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Flora.compute"));
@@ -210,6 +211,7 @@ namespace GeneSys.Editor
             SetObject(host, "flora", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Flora.compute"));
             SetObject(host, "fauna", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Fauna.compute"));
             SetObject(host, "grass", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Grass.compute"));
+            SetObject(host, "hydrostatic", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrostatic.compute"));
             document.panelSettings = panelSettings;
             EditorUtility.SetDirty(document);
             EditorSceneManager.MarkSceneDirty(host.gameObject.scene);

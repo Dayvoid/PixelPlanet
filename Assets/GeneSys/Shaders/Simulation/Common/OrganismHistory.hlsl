@@ -1,6 +1,7 @@
 #ifndef GENESYS_ORGANISM_HISTORY_INCLUDED
 #define GENESYS_ORGANISM_HISTORY_INCLUDED
 
+#ifndef GENESYS_DISABLE_ORGANISM_HISTORY_UAV
 RWStructuredBuffer<OrganismHistoryEvent> _OrganismHistory;
 RWStructuredBuffer<uint> _OrganismHistoryCounter;
 
@@ -21,5 +22,8 @@ void LogOrganismEvent(uint tick, uint kind, uint generation, uint lineage, uint 
     record.pad2 = 0u;
     _OrganismHistory[index] = record;
 }
+#else
+void LogOrganismEvent(uint tick, uint kind, uint generation, uint lineage, uint cause) { }
+#endif
 
 #endif

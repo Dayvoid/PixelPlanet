@@ -1,0 +1,230 @@
+#pragma kernel BuildSurfaceWaterColumns
+#pragma kernel ComputeHydrostaticFaceFlux
+#pragma target 5.0
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+RWStructuredBuffer<float4> _WaterColumns;
+RWStructuredBuffer<float4> _WaterFaceFlux;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _HydrologyC; // runoffRate, pondingRate, fieldCapacityFraction, geyserCooldownSeconds
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+bool IsAtmosphereCell(int2 cell, uint material)
+{
+    float category = D(material).metadata.x;
+    if (category == 1.0 || material == 11u) return true;
+    return material == 0u && Radius01(cell.y, _GridSize.y) >= _AtmosphereStartRadius;
+}
+
+bool IsOpenCarrier(uint material)
+{
+    return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
+}
+
+bool IsFilmSubstrate(int2 cell, uint material)
+{
+    if (IsAtmosphereCell(cell, material)) return false;
+    return material != 0u && material != 9u && material != 10u;
+}
+
+bool IsFallingLiquid(int2 cell, uint material)
+{
+    if (material != 9u && material != 10u) return false;
+    if (cell.y <= 0) return false;
+    return IsOpenCarrier(M(cell + int2(0, -1)));
+}
+
+void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float temperature, out float head, out int waterTop, out bool hadPixels)
+{
+    bedY = -1;
+    volume = 0.0;
+    temperature = 15.0;
+    head = 0.0;
+    waterTop = -1;
+    hadPixels = false;
+
+    float skyMass = 0.0;
+    float skyHeat = 0.0;
+    int fallTop = -1;
+    int y = _GridSize.y - 1;
+    [loop]
+    while (y >= 0)
+    {
+        int2 cell = int2(x, y);
+        uint material = M(cell);
+        if (IsAtmosphereCell(cell, material))
+        {
+            y--;
+            continue;
+        }
+        if (IsFallingLiquid(cell, material))
+        {
+            if (fallTop < 0) fallTop = y;
+            float4 fallState = S(cell);
+            float fallMass = max(0.0, fallState.z);
+            skyMass += fallMass;
+            skyHeat += fallMass * fallState.x;
+            y--;
+            continue;
+        }
+        break;
+    }
+    if (y < 0)
+        return;
+
+    uint surfaceMat = M(int2(x, y));
+    if (surfaceMat == 10u)
+    {
+        bedY = y;
+        waterTop = fallTop >= 0 ? max(y, fallTop) : y;
+        volume = skyMass;
+        if (volume > 1e-6)
+            temperature = skyHeat / volume;
+        if (skyMass > 1e-6) hadPixels = true;
+        head = (float)(bedY + 1) + volume;
+        return;
+    }
+
+    if (surfaceMat == 9u)
+    {
+        waterTop = y;
+        hadPixels = true;
+        float heat = 0.0;
+        [loop]
+        while (y >= 0 && M(int2(x, y)) == 9u)
+        {
+            float4 state = S(int2(x, y));
+            float mass = max(0.0, state.z);
+            volume += mass;
+            heat += mass * state.x;
+            y--;
+        }
+        bedY = y;
+        if (bedY >= 0)
+        {
+            int2 bed = int2(x, bedY);
+            uint bedMat = M(bed);
+            if (IsFilmSubstrate(bed, bedMat))
+            {
+                float4 bedState = S(bed);
+                float film = max(0.0, bedState.z);
+                volume += film;
+                heat += film * bedState.x;
+            }
+        }
+        temperature = volume > 1e-6 ? heat / volume : 15.0;
+        volume += skyMass;
+        if (volume > 1e-6 && skyMass > 1e-6)
+            temperature = (max(0.0, volume - skyMass) * temperature + skyHeat) / volume;
+        if (skyMass > 1e-6) hadPixels = true;
+        if (fallTop >= 0) waterTop = max(waterTop, fallTop);
+        head = (float)(bedY + 1) + volume;
+        return;
+    }
+
+    bedY = y;
+    waterTop = y;
+    int2 bed = int2(x, bedY);
+    if (IsFilmSubstrate(bed, surfaceMat))
+    {
+        float4 state = S(bed);
+        volume = max(0.0, state.z);
+        temperature = state.x;
+    }
+    volume += skyMass;
+    if (volume > 1e-6 && skyMass > 1e-6)
+        temperature = (max(0.0, volume - skyMass) * temperature + skyHeat) / volume;
+    if (skyMass > 1e-6) hadPixels = true;
+    if (fallTop >= 0) waterTop = max(waterTop, fallTop);
+    head = (float)(bedY + 1) + volume;
+}
+
+[numthreads(64, 1, 1)]
+void BuildSurfaceWaterColumns(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    int x = (int)id.x;
+    int bedY;
+    float volume;
+    float temperature;
+    float head;
+    int waterTop;
+    bool hadPixels;
+    ProfileSurfaceColumn(x, bedY, volume, temperature, head, waterTop, hadPixels);
+    _WaterColumns[x] = float4((float)bedY, volume, temperature, head);
+}
+
+[numthreads(64, 1, 1)]
+void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    int left = (int)id.x;
+    int right = (int)WrapTheta(left + 1, _GridSize.x);
+    float4 leftCol = _WaterColumns[left];
+    float4 rightCol = _WaterColumns[right];
+    int bedL = (int)round(leftCol.x);
+    int bedR = (int)round(rightCol.x);
+    if (bedL < 0 || bedR < 0)
+    {
+        _WaterFaceFlux[left] = 0;
+        return;
+    }
+
+    float volL = max(0.0, leftCol.y);
+    float volR = max(0.0, rightCol.y);
+    float headL = leftCol.w;
+    float headR = rightCol.w;
+    float bedTopL = (float)(bedL + 1);
+    float bedTopR = (float)(bedR + 1);
+    float saddle = max(bedTopL, bedTopR);
+    float delta = headL - headR;
+    if (abs(delta) <= 1e-5)
+    {
+        _WaterFaceFlux[left] = 0;
+        return;
+    }
+
+    bool leftDonates = delta > 0.0;
+    float donorHead = leftDonates ? headL : headR;
+    float donorVol = leftDonates ? volL : volR;
+    float recvVol = leftDonates ? volR : volL;
+    int recvBed = leftDonates ? bedR : bedL;
+    float donorBedTop = leftDonates ? bedTopL : bedTopR;
+    if (donorHead <= saddle + 1e-5 || donorVol <= 1e-6)
+    {
+        _WaterFaceFlux[left] = 0;
+        return;
+    }
+
+    float donorDepth = max(0.0, donorHead - donorBedTop);
+    float retention = donorDepth < 0.999 ? saturate(max(0.0, _HydrologyC.y) * 0.15) : 0.0;
+    float mobility = max(0.0, _HydrologyC.x) * (1.0 - retention);
+    float amount = abs(delta) * 0.5 * min(1.0, mobility * _DeltaTime * 8.0);
+    amount = min(amount, donorVol * 0.35);
+    amount = min(amount, abs(delta) * 0.5);
+    float sky = max(0.0, (float)(_GridSize.y - recvBed - 1) - recvVol);
+    amount = min(amount, sky);
+    if (amount <= 1e-8)
+    {
+        _WaterFaceFlux[left] = 0;
+        return;
+    }
+
+    float signedMass = leftDonates ? amount : -amount;
+    float donorTemp = leftDonates ? leftCol.z : rightCol.z;
+    _WaterFaceFlux[left] = float4(signedMass, signedMass * donorTemp, 0.0, 0.0);
+}

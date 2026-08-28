@@ -8,7 +8,8 @@
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
-#include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
+// ApplyEdits already uses 8 texture UAVs (D3D11's per-kernel cap). OrganismHistory
+// buffers would add two more and make GetKernelThreadGroupSizes log an error.
 
 Texture2D<uint> _MaterialRead;
 RWTexture2D<uint> _MaterialWrite;
@@ -114,6 +115,10 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
                 aux.y = max(aux.y, max(0.25, saturate(_GrassI.w)));
                 aux.z = max(aux.z, max(0.45, saturate(_GrassI.z)));
             }
+            if (material == 9u && state.x > 99.0)
+                state.x = 15.0;
+            else if (material == 10u && state.x >= 0.0)
+                state.x = -4.0;
             if (IsFloraMaterial(material) && life.y <= 1e-6)
             {
                 genome = RandomFloraGenome((uint2)cell, _Seed, _Tick);
@@ -121,7 +126,6 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
                 life.y = 0.35;
                 life.z = 0.1;
                 life.x = max(life.x, 0.05);
-                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_PAINTED);
             }
         }
         else if (mode == 1) state.x += command.values.y * max(0.1, falloff);
@@ -201,6 +205,12 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     if (material == 11u)
     {
         material = 1u;
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+        return;
+    }
+    // Isolation and frozen-thermal ticks keep existing phase; boiling still runs when heat is enabled.
+    if (_Mechanics.y <= 1e-8)
+    {
         WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
@@ -328,6 +338,8 @@ int2 MovementDestination(int2 source)
 
     MaterialGpuData definition = Mat(sourceMaterial);
     if (definition.physical.y >= 0.9) return source;
+    // Surface water levels by hydraulic head; diagonal whole-cell slides would pile hills.
+    if (sourceMaterial == 9u) return source;
     int direction = ((source.x + _Tick) & 1) == 0 ? -1 : 1;
     int2 diagonal = ClampCell(source + int2(direction, -1), _GridSize);
     if (IsOpen(ReadMaterial(diagonal))) return diagonal;

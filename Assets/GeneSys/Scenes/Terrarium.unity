@@ -204,6 +204,7 @@ MonoBehaviour:
   materialSimulation: {fileID: 7200000, guid: 946d98dd4bab2cf4d98a8441aa705775, type: 3}
   geology: {fileID: 7200000, guid: 7a686a745ee2fa3498e47ec2c592853d, type: 3}
   hydrology: {fileID: 7200000, guid: 85fee0edde0e14b40adcfa26e70d3fab, type: 3}
+  hydrostatic: {fileID: 7200000, guid: 8cdf7fcdf5dcb874da60a793c583fd70, type: 3}
   weather: {fileID: 7200000, guid: 90f4c8bd082f6bc4bb24a0bec3130b9e, type: 3}
   mycology: {fileID: 7200000, guid: b7c41e2a9d8f4e6ab3c15d90e4a7f218, type: 3}
   flora: {fileID: 7200000, guid: c8f3a91e4b6d47a0b2e5c7d9f0a1b348, type: 3}

@@ -21,6 +21,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader materialSimulation;
         [SerializeField] private ComputeShader geology;
         [SerializeField] private ComputeShader hydrology;
+        [SerializeField] private ComputeShader hydrostatic;
         [SerializeField] private ComputeShader weather;
         [SerializeField] private ComputeShader mycology;
         [SerializeField] private ComputeShader flora;
@@ -101,9 +102,13 @@ namespace GeneSys.Simulation
                 enabled = false;
                 return;
             }
+#if UNITY_EDITOR
+            if (hydrostatic == null)
+                hydrostatic = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrostatic.compute");
+#endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, weather, mycology, flora, fauna, grass, combustion, storm);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();

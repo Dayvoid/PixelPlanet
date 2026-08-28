@@ -43,6 +43,8 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture PropaguleWrite { get; private set; }
         public RenderTexture GrassRootFlux { get; private set; }
         public RenderTexture GrassDropClaims { get; private set; }
+        public ComputeBuffer WaterColumn { get; private set; }
+        public ComputeBuffer WaterFaceFlux { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -85,8 +87,19 @@ namespace GeneSys.Simulation.Gpu
             PropaguleWrite = CreateTextureArray("GeneSys Propagule B", GraphicsFormat.R32G32B32A32_SFloat, 3);
             GrassRootFlux = CreateTexture("GeneSys Grass Root Flux", GraphicsFormat.R32G32B32A32_SFloat);
             GrassDropClaims = CreateTexture("GeneSys Grass Drop Claims", GraphicsFormat.R32_UInt);
+            WaterColumn = CreateColumnBuffer();
+            WaterFaceFlux = CreateColumnBuffer();
             ClearFaunaAndAcoustic();
             ClearGrass();
+            ClearWaterColumns();
+        }
+
+        public void ClearWaterColumns()
+        {
+            int count = Mathf.Max(1, Grid.angularResolution);
+            var zeros = new Vector4[count];
+            WaterColumn?.SetData(zeros);
+            WaterFaceFlux?.SetData(zeros);
         }
 
         public void ClearGrass()
@@ -148,6 +161,12 @@ namespace GeneSys.Simulation.Gpu
             return texture;
         }
 
+        private ComputeBuffer CreateColumnBuffer()
+        {
+            int count = Mathf.Max(1, Grid.angularResolution);
+            return new ComputeBuffer(count, sizeof(float) * 4, ComputeBufferType.Structured);
+        }
+
         private RenderTexture CreateTextureArray(string name, GraphicsFormat format, int slices)
         {
             var descriptor = new RenderTextureDescriptor(Grid.angularResolution, Grid.radialResolution)
@@ -184,8 +203,8 @@ namespace GeneSys.Simulation.Gpu
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
             (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
-            // Storm, Light, Fauna, Acoustic, Claims, Grass, Propagule, and root flux are excluded:
-            // other kernels do not copy them through WriteCell.
+            // Storm, Light, Fauna, Acoustic, Claims, Grass, Propagule, root flux, and
+            // hydrostatic column scratch are excluded: other kernels do not copy them through WriteCell.
         }
 
         public void SwapStorm()
@@ -252,6 +271,8 @@ namespace GeneSys.Simulation.Gpu
             Release(PropaguleRead); Release(PropaguleWrite);
             Release(GrassRootFlux);
             Release(GrassDropClaims);
+            WaterColumn?.Release();
+            WaterFaceFlux?.Release();
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -267,6 +288,8 @@ namespace GeneSys.Simulation.Gpu
             PropaguleRead = PropaguleWrite = null;
             GrassRootFlux = null;
             GrassDropClaims = null;
+            WaterColumn = null;
+            WaterFaceFlux = null;
         }
 
         private static void Release(RenderTexture texture)

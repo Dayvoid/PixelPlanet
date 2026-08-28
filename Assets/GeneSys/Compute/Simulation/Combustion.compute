@@ -2,6 +2,7 @@
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#define GENESYS_DISABLE_ORGANISM_HISTORY_UAV
 #include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
 
 Texture2D<uint> _MaterialRead;

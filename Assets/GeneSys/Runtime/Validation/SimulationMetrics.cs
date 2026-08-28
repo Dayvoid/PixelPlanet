@@ -264,7 +264,7 @@ namespace GeneSys.Validation
                     uint material = materials[index];
                     Vector4 state = states[index];
                     if (material == MaterialIds.Air || material == MaterialIds.Void) continue;
-                    if (material == MaterialIds.Water || material == MaterialIds.Ice || state.z > 0.25f)
+                    if (material == MaterialIds.Water)
                         oceanAngles[x] = true;
                     break;
                 }

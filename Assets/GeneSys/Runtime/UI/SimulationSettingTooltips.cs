@@ -151,9 +151,9 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.capillaryEvaporationFraction)] =
                 "Share of near-surface groundwater that can evaporate into air. Higher values couple aquifers to the weather cycle and dry soils from below.",
             [nameof(SimulationConfig.runoffRate)] =
-                "How fast excess surface water flows downhill. Higher runoff builds streams and waterfalls; lower runoff ponds in place and soaks in.",
+                "How fast atmosphere-connected surface water levels under hydraulic head. Higher runoff equalizes lakes and spills over sills; lower runoff leaves film and pools in place to soak in.",
             [nameof(SimulationConfig.pondingRate)] =
-                "How readily water collects in depressions. Higher ponding creates lakes and wetlands that buffer the water cycle and mycology moisture.",
+                "How strongly shallow surface film resists hydrostatic flow. Higher ponding holds water in depressions as wetlands; standing water columns still level by head.",
             [nameof(SimulationConfig.surfaceWaterPixelThreshold)] =
                 "Surface liquid film required before standing Water or Ice pixels spawn above wet ground. Zero keeps moisture as a field on soil; higher values delay visible pooling until rain has accumulated.",
             [nameof(SimulationConfig.springHeadThreshold)] =
@@ -190,11 +190,11 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.pressureRate)] =
                 "How quickly material expansion adds cell pressure, and how fast that pressure relaxes. Couples thermal/electrical swelling to wind, vents, and fractures.",
             [nameof(SimulationConfig.pressureDiffusionRate)] =
-                "Master speed of pressure spreading between neighbors. Faster diffusion smooths storms and mantle pressure; slower diffusion keeps sharp fronts and blasts.",
+                "Master speed of atmospheric and material pressure spreading between neighbors. Faster diffusion smooths storms and mantle pressure; slower diffusion keeps sharp fronts and blasts. This does not level surface water.",
             [nameof(SimulationConfig.gasPressureDiffusivity)] =
                 "Pressure conductivity of air and vapor. High values let atmosphere equalize quickly; low values allow local gusts and steam pockets.",
             [nameof(SimulationConfig.fluidPressureDiffusivity)] =
-                "Pressure conductivity of liquids. Affects how waves, hydrostatic load, and magma pressure communicate through water and melt.",
+                "Pressure conductivity of liquids for the atmospheric/material pressure field. Affects how storms and magma pressure communicate through water and melt, not free-surface lake leveling.",
             [nameof(SimulationConfig.porousPressureDiffusivity)] =
                 "Pressure conductivity of soil, sediment, and porous rock. Controls aquifer transmission and whether buried pressure vents or stays trapped.",
             [nameof(SimulationConfig.rigidPressureDiffusivity)] =

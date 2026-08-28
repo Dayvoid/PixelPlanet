@@ -23,12 +23,14 @@ namespace GeneSys.Simulation.Gpu
         private readonly SimulationResources resources;
         private readonly GraphicsBuffer materialBuffer;
         private readonly GraphicsBuffer brushBuffer;
-        private readonly List<BrushCommand> brushCommands = new(128);
+        private const int MaxBrushCommands = 1024;
+        private readonly List<BrushCommand> brushCommands = new(MaxBrushCommands);
         private readonly List<BrushCommand> grassPaintCommands = new(32);
         private readonly ComputeShader worldGeneration;
         private readonly ComputeShader materialSimulation;
         private readonly ComputeShader geology;
         private readonly ComputeShader hydrology;
+        private readonly ComputeShader hydrostatic;
         private readonly ComputeShader weather;
         private readonly ComputeShader mycology;
         private readonly ComputeShader flora;
@@ -47,7 +49,6 @@ namespace GeneSys.Simulation.Gpu
         private const int MaxStrikeSeeds = 32;
         private const int StrikeSeedStride = 16;
         public const int OrganismHistoryGpuCapacity = 2048;
-        private readonly Dictionary<int, Vector2Int> threadGroups = new();
         private int tick;
 
         public int TickIndex => tick;
@@ -57,7 +58,7 @@ namespace GeneSys.Simulation.Gpu
 
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
-            ComputeShader hydrology, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
+            ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
             ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm)
         {
             this.config = config;
@@ -66,6 +67,7 @@ namespace GeneSys.Simulation.Gpu
             this.materialSimulation = materialSimulation;
             this.geology = geology;
             this.hydrology = hydrology;
+            this.hydrostatic = hydrostatic != null ? hydrostatic : hydrology;
             this.weather = weather;
             this.mycology = mycology;
             this.flora = flora;
@@ -74,7 +76,7 @@ namespace GeneSys.Simulation.Gpu
             this.combustion = combustion;
             this.storm = storm;
             materialBuffer = registry.CreateGpuBuffer();
-            brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 128, BrushCommand.Stride);
+            brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
             strikeCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
             organismHistoryBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, OrganismHistoryGpuCapacity, OrganismHistoryLog.GpuEvent.Stride);
@@ -176,7 +178,21 @@ namespace GeneSys.Simulation.Gpu
 
         public void QueueBrush(BrushCommand command)
         {
-            if (brushCommands.Count < 128) brushCommands.Add(command);
+            if (brushCommands.Count >= MaxBrushCommands)
+                FlushPendingBrushes();
+            if (brushCommands.Count < MaxBrushCommands)
+                brushCommands.Add(command);
+        }
+
+        private void FlushPendingBrushes()
+        {
+            if (brushCommands.Count == 0) return;
+            brushBuffer.SetData(brushCommands);
+            int brushKernel = materialSimulation.FindKernel("ApplyEdits");
+            materialSimulation.SetInt("_BrushCount", brushCommands.Count);
+            materialSimulation.SetBuffer(brushKernel, "_BrushCommands", brushBuffer);
+            DispatchPass(materialSimulation, brushKernel, 0f);
+            brushCommands.Clear();
         }
 
         public void QueueGrassSeed(BrushCommand command)
@@ -243,11 +259,11 @@ namespace GeneSys.Simulation.Gpu
             if (storm != null)
                 DispatchStorm(deltaTime);
 
-            DispatchPass(hydrology, hydrology.FindKernel("RunoffAndDeposition"), deltaTime);
             // Soak this tick's rain/ponding, then springs/geysers see the updated water table.
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("WaterMaterialization"), deltaTime);
+            DispatchHydrostaticLeveling(deltaTime);
 
             // Erosion sees the current tick's moisture, exposure, and flow after weather/runoff.
             if (Due(config.slowPassInterval))
@@ -296,7 +312,12 @@ namespace GeneSys.Simulation.Gpu
         }
 
         private static int Interval(int value) => Mathf.Max(1, value);
-        private bool Due(int interval) => tick % Interval(interval) == 0;
+        private bool Due(int interval)
+        {
+            int n = Interval(interval);
+            if (n <= 1) return true;
+            return tick > 0 && tick % n == 0;
+        }
         private static float CadenceDt(float deltaTime, int interval) => deltaTime * Interval(interval);
 
         private void DispatchPass(ComputeShader shader, int kernel, float deltaTime)
@@ -312,6 +333,49 @@ namespace GeneSys.Simulation.Gpu
             BindOrganismHistory(shader, kernel);
             Dispatch(shader, kernel);
             resources.Swap();
+        }
+
+        // Column solver is three 64-wide dispatches (profile, flux, apply) plus one Swap.
+        private void DispatchHydrostaticLeveling(float deltaTime)
+        {
+            int build = hydrostatic.FindKernel("BuildSurfaceWaterColumns");
+            int flux = hydrostatic.FindKernel("ComputeHydrostaticFaceFlux");
+            int apply = hydrology.FindKernel("ApplyHydrostaticColumns");
+            if (build < 0 || flux < 0 || apply < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing hydrostatic hydrology kernel. Skipping surface leveling.");
+                return;
+            }
+
+            SetCommon(hydrostatic, build, deltaTime);
+            hydrostatic.SetBuffer(build, "_MaterialDefinitions", materialBuffer);
+            hydrostatic.SetTexture(build, "_MaterialRead", resources.MaterialRead);
+            hydrostatic.SetTexture(build, "_StateRead", resources.StateRead);
+            hydrostatic.SetBuffer(build, "_WaterColumns", resources.WaterColumn);
+            hydrostatic.SetBuffer(build, "_WaterFaceFlux", resources.WaterFaceFlux);
+            DispatchColumns(hydrostatic, build);
+
+            SetCommon(hydrostatic, flux, deltaTime);
+            hydrostatic.SetBuffer(flux, "_MaterialDefinitions", materialBuffer);
+            hydrostatic.SetTexture(flux, "_MaterialRead", resources.MaterialRead);
+            hydrostatic.SetTexture(flux, "_StateRead", resources.StateRead);
+            hydrostatic.SetBuffer(flux, "_WaterColumns", resources.WaterColumn);
+            hydrostatic.SetBuffer(flux, "_WaterFaceFlux", resources.WaterFaceFlux);
+            DispatchColumns(hydrostatic, flux);
+            Graphics.ClearRandomWriteTargets();
+
+            SetCommon(hydrology, apply, deltaTime);
+            hydrology.SetBuffer(apply, "_MaterialDefinitions", materialBuffer);
+            BindPassTextures(hydrology, apply);
+            hydrology.SetBuffer(apply, "_WaterFaceFlux", resources.WaterFaceFlux);
+            DispatchColumns(hydrology, apply);
+            resources.Swap();
+        }
+
+        private void DispatchColumns(ComputeShader shader, int kernel)
+        {
+            int groupsX = Mathf.Max(1, Mathf.CeilToInt(resources.Grid.angularResolution / 64f));
+            shader.Dispatch(kernel, groupsX, 1, 1);
         }
 
         private void SetCommon(ComputeShader shader, int kernel, float deltaTime)
@@ -421,7 +485,7 @@ namespace GeneSys.Simulation.Gpu
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)
         {
-            if (shader != flora && shader != fauna && shader != grass && shader != combustion && shader != materialSimulation)
+            if (shader != flora && shader != fauna && shader != grass && shader != combustion)
                 return;
             shader.SetBuffer(kernel, "_OrganismHistory", organismHistoryBuffer);
             shader.SetBuffer(kernel, "_OrganismHistoryCounter", organismHistoryCounterBuffer);
@@ -471,20 +535,13 @@ namespace GeneSys.Simulation.Gpu
             BindPassTextures(shader, kernel);
             shader.SetTexture(kernel, "_LightWrite", resources.LightField);
             BindOrganismHistory(shader, kernel);
-            Dispatch(shader, kernel);
+            DispatchColumns(shader, kernel);
         }
 
         private void Dispatch(ComputeShader shader, int kernel)
         {
-            int key = shader.GetInstanceID() * 397 + kernel;
-            if (!threadGroups.TryGetValue(key, out Vector2Int size))
-            {
-                shader.GetKernelThreadGroupSizes(kernel, out uint x, out uint y, out _);
-                size = new Vector2Int(Mathf.Max(1, (int)x), Mathf.Max(1, (int)y));
-                threadGroups[key] = size;
-            }
-            int groupsX = Mathf.CeilToInt(resources.Grid.angularResolution / (float)size.x);
-            int groupsY = Mathf.CeilToInt(resources.Grid.radialResolution / (float)size.y);
+            int groupsX = Mathf.Max(1, Mathf.CeilToInt(resources.Grid.angularResolution / 8f));
+            int groupsY = Mathf.Max(1, Mathf.CeilToInt(resources.Grid.radialResolution / 8f));
             shader.Dispatch(kernel, groupsX, groupsY, 1);
         }
 
@@ -519,8 +576,7 @@ namespace GeneSys.Simulation.Gpu
             storm.SetBuffer(walk, "_StrikeSeeds", strikeSeedBuffer);
             storm.SetBuffer(walk, "_StrikeCounter", strikeCounterBuffer);
             BindStormWalkTextures(walk);
-            storm.GetKernelThreadGroupSizes(walk, out uint walkX, out _, out _);
-            int groups = Mathf.Max(1, Mathf.CeilToInt(MaxStrikeSeeds / (float)walkX));
+            int groups = Mathf.Max(1, Mathf.CeilToInt(MaxStrikeSeeds / 32f));
             storm.Dispatch(walk, groups, 1, 1);
         }
 

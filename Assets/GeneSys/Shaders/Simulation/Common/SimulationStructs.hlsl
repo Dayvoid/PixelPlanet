@@ -99,6 +99,12 @@
 //   upper neighbor sinks / a lighter lower neighbor rises. buoyancyBias (biology.w) only scales
 //   exchange probability and cannot reverse float/sink. Equal densities within epsilon stay put.
 //   Foundational solids (Core/Mantle) and Ash remain opted out; Ash keeps AshTransport.
+// Surface hydrostatic leveling:
+//   After groundwater and materialization, hydrology profiles each angular column's
+//   atmosphere-connected liquid (film plus contiguous Water pixels), then exchanges mass
+//   across wrapped faces from hydraulic head. Head is substrate radius plus liquid volume.
+//   Terrain saddles block flow; ice lids and enclosed cave water are excluded.
+//   state.y remains atmospheric/material pressure and is never reused as water head.
 
 struct MaterialGpuData
 {
