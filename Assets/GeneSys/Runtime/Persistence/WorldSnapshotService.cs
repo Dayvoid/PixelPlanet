@@ -21,15 +21,23 @@ namespace GeneSys.Persistence
         private const int Version7 = 7;
         private const int Version8 = 8;
         private const int Version9 = 9;
+        private const int Version10 = 10;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
+        private const int PayloadCountV10 = 31;
 
-        public void Save(SimulationHost host, string path, Action<bool> completed = null)
+        public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
+            Save(host, path, Version10, completed);
+
+        public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            byte[][] payloads = new byte[PayloadCountV9][];
+            int writeVersion = version >= Version10 ? Version10 : Version9;
+            bool includeGrass = writeVersion >= Version10;
+            byte[][] payloads = new byte[PayloadCountV10][];
             int remaining = PayloadCountV9;
             bool failed = false;
+            bool grassBatchStarted = !includeGrass;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -58,12 +66,39 @@ namespace GeneSys.Persistence
             AsyncGPUReadback.Request(host.Resources.AcousticRead, 0, request => CompletePayload(14, request));
             AsyncGPUReadback.Request(host.Resources.AcousticPrev, 0, request => CompletePayload(15, request));
 
+            void RequestGrassBatch()
+            {
+                RenderTexture grass = host.Resources.GrassRead;
+                for (int slice = 0; slice < 12; slice++)
+                {
+                    int index = 16 + slice;
+                    int capture = slice;
+                    AsyncGPUReadback.Request(grass, 0, 0, grass.width, 0, grass.height, capture, 1,
+                        request => CompletePayload(index, request));
+                }
+                RenderTexture propagule = host.Resources.PropaguleRead;
+                for (int slice = 0; slice < 3; slice++)
+                {
+                    int index = 28 + slice;
+                    int capture = slice;
+                    AsyncGPUReadback.Request(propagule, 0, 0, propagule.width, 0, propagule.height, capture, 1,
+                        request => CompletePayload(index, request));
+                }
+            }
+
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
             {
                 if (request.hasError) failed = true;
                 else payloads[index] = request.GetData<byte>().ToArray();
                 remaining--;
                 if (remaining != 0) return;
+                if (includeGrass && !grassBatchStarted)
+                {
+                    grassBatchStarted = true;
+                    remaining = PayloadCountV10 - PayloadCountV9;
+                    RequestGrassBatch();
+                    return;
+                }
                 if (!failed)
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
@@ -71,7 +106,7 @@ namespace GeneSys.Persistence
                     using var writer = new BinaryWriter(stream);
                     SimulationConfig config = host.Config;
                     writer.Write(Magic);
-                    writer.Write(Version9);
+                    writer.Write(writeVersion);
                     writer.Write(host.Resources.Grid.angularResolution);
                     writer.Write(host.Resources.Grid.radialResolution);
                     writer.Write(config.seed);
@@ -80,10 +115,13 @@ namespace GeneSys.Persistence
                     WriteEcologyConfig(writer, config);
                     WriteFloraConfig(writer, config);
                     WriteFaunaConfig(writer, config);
-                    foreach (byte[] payload in payloads)
+                    if (includeGrass)
+                        WriteGrassConfig(writer, config);
+                    int payloadCount = includeGrass ? PayloadCountV10 : PayloadCountV9;
+                    for (int i = 0; i < payloadCount; i++)
                     {
-                        writer.Write(payload.Length);
-                        writer.Write(payload);
+                        writer.Write(payloads[i].Length);
+                        writer.Write(payloads[i]);
                     }
                 }
                 completed?.Invoke(!failed);
@@ -97,7 +135,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7 && version != Version8 && version != Version9) return false;
+            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7 && version != Version8 && version != Version9 && version != Version10) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -114,6 +152,8 @@ namespace GeneSys.Persistence
                 ReadFloraConfig(reader, host.Config, version);
             if (version >= Version9)
                 ReadFaunaConfig(reader, host.Config);
+            if (version >= Version10)
+                ReadGrassConfig(reader, host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -256,6 +296,37 @@ namespace GeneSys.Persistence
             else
             {
                 host.Resources.ClearFaunaAndAcoustic();
+            }
+
+            if (version >= Version10)
+            {
+                for (int slice = 0; slice < 12; slice++)
+                {
+                    int length = reader.ReadInt32();
+                    byte[] payload = reader.ReadBytes(length);
+                    if (payload.Length != length) return false;
+                    Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                    staging.LoadRawTextureData(payload);
+                    staging.Apply(false, false);
+                    Graphics.CopyTexture(staging, 0, 0, host.Resources.GrassRead, slice, 0);
+                    UnityEngine.Object.Destroy(staging);
+                }
+
+                for (int slice = 0; slice < 3; slice++)
+                {
+                    int length = reader.ReadInt32();
+                    byte[] payload = reader.ReadBytes(length);
+                    if (payload.Length != length) return false;
+                    Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                    staging.LoadRawTextureData(payload);
+                    staging.Apply(false, false);
+                    Graphics.CopyTexture(staging, 0, 0, host.Resources.PropaguleRead, slice, 0);
+                    UnityEngine.Object.Destroy(staging);
+                }
+            }
+            else
+            {
+                host.Resources.ClearGrass();
             }
 
             host.Resources.CopyReadToWrite();
@@ -580,6 +651,96 @@ namespace GeneSys.Persistence
             config.faunaWanderRate = reader.ReadSingle();
             config.faunaSurvivalTempMin = reader.ReadSingle();
             config.faunaSurvivalTempMax = reader.ReadSingle();
+        }
+
+        private static void WriteGrassConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.grassSeedAtWorldgen);
+            writer.Write(config.grassInitialBiomass);
+            writer.Write(config.grassInitialEnergy);
+            writer.Write(config.grassPhotosynthesisRate);
+            writer.Write(config.grassGrowthRate);
+            writer.Write(config.grassDecayRate);
+            writer.Write(config.grassMaintenanceRate);
+            writer.Write(config.grassNightDrain);
+            writer.Write(config.grassWaterUptakeRate);
+            writer.Write(config.grassNutrientUptakeRate);
+            writer.Write(config.grassRootCohesionBonus);
+            writer.Write(config.grassFlowerEnergyThreshold);
+            writer.Write(config.grassGeneExpressionRange);
+            writer.Write(config.grassGrowthTempMin);
+            writer.Write(config.grassGrowthTempMax);
+            writer.Write(config.grassGrowthMoistureMin);
+            writer.Write(config.grassGrowthMoistureMax);
+            writer.Write(config.grassSurvivalTempMin);
+            writer.Write(config.grassSurvivalTempMax);
+            writer.Write(config.grassSurvivalMoistureMin);
+            writer.Write(config.grassSurvivalMoistureMax);
+            writer.Write(config.grassMinLight);
+            writer.Write(config.grassAdultBiomass);
+            writer.Write(config.grassPollenEmitRate);
+            writer.Write(config.grassPollenTransportRate);
+            writer.Write(config.grassSeedTransportRate);
+            writer.Write(config.grassPollenWindRate);
+            writer.Write(config.grassPollenWaterRate);
+            writer.Write(config.grassPollenSettlingRate);
+            writer.Write(config.grassSeedWindRate);
+            writer.Write(config.grassSeedWaterRate);
+            writer.Write(config.grassSeedSettlingRate);
+            writer.Write(config.grassNectarAmount);
+            writer.Write(config.grassCanopyOpacity);
+            writer.Write(config.detritusVaporAbsorbRate);
+            writer.Write(config.detritusEvaporationRate);
+            writer.Write(config.detritusMoistureDistributeRate);
+            writer.Write(config.detritusNutrientLeachRate);
+            writer.Write(config.detritusDecompositionRate);
+            writer.Write(config.detritusInitialNutrient);
+            writer.Write(config.detritusInitialMoisture);
+        }
+
+        private static void ReadGrassConfig(BinaryReader reader, SimulationConfig config)
+        {
+            config.grassSeedAtWorldgen = reader.ReadBoolean();
+            config.grassInitialBiomass = reader.ReadSingle();
+            config.grassInitialEnergy = reader.ReadSingle();
+            config.grassPhotosynthesisRate = reader.ReadSingle();
+            config.grassGrowthRate = reader.ReadSingle();
+            config.grassDecayRate = reader.ReadSingle();
+            config.grassMaintenanceRate = reader.ReadSingle();
+            config.grassNightDrain = reader.ReadSingle();
+            config.grassWaterUptakeRate = reader.ReadSingle();
+            config.grassNutrientUptakeRate = reader.ReadSingle();
+            config.grassRootCohesionBonus = reader.ReadSingle();
+            config.grassFlowerEnergyThreshold = reader.ReadSingle();
+            config.grassGeneExpressionRange = reader.ReadSingle();
+            config.grassGrowthTempMin = reader.ReadSingle();
+            config.grassGrowthTempMax = reader.ReadSingle();
+            config.grassGrowthMoistureMin = reader.ReadSingle();
+            config.grassGrowthMoistureMax = reader.ReadSingle();
+            config.grassSurvivalTempMin = reader.ReadSingle();
+            config.grassSurvivalTempMax = reader.ReadSingle();
+            config.grassSurvivalMoistureMin = reader.ReadSingle();
+            config.grassSurvivalMoistureMax = reader.ReadSingle();
+            config.grassMinLight = reader.ReadSingle();
+            config.grassAdultBiomass = reader.ReadSingle();
+            config.grassPollenEmitRate = reader.ReadSingle();
+            config.grassPollenTransportRate = reader.ReadSingle();
+            config.grassSeedTransportRate = reader.ReadSingle();
+            config.grassPollenWindRate = reader.ReadSingle();
+            config.grassPollenWaterRate = reader.ReadSingle();
+            config.grassPollenSettlingRate = reader.ReadSingle();
+            config.grassSeedWindRate = reader.ReadSingle();
+            config.grassSeedWaterRate = reader.ReadSingle();
+            config.grassSeedSettlingRate = reader.ReadSingle();
+            config.grassNectarAmount = reader.ReadSingle();
+            config.grassCanopyOpacity = reader.ReadSingle();
+            config.detritusVaporAbsorbRate = reader.ReadSingle();
+            config.detritusEvaporationRate = reader.ReadSingle();
+            config.detritusMoistureDistributeRate = reader.ReadSingle();
+            config.detritusNutrientLeachRate = reader.ReadSingle();
+            config.detritusDecompositionRate = reader.ReadSingle();
+            config.detritusInitialNutrient = reader.ReadSingle();
+            config.detritusInitialMoisture = reader.ReadSingle();
         }
 
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)

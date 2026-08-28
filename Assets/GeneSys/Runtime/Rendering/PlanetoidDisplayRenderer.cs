@@ -131,7 +131,7 @@ namespace GeneSys.Rendering
 
         public void SetOverlay(int mode)
         {
-            OverlayMode = Mathf.Clamp(mode, 0, 24);
+            OverlayMode = Mathf.Clamp(mode, 0, 25);
             if (displayMaterial != null) displayMaterial.SetInt("_OverlayMode", OverlayMode);
         }
 
@@ -183,6 +183,7 @@ namespace GeneSys.Rendering
             displayMaterial.SetTexture("_StormTex", resources.StormRead);
             displayMaterial.SetTexture("_LifeGenomeTex", resources.LifeGenomeRead);
             displayMaterial.SetTexture("_FaunaTex", resources.FaunaRead);
+            displayMaterial.SetTexture("_GrassTex", resources.GrassRead);
             displayMaterial.SetTexture("_AcousticTex", resources.AcousticRead);
             displayMaterial.SetTexture("_LightTex", resources.LightField);
         }

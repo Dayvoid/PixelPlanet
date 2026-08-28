@@ -421,6 +421,89 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.faunaSurvivalTempMax)] =
                 "Upper air temperature adult and juvenile crickets can endure. Extreme heat kills even if they are not on fire.",
 
+            [nameof(SimulationConfig.grassSeedAtWorldgen)] =
+                "When enabled, worldgen plants a sparse set of adult grasses on exposed soil. Off keeps worlds empty until you seed grass or wait for transported seeds.",
+            [nameof(SimulationConfig.grassInitialBiomass)] =
+                "Starting blade biomass for a newly germinated or painted grass slot.",
+            [nameof(SimulationConfig.grassInitialEnergy)] =
+                "Starting photosynthate reserve. Higher values let new plants flower sooner after the 3–4 day wait.",
+            [nameof(SimulationConfig.grassPhotosynthesisRate)] =
+                "How quickly grass converts light and root water into stored energy.",
+            [nameof(SimulationConfig.grassGrowthRate)] =
+                "How quickly stored energy becomes blade biomass in the growth niche.",
+            [nameof(SimulationConfig.grassDecayRate)] =
+                "Biomass and energy loss outside the growth band.",
+            [nameof(SimulationConfig.grassMaintenanceRate)] =
+                "Baseline energy drain while a grass slot is alive, paid every tick even in the growth band.",
+            [nameof(SimulationConfig.grassNightDrain)] =
+                "Extra energy drain when photosynthetically active radiation is near zero.",
+            [nameof(SimulationConfig.grassWaterUptakeRate)] =
+                "How aggressively each slot requests water from its root taps. Competing taps share available moisture.",
+            [nameof(SimulationConfig.grassNutrientUptakeRate)] =
+                "How aggressively each slot requests soil nutrients from tapped cells.",
+            [nameof(SimulationConfig.grassRootCohesionBonus)] =
+                "Added soil cohesion per active root tap targeting a cell, scaled by base soil cohesion (0.10 default).",
+            [nameof(SimulationConfig.grassFlowerEnergyThreshold)] =
+                "Stored energy required before an adult may open a flower at its 3–4 day mark.",
+            [nameof(SimulationConfig.grassGeneExpressionRange)] =
+                "How far grass genes can shift baseline rates, colors, and root architecture.",
+            [nameof(SimulationConfig.grassGrowthTempMin)] =
+                "Lower temperature of healthy grass growth.",
+            [nameof(SimulationConfig.grassGrowthTempMax)] =
+                "Upper temperature of healthy grass growth.",
+            [nameof(SimulationConfig.grassGrowthMoistureMin)] =
+                "Lower soil moisture of healthy grass growth.",
+            [nameof(SimulationConfig.grassGrowthMoistureMax)] =
+                "Upper soil moisture of healthy grass growth.",
+            [nameof(SimulationConfig.grassSurvivalTempMin)] =
+                "Lower temperature grass can endure before dying.",
+            [nameof(SimulationConfig.grassSurvivalTempMax)] =
+                "Upper temperature grass can endure before dying.",
+            [nameof(SimulationConfig.grassSurvivalMoistureMin)] =
+                "Lower moisture grass can endure before dying.",
+            [nameof(SimulationConfig.grassSurvivalMoistureMax)] =
+                "Upper moisture grass can endure before dying.",
+            [nameof(SimulationConfig.grassMinLight)] =
+                "Minimum PAR required for growth. Night and canopy shade drop plants toward maintenance-only.",
+            [nameof(SimulationConfig.grassAdultBiomass)] =
+                "Biomass at which a juvenile becomes an unflowered adult.",
+            [nameof(SimulationConfig.grassPollenEmitRate)] =
+                "Low-rate pollen mass emitted by an open flower into the local cell.",
+            [nameof(SimulationConfig.grassPollenTransportRate)] =
+                "Baseline pollen movement. Keep low so pollination stays rare without a pollinator.",
+            [nameof(SimulationConfig.grassSeedTransportRate)] =
+                "Baseline whole-seed movement. Keep low so stands expand slowly.",
+            [nameof(SimulationConfig.grassPollenWindRate)] =
+                "How strongly angular wind carries pollen between open carriers.",
+            [nameof(SimulationConfig.grassPollenWaterRate)] =
+                "How strongly runoff and water cells carry pollen.",
+            [nameof(SimulationConfig.grassPollenSettlingRate)] =
+                "Inward gravity/settling of pollen onto soil and carriers.",
+            [nameof(SimulationConfig.grassSeedWindRate)] =
+                "How strongly angular wind carries whole seeds.",
+            [nameof(SimulationConfig.grassSeedWaterRate)] =
+                "How strongly water and runoff carry whole seeds.",
+            [nameof(SimulationConfig.grassSeedSettlingRate)] =
+                "Inward gravity/settling of seeds onto exposed soil.",
+            [nameof(SimulationConfig.grassNectarAmount)] =
+                "Nectar written into an open flower. Inspectable now; a future pollinator can consume it.",
+            [nameof(SimulationConfig.grassCanopyOpacity)] =
+                "How much living grass biomass attenuates the shared flora light field.",
+            [nameof(SimulationConfig.detritusVaporAbsorbRate)] =
+                "How quickly fallen flowers soak atmospheric vapor into retained moisture.",
+            [nameof(SimulationConfig.detritusEvaporationRate)] =
+                "Detritus drying rate. Substantially slower than ordinary wet surfaces.",
+            [nameof(SimulationConfig.detritusMoistureDistributeRate)] =
+                "How quickly excess detritus moisture moves into neighboring groundwater hosts.",
+            [nameof(SimulationConfig.detritusNutrientLeachRate)] =
+                "How quickly the finite nutrient reserve leaches into adjacent soil.",
+            [nameof(SimulationConfig.detritusDecompositionRate)] =
+                "How quickly the nutrient reserve is exhausted. Empty exposed detritus becomes air; buried detritus becomes soil.",
+            [nameof(SimulationConfig.detritusInitialNutrient)] =
+                "Nutrient reserve written when a flower drops as detritus.",
+            [nameof(SimulationConfig.detritusInitialMoisture)] =
+                "Retained moisture written when a flower drops as detritus.",
+
             [nameof(SimulationConfig.combustionAmbientOxygen)] =
                 "Target oxygen fill as a fraction of each cell's capacity. Atmosphere and porous ground relax toward this level; lowering it starves fire and favors smolder.",
             [nameof(SimulationConfig.combustionOxygenReplenishRate)] =

@@ -50,6 +50,7 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float4> _StormTex;
             Texture2DArray<float4> _LifeGenomeTex;
             Texture2DArray<float4> _FaunaTex;
+            Texture2DArray<float4> _GrassTex;
             Texture2D<float2> _AcousticTex;
             Texture2D<float> _LightTex;
             Texture2D<float4> _Palette;
@@ -74,6 +75,91 @@ Shader "GeneSys/Planetoid Display"
             {
                 float t = saturate((value + 30.0) / 1100.0);
                 return lerp(float3(0.05, 0.15, 0.7), float3(1.0, 0.12, 0.01), t);
+            }
+
+            float3 GrassHue(float gene)
+            {
+                float t = gene / 255.0;
+                return lerp(float3(0.16, 0.48, 0.12), float3(0.38, 0.78, 0.22), t);
+            }
+
+            float3 FlowerHue(float gene, uint rare)
+            {
+                float t = gene / 255.0;
+                float3 baseCol = lerp(float3(0.85, 0.28, 0.38), float3(0.92, 0.78, 0.25), t);
+                if (rare == 2u) baseCol = lerp(baseCol, float3(0.35, 0.55, 0.95), 0.55);
+                else if (rare == 32u) baseCol = lerp(baseCol, float3(0.95, 0.45, 0.12), 0.55);
+                else if (rare == 8u) baseCol = lerp(baseCol, float3(0.75, 0.9, 0.35), 0.4);
+                return baseCol;
+            }
+
+            float sdSegment(float2 p, float2 a, float2 b, float thick)
+            {
+                float2 pa = p - a;
+                float2 ba = b - a;
+                float h = saturate(dot(pa, ba) / max(dot(ba, ba), 1e-5));
+                return length(pa - ba * h) - thick;
+            }
+
+            float3 DrawGrass(float3 color, float2 cellUv, float2 flow, int2 cell, uint width)
+            {
+                [unroll]
+                for (uint slot = 0u; slot < 3u; slot++)
+                {
+                    float4 life = _GrassTex.Load(int4(cell, (int)(slot * 4u), 0));
+                    uint4 genome = asuint(_GrassTex.Load(int4(cell, (int)(slot * 4u + 1u), 0)));
+                    float4 timing = _GrassTex.Load(int4(cell, (int)(slot * 4u + 2u), 0));
+                    uint stage = genome.w & 255u;
+                    if (stage == 0u) continue;
+                    float2 offset = slot == 0u ? float2(-0.28, 0.10) : (slot == 2u ? float2(0.28, 0.10) : float2(0.0, 0.22));
+                    float2 baseP = float2(0.5, 0.18) + offset * 0.35;
+                    uint heightGene = (genome.y >> 8) & 255u;
+                    uint colorGene = (genome.y >> 16) & 255u;
+                    uint sizeGene = (genome.y >> 24) & 255u;
+                    uint flowerGene = genome.z & 255u;
+                    float height = 0.22 + (heightGene / 255.0) * 0.38 * saturate(life.x);
+                    float bend = clamp(flow.x, -1.5, 1.5) * 0.12;
+                    float2 tip = baseP + float2(bend, height);
+                    float blade = sdSegment(cellUv, baseP, tip, 0.025 + saturate(life.x) * 0.02);
+                    float3 bladeCol = GrassHue((float)colorGene);
+                    if (stage == 1u) bladeCol = lerp(bladeCol, float3(0.32, 0.52, 0.18), 0.35);
+                    color = lerp(color, bladeCol, saturate(1.0 - blade * 18.0) * 0.95);
+
+                    uint mask = (uint)round(max(timing.w, 0.0)) & 7u;
+                    uint rare = 0u;
+                    uint rareRank = 0u;
+                    [unroll]
+                    for (uint bit = 0u; bit < 3u; bit++)
+                    {
+                        if ((mask & (1u << bit)) == 0u) continue;
+                        float2 rootEnd = baseP + float2((bit == 0u ? -0.18 : (bit == 2u ? 0.18 : 0.0)), -0.22);
+                        float root = sdSegment(cellUv, baseP, rootEnd, 0.012);
+                        color = lerp(color, float3(0.28, 0.16, 0.08), saturate(1.0 - root * 22.0) * 0.85);
+                        int tx = cell.x + (bit == 0u ? -1 : (bit == 2u ? 1 : 0));
+                        tx = (tx % (int)width + (int)width) % (int)width;
+                        int ty = cell.y - 1;
+                        if (ty < 0) continue;
+                        uint traits = (uint)round(_EcologyTex.Load(int3(tx, ty, 0)).z);
+                        uint flags[3] = { 2u, 32u, 8u };
+                        [unroll]
+                        for (uint f = 0u; f < 3u; f++)
+                        {
+                            if ((traits & flags[f]) != 0u && (3u - f) > rareRank)
+                            {
+                                rare = flags[f];
+                                rareRank = 3u - f;
+                            }
+                        }
+                    }
+
+                    if (((uint)round(max(timing.w, 0.0)) & 8u) != 0u)
+                    {
+                        float flowerR = 0.04 + (sizeGene / 255.0) * 0.06;
+                        float disc = saturate((flowerR - length(cellUv - tip)) * 20.0);
+                        color = lerp(color, FlowerHue((float)flowerGene, rare), disc);
+                    }
+                }
+                return color;
             }
 
             bool IsMottledCategory(float category)
@@ -157,6 +243,13 @@ Shader "GeneSys/Planetoid Display"
                         float radius = material == 130u ? 0.22 : 0.38;
                         float disc = saturate((radius - length(cellUv - 0.5)) * 8.0);
                         color = lerp(color * 0.4, stageColor, lerp(0.4, 0.95, disc));
+                    }
+
+                    {
+                        float2 grassUv = float2(
+                            frac(angle / 6.28318530718 * width),
+                            frac(simulationRadius * height));
+                        color = DrawGrass(color, grassUv, flow, cell, width);
                     }
 
                     if (cloud > 0.02)
@@ -324,6 +417,22 @@ Shader "GeneSys/Planetoid Display"
                     color = lerp(color, float3(0.95, 0.45, 0.15), saturate(mate));
                     if (feed < 0.0) color = lerp(color, float3(0.1, 0.2, 0.45), saturate(-feed));
                     if (mate < 0.0) color = lerp(color, float3(0.35, 0.1, 0.4), saturate(-mate));
+                }
+                else if (_OverlayMode == 25)
+                {
+                    color = float3(0.04, 0.05, 0.03);
+                    float2 grassUv = float2(
+                        frac(angle / 6.28318530718 * width),
+                        frac(simulationRadius * height));
+                    color = DrawGrass(color, grassUv, flow, cell, width);
+                    float occupied = 0.0;
+                    [unroll]
+                    for (uint slot = 0u; slot < 3u; slot++)
+                    {
+                        uint4 g = asuint(_GrassTex.Load(int4(cell, (int)(slot * 4u + 1u), 0)));
+                        if ((g.w & 255u) != 0u) occupied += 0.33;
+                    }
+                    color = lerp(float3(0.05, 0.06, 0.04), color, 0.35 + occupied);
                 }
 
                 float radialGrid = frac(simulationRadius * height);

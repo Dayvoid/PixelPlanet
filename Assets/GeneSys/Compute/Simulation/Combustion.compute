@@ -100,7 +100,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
     combustion.x = min(max(0.0, combustion.x), capacity);
 
     float fuel = MycologyFuel(material, ecology) + FloraFuel(material, life, FloraStage(genome))
-        + FaunaFuel(material, ReadFaunaVitals(cell), FaunaStage(ReadFaunaGenome(cell)));
+        + FaunaFuel(material, ReadFaunaVitals(cell), FaunaStage(ReadFaunaGenome(cell)))
+        + DetritusFuel(material, aux, definition);
     float wetness = max(0.0, state.z) + max(0.0, aux.y) + max(0.0, aux.x) * steamSuppression;
     uint traits = DecodeMycologyTraits(ecology.z);
     float threshold = TraitModulatedIgnition(definition.combustion.x, traits, _MycologyE.z) + wetness * moisturePenalty;
@@ -138,6 +139,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
             float floraShare = min(burn, saturate(life.y));
             life.y = saturate(life.y - floraShare);
         }
+        if (IsDetritusMaterial(material))
+            aux.z = max(0.0, aux.z - burn);
         if (IsFaunaMaterial(material))
         {
             float faunaShare = min(burn, saturate(ReadFaunaVitals(cell).x));

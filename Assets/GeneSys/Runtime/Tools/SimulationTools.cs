@@ -171,8 +171,7 @@ namespace GeneSys.Tools
                                                                         NativeArray<Vector2> data = acousticRequest.GetData<Vector2>();
                                                                         if (data.Length > 0) inspection.acoustic = data[0];
                                                                     }
-                                                                    readbackPending = false;
-                                                                    Inspected?.Invoke(inspection);
+                                                                    ReadGrassSlots(host, cell, inspection);
                                                                 });
                                                             });
                                                         });
@@ -186,6 +185,76 @@ namespace GeneSys.Tools
                     });
                 });
             });
+        }
+
+        private void ReadGrassSlots(SimulationHost host, Vector2Int cell, CellInspection inspection)
+        {
+            inspection.grassLife = new Vector4[GrassGenome.SlotCount];
+            inspection.grassTiming = new Vector4[GrassGenome.SlotCount];
+            inspection.grassGenomes = new GrassGenome.Packed[GrassGenome.SlotCount];
+            inspection.grassDonors = new GrassGenome.Packed[GrassGenome.SlotCount];
+            if (host.Resources.GrassRead == null)
+            {
+                readbackPending = false;
+                Inspected?.Invoke(inspection);
+                return;
+            }
+
+            int remaining = GrassGenome.SlotCount * 4;
+            for (int slot = 0; slot < GrassGenome.SlotCount; slot++)
+            {
+                int capture = slot;
+                int lifeSlice = GrassGenome.Slice(capture, GrassGenome.LifeOffset);
+                int genomeSlice = GrassGenome.Slice(capture, GrassGenome.GenomeOffset);
+                int timingSlice = GrassGenome.Slice(capture, GrassGenome.TimingOffset);
+                int donorSlice = GrassGenome.Slice(capture, GrassGenome.DonorOffset);
+                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, lifeSlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0) inspection.grassLife[capture] = data[0];
+                    }
+                    CompleteGrass();
+                });
+                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, genomeSlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0)
+                            inspection.grassGenomes[capture] = GrassGenome.Sanitize(GrassGenome.FromFloatBits(data[0]));
+                    }
+                    CompleteGrass();
+                });
+                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, timingSlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0) inspection.grassTiming[capture] = data[0];
+                    }
+                    CompleteGrass();
+                });
+                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, donorSlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0)
+                            inspection.grassDonors[capture] = GrassGenome.FromFloatBits(data[0]);
+                    }
+                    CompleteGrass();
+                });
+            }
+
+            void CompleteGrass()
+            {
+                remaining--;
+                if (remaining > 0) return;
+                readbackPending = false;
+                Inspected?.Invoke(inspection);
+            }
         }
     }
 
@@ -206,5 +275,9 @@ namespace GeneSys.Tools
         public Vector2 acoustic;
         public float light;
         public Vector2 flow;
+        public Vector4[] grassLife;
+        public Vector4[] grassTiming;
+        public GrassGenome.Packed[] grassGenomes;
+        public GrassGenome.Packed[] grassDonors;
     }
 }
