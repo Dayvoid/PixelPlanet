@@ -48,6 +48,8 @@ bool IsFallingLiquid(int2 cell, uint material)
     return IsOpenCarrier(M(cell + int2(0, -1)));
 }
 
+// Falling rain/snow stays with MaterialMotion. Skip it while finding the free
+// surface so hydrostatic leveling only packs standing film and contiguous water.
 void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float temperature, out float head, out int waterTop, out bool hadPixels)
 {
     bedY = -1;
@@ -57,27 +59,14 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
     waterTop = -1;
     hadPixels = false;
 
-    float skyMass = 0.0;
-    float skyHeat = 0.0;
-    int fallTop = -1;
     int y = _GridSize.y - 1;
     [loop]
     while (y >= 0)
     {
         int2 cell = int2(x, y);
         uint material = M(cell);
-        if (IsAtmosphereCell(cell, material))
+        if (IsAtmosphereCell(cell, material) || IsFallingLiquid(cell, material))
         {
-            y--;
-            continue;
-        }
-        if (IsFallingLiquid(cell, material))
-        {
-            if (fallTop < 0) fallTop = y;
-            float4 fallState = S(cell);
-            float fallMass = max(0.0, fallState.z);
-            skyMass += fallMass;
-            skyHeat += fallMass * fallState.x;
             y--;
             continue;
         }
@@ -90,12 +79,8 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
     if (surfaceMat == 10u)
     {
         bedY = y;
-        waterTop = fallTop >= 0 ? max(y, fallTop) : y;
-        volume = skyMass;
-        if (volume > 1e-6)
-            temperature = skyHeat / volume;
-        if (skyMass > 1e-6) hadPixels = true;
-        head = (float)(bedY + 1) + volume;
+        waterTop = y;
+        head = (float)(bedY + 1);
         return;
     }
 
@@ -127,11 +112,6 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
             }
         }
         temperature = volume > 1e-6 ? heat / volume : 15.0;
-        volume += skyMass;
-        if (volume > 1e-6 && skyMass > 1e-6)
-            temperature = (max(0.0, volume - skyMass) * temperature + skyHeat) / volume;
-        if (skyMass > 1e-6) hadPixels = true;
-        if (fallTop >= 0) waterTop = max(waterTop, fallTop);
         head = (float)(bedY + 1) + volume;
         return;
     }
@@ -145,11 +125,6 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
         volume = max(0.0, state.z);
         temperature = state.x;
     }
-    volume += skyMass;
-    if (volume > 1e-6 && skyMass > 1e-6)
-        temperature = (max(0.0, volume - skyMass) * temperature + skyHeat) / volume;
-    if (skyMass > 1e-6) hadPixels = true;
-    if (fallTop >= 0) waterTop = max(waterTop, fallTop);
     head = (float)(bedY + 1) + volume;
 }
 
