@@ -335,13 +335,18 @@ namespace GeneSys.Simulation.Gpu
             resources.Swap();
         }
 
-        // Column solver is three 64-wide dispatches (profile, flux, apply) plus one Swap.
+        // Column solver profiles the surface once, relaxes the face exchange against the tiny
+        // column buffer several times, then writes the settled result back to the grid once.
+        // Only the apply pass touches every cell, so extra iterations buy reach for almost
+        // nothing: a single flux pass can only move water one column per tick, which leaves
+        // basin-scale slopes and rain-made mounds standing for thousands of ticks.
         private void DispatchHydrostaticLeveling(float deltaTime)
         {
             int build = hydrostatic.FindKernel("BuildSurfaceWaterColumns");
             int flux = hydrostatic.FindKernel("ComputeHydrostaticFaceFlux");
+            int integrate = hydrostatic.FindKernel("IntegrateHydrostaticColumns");
             int apply = hydrology.FindKernel("ApplyHydrostaticColumns");
-            if (build < 0 || flux < 0 || apply < 0)
+            if (build < 0 || flux < 0 || integrate < 0 || apply < 0)
             {
                 UnityEngine.Debug.LogError("GeneSys: missing hydrostatic hydrology kernel. Skipping surface leveling.");
                 return;
@@ -361,13 +366,22 @@ namespace GeneSys.Simulation.Gpu
             hydrostatic.SetTexture(flux, "_StateRead", resources.StateRead);
             hydrostatic.SetBuffer(flux, "_WaterColumns", resources.WaterColumn);
             hydrostatic.SetBuffer(flux, "_WaterFaceFlux", resources.WaterFaceFlux);
-            DispatchColumns(hydrostatic, flux);
+            SetCommon(hydrostatic, integrate, deltaTime);
+            hydrostatic.SetBuffer(integrate, "_MaterialDefinitions", materialBuffer);
+            hydrostatic.SetBuffer(integrate, "_WaterColumns", resources.WaterColumn);
+            hydrostatic.SetBuffer(integrate, "_WaterFaceFlux", resources.WaterFaceFlux);
+            int iterations = Mathf.Clamp(config.hydrostaticIterations, 1, 64);
+            for (int i = 0; i < iterations; i++)
+            {
+                DispatchColumns(hydrostatic, flux);
+                DispatchColumns(hydrostatic, integrate);
+            }
             Graphics.ClearRandomWriteTargets();
 
             SetCommon(hydrology, apply, deltaTime);
             hydrology.SetBuffer(apply, "_MaterialDefinitions", materialBuffer);
             BindPassTextures(hydrology, apply);
-            hydrology.SetBuffer(apply, "_WaterFaceFlux", resources.WaterFaceFlux);
+            hydrology.SetBuffer(apply, "_WaterColumns", resources.WaterColumn);
             DispatchColumns(hydrology, apply);
             resources.Swap();
         }

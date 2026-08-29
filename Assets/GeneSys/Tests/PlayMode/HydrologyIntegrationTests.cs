@@ -903,7 +903,13 @@ namespace GeneSys.Tests
                 float film = Mathf.Abs(xx - x) <= 1 ? 0.9f : 0.15f;
                 PaintField(host, xx, bedY, 2f, film);
             }
+            // The brush only lands on a tick, and the column solver relaxes far enough within
+            // one tick to flatten a mound this narrow. Hold leveling off for the settling tick
+            // so the baseline measured below is the mound, not its answer.
+            float runoff = host.Config.runoffRate;
+            host.Config.runoffRate = 0f;
             yield return Step(host, 1);
+            host.Config.runoffRate = runoff;
 
             double waterBefore = 0d;
             float varianceBefore = 0f;
@@ -1007,6 +1013,102 @@ namespace GeneSys.Tests
                 float headB = topB + states[topB * width + (x + 1)].z;
                 Assert.That(headA, Is.EqualTo(headB).Within(0.35f));
             });
+        }
+
+        // Every other hydrostatic test builds a shelf six to thirteen columns wide, which one
+        // flux pass can cross in a handful of ticks. A basin the width of a real ocean cannot:
+        // a single pass moves head exactly one column per tick, so the solver has to relax
+        // repeatedly within a tick or wide water keeps its worldgen slope indefinitely.
+        [UnityTest]
+        public IEnumerator WideBasinLevelsAtTheShippingRunoffRate()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            // Deliberately the shipping values rather than the tuned ones the other tests use.
+            host.Config.runoffRate = 0.45f;
+            host.Config.surfaceWaterPixelThreshold = 0.2f;
+            host.Config.seed = 33009;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            const int halfWidth = 20;
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int centre = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.62f), 16, height - 20);
+            int top = height - 1;
+
+            for (int dx = -halfWidth; dx <= halfWidth; dx++)
+            {
+                int xx = host.Grid.WrapTheta(centre + dx);
+                Paint(host, xx, bedY - 1, MaterialIds.Mantle);
+                Paint(host, xx, bedY, MaterialIds.Rock);
+                for (int y = bedY + 1; y <= top; y++)
+                    Paint(host, xx, y, MaterialIds.Air);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+            foreach (int wall in new[] { centre - halfWidth - 1, centre + halfWidth + 1 })
+            {
+                int xx = host.Grid.WrapTheta(wall);
+                Paint(host, xx, bedY - 1, MaterialIds.Mantle);
+                for (int y = bedY; y <= top; y++)
+                    Paint(host, xx, y, MaterialIds.Rock);
+            }
+            for (int dx = -halfWidth; dx < 0; dx++)
+            {
+                int xx = host.Grid.WrapTheta(centre + dx);
+                for (int dy = 1; dy <= 12; dy++)
+                {
+                    Paint(host, xx, bedY + dy, MaterialIds.Water);
+                    PaintField(host, xx, bedY + dy, 2f, -100f);
+                    PaintField(host, xx, bedY + dy, 2f, 1f);
+                }
+            }
+            yield return Step(host, 1);
+
+            double waterBefore = 0d;
+            int reliefBefore = 0;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                waterBefore = TrackedWater(states, aux);
+                reliefBefore = SurfaceRelief(mats, host, width, height, centre, halfWidth, bedY);
+                Assert.That(reliefBefore, Is.GreaterThan(6),
+                    "The tank must start with a genuine step for the solver to remove.");
+            });
+
+            yield return Step(host, 200);
+
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(TrackedWater(states, aux), Is.EqualTo(waterBefore).Within(Math.Max(0.05d, waterBefore * 0.01d)));
+                int relief = SurfaceRelief(mats, host, width, height, centre, halfWidth, bedY);
+                Assert.That(relief, Is.LessThanOrEqualTo(2),
+                    $"A sealed {halfWidth * 2 + 1} column basin should be level; relief went {reliefBefore} -> {relief}.");
+            });
+        }
+
+        // Highest minus lowest standing-water surface across the tank, measured in cells.
+        private static int SurfaceRelief(uint[] mats, SimulationHost host, int width, int height, int centre, int halfWidth, int bedY)
+        {
+            int min = int.MaxValue;
+            int max = int.MinValue;
+            for (int dx = -halfWidth; dx <= halfWidth; dx++)
+            {
+                int xx = host.Grid.WrapTheta(centre + dx);
+                int surface = bedY;
+                for (int y = height - 1; y > bedY; y--)
+                {
+                    if (!IsLiquidPixel(mats[y * width + xx])) continue;
+                    surface = y;
+                    break;
+                }
+                min = Math.Min(min, surface);
+                max = Math.Max(max, surface);
+            }
+            return max - min;
         }
 
         [UnityTest]

@@ -27,7 +27,7 @@ Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
 Texture2DArray<float4> _GrassRead;
 Texture2D<uint> _GrassDropClaims;
-StructuredBuffer<float4> _WaterFaceFlux;
+StructuredBuffer<float4> _WaterColumns;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -643,14 +643,13 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
     bool hadPixels;
     ProfileSurfaceColumn(x, bedY, volume, temperature, head, waterTop, hadPixels);
 
-    float4 leftFlux = _WaterFaceFlux[WrapTheta(x - 1, _GridSize.x)];
-    float4 rightFlux = _WaterFaceFlux[x];
-    float incomingHeat = max(0.0, leftFlux.y) + max(0.0, -rightFlux.y);
-    float outgoing = max(0.0, rightFlux.x) + max(0.0, -leftFlux.x);
-    float stay = max(0.0, volume - outgoing);
-    float newVolume = max(0.0, volume + leftFlux.x - rightFlux.x);
-    float newTemp = newVolume > 1e-6 ? (stay * temperature + incomingHeat) / newVolume : temperature;
-    float net = leftFlux.x - rightFlux.x;
+    // BuildSurfaceWaterColumns profiled the same textures with the same code, so the solved
+    // column started from this exact volume. The difference is everything the relaxation
+    // iterations moved across this column's two faces.
+    float4 solved = _WaterColumns[x];
+    float newVolume = max(0.0, solved.y);
+    float newTemp = newVolume > 1e-6 ? solved.z : temperature;
+    float net = newVolume - volume;
 
     float threshold = _WeatherE.w;
     bool canFilm = false;
@@ -672,7 +671,7 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
     int newTop = spawnPixels ? bedY + newCells : bedY;
     int oldTop = hadPixels ? waterTop : bedY;
     int rewriteMax = max(oldTop, newTop);
-    bool idle = _HydrologyC.x <= 1e-8 || (abs(net) <= 1e-8 && outgoing <= 1e-8 && incomingHeat <= 1e-8);
+    bool idle = _HydrologyC.x <= 1e-8 || abs(net) <= 1e-8;
 
     [loop]
     for (int y = 0; y < _GridSize.y; y++)

@@ -1,5 +1,6 @@
 #pragma kernel BuildSurfaceWaterColumns
 #pragma kernel ComputeHydrostaticFaceFlux
+#pragma kernel IntegrateHydrostaticColumns
 #pragma target 5.0
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
@@ -85,7 +86,10 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     float donorDepth = max(0.0, donorHead - donorBedTop);
     float retention = donorDepth < 0.999 ? saturate(max(0.0, _HydrologyC.y) * 0.15) : 0.0;
     float mobility = max(0.0, _HydrologyC.x) * (1.0 - retention);
-    float amount = abs(delta) * 0.5 * min(1.0, mobility * _DeltaTime * 8.0);
+    // A face may move at most half the head difference; beyond that the pair overshoots and
+    // trades the imbalance back next iteration. Cap below the marginal value so the shortest
+    // wavelength decays instead of ringing forever once the solver relaxes many times a tick.
+    float amount = abs(delta) * 0.5 * min(0.9, mobility * _DeltaTime * 8.0);
     amount = min(amount, donorVol * 0.35);
     amount = min(amount, abs(delta) * 0.5);
     float sky = max(0.0, (float)(_GridSize.y - recvBed - 1) - recvVol);
@@ -99,4 +103,29 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     float signedMass = leftDonates ? amount : -amount;
     float donorTemp = leftDonates ? leftCol.z : rightCol.z;
     _WaterFaceFlux[left] = float4(signedMass, signedMass * donorTemp, 0.0, 0.0);
+}
+
+// Settle the face exchange back into the column buffer so the flux pass can run again against
+// the updated heads. Water finds its level by propagating pressure, not by diffusing one cell
+// per tick, so the scheduler relaxes this pair of passes several times before touching the
+// grid. Each thread writes only its own column and reads only faces, so the update is race
+// free and the antisymmetric face exchange keeps the total volume exact.
+[numthreads(64, 1, 1)]
+void IntegrateHydrostaticColumns(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    int x = (int)id.x;
+    float4 column = _WaterColumns[x];
+    int bedY = (int)round(column.x);
+    if (bedY < 0) return;
+
+    float4 leftFlux = _WaterFaceFlux[WrapTheta(x - 1, _GridSize.x)];
+    float4 rightFlux = _WaterFaceFlux[x];
+    float volume = max(0.0, column.y);
+    float outgoing = max(0.0, rightFlux.x) + max(0.0, -leftFlux.x);
+    float incomingHeat = max(0.0, leftFlux.y) + max(0.0, -rightFlux.y);
+    float newVolume = max(0.0, volume + leftFlux.x - rightFlux.x);
+    float stay = max(0.0, volume - outgoing);
+    float newTemp = newVolume > 1e-6 ? (stay * column.z + incomingHeat) / newVolume : column.z;
+    _WaterColumns[x] = float4(column.x, newVolume, newTemp, (float)(bedY + 1) + newVolume);
 }

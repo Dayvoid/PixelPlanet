@@ -152,6 +152,8 @@ namespace GeneSys.UI
                 "Share of near-surface groundwater that can evaporate into air. Higher values couple aquifers to the weather cycle and dry soils from below.",
             [nameof(SimulationConfig.runoffRate)] =
                 "How fast atmosphere-connected surface water levels under hydraulic head. Higher runoff equalizes lakes and spills over sills; lower runoff leaves film and pools in place to soak in.",
+            [nameof(SimulationConfig.hydrostaticIterations)] =
+                "How many times surface water re-levels against its neighbours each tick. One pass moves water a single column, so low counts leave ocean slopes and rain mounds standing; higher counts settle wide basins quickly at a small solver cost.",
             [nameof(SimulationConfig.pondingRate)] =
                 "How strongly shallow surface film resists hydrostatic flow. Higher ponding holds water in depressions as wetlands; standing water columns still level by head.",
             [nameof(SimulationConfig.surfaceWaterPixelThreshold)] =

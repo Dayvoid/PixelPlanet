@@ -95,6 +95,7 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float moistureCohesionStrength = 0.85f;
         [Range(0f, 1f)] public float capillaryEvaporationFraction = 0.5f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
+        [Range(1, 64)] public int hydrostaticIterations = 32;
         [Range(0f, 4f)] public float pondingRate = 0.05f;
         [Range(0f, 1f)] public float surfaceWaterPixelThreshold = 0.2f;
         [Range(0f, 1f)] public float springHeadThreshold = 0.9f;

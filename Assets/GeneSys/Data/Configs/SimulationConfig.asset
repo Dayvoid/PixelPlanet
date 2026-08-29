@@ -88,6 +88,7 @@ MonoBehaviour:
   moistureCohesionStrength: 0.85
   capillaryEvaporationFraction: 0.5
   runoffRate: 0.45
+  hydrostaticIterations: 32
   pondingRate: 0.05
   surfaceWaterPixelThreshold: 0.2
   springHeadThreshold: 0.9
