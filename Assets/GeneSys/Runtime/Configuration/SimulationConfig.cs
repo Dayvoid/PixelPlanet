@@ -237,6 +237,50 @@ namespace GeneSys.Configuration
         [Range(-80f, 80f)] public float faunaSurvivalTempMin = -12f;
         [Range(-40f, 160f)] public float faunaSurvivalTempMax = 75f;
 
+        [Header("Ecology - Wasp")]
+        public bool waspSeedAtWorldgen = false;
+        [Range(0f, 1f)] public float waspInitialCalories = 0.5f;
+        [Range(0f, 1f)] public float waspInitialHydration = 0.7f;
+        [Range(1, 20000)] public int waspMaturityTicks = 1600;
+        [Range(1, 16)] public int waspDecisionInterval = 2;
+        [Range(0f, 4f)] public float waspMaintenanceRate = 0.035f;
+        [Range(0f, 4f)] public float waspFlightDrain = 0.05f;
+        [Range(0f, 4f)] public float waspHydrationDrain = 0.04f;
+        [Range(0.05f, 2f)] public float waspCalorieCapacity = 1f;
+        [Range(0.05f, 1f)] public float waspFullThreshold = 0.75f;
+        [Range(0.05f, 1f)] public float waspHungerThreshold = 0.45f;
+        [Range(0f, 1f)] public float waspStarvationThreshold = 0.12f;
+        [Range(1f, 16f)] public float waspCruiseAltitude = 5f;
+        [Range(0f, 4f)] public float waspAltitudeGain = 1.2f;
+        [Range(0f, 16f)] public float waspLiftPower = 4.5f;
+        [Range(1, 24)] public int waspSurfaceScanRange = 12;
+        [Range(0.05f, 4f)] public float waspBodyMass = 0.22f;
+        [Range(0f, 4f)] public float waspDrag = 1.4f;
+        [Range(0f, 4f)] public float waspWindCoupling = 0.6f;
+        [Range(0f, 4f)] public float waspUpdraftCoupling = 0.9f;
+        [Range(0f, 16f)] public float waspSwoopImpulse = 3.5f;
+        [Range(1, 16)] public int waspSenseRadius = 7;
+        [Range(0f, 2f)] public float waspPreyCalorieConversion = 0.85f;
+        [Range(0f, 2f)] public float waspPreyHydrationTransfer = 0.6f;
+        [Range(0f, 1f)] public float waspNectarDraw = 0.2f;
+        [Range(0f, 1f)] public float waspNectarCalories = 0.05f;
+        [Range(0f, 2f)] public float waspNectarHydration = 0.8f;
+        [Range(1, 3)] public int waspPollenCapacity = 3;
+        [Range(0f, 1f)] public float waspGeneExpressionRange = 0.45f;
+        [Range(0f, 1f)] public float waspBaseMutationRate = 0.05f;
+        [Range(0, 8000)] public int waspMateCooldownTicks = 300;
+        [Range(0, 8000)] public int waspReproduceCooldownTicks = 700;
+        [Range(1, 8)] public int waspClutchMin = 1;
+        [Range(1, 8)] public int waspClutchMax = 3;
+        [Range(1, 8000)] public int waspHatchTicksMin = 900;
+        [Range(1, 8000)] public int waspHatchTicksMax = 1400;
+        [Range(0.05f, 1f)] public float waspReproductionCalorieThreshold = 0.6f;
+        [Range(0f, 1f)] public float waspEggDesiccationMoisture = 0.04f;
+        [Range(20f, 200f)] public float waspEggHeatDeath = 90f;
+        [Range(-80f, 80f)] public float waspSurvivalTempMin = -8f;
+        [Range(-40f, 160f)] public float waspSurvivalTempMax = 78f;
+        [Range(20f, 200f)] public float waspThreatTemperature = 90f;
+
         [Header("Ecology - Grass")]
         public bool grassSeedAtWorldgen = false;
         [Range(0f, 1f)] public float grassInitialBiomass = 0.4f;
@@ -563,6 +607,51 @@ namespace GeneSys.Configuration
                 float swap = faunaSurvivalTempMin;
                 faunaSurvivalTempMin = faunaSurvivalTempMax;
                 faunaSurvivalTempMax = swap;
+            }
+            waspInitialCalories = Mathf.Clamp01(waspInitialCalories);
+            waspInitialHydration = Mathf.Clamp01(waspInitialHydration);
+            waspMaturityTicks = Mathf.Clamp(waspMaturityTicks, 1, 20000);
+            waspDecisionInterval = Mathf.Clamp(waspDecisionInterval, 1, 16);
+            waspMaintenanceRate = Mathf.Max(0f, waspMaintenanceRate);
+            waspFlightDrain = Mathf.Max(0f, waspFlightDrain);
+            waspHydrationDrain = Mathf.Max(0f, waspHydrationDrain);
+            waspCalorieCapacity = Mathf.Max(0.05f, waspCalorieCapacity);
+            waspFullThreshold = Mathf.Clamp(waspFullThreshold, 0.05f, 1f);
+            waspHungerThreshold = Mathf.Clamp(waspHungerThreshold, 0.05f, waspFullThreshold);
+            waspStarvationThreshold = Mathf.Clamp(waspStarvationThreshold, 0f, waspHungerThreshold);
+            waspCruiseAltitude = Mathf.Clamp(waspCruiseAltitude, 1f, 16f);
+            waspAltitudeGain = Mathf.Max(0f, waspAltitudeGain);
+            waspLiftPower = Mathf.Max(0f, waspLiftPower);
+            waspSurfaceScanRange = Mathf.Clamp(waspSurfaceScanRange, 1, 24);
+            waspBodyMass = Mathf.Max(0.05f, waspBodyMass);
+            waspDrag = Mathf.Max(0f, waspDrag);
+            waspWindCoupling = Mathf.Max(0f, waspWindCoupling);
+            waspUpdraftCoupling = Mathf.Max(0f, waspUpdraftCoupling);
+            waspSwoopImpulse = Mathf.Max(0f, waspSwoopImpulse);
+            waspSenseRadius = Mathf.Clamp(waspSenseRadius, 1, 16);
+            waspPreyCalorieConversion = Mathf.Max(0f, waspPreyCalorieConversion);
+            waspPreyHydrationTransfer = Mathf.Max(0f, waspPreyHydrationTransfer);
+            waspNectarDraw = Mathf.Clamp01(waspNectarDraw);
+            waspNectarCalories = Mathf.Clamp01(waspNectarCalories);
+            waspNectarHydration = Mathf.Max(0f, waspNectarHydration);
+            waspPollenCapacity = Mathf.Clamp(waspPollenCapacity, 1, 3);
+            waspGeneExpressionRange = Mathf.Clamp01(waspGeneExpressionRange);
+            waspBaseMutationRate = Mathf.Clamp01(waspBaseMutationRate);
+            waspMateCooldownTicks = Mathf.Max(0, waspMateCooldownTicks);
+            waspReproduceCooldownTicks = Mathf.Max(0, waspReproduceCooldownTicks);
+            waspClutchMin = Mathf.Clamp(waspClutchMin, 1, 8);
+            waspClutchMax = Mathf.Clamp(waspClutchMax, waspClutchMin, 8);
+            waspHatchTicksMin = Mathf.Clamp(waspHatchTicksMin, 1, 8000);
+            waspHatchTicksMax = Mathf.Max(waspHatchTicksMin, waspHatchTicksMax);
+            waspReproductionCalorieThreshold = Mathf.Clamp(waspReproductionCalorieThreshold, 0.05f, 1f);
+            waspEggDesiccationMoisture = Mathf.Clamp01(waspEggDesiccationMoisture);
+            waspEggHeatDeath = Mathf.Max(0f, waspEggHeatDeath);
+            waspThreatTemperature = Mathf.Max(0f, waspThreatTemperature);
+            if (waspSurvivalTempMax < waspSurvivalTempMin)
+            {
+                float swap = waspSurvivalTempMin;
+                waspSurvivalTempMin = waspSurvivalTempMax;
+                waspSurvivalTempMax = swap;
             }
             grassInitialBiomass = Mathf.Clamp01(grassInitialBiomass);
             grassInitialEnergy = Mathf.Clamp01(grassInitialEnergy);

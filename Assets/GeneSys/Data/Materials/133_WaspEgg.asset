@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 133_WaspEgg
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 133
+  displayName: Wasp Egg
+  category: 6
+  displayColor: {r: 0.88, g: 0.84, b: 0.6, a: 1}
+  shadeVariation: 0.1
+  density: 0.85
+  rigidity: 0.99
+  angleOfRepose: 80
+  grainSize: 0.3
+  buoyancyBias: 0.05
+  densityDisplaceable: 0
+  thermalConductivity: 0.14
+  heatCapacity: 1.5
+  electricalConductivity: 0.01
+  absorbency: 0.6
+  porosity: 0.25
+  meltingTemperature: 80
+  boilingTemperature: 160
+  thermalExpansion: 0.02
+  electricalExpansion: 0
+  solidPhaseId: 133
+  liquidPhaseId: 133
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0.45
+  bioModifiable: 1
+  ignitionTemperature: 180
+  flashPoint: 150
+  oxygenDemand: 0.65
+  smokeYield: 0.4

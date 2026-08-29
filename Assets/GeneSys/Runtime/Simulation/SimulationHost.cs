@@ -27,6 +27,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader flora;
         [SerializeField] private ComputeShader fauna;
         [SerializeField] private ComputeShader grass;
+        [SerializeField] private ComputeShader wasp;
         [SerializeField] private ComputeShader combustion;
         [SerializeField] private ComputeShader storm;
         [Header("Scene")]
@@ -64,6 +65,7 @@ namespace GeneSys.Simulation
         public RenderTexture LightField => Resources?.LightField;
         public RenderTexture FaunaField => Resources?.FaunaRead;
         public RenderTexture GrassField => Resources?.GrassRead;
+        public RenderTexture WaspField => Resources?.WaspRead;
         public RenderTexture PropaguleField => Resources?.PropaguleRead;
         public RenderTexture AcousticField => Resources?.AcousticRead;
 
@@ -108,7 +110,7 @@ namespace GeneSys.Simulation
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
@@ -242,6 +244,18 @@ namespace GeneSys.Simulation
         public void QueueFaunaSeed(Vector2Int cell, int radius, uint materialId)
         {
             uint id = materialId == MaterialIds.CricketEgg ? MaterialIds.CricketEgg : MaterialIds.Cricket;
+            QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = cell,
+                radius = Mathf.Max(0, radius),
+                materialId = id,
+                values = Vector4.zero
+            });
+        }
+
+        public void QueueWaspSeed(Vector2Int cell, int radius, uint materialId)
+        {
+            uint id = materialId == MaterialIds.WaspEgg ? MaterialIds.WaspEgg : MaterialIds.Wasp;
             QueueBrush(new GpuPassScheduler.BrushCommand
             {
                 center = cell,

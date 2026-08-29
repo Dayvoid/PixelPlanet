@@ -36,6 +36,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader flora;
         private readonly ComputeShader fauna;
         private readonly ComputeShader grass;
+        private readonly ComputeShader wasp;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
         private readonly GraphicsBuffer strikeSeedBuffer;
@@ -59,7 +60,8 @@ namespace GeneSys.Simulation.Gpu
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
             ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
-            ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm)
+            ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm,
+            ComputeShader wasp = null)
         {
             this.config = config;
             this.resources = resources;
@@ -73,6 +75,7 @@ namespace GeneSys.Simulation.Gpu
             this.flora = flora;
             this.fauna = fauna;
             this.grass = grass;
+            this.wasp = wasp;
             this.combustion = combustion;
             this.storm = storm;
             materialBuffer = registry.CreateGpuBuffer();
@@ -145,6 +148,7 @@ namespace GeneSys.Simulation.Gpu
             }
             resources.ClearFaunaAndAcoustic();
             resources.ClearGrass();
+            resources.ClearWasp();
             if (fauna != null)
             {
                 int seedFauna = fauna.FindKernel("SeedFauna");
@@ -171,6 +175,27 @@ namespace GeneSys.Simulation.Gpu
                     BindOrganismHistory(grass, seedGrass);
                     Dispatch(grass, seedGrass);
                     resources.SwapGrass();
+                }
+            }
+            if (wasp != null)
+            {
+                int scatterWasp = wasp.FindKernel("ScatterWasp");
+                if (scatterWasp >= 0 && config.waspSeedAtWorldgen)
+                {
+                    SetCommon(wasp, scatterWasp, 0f);
+                    wasp.SetTexture(scatterWasp, "_MaterialRead", resources.MaterialRead);
+                    wasp.SetTexture(scatterWasp, "_MaterialWrite", resources.MaterialRead);
+                    Dispatch(wasp, scatterWasp);
+                }
+                int seedWasp = wasp.FindKernel("SeedWasp");
+                if (seedWasp >= 0)
+                {
+                    SetCommon(wasp, seedWasp, 0f);
+                    wasp.SetTexture(seedWasp, "_MaterialRead", resources.MaterialRead);
+                    wasp.SetTexture(seedWasp, "_WaspRead", resources.WaspRead);
+                    wasp.SetTexture(seedWasp, "_WaspWrite", resources.WaspRead);
+                    BindOrganismHistory(wasp, seedWasp);
+                    Dispatch(wasp, seedWasp);
                 }
             }
             resources.CopyReadToWrite();
@@ -305,6 +330,10 @@ namespace GeneSys.Simulation.Gpu
 
             if (fauna != null)
                 DispatchFauna(deltaTime);
+
+            // Wasps run last so predation resolves against settled cricket state.
+            if (wasp != null)
+                DispatchWasp(deltaTime);
 
             tick++;
             stopwatch.Stop();
@@ -456,6 +485,17 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_GrassG", new Vector4(config.grassPollenWindRate, config.grassPollenWaterRate, config.grassPollenSettlingRate, config.grassSeedWindRate));
             shader.SetVector("_GrassH", new Vector4(config.grassSeedWaterRate, config.grassSeedSettlingRate, config.grassInitialBiomass, config.grassInitialEnergy));
             shader.SetVector("_GrassI", new Vector4(config.grassSeedAtWorldgen ? 1f : 0f, config.grassRootCohesionBonus, config.detritusInitialNutrient, config.detritusInitialMoisture));
+            shader.SetVector("_WaspA", new Vector4(config.waspInitialCalories, config.waspInitialHydration, config.waspMaturityTicks, config.waspDecisionInterval));
+            shader.SetVector("_WaspB", new Vector4(config.waspMaintenanceRate, config.waspFlightDrain, config.waspHydrationDrain, config.waspCalorieCapacity));
+            shader.SetVector("_WaspC", new Vector4(config.waspFullThreshold, config.waspHungerThreshold, config.waspStarvationThreshold, config.waspReproductionCalorieThreshold));
+            shader.SetVector("_WaspD", new Vector4(config.waspCruiseAltitude, config.waspAltitudeGain, config.waspLiftPower, config.waspSurfaceScanRange));
+            shader.SetVector("_WaspE", new Vector4(config.waspBodyMass, config.waspDrag, config.waspWindCoupling, config.waspUpdraftCoupling));
+            shader.SetVector("_WaspF", new Vector4(config.waspSwoopImpulse, config.waspSenseRadius, config.waspPreyCalorieConversion, config.waspPreyHydrationTransfer));
+            shader.SetVector("_WaspG", new Vector4(config.waspNectarDraw, config.waspNectarCalories, config.waspNectarHydration, config.waspPollenCapacity));
+            shader.SetVector("_WaspH", new Vector4(config.waspGeneExpressionRange, config.waspBaseMutationRate, config.waspMateCooldownTicks, config.waspReproduceCooldownTicks));
+            shader.SetVector("_WaspI", new Vector4(config.waspClutchMin, config.waspClutchMax, config.waspHatchTicksMin, config.waspHatchTicksMax));
+            shader.SetVector("_WaspJ", new Vector4(config.waspEggDesiccationMoisture, config.waspEggHeatDeath, config.waspSurvivalTempMin, config.waspSurvivalTempMax));
+            shader.SetVector("_WaspK", new Vector4(config.waspThreatTemperature, config.waspSeedAtWorldgen ? 1f : 0f, 0f, 0f));
             shader.SetVector("_DetritusA", new Vector4(config.detritusVaporAbsorbRate, config.detritusEvaporationRate, config.detritusMoistureDistributeRate, config.detritusNutrientLeachRate));
             shader.SetVector("_DetritusB", new Vector4(config.detritusDecompositionRate, 0f, 0f, 0f));
             shader.SetVector("_CombustionA", new Vector4(config.combustionAmbientOxygen, config.combustionOxygenReplenishRate, config.combustionOxygenDiffusionRate, config.combustionIgnitionAccumulationRate));
@@ -499,7 +539,7 @@ namespace GeneSys.Simulation.Gpu
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)
         {
-            if (shader != flora && shader != fauna && shader != grass && shader != combustion)
+            if (shader != flora && shader != fauna && shader != grass && shader != combustion && shader != wasp)
                 return;
             shader.SetBuffer(kernel, "_OrganismHistory", organismHistoryBuffer);
             shader.SetBuffer(kernel, "_OrganismHistoryCounter", organismHistoryCounterBuffer);
@@ -689,10 +729,19 @@ namespace GeneSys.Simulation.Gpu
                 grass.SetTexture(life, "_PropaguleRead", resources.PropaguleRead);
                 grass.SetTexture(life, "_PropaguleWrite", resources.PropaguleWrite);
                 grass.SetTexture(life, "_GrassRootFlux", resources.GrassRootFlux);
+                grass.SetTexture(life, "_GrassVisit", resources.GrassVisit);
                 BindOrganismHistory(grass, life);
                 Dispatch(grass, life);
                 resources.SwapGrass();
                 resources.SwapPropagule();
+
+                int clearVisit = grass.FindKernel("ClearGrassVisit");
+                if (clearVisit >= 0)
+                {
+                    SetCommon(grass, clearVisit, transportDt);
+                    grass.SetTexture(clearVisit, "_GrassVisitWrite", resources.GrassVisit);
+                    Dispatch(grass, clearVisit);
+                }
 
                 SetCommon(grass, pollen, transportDt);
                 BindGrassWorldReads(pollen);
@@ -884,6 +933,117 @@ namespace GeneSys.Simulation.Gpu
 
             resources.Swap();
             resources.SwapFauna();
+        }
+
+        private void DispatchWasp(float deltaTime)
+        {
+            int seed = wasp.FindKernel("SeedWasp");
+            int metabolism = wasp.FindKernel("WaspMetabolism");
+            int clear = wasp.FindKernel("ClearWaspClaims");
+            int claim = wasp.FindKernel("ClaimWaspActions");
+            int flower = wasp.FindKernel("ApplyWaspFlower");
+            int applyWorld = wasp.FindKernel("ApplyWaspWorld");
+            int applyState = wasp.FindKernel("ApplyWaspState");
+            if (seed < 0 || metabolism < 0 || clear < 0 || claim < 0 || flower < 0 || applyWorld < 0 || applyState < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing wasp compute kernel. Skipping wasp pass.");
+                return;
+            }
+
+            SetCommon(wasp, seed, deltaTime);
+            wasp.SetTexture(seed, "_MaterialRead", resources.MaterialRead);
+            wasp.SetTexture(seed, "_WaspRead", resources.WaspRead);
+            wasp.SetTexture(seed, "_WaspWrite", resources.WaspWrite);
+            BindOrganismHistory(wasp, seed);
+            Dispatch(wasp, seed);
+            resources.SwapWasp();
+
+            SetCommon(wasp, metabolism, deltaTime);
+            wasp.SetBuffer(metabolism, "_MaterialDefinitions", materialBuffer);
+            BindWaspWorldReads(metabolism);
+            wasp.SetTexture(metabolism, "_WaspRead", resources.WaspRead);
+            wasp.SetTexture(metabolism, "_WaspWrite", resources.WaspWrite);
+            wasp.SetTexture(metabolism, "_FaunaRead", resources.FaunaRead);
+            wasp.SetTexture(metabolism, "_GrassRead", resources.GrassRead);
+            wasp.SetTexture(metabolism, "_AcousticRead", resources.AcousticRead);
+            BindOrganismHistory(wasp, metabolism);
+            Dispatch(wasp, metabolism);
+            resources.SwapWasp();
+
+            SetCommon(wasp, clear, deltaTime);
+            wasp.SetTexture(clear, "_WaspClaimsWrite", resources.WaspClaims);
+            Dispatch(wasp, clear);
+
+            SetCommon(wasp, claim, deltaTime);
+            wasp.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
+            BindWaspWorldReads(claim);
+            wasp.SetTexture(claim, "_WaspRead", resources.WaspRead);
+            wasp.SetTexture(claim, "_FaunaRead", resources.FaunaRead);
+            wasp.SetTexture(claim, "_GrassRead", resources.GrassRead);
+            wasp.SetTexture(claim, "_AcousticRead", resources.AcousticRead);
+            wasp.SetTexture(claim, "_WaspClaimsWrite", resources.WaspClaims);
+            Dispatch(wasp, claim);
+
+            // Records the visit for the next grass pass. Runs before the world pass so it
+            // still sees the pre-kill material grid.
+            SetCommon(wasp, flower, deltaTime);
+            wasp.SetBuffer(flower, "_MaterialDefinitions", materialBuffer);
+            wasp.SetTexture(flower, "_MaterialRead", resources.MaterialRead);
+            wasp.SetTexture(flower, "_WaspRead", resources.WaspRead);
+            wasp.SetTexture(flower, "_GrassRead", resources.GrassRead);
+            wasp.SetTexture(flower, "_WaspClaims", resources.WaspClaims);
+            wasp.SetTexture(flower, "_GrassVisitWrite", resources.GrassVisit);
+            Dispatch(wasp, flower);
+
+            SetCommon(wasp, applyWorld, deltaTime);
+            wasp.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
+            wasp.SetTexture(applyWorld, "_MaterialRead", resources.MaterialRead);
+            wasp.SetTexture(applyWorld, "_MaterialWrite", resources.MaterialWrite);
+            wasp.SetTexture(applyWorld, "_StateRead", resources.StateRead);
+            wasp.SetTexture(applyWorld, "_StateWrite", resources.StateWrite);
+            wasp.SetTexture(applyWorld, "_FlowRead", resources.FlowRead);
+            wasp.SetTexture(applyWorld, "_FlowWrite", resources.FlowWrite);
+            wasp.SetTexture(applyWorld, "_AuxRead", resources.AuxRead);
+            wasp.SetTexture(applyWorld, "_AuxWrite", resources.AuxWrite);
+            wasp.SetTexture(applyWorld, "_ShadeRead", resources.ShadeRead);
+            wasp.SetTexture(applyWorld, "_ShadeWrite", resources.ShadeWrite);
+            wasp.SetTexture(applyWorld, "_EcologyRead", resources.EcologyRead);
+            wasp.SetTexture(applyWorld, "_EcologyWrite", resources.EcologyWrite);
+            wasp.SetTexture(applyWorld, "_CombustionRead", resources.CombustionRead);
+            wasp.SetTexture(applyWorld, "_CombustionWrite", resources.CombustionWrite);
+            wasp.SetTexture(applyWorld, "_LifeGenomeRead", resources.LifeGenomeRead);
+            wasp.SetTexture(applyWorld, "_LifeGenomeWrite", resources.LifeGenomeWrite);
+            wasp.SetTexture(applyWorld, "_FaunaRead", resources.FaunaRead);
+            wasp.SetTexture(applyWorld, "_WaspRead", resources.WaspRead);
+            wasp.SetTexture(applyWorld, "_WaspClaims", resources.WaspClaims);
+            BindOrganismHistory(wasp, applyWorld);
+            Dispatch(wasp, applyWorld);
+
+            SetCommon(wasp, applyState, deltaTime);
+            wasp.SetBuffer(applyState, "_MaterialDefinitions", materialBuffer);
+            BindWaspWorldReads(applyState);
+            wasp.SetTexture(applyState, "_WaspRead", resources.WaspRead);
+            wasp.SetTexture(applyState, "_WaspWrite", resources.WaspWrite);
+            wasp.SetTexture(applyState, "_FaunaRead", resources.FaunaRead);
+            wasp.SetTexture(applyState, "_GrassRead", resources.GrassRead);
+            wasp.SetTexture(applyState, "_AcousticRead", resources.AcousticRead);
+            wasp.SetTexture(applyState, "_WaspClaims", resources.WaspClaims);
+            BindOrganismHistory(wasp, applyState);
+            Dispatch(wasp, applyState);
+
+            resources.Swap();
+            resources.SwapWasp();
+        }
+
+        private void BindWaspWorldReads(int kernel)
+        {
+            wasp.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            wasp.SetTexture(kernel, "_StateRead", resources.StateRead);
+            wasp.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            wasp.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            wasp.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
+            wasp.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            wasp.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
         }
 
         private void BindFaunaWorldReads(int kernel)

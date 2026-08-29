@@ -51,6 +51,7 @@ Shader "GeneSys/Planetoid Display"
             Texture2DArray<float4> _LifeGenomeTex;
             Texture2DArray<float4> _FaunaTex;
             Texture2DArray<float4> _GrassTex;
+            Texture2DArray<float4> _WaspTex;
             Texture2D<float2> _AcousticTex;
             Texture2D<float> _LightTex;
             Texture2D<float4> _Palette;
@@ -162,6 +163,42 @@ Shader "GeneSys/Planetoid Display"
                 return color;
             }
 
+            // Banded body plus two wing strokes whose beat amplitude falls off with speed, so a
+            // hovering wasp blurs its wings and a gliding one holds them out flat.
+            float3 DrawWasp(float3 color, float2 cellUv, int2 cell, uint stage, uint cargoCount)
+            {
+                float2 center = float2(0.5, 0.5);
+                float4 motion = _WaspTex.Load(int4(cell, 1, 0));
+                float speed = saturate(length(motion.xy) * 0.35);
+
+                float radius = stage == 2u ? 0.26 : 0.34;
+                float disc = saturate((radius - length(cellUv - center)) * 9.0);
+                float band = step(0.5, frac(cellUv.x * 3.0));
+                float3 body = lerp(float3(0.10, 0.09, 0.06), float3(0.94, 0.76, 0.14), band);
+                if (stage == 2u) body = lerp(body, float3(0.72, 0.66, 0.32), 0.35);
+
+                float phase = _Time.y * lerp(46.0, 14.0, speed) + (float)(cell.x * 7 + cell.y * 13);
+                float beat = sin(phase) * lerp(0.16, 0.05, speed);
+                float wingAlpha = lerp(0.30, 0.6, speed);
+                [unroll]
+                for (int side = 0; side < 2; side++)
+                {
+                    float sx = side == 0 ? -1.0 : 1.0;
+                    float2 root = center + float2(sx * 0.05, 0.03);
+                    float2 tip = center + float2(sx * 0.34, 0.10 + beat * sx * sx);
+                    float wing = sdSegment(cellUv, root, tip, 0.018);
+                    color = lerp(color, float3(0.86, 0.9, 0.95), saturate(1.0 - wing * 20.0) * wingAlpha);
+                }
+
+                color = lerp(color * 0.4, body, lerp(0.4, 0.95, disc));
+                if (cargoCount > 0u)
+                {
+                    float rim = saturate((0.10 - abs(length(cellUv - center) - radius)) * 14.0);
+                    color = lerp(color, float3(0.98, 0.92, 0.35), rim * (0.3 + 0.2 * (float)cargoCount));
+                }
+                return color;
+            }
+
             bool IsMottledCategory(float category)
             {
                 return category >= 2.0 && category <= 6.0;
@@ -243,6 +280,26 @@ Shader "GeneSys/Planetoid Display"
                         float radius = material == 130u ? 0.22 : 0.38;
                         float disc = saturate((radius - length(cellUv - 0.5)) * 8.0);
                         color = lerp(color * 0.4, stageColor, lerp(0.4, 0.95, disc));
+                    }
+                    else if (material == 132u)
+                    {
+                        uint4 waspGenome = asuint(_WaspTex.Load(int4(cell, 2, 0)));
+                        uint cargoCount = 0u;
+                        [unroll]
+                        for (int slot = 0; slot < 3; slot++)
+                            if ((asuint(_WaspTex.Load(int4(cell, 4 + slot, 0))).w & 1u) != 0u) cargoCount++;
+                        float2 cellUv = float2(
+                            frac(angle / 6.28318530718 * width),
+                            frac(simulationRadius * height));
+                        color = DrawWasp(color, cellUv, cell, waspGenome.w & 255u, cargoCount);
+                    }
+                    else if (material == 133u)
+                    {
+                        float2 cellUv = float2(
+                            frac(angle / 6.28318530718 * width),
+                            frac(simulationRadius * height));
+                        float disc = saturate((0.2 - length(cellUv - 0.5)) * 8.0);
+                        color = lerp(color * 0.4, float3(0.90, 0.86, 0.60), lerp(0.4, 0.95, disc));
                     }
 
                     {

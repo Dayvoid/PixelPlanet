@@ -220,8 +220,7 @@ namespace GeneSys.Tools
             inspection.grassDonors = new GrassGenome.Packed[GrassGenome.SlotCount];
             if (host.Resources.GrassRead == null)
             {
-                readbackPending = false;
-                Inspected?.Invoke(inspection);
+                ReadWaspSlices(host, cell, inspection);
                 return;
             }
 
@@ -277,6 +276,68 @@ namespace GeneSys.Tools
             {
                 remaining--;
                 if (remaining > 0) return;
+                ReadWaspSlices(host, cell, inspection);
+            }
+        }
+
+        private void ReadWaspSlices(SimulationHost host, Vector2Int cell, CellInspection inspection)
+        {
+            inspection.waspCargo = new FaunaGenome.Packed[WaspGenome.CargoSlots];
+            if (host.Resources.WaspRead == null)
+            {
+                readbackPending = false;
+                Inspected?.Invoke(inspection);
+                return;
+            }
+
+            int remaining = 3 + WaspGenome.CargoSlots;
+            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, 0, 1, request =>
+            {
+                if (!request.hasError)
+                {
+                    NativeArray<Vector4> data = request.GetData<Vector4>();
+                    if (data.Length > 0) inspection.waspVitals = data[0];
+                }
+                CompleteWasp();
+            });
+            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, 1, 1, request =>
+            {
+                if (!request.hasError)
+                {
+                    NativeArray<Vector4> data = request.GetData<Vector4>();
+                    if (data.Length > 0) inspection.waspMotion = data[0];
+                }
+                CompleteWasp();
+            });
+            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, 2, 1, request =>
+            {
+                if (!request.hasError)
+                {
+                    NativeArray<Vector4> data = request.GetData<Vector4>();
+                    if (data.Length > 0)
+                        inspection.waspGenome = WaspGenome.Sanitize(WaspGenome.FromFloatBits(data[0]));
+                }
+                CompleteWasp();
+            });
+            for (int slot = 0; slot < WaspGenome.CargoSlots; slot++)
+            {
+                int capture = slot;
+                int slice = WaspGenome.CargoSlice + capture;
+                AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, slice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0) inspection.waspCargo[capture] = WaspGenome.FromFloatBits(data[0]);
+                    }
+                    CompleteWasp();
+                });
+            }
+
+            void CompleteWasp()
+            {
+                remaining--;
+                if (remaining > 0) return;
                 readbackPending = false;
                 Inspected?.Invoke(inspection);
             }
@@ -297,6 +358,10 @@ namespace GeneSys.Tools
         public FloraGenome.Packed genome;
         public Vector4 faunaVitals;
         public FaunaGenome.Packed faunaGenome;
+        public Vector4 waspVitals;
+        public Vector4 waspMotion;
+        public FaunaGenome.Packed waspGenome;
+        public FaunaGenome.Packed[] waspCargo;
         public Vector2 acoustic;
         public float light;
         public Vector2 flow;

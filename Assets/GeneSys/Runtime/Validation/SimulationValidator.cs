@@ -164,10 +164,36 @@ namespace GeneSys.Validation
                                                     }
                                                     if (host == null || !host.IsReady || host.Config == null)
                                                     { Complete(false, "Simulation host unavailable."); return; }
-                                                    if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
-                                                    double drift = Math.Abs(water - baselineWater) / baselineWater;
-                                                    bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
-                                                    Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                                    RenderTexture waspTex = host.Resources.WaspRead;
+                                                    AsyncGPUReadback.Request(waspTex, 0, 0, waspTex.width, 0, waspTex.height, 0, 1, waspRequest =>
+                                                    {
+                                                        if (waspRequest.hasError) { Complete(false, "Wasp GPU readback failed."); return; }
+                                                        NativeArray<Vector4> waspVitals = waspRequest.GetData<Vector4>();
+                                                        for (int i = 0; i < waspVitals.Length; i++)
+                                                        {
+                                                            Vector4 value = waspVitals[i];
+                                                            if (!Finite(value)) { Complete(false, $"Non-finite wasp vitals at cell {i}."); return; }
+                                                            if (value.x < -0.01f || value.x > 1.01f) { Complete(false, $"Wasp calories out of range at cell {i}."); return; }
+                                                            if (value.y < -0.01f || value.y > 1.01f) { Complete(false, $"Wasp hydration out of range at cell {i}."); return; }
+                                                        }
+                                                        AsyncGPUReadback.Request(waspTex, 0, 0, waspTex.width, 0, waspTex.height, 2, 1, waspGenomeRequest =>
+                                                        {
+                                                            if (waspGenomeRequest.hasError) { Complete(false, "Wasp genome GPU readback failed."); return; }
+                                                            NativeArray<Vector4> waspBits = waspGenomeRequest.GetData<Vector4>();
+                                                            for (int i = 0; i < waspBits.Length; i++)
+                                                            {
+                                                                uint waspStage = WaspGenome.Stage(WaspGenome.FromFloatBits(waspBits[i]));
+                                                                if (!WaspGenome.IsValidStage(waspStage))
+                                                                { Complete(false, $"Invalid wasp stage {waspStage} at cell {i}."); return; }
+                                                            }
+                                                            if (host == null || !host.IsReady || host.Config == null)
+                                                            { Complete(false, "Simulation host unavailable."); return; }
+                                                            if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
+                                                            double drift = Math.Abs(water - baselineWater) / baselineWater;
+                                                            bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                                                            Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                                        });
+                                                    });
                                                 });
                                             });
                                         });

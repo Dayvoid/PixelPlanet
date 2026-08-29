@@ -26,9 +26,11 @@ namespace GeneSys.Persistence
         private const int Version8 = 8;
         private const int Version9 = 9;
         private const int Version10 = 10;
+        private const int Version11 = 11;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
+        private const int PayloadCountV11 = 38;
 
         private readonly string directoryOverride;
         private string resolvedDirectory;
@@ -92,17 +94,19 @@ namespace GeneSys.Persistence
         }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
-            Save(host, path, Version10, completed);
+            Save(host, path, Version11, completed);
 
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = version >= Version10 ? Version10 : Version9;
+            int writeVersion = version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9);
             bool includeGrass = writeVersion >= Version10;
-            byte[][] payloads = new byte[PayloadCountV10][];
+            bool includeWasp = writeVersion >= Version11;
+            byte[][] payloads = new byte[PayloadCountV11][];
             int remaining = PayloadCountV9;
             bool failed = false;
             bool grassBatchStarted = !includeGrass;
+            bool waspBatchStarted = !includeWasp;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -151,6 +155,18 @@ namespace GeneSys.Persistence
                 }
             }
 
+            void RequestWaspBatch()
+            {
+                RenderTexture wasp = host.Resources.WaspRead;
+                for (int slice = 0; slice < SimulationResources.WaspSliceCount; slice++)
+                {
+                    int index = PayloadCountV10 + slice;
+                    int capture = slice;
+                    AsyncGPUReadback.Request(wasp, 0, 0, wasp.width, 0, wasp.height, capture, 1,
+                        request => CompletePayload(index, request));
+                }
+            }
+
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
             {
                 if (request.hasError) failed = true;
@@ -162,6 +178,13 @@ namespace GeneSys.Persistence
                     grassBatchStarted = true;
                     remaining = PayloadCountV10 - PayloadCountV9;
                     RequestGrassBatch();
+                    return;
+                }
+                if (includeWasp && !waspBatchStarted)
+                {
+                    waspBatchStarted = true;
+                    remaining = PayloadCountV11 - PayloadCountV10;
+                    RequestWaspBatch();
                     return;
                 }
                 if (!failed)
@@ -182,7 +205,9 @@ namespace GeneSys.Persistence
                     WriteFaunaConfig(writer, config);
                     if (includeGrass)
                         WriteGrassConfig(writer, config);
-                    int payloadCount = includeGrass ? PayloadCountV10 : PayloadCountV9;
+                    if (includeWasp)
+                        WriteWaspConfig(writer, config);
+                    int payloadCount = includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9);
                     for (int i = 0; i < payloadCount; i++)
                     {
                         writer.Write(payloads[i].Length);
@@ -200,7 +225,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version != Version1 && version != Version2 && version != Version3 && version != Version4 && version != Version5 && version != Version6 && version != Version7 && version != Version8 && version != Version9 && version != Version10) return false;
+            if (version < Version1 || version > Version11) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -219,6 +244,8 @@ namespace GeneSys.Persistence
                 ReadFaunaConfig(reader, host.Config);
             if (version >= Version10)
                 ReadGrassConfig(reader, host.Config);
+            if (version >= Version11)
+                ReadWaspConfig(reader, host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -392,6 +419,25 @@ namespace GeneSys.Persistence
             else
             {
                 host.Resources.ClearGrass();
+            }
+
+            if (version >= Version11)
+            {
+                for (int slice = 0; slice < SimulationResources.WaspSliceCount; slice++)
+                {
+                    int length = reader.ReadInt32();
+                    byte[] payload = reader.ReadBytes(length);
+                    if (payload.Length != length) return false;
+                    Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                    staging.LoadRawTextureData(payload);
+                    staging.Apply(false, false);
+                    Graphics.CopyTexture(staging, 0, 0, host.Resources.WaspRead, slice, 0);
+                    UnityEngine.Object.Destroy(staging);
+                }
+            }
+            else
+            {
+                host.Resources.ClearWasp();
             }
 
             host.Resources.CopyReadToWrite();
@@ -806,6 +852,98 @@ namespace GeneSys.Persistence
             config.detritusDecompositionRate = reader.ReadSingle();
             config.detritusInitialNutrient = reader.ReadSingle();
             config.detritusInitialMoisture = reader.ReadSingle();
+        }
+
+        private static void WriteWaspConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.waspSeedAtWorldgen);
+            writer.Write(config.waspInitialCalories);
+            writer.Write(config.waspInitialHydration);
+            writer.Write(config.waspMaturityTicks);
+            writer.Write(config.waspDecisionInterval);
+            writer.Write(config.waspMaintenanceRate);
+            writer.Write(config.waspFlightDrain);
+            writer.Write(config.waspHydrationDrain);
+            writer.Write(config.waspCalorieCapacity);
+            writer.Write(config.waspFullThreshold);
+            writer.Write(config.waspHungerThreshold);
+            writer.Write(config.waspStarvationThreshold);
+            writer.Write(config.waspCruiseAltitude);
+            writer.Write(config.waspAltitudeGain);
+            writer.Write(config.waspLiftPower);
+            writer.Write(config.waspSurfaceScanRange);
+            writer.Write(config.waspBodyMass);
+            writer.Write(config.waspDrag);
+            writer.Write(config.waspWindCoupling);
+            writer.Write(config.waspUpdraftCoupling);
+            writer.Write(config.waspSwoopImpulse);
+            writer.Write(config.waspSenseRadius);
+            writer.Write(config.waspPreyCalorieConversion);
+            writer.Write(config.waspPreyHydrationTransfer);
+            writer.Write(config.waspNectarDraw);
+            writer.Write(config.waspNectarCalories);
+            writer.Write(config.waspNectarHydration);
+            writer.Write(config.waspPollenCapacity);
+            writer.Write(config.waspGeneExpressionRange);
+            writer.Write(config.waspBaseMutationRate);
+            writer.Write(config.waspMateCooldownTicks);
+            writer.Write(config.waspReproduceCooldownTicks);
+            writer.Write(config.waspClutchMin);
+            writer.Write(config.waspClutchMax);
+            writer.Write(config.waspHatchTicksMin);
+            writer.Write(config.waspHatchTicksMax);
+            writer.Write(config.waspReproductionCalorieThreshold);
+            writer.Write(config.waspEggDesiccationMoisture);
+            writer.Write(config.waspEggHeatDeath);
+            writer.Write(config.waspSurvivalTempMin);
+            writer.Write(config.waspSurvivalTempMax);
+            writer.Write(config.waspThreatTemperature);
+        }
+
+        private static void ReadWaspConfig(BinaryReader reader, SimulationConfig config)
+        {
+            config.waspSeedAtWorldgen = reader.ReadBoolean();
+            config.waspInitialCalories = reader.ReadSingle();
+            config.waspInitialHydration = reader.ReadSingle();
+            config.waspMaturityTicks = reader.ReadInt32();
+            config.waspDecisionInterval = reader.ReadInt32();
+            config.waspMaintenanceRate = reader.ReadSingle();
+            config.waspFlightDrain = reader.ReadSingle();
+            config.waspHydrationDrain = reader.ReadSingle();
+            config.waspCalorieCapacity = reader.ReadSingle();
+            config.waspFullThreshold = reader.ReadSingle();
+            config.waspHungerThreshold = reader.ReadSingle();
+            config.waspStarvationThreshold = reader.ReadSingle();
+            config.waspCruiseAltitude = reader.ReadSingle();
+            config.waspAltitudeGain = reader.ReadSingle();
+            config.waspLiftPower = reader.ReadSingle();
+            config.waspSurfaceScanRange = reader.ReadInt32();
+            config.waspBodyMass = reader.ReadSingle();
+            config.waspDrag = reader.ReadSingle();
+            config.waspWindCoupling = reader.ReadSingle();
+            config.waspUpdraftCoupling = reader.ReadSingle();
+            config.waspSwoopImpulse = reader.ReadSingle();
+            config.waspSenseRadius = reader.ReadInt32();
+            config.waspPreyCalorieConversion = reader.ReadSingle();
+            config.waspPreyHydrationTransfer = reader.ReadSingle();
+            config.waspNectarDraw = reader.ReadSingle();
+            config.waspNectarCalories = reader.ReadSingle();
+            config.waspNectarHydration = reader.ReadSingle();
+            config.waspPollenCapacity = reader.ReadInt32();
+            config.waspGeneExpressionRange = reader.ReadSingle();
+            config.waspBaseMutationRate = reader.ReadSingle();
+            config.waspMateCooldownTicks = reader.ReadInt32();
+            config.waspReproduceCooldownTicks = reader.ReadInt32();
+            config.waspClutchMin = reader.ReadInt32();
+            config.waspClutchMax = reader.ReadInt32();
+            config.waspHatchTicksMin = reader.ReadInt32();
+            config.waspHatchTicksMax = reader.ReadInt32();
+            config.waspReproductionCalorieThreshold = reader.ReadSingle();
+            config.waspEggDesiccationMoisture = reader.ReadSingle();
+            config.waspEggHeatDeath = reader.ReadSingle();
+            config.waspSurvivalTempMin = reader.ReadSingle();
+            config.waspSurvivalTempMax = reader.ReadSingle();
+            config.waspThreatTemperature = reader.ReadSingle();
         }
 
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)

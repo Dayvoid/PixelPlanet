@@ -9,6 +9,7 @@
 #pragma kernel ApplyFlowerDrop
 #pragma kernel SeedGrass
 #pragma kernel PaintGrass
+#pragma kernel ClearGrassVisit
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
@@ -31,6 +32,9 @@ RWTexture2DArray<float4> _PropaguleWrite;
 RWTexture2D<float4> _GrassRootFlux;
 Texture2D<uint> _GrassDropClaims;
 RWTexture2D<uint> _GrassDropClaimsWrite;
+// Wasp visits recorded on earlier ticks. Read here, cleared by ClearGrassVisit right after.
+Texture2DArray<float4> _GrassVisit;
+RWTexture2DArray<float4> _GrassVisitWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -293,6 +297,9 @@ void PhotosynthesisLifecycle(uint3 id : SV_DispatchThreadID)
     float pollenBest = load.y;
     float seedBest = load.x;
 
+    float4 visitNectar = SampleGrassVisitNectar(_GrassVisit, cell);
+    uint4 visitDonor = SampleGrassVisitDonor(_GrassVisit, cell);
+
     [unroll]
     for (uint slot = 0u; slot < 3u; slot++)
     {
@@ -409,6 +416,20 @@ void PhotosynthesisLifecycle(uint3 id : SV_DispatchThreadID)
             if (GrassHasDonor(incoming) && GrassLineage(incoming) != GrassLineage(genome))
             {
                 donor = incoming;
+                donor.w |= GRASS_DONOR_VALID;
+                pollinated = true;
+            }
+
+            // A wasp visited this cell since the last grass pass: it drank nectar and may
+            // have left a sample from another lineage. Same rejection rule as wind pollen.
+            float drawn = slot == 0u ? visitNectar.x : (slot == 1u ? visitNectar.y : visitNectar.z);
+            if (drawn > 0.0)
+                life.w = saturate(life.w - drawn);
+            if ((uint)round(max(visitNectar.w, 0.0)) == slot + 1u
+                && GrassHasDonor(visitDonor)
+                && GrassLineage(visitDonor) != GrassLineage(genome))
+            {
+                donor = visitDonor;
                 donor.w |= GRASS_DONOR_VALID;
                 pollinated = true;
             }
@@ -725,4 +746,16 @@ void PaintGrass(uint3 id : SV_DispatchThreadID)
         PlantSlot(cell, plantSlot, GRASS_STAGE_ADULT);
         break;
     }
+}
+
+// Runs immediately after PhotosynthesisLifecycle consumes the records. Separate from that
+// kernel so the visit texture is never bound as SRV and UAV in the same dispatch.
+[numthreads(8, 8, 1)]
+void ClearGrassVisit(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    uint2 cell = id.xy;
+    [unroll]
+    for (uint slice = 0u; slice < (uint)GRASS_VISIT_SLICE_COUNT; slice++)
+        _GrassVisitWrite[uint3(cell, slice)] = 0.0;
 }

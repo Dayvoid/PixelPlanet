@@ -61,6 +61,12 @@
 // Propagule (dedicated Tex2DArray RGBA32F depth 3): seedCount, pollenMass + maternal/donor genomes.
 // Root flux (transient RGBA32F): taken water/nutrients and pre-tick demand totals per soil target.
 // Flower-drop claims (transient R32_UInt): exclusive Detritus destinations.
+// Wasp (dedicated Tex2DArray RGBA32F depth 7, swapped like Fauna, excluded from WriteCell):
+//   slices 0-3 mirror Fauna (vitals, motion, genome, partner) with wasp gene meanings
+//   slices 4-6 pollen cargo: up to three grass donor genomes, w low bit = valid sample
+// Wasp claims (transient R32_UInt Tex2DArray depth 5): move, prey, mate, egg, flower.
+// Grass visit (transient RGBA32F Tex2DArray depth 2): wasp -> grass handoff consumed one
+//   tick later. Slice 0 = nectar drawn per slot in xyz; slice 1 = deposited donor genome.
 // Atmosphere representation:
 //   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
 //   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
@@ -523,6 +529,8 @@ float FloraFuel(uint material, float4 life, uint stage)
 
 #define FAUNA_CRICKET_ID 129u
 #define FAUNA_EGG_ID 130u
+#define WASP_ID 132u
+#define WASP_EGG_ID 133u
 #define FAUNA_STAGE_EMPTY 0u
 #define FAUNA_STAGE_EGG 1u
 #define FAUNA_STAGE_JUVENILE 2u
@@ -571,6 +579,23 @@ bool IsFaunaMaterial(uint material)
     return IsCricketMaterial(material) || IsFaunaEggMaterial(material);
 }
 
+bool IsWaspMaterial(uint material)
+{
+    return material == WASP_ID;
+}
+
+bool IsWaspEggMaterial(uint material)
+{
+    return material == WASP_EGG_ID;
+}
+
+// Every mobile organism material. Combustion and metrics use this; occupancy and
+// support rules must not, because adult wasps fly and cannot be stood on.
+bool IsAnyFaunaMaterial(uint material)
+{
+    return IsFaunaMaterial(material) || IsWaspMaterial(material) || IsWaspEggMaterial(material);
+}
+
 bool IsFaunaOpenHabitat(uint material)
 {
     return material == 0u || material == 1u || material == 11u;
@@ -580,7 +605,8 @@ bool IsFaunaSupport(uint material)
 {
     return material == 4u || material == 5u || material == 7u || material == 8u
         || material == 9u || material == 10u || material == 12u || material == 13u
-        || material == 131u || material == FLORA_ALGAE_ID || IsFaunaMaterial(material);
+        || material == 131u || material == FLORA_ALGAE_ID || IsFaunaMaterial(material)
+        || IsWaspEggMaterial(material);
 }
 
 uint FaunaStage(uint4 genome)
@@ -1251,6 +1277,234 @@ float GrassFloweringDays(uint4 genome)
 float GrassSeedReleaseDays(uint4 genome)
 {
     return 1.0 + DecodeGene(genome, GRASS_GENE_CADENCE) / 255.0;
+}
+
+#define WASP_STAGE_EMPTY 0u
+#define WASP_STAGE_EGG 1u
+#define WASP_STAGE_JUVENILE 2u
+#define WASP_STAGE_ADULT 3u
+#define WASP_STAGE_DEAD 4u
+#define WASP_BEHAVIOR_IDLE 0u
+#define WASP_BEHAVIOR_CRUISE 1u
+#define WASP_BEHAVIOR_HUNT 2u
+#define WASP_BEHAVIOR_NECTAR 3u
+#define WASP_BEHAVIOR_SWOOP 4u
+#define WASP_BEHAVIOR_FLEE 5u
+#define WASP_GENE_FLIGHT_POWER 0u
+#define WASP_GENE_BODY_MASS 1u
+#define WASP_GENE_DRAG 2u
+#define WASP_GENE_CRUISE_ALTITUDE 3u
+#define WASP_GENE_HYDRATION_RETENTION 4u
+#define WASP_GENE_METABOLISM 5u
+#define WASP_GENE_CALORIE_CAPACITY 6u
+#define WASP_GENE_PREY_SENSE 7u
+#define WASP_GENE_HEARING 8u
+#define WASP_GENE_AGGRESSION 9u
+#define WASP_GENE_FERTILITY 10u
+#define WASP_GENE_MUTATION 11u
+#define WASP_VITALS_SLICE 0
+#define WASP_MOTION_SLICE 1
+#define WASP_GENOME_SLICE 2
+#define WASP_PARTNER_SLICE 3
+#define WASP_CARGO_SLICE 4
+#define WASP_CARGO_SLOTS 3u
+#define WASP_SLICE_COUNT 7
+#define WASP_CLAIM_MOVE 0
+#define WASP_CLAIM_PREY 1
+#define WASP_CLAIM_MATE 2
+#define WASP_CLAIM_EGG 3
+#define WASP_CLAIM_FLOWER 4
+#define WASP_CLAIM_COUNT 5
+#define WASP_CLAIM_EMPTY 0xffffffffu
+// Deferred wasp -> grass handoff. The wasp pass writes it, the grass pass consumes it
+// on the following tick, which keeps the wasp pass out of the 12-slice grass array.
+#define GRASS_VISIT_NECTAR 0
+#define GRASS_VISIT_DONOR 1
+#define GRASS_VISIT_SLICE_COUNT 2
+
+uint WaspStage(uint4 genome)
+{
+    return genome.w & 255u;
+}
+
+uint WaspBehavior(uint4 genome)
+{
+    return (genome.w >> 8) & 255u;
+}
+
+uint WaspGeneration(uint4 genome)
+{
+    return (genome.w >> 16) & 255u;
+}
+
+uint WaspLineage(uint4 genome)
+{
+    return (genome.w >> 24) & 255u;
+}
+
+uint PackWaspMeta(uint stage, uint behavior, uint generation, uint lineage)
+{
+    return (stage & 255u) | ((behavior & 255u) << 8) | ((generation & 255u) << 16) | ((lineage & 255u) << 24);
+}
+
+uint4 SanitizeWaspGenome(uint4 genome)
+{
+    uint stage = WaspStage(genome);
+    if (stage > WASP_STAGE_DEAD)
+        stage = WASP_STAGE_EMPTY;
+    uint behavior = WaspBehavior(genome);
+    if (behavior > WASP_BEHAVIOR_FLEE)
+        behavior = WASP_BEHAVIOR_IDLE;
+    genome.w = PackWaspMeta(stage, behavior, WaspGeneration(genome), WaspLineage(genome));
+    return genome;
+}
+
+float WaspExpressFactor(uint gene, float range)
+{
+    return 1.0 + ((gene / 255.0) - 0.5) * 2.0 * saturate(range);
+}
+
+float4 SampleWaspVitals(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, WASP_VITALS_SLICE, 0));
+}
+
+float4 SampleWaspMotion(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, WASP_MOTION_SLICE, 0));
+}
+
+uint4 SampleWaspGenome(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, WASP_GENOME_SLICE, 0)));
+}
+
+uint4 SampleWaspPartner(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, WASP_PARTNER_SLICE, 0)));
+}
+
+uint4 SampleWaspCargo(Texture2DArray<float4> tex, int2 cell, uint slot)
+{
+    return asuint(tex.Load(int4(cell, WASP_CARGO_SLICE + (int)min(slot, WASP_CARGO_SLOTS - 1u), 0)));
+}
+
+void WriteWaspState(RWTexture2DArray<float4> tex, int2 cell, float4 vitals, float4 motion, uint4 genome, uint4 partner, uint4 cargo0, uint4 cargo1, uint4 cargo2)
+{
+    tex[uint3((uint2)cell, WASP_VITALS_SLICE)] = SanitizeFaunaVitals(vitals);
+    tex[uint3((uint2)cell, WASP_MOTION_SLICE)] = SanitizeFaunaMotion(motion);
+    tex[uint3((uint2)cell, WASP_GENOME_SLICE)] = asfloat(SanitizeWaspGenome(genome));
+    tex[uint3((uint2)cell, WASP_PARTNER_SLICE)] = asfloat(partner);
+    tex[uint3((uint2)cell, WASP_CARGO_SLICE + 0)] = asfloat(cargo0);
+    tex[uint3((uint2)cell, WASP_CARGO_SLICE + 1)] = asfloat(cargo1);
+    tex[uint3((uint2)cell, WASP_CARGO_SLICE + 2)] = asfloat(cargo2);
+}
+
+void ClearWaspState(RWTexture2DArray<float4> tex, int2 cell)
+{
+    uint4 zero = uint4(0u, 0u, 0u, 0u);
+    WriteWaspState(tex, cell, 0.0, 0.0, zero, zero, zero, zero, zero);
+}
+
+bool WaspHasPartner(uint4 partner)
+{
+    return partner.w != 0u;
+}
+
+// Pollen cargo reuses the grass donor convention: the low bit of .w marks a live
+// sample, so a cargo entry can be handed straight to the grass donor slice.
+bool WaspCargoValid(uint4 cargo)
+{
+    return (cargo.w & GRASS_DONOR_VALID) != 0u;
+}
+
+uint WaspCargoCount(uint4 cargo0, uint4 cargo1, uint4 cargo2)
+{
+    uint count = 0u;
+    if (WaspCargoValid(cargo0)) count++;
+    if (WaspCargoValid(cargo1)) count++;
+    if (WaspCargoValid(cargo2)) count++;
+    return count;
+}
+
+uint WaspPollenCapacity(float configured)
+{
+    return (uint)clamp((int)round(configured), 1, (int)WASP_CARGO_SLOTS);
+}
+
+// Oldest held sample whose lineage differs from the flower being visited, or -1.
+int WaspCargoForeignIndex(uint4 cargo0, uint4 cargo1, uint4 cargo2, uint hostLineage)
+{
+    if (WaspCargoValid(cargo0) && GrassLineage(cargo0) != hostLineage) return 0;
+    if (WaspCargoValid(cargo1) && GrassLineage(cargo1) != hostLineage) return 1;
+    if (WaspCargoValid(cargo2) && GrassLineage(cargo2) != hostLineage) return 2;
+    return -1;
+}
+
+// FIFO: removing shifts later samples forward so slot 0 is always the oldest.
+void WaspCargoRemove(inout uint4 cargo0, inout uint4 cargo1, inout uint4 cargo2, int index)
+{
+    uint4 zero = uint4(0u, 0u, 0u, 0u);
+    if (index == 0) { cargo0 = cargo1; cargo1 = cargo2; cargo2 = zero; }
+    else if (index == 1) { cargo1 = cargo2; cargo2 = zero; }
+    else if (index == 2) { cargo2 = zero; }
+}
+
+void WaspCargoPush(inout uint4 cargo0, inout uint4 cargo1, inout uint4 cargo2, uint4 sample, uint capacity)
+{
+    sample.w |= GRASS_DONOR_VALID;
+    if (!WaspCargoValid(cargo0)) { cargo0 = sample; return; }
+    if (capacity >= 2u && !WaspCargoValid(cargo1)) { cargo1 = sample; return; }
+    if (capacity >= 3u && !WaspCargoValid(cargo2)) { cargo2 = sample; }
+}
+
+uint4 RandomWaspGenome(uint2 cell, int seed, int tick)
+{
+    uint4 genome = 0;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float h = Hash01(cell.x * 40503u + cell.y * 22543u + i * 83492791u + (uint)seed * 5779u + (uint)tick * 26417u);
+        EncodeGene(genome, i, (uint)round(h * 255.0));
+    }
+    uint lineage = (uint)round(Hash01(cell.x * 22543u + cell.y * 40503u + (uint)seed * 3323u + (uint)tick) * 255.0);
+    genome.w = PackWaspMeta(WASP_STAGE_ADULT, WASP_BEHAVIOR_CRUISE, 0u, lineage);
+    return genome;
+}
+
+uint4 MutateWaspGenome(uint4 genome, float baseMutationRate, uint salt)
+{
+    genome = SanitizeWaspGenome(genome);
+    float mutationGene = WaspExpressFactor(DecodeGene(genome, WASP_GENE_MUTATION), 1.0);
+    float rate = max(0.0, baseMutationRate) * mutationGene;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float unit = Hash01(salt + i * 83492791u + DecodeGene(genome, i) * 747796405u);
+        int step = (int)round((unit * 2.0 - 1.0) * rate * 255.0);
+        int next = clamp((int)DecodeGene(genome, i) + step, 0, 255);
+        EncodeGene(genome, i, (uint)next);
+    }
+    return genome;
+}
+
+float WaspFuel(uint material, float4 vitals, uint stage)
+{
+    if (!IsWaspMaterial(material) && !IsWaspEggMaterial(material))
+        return 0.0;
+    if (stage == WASP_STAGE_EMPTY || stage == WASP_STAGE_DEAD)
+        return 0.0;
+    return saturate(vitals.x);
+}
+
+float4 SampleGrassVisitNectar(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, GRASS_VISIT_NECTAR, 0));
+}
+
+uint4 SampleGrassVisitDonor(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, GRASS_VISIT_DONOR, 0)));
 }
 
 uint DominantRareMycology(uint traitsA, uint traitsB, uint traitsC)

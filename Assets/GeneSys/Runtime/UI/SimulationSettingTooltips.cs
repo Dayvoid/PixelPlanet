@@ -488,7 +488,91 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.grassSeedSettlingRate)] =
                 "Inward gravity/settling of seeds onto exposed soil.",
             [nameof(SimulationConfig.grassNectarAmount)] =
-                "Nectar written into an open flower. Inspectable now; a future pollinator can consume it.",
+                "Nectar written into an open flower. Visiting wasps drink it and carry pollen between lineages.",
+            [nameof(SimulationConfig.waspSeedAtWorldgen)] =
+                "Scatter a starting wasp population during world generation instead of waiting for the brush or probe.",
+            [nameof(SimulationConfig.waspInitialCalories)] =
+                "Calories a freshly seeded or hatched wasp starts with.",
+            [nameof(SimulationConfig.waspInitialHydration)] =
+                "Hydration a freshly seeded or hatched wasp starts with. Nectar is the main way to top this back up.",
+            [nameof(SimulationConfig.waspMaturityTicks)] =
+                "Ticks a juvenile must survive before it can mate and lay.",
+            [nameof(SimulationConfig.waspDecisionInterval)] =
+                "Ticks between behavior re-evaluations. Larger values make wasps commit longer to a hunt or a flower.",
+            [nameof(SimulationConfig.waspMaintenanceRate)] =
+                "Baseline calorie burn per second, scaled by the metabolism gene.",
+            [nameof(SimulationConfig.waspFlightDrain)] =
+                "Extra calorie burn for staying airborne, scaled by mass and by climbing against gravity. Riding an updraft is cheap; fighting a downdraft is expensive.",
+            [nameof(SimulationConfig.waspHydrationDrain)] =
+                "Hydration lost per second, divided by the retention gene.",
+            [nameof(SimulationConfig.waspCalorieCapacity)] =
+                "Baseline stomach size. The calorie-capacity gene scales this; prey and nectar cannot push past the expressed cap.",
+            [nameof(SimulationConfig.waspFullThreshold)] =
+                "Calorie level at which a wasp stops hunting and switches to mating or cruising.",
+            [nameof(SimulationConfig.waspHungerThreshold)] =
+                "Calorie level that promotes active hunting of crickets.",
+            [nameof(SimulationConfig.waspStarvationThreshold)] =
+                "Calorie level below which a wasp will attack other adult wasps. Cannibalism damps predator population crashes.",
+            [nameof(SimulationConfig.waspCruiseAltitude)] =
+                "Preferred clearance in cells above the surface. The cruise-altitude gene scales this per individual.",
+            [nameof(SimulationConfig.waspAltitudeGain)] =
+                "How aggressively a wasp corrects altitude error. High values hold station tightly but bob in gusts.",
+            [nameof(SimulationConfig.waspLiftPower)] =
+                "Baseline lift authority, scaled by the flight-power gene and divided by mass. Too low and wasps sink.",
+            [nameof(SimulationConfig.waspSurfaceScanRange)] =
+                "How many cells down a wasp looks for ground. Beyond this range it reads as open sky and descends.",
+            [nameof(SimulationConfig.waspBodyMass)] =
+                "Baseline body mass used in flight physics. Heavier wasps resist wind but pay more to stay aloft.",
+            [nameof(SimulationConfig.waspDrag)] =
+                "Air resistance on wasp velocity. Higher values settle motion faster and shorten glides.",
+            [nameof(SimulationConfig.waspWindCoupling)] =
+                "How strongly angular wind pushes a flying wasp sideways.",
+            [nameof(SimulationConfig.waspUpdraftCoupling)] =
+                "How strongly radial wind lifts or drops a flying wasp. Ties the population to storms and fire updrafts.",
+            [nameof(SimulationConfig.waspSwoopImpulse)] =
+                "Downward impulse when diving on prey or descending to lay.",
+            [nameof(SimulationConfig.waspSenseRadius)] =
+                "Search radius for prey and flowers, scaled by the prey-sense and hearing genes.",
+            [nameof(SimulationConfig.waspPreyCalorieConversion)] =
+                "Fraction of a victim's calories the killer absorbs. The remainder stays in the Detritus corpse.",
+            [nameof(SimulationConfig.waspPreyHydrationTransfer)] =
+                "Fraction of a victim's hydration the killer absorbs.",
+            [nameof(SimulationConfig.waspNectarDraw)] =
+                "Nectar removed from a flower per visit. Larger draws empty a bloom faster and push wasps to keep moving.",
+            [nameof(SimulationConfig.waspNectarCalories)] =
+                "Calories gained per unit of nectar. Small on purpose; nectar is a drink, not a meal.",
+            [nameof(SimulationConfig.waspNectarHydration)] =
+                "Hydration gained per unit of nectar. This is the main reason to visit flowers.",
+            [nameof(SimulationConfig.waspPollenCapacity)] =
+                "How many distinct pollen samples a wasp can carry. More capacity means gene flow across longer routes.",
+            [nameof(SimulationConfig.waspGeneExpressionRange)] =
+                "How far wasp genes may push a trait away from its baseline value.",
+            [nameof(SimulationConfig.waspBaseMutationRate)] =
+                "Baseline per-gene mutation step, scaled by the individual's mutation gene.",
+            [nameof(SimulationConfig.waspMateCooldownTicks)] =
+                "Ticks after mating before a wasp may pair again.",
+            [nameof(SimulationConfig.waspReproduceCooldownTicks)] =
+                "Ticks after laying before a wasp may lay again.",
+            [nameof(SimulationConfig.waspClutchMin)] =
+                "Fewest eggs in a clutch. The fertility gene interpolates between min and max.",
+            [nameof(SimulationConfig.waspClutchMax)] =
+                "Most eggs in a clutch. The fertility gene interpolates between min and max.",
+            [nameof(SimulationConfig.waspHatchTicksMin)] =
+                "Shortest incubation for a wasp egg. Each egg rolls its own hatch time between the min and max.",
+            [nameof(SimulationConfig.waspHatchTicksMax)] =
+                "Longest incubation for a wasp egg. Wide ranges spread a clutch out instead of hatching it at once.",
+            [nameof(SimulationConfig.waspReproductionCalorieThreshold)] =
+                "Calories required before an adult will swoop to the surface and lay.",
+            [nameof(SimulationConfig.waspEggDesiccationMoisture)] =
+                "Moisture below which a wasp egg dries out and dies.",
+            [nameof(SimulationConfig.waspEggHeatDeath)] =
+                "Temperature at which a wasp egg cooks. Fire near a laying site wipes out the whole clutch.",
+            [nameof(SimulationConfig.waspSurvivalTempMin)] =
+                "Coldest temperature an adult wasp survives.",
+            [nameof(SimulationConfig.waspSurvivalTempMax)] =
+                "Hottest temperature an adult wasp survives.",
+            [nameof(SimulationConfig.waspThreatTemperature)] =
+                "Temperature above which a wasp treats a neighbor cell as dangerous and flees.",
             [nameof(SimulationConfig.grassCanopyOpacity)] =
                 "How much living grass biomass attenuates the shared flora light field.",
             [nameof(SimulationConfig.detritusVaporAbsorbRate)] =

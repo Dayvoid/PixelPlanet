@@ -8,6 +8,10 @@ namespace GeneSys.Simulation.Gpu
 {
     public sealed class SimulationResources : IDisposable
     {
+        public const int WaspSliceCount = 7;
+        public const int WaspClaimCount = 5;
+        public const int GrassVisitSliceCount = 2;
+
         public RenderTexture MaterialRead { get; private set; }
         public RenderTexture MaterialWrite { get; private set; }
         public RenderTexture StateRead { get; private set; }
@@ -43,6 +47,10 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture PropaguleWrite { get; private set; }
         public RenderTexture GrassRootFlux { get; private set; }
         public RenderTexture GrassDropClaims { get; private set; }
+        public RenderTexture WaspRead { get; private set; }
+        public RenderTexture WaspWrite { get; private set; }
+        public RenderTexture WaspClaims { get; private set; }
+        public RenderTexture GrassVisit { get; private set; }
         public ComputeBuffer WaterColumn { get; private set; }
         public ComputeBuffer WaterFaceFlux { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
@@ -87,10 +95,15 @@ namespace GeneSys.Simulation.Gpu
             PropaguleWrite = CreateTextureArray("GeneSys Propagule B", GraphicsFormat.R32G32B32A32_SFloat, 3);
             GrassRootFlux = CreateTexture("GeneSys Grass Root Flux", GraphicsFormat.R32G32B32A32_SFloat);
             GrassDropClaims = CreateTexture("GeneSys Grass Drop Claims", GraphicsFormat.R32_UInt);
+            WaspRead = CreateTextureArray("GeneSys Wasp A", GraphicsFormat.R32G32B32A32_SFloat, WaspSliceCount);
+            WaspWrite = CreateTextureArray("GeneSys Wasp B", GraphicsFormat.R32G32B32A32_SFloat, WaspSliceCount);
+            WaspClaims = CreateTextureArray("GeneSys Wasp Claims", GraphicsFormat.R32_UInt, WaspClaimCount);
+            GrassVisit = CreateTextureArray("GeneSys Grass Visit", GraphicsFormat.R32G32B32A32_SFloat, GrassVisitSliceCount);
             WaterColumn = CreateColumnBuffer();
             WaterFaceFlux = CreateColumnBuffer();
             ClearFaunaAndAcoustic();
             ClearGrass();
+            ClearWasp();
             ClearWaterColumns();
         }
 
@@ -110,6 +123,14 @@ namespace GeneSys.Simulation.Gpu
             ClearRenderTarget(PropaguleWrite);
             ClearRenderTarget(GrassRootFlux);
             ClearRenderTarget(GrassDropClaims);
+        }
+
+        public void ClearWasp()
+        {
+            ClearRenderTarget(WaspRead);
+            ClearRenderTarget(WaspWrite);
+            ClearRenderTarget(WaspClaims);
+            ClearRenderTarget(GrassVisit);
         }
 
         public void ClearFaunaAndAcoustic()
@@ -203,8 +224,8 @@ namespace GeneSys.Simulation.Gpu
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
             (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
-            // Storm, Light, Fauna, Acoustic, Claims, Grass, Propagule, root flux, and
-            // hydrostatic column scratch are excluded: other kernels do not copy them through WriteCell.
+            // Storm, Light, Fauna, Acoustic, Claims, Grass, Propagule, Wasp, grass visit, root flux,
+            // and hydrostatic column scratch are excluded: other kernels do not copy them through WriteCell.
         }
 
         public void SwapStorm()
@@ -215,6 +236,11 @@ namespace GeneSys.Simulation.Gpu
         public void SwapFauna()
         {
             (FaunaRead, FaunaWrite) = (FaunaWrite, FaunaRead);
+        }
+
+        public void SwapWasp()
+        {
+            (WaspRead, WaspWrite) = (WaspWrite, WaspRead);
         }
 
         public void SwapGrass()
@@ -250,6 +276,7 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(AcousticRead, AcousticWrite);
             Graphics.CopyTexture(GrassRead, GrassWrite);
             Graphics.CopyTexture(PropaguleRead, PropaguleWrite);
+            Graphics.CopyTexture(WaspRead, WaspWrite);
         }
 
         public void Dispose()
@@ -271,6 +298,9 @@ namespace GeneSys.Simulation.Gpu
             Release(PropaguleRead); Release(PropaguleWrite);
             Release(GrassRootFlux);
             Release(GrassDropClaims);
+            Release(WaspRead); Release(WaspWrite);
+            Release(WaspClaims);
+            Release(GrassVisit);
             WaterColumn?.Release();
             WaterFaceFlux?.Release();
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
@@ -288,6 +318,9 @@ namespace GeneSys.Simulation.Gpu
             PropaguleRead = PropaguleWrite = null;
             GrassRootFlux = null;
             GrassDropClaims = null;
+            WaspRead = WaspWrite = null;
+            WaspClaims = null;
+            GrassVisit = null;
             WaterColumn = null;
             WaterFaceFlux = null;
         }

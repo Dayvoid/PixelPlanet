@@ -80,6 +80,8 @@ namespace GeneSys.Materials
         public const uint Cricket = 129;
         public const uint CricketEgg = 130;
         public const uint Detritus = 131;
+        public const uint Wasp = 132;
+        public const uint WaspEgg = 133;
         public const uint BiologicalStart = 128;
     }
 }

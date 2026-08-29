@@ -70,6 +70,19 @@ namespace GeneSys.Validation
         public float MeanGeneration;
     }
 
+    public struct WaspMetrics
+    {
+        public int AdultCount;
+        public int JuvenileCount;
+        public int EggCount;
+        public int PollenCarrierCount;
+        public int PollenSampleCount;
+        public double TotalCalories;
+        public double TotalHydration;
+        public float MeanAge;
+        public float MeanGeneration;
+    }
+
     public static class SimulationMetrics
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
@@ -293,7 +306,8 @@ namespace GeneSys.Validation
                         sampleCount++;
                     }
 
-                    if (material == MaterialIds.Algae || material == MaterialIds.Cricket || material == MaterialIds.CricketEgg)
+                    if (material == MaterialIds.Algae || material == MaterialIds.Cricket || material == MaterialIds.CricketEgg
+                        || material == MaterialIds.Wasp || material == MaterialIds.WaspEgg)
                         metrics.OrganismCount++;
 
                     if (flow != null && (material == MaterialIds.Air || material == MaterialIds.Vapor))
@@ -372,6 +386,103 @@ namespace GeneSys.Validation
                     });
                 });
             });
+        }
+
+        public static void MeasureWaspAsync(SimulationHost host, Action<WaspMetrics> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            RenderTexture materialTex = host.Resources.MaterialRead;
+            RenderTexture waspTex = host.Resources.WaspRead;
+            if (materialTex == null || waspTex == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            Action fail = () => completed?.Invoke(default);
+            RequestField(materialTex, fail, materialRequest =>
+            {
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                RequestFieldSlice(waspTex, 0, fail, vitalsRequest =>
+                {
+                    Vector4[] vitals = vitalsRequest.GetData<Vector4>().ToArray();
+                    RequestFieldSlice(waspTex, 2, fail, genomeRequest =>
+                    {
+                        Vector4[] genomeBits = genomeRequest.GetData<Vector4>().ToArray();
+                        var genomes = new FaunaGenome.Packed[genomeBits.Length];
+                        for (int i = 0; i < genomeBits.Length; i++)
+                            genomes[i] = WaspGenome.FromFloatBits(genomeBits[i]);
+                        ReadCargo(waspTex, fail, materials, vitals, genomes, completed);
+                    });
+                });
+            });
+        }
+
+        private static void ReadCargo(RenderTexture waspTex, Action fail, uint[] materials, Vector4[] vitals,
+            FaunaGenome.Packed[] genomes, Action<WaspMetrics> completed)
+        {
+            RequestFieldSlice(waspTex, 4, fail, first =>
+            {
+                Vector4[] cargo0 = first.GetData<Vector4>().ToArray();
+                RequestFieldSlice(waspTex, 5, fail, second =>
+                {
+                    Vector4[] cargo1 = second.GetData<Vector4>().ToArray();
+                    RequestFieldSlice(waspTex, 6, fail, third =>
+                    {
+                        Vector4[] cargo2 = third.GetData<Vector4>().ToArray();
+                        completed?.Invoke(ComputeWaspMetrics(materials, vitals, genomes, cargo0, cargo1, cargo2));
+                    });
+                });
+            });
+        }
+
+        public static WaspMetrics ComputeWaspMetrics(uint[] materials, Vector4[] vitals, FaunaGenome.Packed[] genomes,
+            Vector4[] cargo0, Vector4[] cargo1, Vector4[] cargo2)
+        {
+            var metrics = new WaspMetrics();
+            int count = Math.Min(materials.Length, Math.Min(vitals.Length, genomes.Length));
+            int living = 0;
+            double ageSum = 0d;
+            double generationSum = 0d;
+            for (int i = 0; i < count; i++)
+            {
+                if (materials[i] != MaterialIds.Wasp && materials[i] != MaterialIds.WaspEgg) continue;
+                FaunaGenome.Packed genome = WaspGenome.Sanitize(genomes[i]);
+                uint stage = WaspGenome.Stage(genome);
+                if (stage == WaspGenome.StageAdult) metrics.AdultCount++;
+                else if (stage == WaspGenome.StageJuvenile) metrics.JuvenileCount++;
+                else if (stage == WaspGenome.StageEgg) metrics.EggCount++;
+                metrics.TotalCalories += Math.Max(0d, vitals[i].x);
+                metrics.TotalHydration += Math.Max(0d, vitals[i].y);
+                ageSum += Math.Max(0f, vitals[i].z);
+                generationSum += WaspGenome.Generation(genome);
+                living++;
+
+                int samples = CargoCountAt(cargo0, cargo1, cargo2, i);
+                if (samples > 0)
+                {
+                    metrics.PollenCarrierCount++;
+                    metrics.PollenSampleCount += samples;
+                }
+            }
+            if (living > 0)
+            {
+                metrics.MeanAge = (float)(ageSum / living);
+                metrics.MeanGeneration = (float)(generationSum / living);
+            }
+            return metrics;
+        }
+
+        private static int CargoCountAt(Vector4[] cargo0, Vector4[] cargo1, Vector4[] cargo2, int index)
+        {
+            int samples = 0;
+            if (cargo0 != null && index < cargo0.Length && WaspGenome.CargoValid(WaspGenome.FromFloatBits(cargo0[index]))) samples++;
+            if (cargo1 != null && index < cargo1.Length && WaspGenome.CargoValid(WaspGenome.FromFloatBits(cargo1[index]))) samples++;
+            if (cargo2 != null && index < cargo2.Length && WaspGenome.CargoValid(WaspGenome.FromFloatBits(cargo2[index]))) samples++;
+            return samples;
         }
 
         public static FaunaMetrics ComputeFaunaMetrics(uint[] materials, Vector4[] vitals, FaunaGenome.Packed[] genomes)

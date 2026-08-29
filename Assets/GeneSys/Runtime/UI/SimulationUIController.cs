@@ -1322,7 +1322,35 @@ namespace GeneSys.UI
                    $"Fauna {FaunaGenome.DescribeStage(FaunaGenome.Stage(inspection.faunaGenome))} / {FaunaGenome.DescribeBehavior(FaunaGenome.Behavior(inspection.faunaGenome))}  gen {FaunaGenome.Generation(inspection.faunaGenome)}\n" +
                    $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
                    FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange) +
-                   FormatGrassInspection(inspection, host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f);
+                   FormatGrassInspection(inspection, host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f) +
+                   FormatWaspInspection(inspection, host.Config != null ? host.Config.waspGeneExpressionRange : 0.45f);
+        }
+
+        private static string FormatWaspInspection(CellInspection inspection, float expressionRange)
+        {
+            uint stage = WaspGenome.Stage(inspection.waspGenome);
+            if (!WaspGenome.IsLivingStage(stage)) return "";
+            var text = new System.Text.StringBuilder();
+            text.Append($"\nWasp {WaspGenome.DescribeStage(stage)} / {WaspGenome.DescribeBehavior(WaspGenome.Behavior(inspection.waspGenome))}");
+            text.Append($" gen {WaspGenome.Generation(inspection.waspGenome)} lin {WaspGenome.Lineage(inspection.waspGenome)}");
+            text.Append($"\n  cal {inspection.waspVitals.x:F3}  hyd {inspection.waspVitals.y:F3}  age {inspection.waspVitals.z:F0}  cd {inspection.waspVitals.w:F0}");
+            text.Append($"\n  vel θ {inspection.waspMotion.x:F3}  r {inspection.waspMotion.y:F3}");
+            if (inspection.waspCargo != null)
+            {
+                int carried = 0;
+                var lineages = new System.Text.StringBuilder();
+                for (int slot = 0; slot < inspection.waspCargo.Length; slot++)
+                {
+                    if (!WaspGenome.CargoValid(inspection.waspCargo[slot])) continue;
+                    if (carried > 0) lineages.Append(", ");
+                    lineages.Append(WaspGenome.CargoLineage(inspection.waspCargo[slot]));
+                    carried++;
+                }
+                text.Append($"\n  pollen {carried}/{inspection.waspCargo.Length}");
+                if (carried > 0) text.Append($"  donors {lineages}");
+            }
+            text.Append($"\n  {WaspGenome.DescribeGenes(inspection.waspGenome, expressionRange)}");
+            return text.ToString();
         }
 
         private void RefreshPlayLabel()
@@ -1407,26 +1435,31 @@ namespace GeneSys.UI
             {
                 SimulationMetrics.MeasureFaunaAsync(host, fauna =>
                 {
-                    metricsReadbackPending = false;
-                    if (worldMetricsLabel != null)
+                    SimulationMetrics.MeasureWaspAsync(host, wasp =>
                     {
-                        worldMetricsLabel.text =
-                            $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
-                            $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
-                    }
-                    if (simulationStatusLabel != null)
-                    {
-                        simulationStatusLabel.text =
-                            $"Grid {metrics.AngularResolution}×{metrics.RadialResolution}\n" +
-                            $"Ocean {metrics.OceanCoverage:P1}  |  Basins {metrics.BasinCount}\n" +
-                            $"Water  surface {metrics.SurfaceWaterMass:F1}  ground {metrics.GroundwaterMass:F1}  vapor {metrics.VaporMass:F1}\n" +
-                            $"Total tracked water {metrics.TotalTrackedWaterMass:F1}\n" +
-                            $"Mean T {metrics.MeanTemperature:F2}  P {metrics.MeanPressure:F3}  moisture {metrics.MeanMoisture:F3}\n" +
-                            $"Mean wind speed {metrics.MeanWindSpeed:F3}\n" +
-                            $"Fire cells {metrics.BurningCellCount}  intensity {metrics.TotalFireIntensity:F2}  O2 {metrics.MeanOxygen:F2}  soot {metrics.SootMass:F2}\n" +
-                            $"Organisms {metrics.OrganismCount}  cricket {fauna.AdultCount}  nymph {fauna.JuvenileCount}  eggs {fauna.EggCount}\n" +
-                            $"Fauna cal {fauna.TotalCalories:F2}  hyd {fauna.TotalHydration:F2}";
-                    }
+                        metricsReadbackPending = false;
+                        if (worldMetricsLabel != null)
+                        {
+                            worldMetricsLabel.text =
+                                $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
+                                $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
+                        }
+                        if (simulationStatusLabel != null)
+                        {
+                            simulationStatusLabel.text =
+                                $"Grid {metrics.AngularResolution}×{metrics.RadialResolution}\n" +
+                                $"Ocean {metrics.OceanCoverage:P1}  |  Basins {metrics.BasinCount}\n" +
+                                $"Water  surface {metrics.SurfaceWaterMass:F1}  ground {metrics.GroundwaterMass:F1}  vapor {metrics.VaporMass:F1}\n" +
+                                $"Total tracked water {metrics.TotalTrackedWaterMass:F1}\n" +
+                                $"Mean T {metrics.MeanTemperature:F2}  P {metrics.MeanPressure:F3}  moisture {metrics.MeanMoisture:F3}\n" +
+                                $"Mean wind speed {metrics.MeanWindSpeed:F3}\n" +
+                                $"Fire cells {metrics.BurningCellCount}  intensity {metrics.TotalFireIntensity:F2}  O2 {metrics.MeanOxygen:F2}  soot {metrics.SootMass:F2}\n" +
+                                $"Organisms {metrics.OrganismCount}  cricket {fauna.AdultCount}  nymph {fauna.JuvenileCount}  eggs {fauna.EggCount}\n" +
+                                $"Fauna cal {fauna.TotalCalories:F2}  hyd {fauna.TotalHydration:F2}\n" +
+                                $"Wasps {wasp.AdultCount}  larvae {wasp.JuvenileCount}  eggs {wasp.EggCount}  carrying {wasp.PollenCarrierCount} ({wasp.PollenSampleCount} pollen)\n" +
+                                $"Wasp cal {wasp.TotalCalories:F2}  hyd {wasp.TotalHydration:F2}  gen {wasp.MeanGeneration:F1}";
+                        }
+                    });
                 });
             });
         }

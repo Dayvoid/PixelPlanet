@@ -1,0 +1,931 @@
+#pragma kernel ScatterWasp
+#pragma kernel SeedWasp
+#pragma kernel WaspMetabolism
+#pragma kernel ClearWaspClaims
+#pragma kernel ClaimWaspActions
+#pragma kernel ApplyWaspFlower
+#pragma kernel ApplyWaspWorld
+#pragma kernel ApplyWaspState
+#pragma target 5.1
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#define GENESYS_DISABLE_ORGANISM_HISTORY_UAV
+#include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+Texture2D<uint> _ShadeRead;
+RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2DArray<float4> _LifeGenomeWrite;
+Texture2DArray<float4> _FaunaRead;
+Texture2DArray<float4> _GrassRead;
+Texture2DArray<float4> _WaspRead;
+RWTexture2DArray<float4> _WaspWrite;
+Texture2DArray<uint> _WaspClaims;
+RWTexture2DArray<uint> _WaspClaimsWrite;
+RWTexture2DArray<float4> _GrassVisitWrite;
+Texture2D<float2> _AcousticRead;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _Mechanics;
+float4 _WaspA; // initialCalories, initialHydration, maturityTicks, decisionInterval
+float4 _WaspB; // maintenanceRate, flightDrain, hydrationDrain, calorieCapacity
+float4 _WaspC; // fullThreshold, hungerThreshold, starvationThreshold, reproductionCalorieThreshold
+float4 _WaspD; // cruiseAltitude, altitudeGain, liftPower, surfaceScanRange
+float4 _WaspE; // bodyMass, drag, windCoupling, updraftCoupling
+float4 _WaspF; // swoopImpulse, senseRadius, preyCalorieConversion, preyHydrationTransfer
+float4 _WaspG; // nectarDraw, nectarCalories, nectarHydration, pollenCapacity
+float4 _WaspH; // geneExpressionRange, baseMutationRate, mateCooldown, reproduceCooldown
+float4 _WaspI; // clutchMin, clutchMax, hatchMin, hatchMax
+float4 _WaspJ; // eggDesiccationMoisture, eggHeatDeath, survivalTempMin, survivalTempMax
+float4 _WaspK; // threatTemperature, seedAtWorldgen, unused, unused
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+float4 Eco(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
+float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
+float4 L(int2 value) { return SampleLife(_LifeGenomeRead, C(value)); }
+uint4 G(int2 value) { return SampleGenome(_LifeGenomeRead, C(value)); }
+float4 VitalsOf(int2 value) { return SampleWaspVitals(_WaspRead, C(value)); }
+float4 MotionOf(int2 value) { return SampleWaspMotion(_WaspRead, C(value)); }
+uint4 WaspG(int2 value) { return SampleWaspGenome(_WaspRead, C(value)); }
+uint4 PartnerOf(int2 value) { return SampleWaspPartner(_WaspRead, C(value)); }
+uint4 CargoOf(int2 value, uint slot) { return SampleWaspCargo(_WaspRead, C(value), slot); }
+float4 PreyVitalsOf(int2 value) { return SampleFaunaVitals(_FaunaRead, C(value)); }
+uint4 PreyGenomeOf(int2 value) { return SampleFaunaGenome(_FaunaRead, C(value)); }
+float2 AcousticOf(int2 value) { return _AcousticRead.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+uint ClaimAt(int2 cell, uint slice)
+{
+    return _WaspClaims.Load(int4(C(cell), (int)slice, 0));
+}
+
+void Claim(int2 dest, uint slice, int2 source)
+{
+    dest = C(dest);
+    uint packed = PackFaunaCell(source, _GridSize);
+    uint original;
+    InterlockedMin(_WaspClaimsWrite[uint3((uint2)dest, slice)], packed, original);
+}
+
+void WriteWorld(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome)
+{
+    uint oldMaterial = M(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(D(material).metadata.x, (uint2)cell, material, _Seed);
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
+}
+
+float CellHash(int2 cell, uint salt)
+{
+    return Hash01((uint)cell.x * 40503u + (uint)cell.y * 22543u + (uint)_Tick * 26417u + (uint)_Seed * 5779u + salt);
+}
+
+bool HasLandingSupport(int2 cell)
+{
+    if (cell.y <= 0) return false;
+    return IsFaunaSupport(M(cell + int2(0, -1)));
+}
+
+// Adult wasps fly, so open habitat alone is enough. Eggs still need something to rest on.
+bool WaspCanOccupy(int2 cell)
+{
+    return IsFaunaOpenHabitat(M(cell));
+}
+
+bool WaspEggCanOccupy(int2 cell)
+{
+    return IsFaunaOpenHabitat(M(cell)) && HasLandingSupport(cell);
+}
+
+// Cells of clearance between the wasp and the first surface below it. Returns one past the
+// scan range when nothing is found, which reads as open sky and makes the wasp descend.
+float SurfaceDistance(int2 cell)
+{
+    int maxScan = clamp((int)round(_WaspD.w), 1, 24);
+    [loop]
+    for (int i = 1; i <= maxScan; i++)
+    {
+        int y = cell.y - i;
+        if (y < 0) return (float)i;
+        if (IsFaunaSupport(M(int2(cell.x, y)))) return (float)i;
+    }
+    return (float)(maxScan + 1);
+}
+
+float WaspMass(uint4 genome, float4 vitals)
+{
+    float range = _WaspH.x;
+    float body = max(0.05, _WaspE.x) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_BODY_MASS), range);
+    return max(0.08, body + saturate(vitals.x) * 0.15);
+}
+
+float WaspCalorieCap(uint4 genome)
+{
+    return saturate(max(0.05, _WaspB.w) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_CALORIE_CAPACITY), _WaspH.x));
+}
+
+float CruiseAltitudeOf(uint4 genome)
+{
+    float target = max(1.0, _WaspD.x) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_CRUISE_ALTITUDE), _WaspH.x);
+    return clamp(target, 1.0, max(1.0, _WaspD.w));
+}
+
+int ClutchSizeOf(uint4 genome)
+{
+    int lo = clamp((int)round(_WaspI.x), 1, 8);
+    int hi = max(lo, clamp((int)round(_WaspI.y), 1, 8));
+    float range = _WaspH.x;
+    float factor = WaspExpressFactor(DecodeGene(genome, WASP_GENE_FERTILITY), range);
+    float span = max(1e-4, 2.0 * max(0.05, range));
+    float t = saturate((factor - (1.0 - range)) / span);
+    return clamp(lo + (int)round(t * (float)(hi - lo)), lo, hi);
+}
+
+bool IsPreyMaterial(uint material, bool starving)
+{
+    if (IsCricketMaterial(material)) return true;
+    return starving && IsWaspMaterial(material);
+}
+
+// Two starving neighbours would otherwise claim each other on the same tick and both
+// become corpses, so cannibalism only runs one way: the better-fed wasp wins, and a tie
+// falls to the lower cell index. Cricket prey never needs this.
+bool WinsCannibalDuel(int2 self, int2 other)
+{
+    float mine = VitalsOf(self).x;
+    float theirs = VitalsOf(other).x;
+    if (abs(mine - theirs) > 1e-5) return mine > theirs;
+    uint a = (uint)self.y * (uint)_GridSize.x + (uint)self.x;
+    uint b = (uint)other.y * (uint)_GridSize.x + (uint)other.x;
+    return a < b;
+}
+
+// Highest-nectar open flower on a soil cell. Both the wasp state and the grass handoff
+// resolve the same slot so the drink and the pollen deposit stay in agreement.
+bool BestFlowerSlot(int2 soil, out uint bestSlot, out float bestNectar, out uint4 bestGenome)
+{
+    bestSlot = 0u;
+    bestNectar = 0.0;
+    bestGenome = uint4(0u, 0u, 0u, 0u);
+    if (!IsGrassSoilAnchor(M(soil))) return false;
+    [unroll]
+    for (uint slot = 0u; slot < 3u; slot++)
+    {
+        uint4 genome = SampleGrassGenome(_GrassRead, soil, slot);
+        if (!GrassIsLiving(GrassStage(genome))) continue;
+        if (!GrassIsFlowering(SampleGrassTiming(_GrassRead, soil, slot))) continue;
+        float nectar = SampleGrassNectar(_GrassRead, soil, slot);
+        if (nectar > bestNectar)
+        {
+            bestNectar = nectar;
+            bestSlot = slot;
+            bestGenome = genome;
+        }
+    }
+    return bestNectar > 1e-4;
+}
+
+float2 ThreatDir(int2 cell, uint4 genome)
+{
+    float threatTemp = max(20.0, _WaspK.x);
+    float2 dir = 0.0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        float danger = max(0.0, S(neighbor).x - threatTemp) * 0.02 + Comb(neighbor).y;
+        dir -= float2(offsets[i]) * danger;
+    }
+    // Aggressive wasps hold position longer before breaking off.
+    return dir / max(0.2, WaspExpressFactor(DecodeGene(genome, WASP_GENE_AGGRESSION), _WaspH.x));
+}
+
+// One pass over the sense box collects both the prey gradient (cricket bodies plus the
+// acoustic calls crickets broadcast for their own kind) and the flower gradient.
+void SenseTargets(int2 cell, uint4 genome, bool starving,
+    out float2 preyDir, out float preyScore, out float2 flowerDir, out float flowerScore)
+{
+    preyDir = 0.0;
+    preyScore = 0.0;
+    flowerDir = 0.0;
+    flowerScore = 0.0;
+
+    float range = _WaspH.x;
+    float senseGene = WaspExpressFactor(DecodeGene(genome, WASP_GENE_PREY_SENSE), range);
+    float hearing = WaspExpressFactor(DecodeGene(genome, WASP_GENE_HEARING), range);
+    int radius = clamp((int)round(max(1.0, _WaspF.y) * senseGene), 1, 6);
+
+    [loop]
+    for (int dy = -radius; dy <= radius; dy++)
+    {
+        [loop]
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            if (dx == 0 && dy == 0) continue;
+            int2 neighbor = C(cell + int2(dx, dy));
+            float weight = 1.0 / max(1.0, (float)(abs(dx) + abs(dy)));
+            float2 offset = float2((float)dx, (float)dy);
+            uint material = M(neighbor);
+
+            float prey = (AcousticOf(neighbor).x + AcousticOf(neighbor).y) * hearing;
+            if (IsPreyMaterial(material, starving) && !all(neighbor == cell))
+                prey += (1.5 + saturate(PreyVitalsOf(neighbor).x)) * senseGene;
+            if (prey > 0.0)
+            {
+                preyDir += offset * prey * weight;
+                preyScore += prey * weight;
+            }
+
+            if (IsGrassSoilAnchor(material))
+            {
+                uint slot;
+                float nectar;
+                uint4 flowerGenome;
+                if (BestFlowerSlot(neighbor, slot, nectar, flowerGenome))
+                {
+                    flowerDir += offset * nectar * weight;
+                    flowerScore += nectar * weight;
+                }
+            }
+        }
+    }
+}
+
+// Adjacent prey the wasp can strike this tick, or the wasp's own cell when there is none.
+int2 AdjacentPrey(int2 cell, bool starving)
+{
+    int2 best = cell;
+    float bestScore = -1.0;
+    int2 offsets[8] =
+    {
+        int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1),
+        int2(-1, -1), int2(1, -1), int2(-1, 1), int2(1, 1)
+    };
+    [unroll]
+    for (int i = 0; i < 8; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        uint material = M(neighbor);
+        if (!IsPreyMaterial(material, starving)) continue;
+        bool cannibal = IsWaspMaterial(material);
+        if (cannibal && WaspStage(WaspG(neighbor)) != WASP_STAGE_ADULT) continue;
+        if (cannibal && !WinsCannibalDuel(cell, neighbor)) continue;
+        float meal = cannibal ? VitalsOf(neighbor).x : PreyVitalsOf(neighbor).x;
+        float score = 1.0 + saturate(meal) + 0.05 * CellHash(neighbor, 23u);
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = neighbor;
+        }
+    }
+    return best;
+}
+
+int2 AdjacentEligibleAdult(int2 cell)
+{
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        if (IsWaspMaterial(M(neighbor)) && WaspStage(WaspG(neighbor)) == WASP_STAGE_ADULT && VitalsOf(neighbor).w <= 0.5)
+            return neighbor;
+    }
+    return cell;
+}
+
+int2 AdjacentFlower(int2 cell)
+{
+    int2 offsets[5] = { int2(0, -1), int2(-1, -1), int2(1, -1), int2(-1, 0), int2(1, 0) };
+    [unroll]
+    for (int i = 0; i < 5; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        uint slot;
+        float nectar;
+        uint4 genome;
+        if (BestFlowerSlot(neighbor, slot, nectar, genome))
+            return neighbor;
+    }
+    return cell;
+}
+
+bool EggReadyToHatch(uint4 genome, float4 vitals)
+{
+    if (WaspStage(genome) != WASP_STAGE_EGG) return false;
+    return vitals.z >= max(1.0, vitals.w);
+}
+
+bool ReadyToLay(uint4 genome, float4 vitals)
+{
+    return WaspStage(genome) == WASP_STAGE_ADULT
+        && vitals.z >= max(1.0, _WaspA.z)
+        && vitals.x >= _WaspC.w
+        && vitals.w <= 0.5;
+}
+
+// Worldgen only: paint a sparse starting population into open air at cruise clearance.
+// Kept separate from SeedWasp because it is the one wasp kernel that edits the grid.
+[numthreads(8, 8, 1)]
+void ScatterWasp(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    if (_WaspK.y < 0.5) return;
+    if (!IsFaunaOpenHabitat(M(cell))) return;
+    float clearance = SurfaceDistance(cell);
+    if (clearance < 2.0 || clearance > max(2.0, _WaspD.x + 2.0)) return;
+    if (Hash01((uint)cell.x * 40503u + (uint)cell.y * 22543u + (uint)_Seed * 5779u) > 0.004) return;
+    _MaterialWrite[cell] = WASP_ID;
+}
+
+[numthreads(8, 8, 1)]
+void SeedWasp(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+    uint4 genome = WaspG(cell);
+    uint4 partner = PartnerOf(cell);
+    uint4 cargo0 = CargoOf(cell, 0u);
+    uint4 cargo1 = CargoOf(cell, 1u);
+    uint4 cargo2 = CargoOf(cell, 2u);
+
+    if (!IsWaspMaterial(material) && !IsWaspEggMaterial(material))
+    {
+        ClearWaspState(_WaspWrite, cell);
+        return;
+    }
+
+    if (WaspStage(genome) == WASP_STAGE_EMPTY)
+    {
+        genome = RandomWaspGenome((uint2)cell, _Seed, _Tick);
+        uint4 zero = uint4(0u, 0u, 0u, 0u);
+        cargo0 = zero;
+        cargo1 = zero;
+        cargo2 = zero;
+        partner = zero;
+        motion = 0.0;
+        if (IsWaspEggMaterial(material))
+        {
+            float hatch = lerp(max(1.0, _WaspI.z), max(_WaspI.z, _WaspI.w), CellHash(cell, 61u));
+            vitals = float4(saturate(_WaspA.x * 0.4), saturate(_WaspA.y), 0.0, hatch);
+            genome.w = PackWaspMeta(WASP_STAGE_EGG, WASP_BEHAVIOR_IDLE, 0u, WaspLineage(genome));
+        }
+        else
+        {
+            vitals = float4(saturate(_WaspA.x), saturate(_WaspA.y), max(0.0, _WaspA.z), 0.0);
+            genome.w = PackWaspMeta(WASP_STAGE_ADULT, WASP_BEHAVIOR_CRUISE, 0u, WaspLineage(genome));
+        }
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, WaspLineage(genome), ORGANISM_CAUSE_PAINTED);
+    }
+
+    WriteWaspState(_WaspWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+}
+
+[numthreads(8, 8, 1)]
+void WaspMetabolism(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+    uint4 genome = WaspG(cell);
+    uint4 partner = PartnerOf(cell);
+    uint4 cargo0 = CargoOf(cell, 0u);
+    uint4 cargo1 = CargoOf(cell, 1u);
+    uint4 cargo2 = CargoOf(cell, 2u);
+
+    if (!IsWaspMaterial(material) && !IsWaspEggMaterial(material))
+    {
+        ClearWaspState(_WaspWrite, cell);
+        return;
+    }
+
+    uint stage = WaspStage(genome);
+    uint behavior = WaspBehavior(genome);
+    float dt = max(1e-4, _DeltaTime);
+    float range = _WaspH.x;
+    float temp = S(cell).x;
+    float flame = Comb(cell).y;
+
+    if (stage == WASP_STAGE_EGG)
+    {
+        float retention = WaspExpressFactor(DecodeGene(genome, WASP_GENE_HYDRATION_RETENTION), range);
+        float envMoist = saturate(max(S(cell).z, cell.y > 0 ? S(cell + int2(0, -1)).z + A(cell + int2(0, -1)).y : 0.0));
+        vitals.y = saturate(vitals.y + (envMoist - vitals.y) * 0.15 * dt * retention);
+        vitals.x = saturate(vitals.x - 0.002 * dt);
+        vitals.z += 1.0;
+        if (flame > 0.05 || temp >= _WaspJ.y)
+        {
+            genome.w = PackWaspMeta(WASP_STAGE_DEAD, WASP_BEHAVIOR_IDLE, WaspGeneration(genome), WaspLineage(genome));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_FIRE);
+        }
+        else if (vitals.y < _WaspJ.x)
+        {
+            genome.w = PackWaspMeta(WASP_STAGE_DEAD, WASP_BEHAVIOR_IDLE, WaspGeneration(genome), WaspLineage(genome));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_DESICCATION);
+        }
+        WriteWaspState(_WaspWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+        return;
+    }
+
+    if (stage != WASP_STAGE_JUVENILE && stage != WASP_STAGE_ADULT)
+    {
+        ClearWaspState(_WaspWrite, cell);
+        return;
+    }
+
+    float metabolic = WaspExpressFactor(DecodeGene(genome, WASP_GENE_METABOLISM), range);
+    float retention = WaspExpressFactor(DecodeGene(genome, WASP_GENE_HYDRATION_RETENTION), range);
+    float mass = WaspMass(genome, vitals);
+    float gravity = max(1e-3, _Mechanics.x);
+
+    // Vertical wind offsets the lift the wasp must produce, so thermals subsidise flight
+    // and downdrafts tax it. This is the main coupling between weather and wasp population.
+    float assist = F(cell).y * max(0.0, _WaspE.w);
+    float effort = saturate((gravity - assist) / gravity);
+    vitals.x = saturate(min(WaspCalorieCap(genome), vitals.x)
+        - (max(0.0, _WaspB.x) * metabolic + max(0.0, _WaspB.y) * mass * effort) * dt);
+    vitals.y = saturate(vitals.y - max(0.0, _WaspB.z) * dt / max(0.25, retention));
+    vitals.z += 1.0;
+    vitals.w = max(0.0, vitals.w - 1.0);
+
+    if (stage == WASP_STAGE_JUVENILE && vitals.z >= max(1.0, _WaspA.z))
+        stage = WASP_STAGE_ADULT;
+
+    uint cause = ORGANISM_CAUSE_NONE;
+    if (flame > 0.08) cause = ORGANISM_CAUSE_FIRE;
+    else if (temp < _WaspJ.z || temp > _WaspJ.w) cause = ORGANISM_CAUSE_FIRE;
+    else if (vitals.x <= 1e-4) cause = ORGANISM_CAUSE_STARVATION;
+    else if (vitals.y <= 1e-4) cause = ORGANISM_CAUSE_DEHYDRATION;
+
+    if (cause != ORGANISM_CAUSE_NONE)
+    {
+        genome.w = PackWaspMeta(WASP_STAGE_DEAD, WASP_BEHAVIOR_IDLE, WaspGeneration(genome), WaspLineage(genome));
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, WaspGeneration(genome), WaspLineage(genome), cause);
+        WriteWaspState(_WaspWrite, cell, vitals, 0.0, genome, partner, cargo0, cargo1, cargo2);
+        return;
+    }
+
+    bool starving = vitals.x < _WaspC.z;
+    bool hungry = vitals.x < _WaspC.y;
+    bool full = vitals.x >= _WaspC.x;
+    bool thirsty = vitals.y < 0.6;
+    uint capacity = WaspPollenCapacity(_WaspG.w);
+    bool wantsPollen = WaspCargoCount(cargo0, cargo1, cargo2) < capacity;
+
+    float2 threat = ThreatDir(cell, genome);
+    float2 preyDir;
+    float preyScore;
+    float2 flowerDir;
+    float flowerScore;
+    SenseTargets(cell, genome, starving, preyDir, preyScore, flowerDir, flowerScore);
+
+    bool decisionDue = ((uint)_Tick % (uint)max(1, (int)round(_WaspA.w))) == 0u;
+    if (decisionDue)
+    {
+        if (length(threat) > 0.05)
+            behavior = WASP_BEHAVIOR_FLEE;
+        else if (ReadyToLay(genome, vitals))
+            behavior = WASP_BEHAVIOR_SWOOP;
+        else if (!full && (hungry || preyScore > 0.05))
+            behavior = WASP_BEHAVIOR_HUNT;
+        else if ((thirsty || wantsPollen) && flowerScore > 1e-3)
+            behavior = WASP_BEHAVIOR_NECTAR;
+        else
+            behavior = WASP_BEHAVIOR_CRUISE;
+    }
+
+    // Altitude controller: hold the gene-scaled cruise clearance, drop to the deck when
+    // swooping. Lift authority must beat gravity, so weak or heavy wasps ride lower.
+    float measured = SurfaceDistance(cell);
+    float target = behavior == WASP_BEHAVIOR_SWOOP ? 1.0 : CruiseAltitudeOf(genome);
+    float lift = max(0.0, _WaspD.z) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_FLIGHT_POWER), range) / mass;
+    float command = clamp((target - measured) * max(0.0, _WaspD.y), -2.0, 2.0);
+    motion.y += (command * lift - gravity) * dt;
+    if (behavior == WASP_BEHAVIOR_SWOOP && measured > 1.5)
+        motion.y -= max(0.0, _WaspF.x) * dt;
+
+    float drag = max(0.0, _WaspE.y) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_DRAG), range);
+    float2 wind = float2(F(cell).x * max(0.0, _WaspE.z), F(cell).y * max(0.0, _WaspE.w));
+    motion.xy += (wind - motion.xy * drag) * dt / mass;
+
+    float2 steer = 0.0;
+    if (behavior == WASP_BEHAVIOR_FLEE) steer = threat;
+    else if (behavior == WASP_BEHAVIOR_HUNT) steer = preyDir;
+    else if (behavior == WASP_BEHAVIOR_NECTAR) steer = flowerDir;
+    else if (behavior == WASP_BEHAVIOR_CRUISE)
+    {
+        float angle = CellHash(cell, 29u) * 6.2831853;
+        steer = float2(cos(angle), 0.0) * abs(sin(angle));
+    }
+    if (length(steer) > 1e-4)
+    {
+        float2 direction = steer / max(length(steer), 1e-4);
+        float thrust = lift * 0.35;
+        motion.x += direction.x * thrust * dt;
+        motion.y += direction.y * thrust * dt * 0.5;
+    }
+
+    motion.xy = clamp(motion.xy, -4.0, 4.0);
+    genome.w = PackWaspMeta(stage, behavior, WaspGeneration(genome), WaspLineage(genome));
+    WriteWaspState(_WaspWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+}
+
+[numthreads(8, 8, 1)]
+void ClearWaspClaims(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    uint2 cell = id.xy;
+    [unroll]
+    for (uint slice = 0u; slice < (uint)WASP_CLAIM_COUNT; slice++)
+        _WaspClaimsWrite[uint3(cell, slice)] = WASP_CLAIM_EMPTY;
+}
+
+[numthreads(8, 8, 1)]
+void ClaimWaspActions(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    if (!IsWaspMaterial(material)) return;
+
+    uint4 genome = WaspG(cell);
+    uint stage = WaspStage(genome);
+    if (stage != WASP_STAGE_JUVENILE && stage != WASP_STAGE_ADULT) return;
+
+    uint behavior = WaspBehavior(genome);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+    bool starving = vitals.x < _WaspC.z;
+
+    if (behavior == WASP_BEHAVIOR_HUNT || starving)
+    {
+        int2 prey = AdjacentPrey(cell, starving);
+        if (!all(prey == cell) && vitals.x < _WaspC.x)
+            Claim(prey, WASP_CLAIM_PREY, cell);
+    }
+
+    uint capacity = WaspPollenCapacity(_WaspG.w);
+    bool wantsFlower = behavior == WASP_BEHAVIOR_NECTAR
+        || vitals.y < 0.6
+        || WaspCargoCount(CargoOf(cell, 0u), CargoOf(cell, 1u), CargoOf(cell, 2u)) < capacity;
+    if (wantsFlower)
+    {
+        int2 flower = AdjacentFlower(cell);
+        if (!all(flower == cell))
+            Claim(flower, WASP_CLAIM_FLOWER, cell);
+    }
+
+    if (stage == WASP_STAGE_ADULT && vitals.w <= 0.5)
+    {
+        int2 mate = AdjacentEligibleAdult(cell);
+        if (!all(mate == cell))
+            Claim(mate, WASP_CLAIM_MATE, cell);
+    }
+
+    // Laying only lands once the wasp has actually descended to the surface.
+    if (ReadyToLay(genome, vitals) && SurfaceDistance(cell) <= 1.5)
+    {
+        int clutch = ClutchSizeOf(genome);
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+        int laid = 0;
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            if (laid >= clutch) break;
+            int2 dest = C(cell + offsets[i]);
+            if (!WaspEggCanOccupy(dest)) continue;
+            Claim(dest, WASP_CLAIM_EGG, cell);
+            laid++;
+        }
+    }
+
+    float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+    int2 step = int2(0, 0);
+    if (abs(nextFrac.x) >= 0.5)
+        step.x = nextFrac.x > 0.0 ? 1 : -1;
+    else if (abs(nextFrac.y) >= 0.5)
+        step.y = nextFrac.y > 0.0 ? 1 : -1;
+    if (any(step != int2(0, 0)))
+    {
+        int2 dest = C(cell + step);
+        if (WaspCanOccupy(dest))
+            Claim(dest, WASP_CLAIM_MOVE, cell);
+        else if (WaspCanOccupy(C(cell + int2(step.x, 0))))
+            Claim(C(cell + int2(step.x, 0)), WASP_CLAIM_MOVE, cell);
+    }
+}
+
+// Deferred handoff to the grass pass. Only claimed cells are written, so records survive
+// until the next grass transport pass consumes and clears them.
+[numthreads(8, 8, 1)]
+void ApplyWaspFlower(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint winner = ClaimAt(cell, WASP_CLAIM_FLOWER);
+    if (winner == WASP_CLAIM_EMPTY) return;
+
+    uint hostSlot;
+    float hostNectar;
+    uint4 hostGenome;
+    if (!BestFlowerSlot(cell, hostSlot, hostNectar, hostGenome)) return;
+
+    int2 waspCell = UnpackFaunaCell(winner, _GridSize);
+    float draw = min(hostNectar, max(0.0, _WaspG.x));
+
+    float4 nectarDraw = 0.0;
+    if (hostSlot == 0u) nectarDraw.x = draw;
+    else if (hostSlot == 1u) nectarDraw.y = draw;
+    else nectarDraw.z = draw;
+    nectarDraw.w = (float)(hostSlot + 1u);
+
+    uint4 donor = uint4(0u, 0u, 0u, 0u);
+    int index = WaspCargoForeignIndex(CargoOf(waspCell, 0u), CargoOf(waspCell, 1u), CargoOf(waspCell, 2u), GrassLineage(hostGenome));
+    if (index >= 0)
+    {
+        donor = CargoOf(waspCell, (uint)index);
+        donor.w |= GRASS_DONOR_VALID;
+    }
+
+    _GrassVisitWrite[uint3((uint2)cell, GRASS_VISIT_NECTAR)] = nectarDraw;
+    _GrassVisitWrite[uint3((uint2)cell, GRASS_VISIT_DONOR)] = asfloat(donor);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyWaspWorld(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = Eco(cell);
+    float4 combustion = Comb(cell);
+    float4 life = L(cell);
+    uint4 genome = G(cell);
+    uint packedSelf = PackFaunaCell(cell, _GridSize);
+
+    uint preyWinner = ClaimAt(cell, WASP_CLAIM_PREY);
+    bool consumed = false;
+    if (preyWinner != WASP_CLAIM_EMPTY && (IsCricketMaterial(material) || IsWaspMaterial(material)))
+    {
+        float4 victim = IsCricketMaterial(material) ? SampleFaunaVitals(_FaunaRead, cell) : VitalsOf(cell);
+        uint generation = IsCricketMaterial(material) ? FaunaGeneration(PreyGenomeOf(cell)) : WaspGeneration(WaspG(cell));
+        uint lineage = IsCricketMaterial(material) ? FaunaLineage(PreyGenomeOf(cell)) : WaspLineage(WaspG(cell));
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, generation, lineage, ORGANISM_CAUSE_CONSUMED);
+        // Leftovers become a corpse that the detritus cycle turns back into nutrients.
+        material = MATERIAL_DETRITUS;
+        aux.y = max(aux.y, saturate(victim.y * (1.0 - saturate(_WaspF.w))));
+        aux.z = max(aux.z, saturate(victim.x * (1.0 - saturate(_WaspF.z))));
+        combustion = SeedCombustion(material, D(material));
+        consumed = true;
+    }
+
+    uint moveWinner = ClaimAt(cell, WASP_CLAIM_MOVE);
+    uint eggWinner = ClaimAt(cell, WASP_CLAIM_EGG);
+    bool vacated = false;
+
+    if (!consumed && (IsWaspMaterial(material) || IsWaspEggMaterial(material)) && WaspStage(WaspG(cell)) == WASP_STAGE_DEAD)
+    {
+        material = MATERIAL_DETRITUS;
+        aux.z = max(aux.z, saturate(VitalsOf(cell).x * 0.5));
+        combustion = SeedCombustion(material, D(material));
+        vacated = true;
+    }
+    else if (!consumed && IsWaspMaterial(material))
+    {
+        float4 motion = MotionOf(cell);
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        int2 dest = any(step != int2(0, 0)) ? C(cell + step) : cell;
+        if (!all(dest == cell) && ClaimAt(dest, WASP_CLAIM_MOVE) == packedSelf)
+        {
+            material = 1u;
+            vacated = true;
+        }
+    }
+    else if (!consumed && IsWaspEggMaterial(material) && EggReadyToHatch(WaspG(cell), VitalsOf(cell)))
+    {
+        material = WASP_ID;
+    }
+
+    if (!consumed && !vacated && moveWinner != WASP_CLAIM_EMPTY && IsFaunaOpenHabitat(material))
+    {
+        int2 source = UnpackFaunaCell(moveWinner, _GridSize);
+        if (IsWaspMaterial(M(source)))
+            material = WASP_ID;
+    }
+    else if (!consumed && !vacated && eggWinner != WASP_CLAIM_EMPTY && IsFaunaOpenHabitat(material) && HasLandingSupport(cell))
+    {
+        material = WASP_EGG_ID;
+    }
+
+    WriteWorld(cell, material, state, flow, aux, ecology, combustion, life, genome);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyWaspState(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 vitals = VitalsOf(cell);
+    float4 motion = MotionOf(cell);
+    uint4 genome = WaspG(cell);
+    uint4 partner = PartnerOf(cell);
+    uint4 cargo0 = CargoOf(cell, 0u);
+    uint4 cargo1 = CargoOf(cell, 1u);
+    uint4 cargo2 = CargoOf(cell, 2u);
+    uint packedSelf = PackFaunaCell(cell, _GridSize);
+
+    uint moveWinner = ClaimAt(cell, WASP_CLAIM_MOVE);
+    uint eggWinner = ClaimAt(cell, WASP_CLAIM_EGG);
+
+    if (moveWinner != WASP_CLAIM_EMPTY && !IsWaspMaterial(material))
+    {
+        int2 source = UnpackFaunaCell(moveWinner, _GridSize);
+        vitals = VitalsOf(source);
+        motion = MotionOf(source);
+        genome = WaspG(source);
+        partner = PartnerOf(source);
+        cargo0 = CargoOf(source, 0u);
+        cargo1 = CargoOf(source, 1u);
+        cargo2 = CargoOf(source, 2u);
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        if (abs(nextFrac.x) >= 0.5) nextFrac.x -= sign(nextFrac.x);
+        if (abs(nextFrac.y) >= 0.5) nextFrac.y -= sign(nextFrac.y);
+        motion.zw = nextFrac;
+        WriteWaspState(_WaspWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+        return;
+    }
+
+    if (eggWinner != WASP_CLAIM_EMPTY && IsFaunaOpenHabitat(material) && WaspStage(genome) != WASP_STAGE_EGG)
+    {
+        int2 parent = UnpackFaunaCell(eggWinner, _GridSize);
+        uint4 parentGenome = WaspG(parent);
+        uint4 parentPartner = PartnerOf(parent);
+        uint salt = packedSelf * 17u + (uint)_Tick * 31u + (uint)_Seed;
+        uint4 child = WaspHasPartner(parentPartner)
+            ? CombineFaunaGenomes(parentGenome, parentPartner, salt)
+            : parentGenome;
+        child = MutateWaspGenome(child, _WaspH.y, salt + 17u);
+        float hatch = lerp(max(1.0, _WaspI.z), max(_WaspI.z, _WaspI.w), CellHash(cell, 41u));
+        float4 parentVitals = VitalsOf(parent);
+        float4 eggVitals = float4(saturate(parentVitals.x * 0.2 + 0.15), saturate(parentVitals.y * 0.5 + 0.3), 0.0, hatch);
+        child.w = PackWaspMeta(WASP_STAGE_EGG, WASP_BEHAVIOR_IDLE, (WaspGeneration(parentGenome) + 1u) & 255u, WaspLineage(parentGenome));
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_REPRODUCE, WaspGeneration(parentGenome), WaspLineage(parentGenome), ORGANISM_CAUSE_LAID);
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, WaspGeneration(child), WaspLineage(child), ORGANISM_CAUSE_NONE);
+        uint4 zero = uint4(0u, 0u, 0u, 0u);
+        WriteWaspState(_WaspWrite, cell, eggVitals, 0.0, child, zero, zero, zero, zero);
+        return;
+    }
+
+    if (!IsWaspMaterial(material) && !IsWaspEggMaterial(material))
+    {
+        ClearWaspState(_WaspWrite, cell);
+        return;
+    }
+
+    bool vacated = false;
+    if (IsWaspMaterial(material))
+    {
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        int2 dest = any(step != int2(0, 0)) ? C(cell + step) : cell;
+        if (!all(dest == cell) && ClaimAt(dest, WASP_CLAIM_MOVE) == packedSelf)
+            vacated = true;
+    }
+
+    bool eaten = ClaimAt(cell, WASP_CLAIM_PREY) != WASP_CLAIM_EMPTY && IsWaspMaterial(material);
+    if (vacated || eaten || WaspStage(genome) == WASP_STAGE_DEAD)
+    {
+        ClearWaspState(_WaspWrite, cell);
+        return;
+    }
+
+    bool starving = vitals.x < _WaspC.z;
+    int2 prey = AdjacentPrey(cell, starving);
+    if (IsWaspMaterial(material) && !all(prey == cell) && ClaimAt(prey, WASP_CLAIM_PREY) == packedSelf)
+    {
+        float4 victim = IsCricketMaterial(M(prey)) ? SampleFaunaVitals(_FaunaRead, prey) : VitalsOf(prey);
+        vitals.x = saturate(min(WaspCalorieCap(genome), vitals.x + victim.x * max(0.0, _WaspF.z)));
+        vitals.y = saturate(vitals.y + victim.y * max(0.0, _WaspF.w));
+    }
+
+    int2 flower = AdjacentFlower(cell);
+    if (IsWaspMaterial(material) && !all(flower == cell) && ClaimAt(flower, WASP_CLAIM_FLOWER) == packedSelf)
+    {
+        uint hostSlot;
+        float hostNectar;
+        uint4 hostGenome;
+        if (BestFlowerSlot(flower, hostSlot, hostNectar, hostGenome))
+        {
+            float draw = min(hostNectar, max(0.0, _WaspG.x));
+            vitals.x = saturate(min(WaspCalorieCap(genome), vitals.x + draw * max(0.0, _WaspG.y)));
+            vitals.y = saturate(vitals.y + draw * max(0.0, _WaspG.z));
+
+            // Drop a foreign sample first, then take one from this flower. Together these
+            // turn a wasp's route into the gene-flow path between grass lineages.
+            uint hostLineage = GrassLineage(hostGenome);
+            int index = WaspCargoForeignIndex(cargo0, cargo1, cargo2, hostLineage);
+            if (index >= 0)
+                WaspCargoRemove(cargo0, cargo1, cargo2, index);
+            uint capacity = WaspPollenCapacity(_WaspG.w);
+            if (WaspCargoCount(cargo0, cargo1, cargo2) < capacity)
+                WaspCargoPush(cargo0, cargo1, cargo2, hostGenome, capacity);
+        }
+    }
+
+    uint mateWinner = ClaimAt(cell, WASP_CLAIM_MATE);
+    if (IsWaspMaterial(material) && WaspStage(genome) == WASP_STAGE_ADULT)
+    {
+        int2 mateDest = AdjacentEligibleAdult(cell);
+        bool received = mateWinner != WASP_CLAIM_EMPTY;
+        bool sent = !all(mateDest == cell) && ClaimAt(mateDest, WASP_CLAIM_MATE) == packedSelf;
+        if (received || sent)
+        {
+            int2 other = received ? UnpackFaunaCell(mateWinner, _GridSize) : mateDest;
+            if (IsWaspMaterial(M(other)) && WaspStage(WaspG(other)) == WASP_STAGE_ADULT)
+            {
+                partner = WaspG(other);
+                partner.w = 1u;
+                vitals.w = max(vitals.w, _WaspH.z);
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_MATE, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_MATED);
+            }
+        }
+    }
+
+    bool laid = false;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        if (ClaimAt(C(cell + offsets[i]), WASP_CLAIM_EGG) == packedSelf)
+            laid = true;
+    }
+    if (laid)
+    {
+        vitals.x = saturate(vitals.x * 0.7);
+        vitals.w = max(vitals.w, _WaspH.w);
+    }
+
+    if (IsWaspEggMaterial(material) && EggReadyToHatch(genome, vitals))
+    {
+        genome.w = PackWaspMeta(WASP_STAGE_JUVENILE, WASP_BEHAVIOR_CRUISE, WaspGeneration(genome), WaspLineage(genome));
+        vitals.z = 0.0;
+        vitals.w = 0.0;
+        vitals.x = saturate(max(vitals.x, 0.35));
+        vitals.y = saturate(max(vitals.y, 0.45));
+        motion = 0.0;
+        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_HATCHED);
+    }
+
+    if (IsWaspMaterial(material))
+    {
+        motion.zw = clamp(motion.zw + motion.xy * _DeltaTime, -0.49, 0.49);
+    }
+
+    WriteWaspState(_WaspWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+}

@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 132_Wasp
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 132
+  displayName: Wasp
+  category: 6
+  displayColor: {r: 0.86, g: 0.68, b: 0.12, a: 1}
+  shadeVariation: 0.16
+  density: 0.55
+  rigidity: 0.99
+  angleOfRepose: 80
+  grainSize: 0.4
+  buoyancyBias: 0.2
+  densityDisplaceable: 0
+  thermalConductivity: 0.11
+  heatCapacity: 1.3
+  electricalConductivity: 0.02
+  absorbency: 0.25
+  porosity: 0.18
+  meltingTemperature: 90
+  boilingTemperature: 180
+  thermalExpansion: 0.02
+  electricalExpansion: 0
+  solidPhaseId: 132
+  liquidPhaseId: 132
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0.65
+  bioModifiable: 1
+  ignitionTemperature: 195
+  flashPoint: 165
+  oxygenDemand: 0.75
+  smokeYield: 0.45
