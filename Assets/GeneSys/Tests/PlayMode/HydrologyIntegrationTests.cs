@@ -818,6 +818,44 @@ namespace GeneSys.Tests
             return total;
         }
 
+        private static bool IsLiquidPixel(uint material) =>
+            material == MaterialIds.Water || material == MaterialIds.Ice;
+
+        private static bool IsOpenCell(uint material) =>
+            material == MaterialIds.Air || material == MaterialIds.Void || material == MaterialIds.Vapor;
+
+        private static int TallestLiquidRun(uint[] mats, int width, int height, int column, int fromY)
+        {
+            int tallest = 0;
+            int run = 0;
+            for (int y = Mathf.Max(0, fromY); y < height; y++)
+            {
+                run = IsLiquidPixel(mats[y * width + column]) ? run + 1 : 0;
+                tallest = Math.Max(tallest, run);
+            }
+            return tallest;
+        }
+
+        // Tallest run of liquid pixels whose lowest member hangs over an open cell. Standing
+        // water rests on terrain, so a tall airborne run means precipitation was misread as a
+        // surface column and packed into midair.
+        private static int TallestAirborneLiquidRun(uint[] mats, int width, int height, int column)
+        {
+            int tallest = 0;
+            for (int y = 1; y < height; y++)
+            {
+                if (!IsLiquidPixel(mats[y * width + column])) continue;
+                if (IsLiquidPixel(mats[(y - 1) * width + column])) continue;
+                if (!IsOpenCell(mats[(y - 1) * width + column])) continue;
+                int run = 0;
+                while (y + run < height && IsLiquidPixel(mats[(y + run) * width + column]))
+                    run++;
+                tallest = Math.Max(tallest, run);
+            }
+            return tallest;
+        }
+
+
         private static void PaintRockShelf(SimulationHost host, int x0, int x1, int bedY, int airHeight)
         {
             int top = host.Grid.radialResolution - 1;
@@ -1148,6 +1186,139 @@ namespace GeneSys.Tests
                 Assert.That(mats[caveY * width + x], Is.EqualTo(MaterialIds.Water));
                 Assert.That(states[caveY * width + x].z, Is.EqualTo(caveBefore).Within(0.04f));
                 Assert.That(mats[(caveY + 1) * width + x], Is.EqualTo(MaterialIds.Rock));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator SaturatedCloudColumnRainsOutWithoutBuildingATower()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            // Precipitation is the only water source here. A vertically saturated cloud must
+            // shed separated drops instead of converting every cell in one dispatch, which
+            // used to drop a solid bar that re-piled into a one-wide tower on the shelf.
+            host.Config.precipitationRate = 1f;
+            host.Config.rainPixelFormationThreshold = 0.5f;
+            host.Config.cloudPrecipitationThreshold = 1f;
+            host.Config.surfaceWaterPixelThreshold = 0.2f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.seed = 33006;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.55f), 10, height - 20);
+            const int cloudBase = 3;
+            const int cloudCells = 10;
+            PaintRockShelf(host, x - 4, x + 4, bedY, cloudBase + cloudCells + 2);
+            for (int xx = x - 4; xx <= x + 4; xx++)
+            {
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+            // Clear air under the cloud base leaves the drops somewhere to fall.
+            for (int dy = cloudBase; dy < cloudBase + cloudCells; dy++)
+            {
+                PaintField(host, x, bedY + dy, 6f, -100f);
+                PaintField(host, x, bedY + dy, 2f, -100f);
+                PaintField(host, x, bedY + dy, 2f, 0.8f);
+            }
+            yield return Step(host, 1);
+
+            double waterBefore = 0d;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[bedY * width + x], Is.EqualTo(MaterialIds.Rock));
+                waterBefore = TrackedWater(states, aux);
+            });
+
+            int tallest = 0;
+            for (int i = 0; i < 24; i++)
+            {
+                yield return Step(host, 1);
+                yield return ReadGpuFields(host, (mats, _, __) =>
+                {
+                    tallest = Math.Max(tallest, TallestLiquidRun(mats, width, height, x, bedY + 1));
+                });
+            }
+
+            Assert.That(tallest, Is.LessThanOrEqualTo(3),
+                $"Saturated cloud column produced a {tallest}-cell water stack; rain must arrive as separated drops.");
+
+            yield return ReadGpuFields(host, (_, states, aux) =>
+            {
+                Assert.That(TrackedWater(states, aux), Is.EqualTo(waterBefore).Within(Math.Max(0.05d, waterBefore * 0.01d)));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator AirborneDropStackIsNotTreatedAsASurfaceColumn()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            host.Config.surfaceWaterPixelThreshold = 0.2f;
+            host.Config.seed = 33007;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.55f), 10, height - 20);
+            PaintRockShelf(host, x - 2, x + 3, bedY, 14);
+            for (int xx = x - 2; xx <= x + 3; xx++)
+            {
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+
+            // A tall standing column beside a clump that hangs in the air. Reading the clump as
+            // a surface column gives it an air cell for a bed, and the tall neighbour then packs
+            // hydrostatic flux into midair above it.
+            for (int dy = 1; dy <= 10; dy++)
+            {
+                Paint(host, x, bedY + dy, MaterialIds.Water);
+                PaintField(host, x, bedY + dy, 2f, -100f);
+                PaintField(host, x, bedY + dy, 2f, 1f);
+            }
+            const int clumpBottom = 2;
+            const int clumpTop = 5;
+            for (int dy = clumpBottom; dy <= clumpTop; dy++)
+            {
+                Paint(host, x + 1, bedY + dy, MaterialIds.Water);
+                PaintField(host, x + 1, bedY + dy, 2f, -100f);
+                PaintField(host, x + 1, bedY + dy, 2f, 1f);
+            }
+            yield return Step(host, 1);
+
+            double waterBefore = 0d;
+            yield return ReadGpuFields(host, (_, states, aux) => waterBefore = TrackedWater(states, aux));
+
+            for (int i = 0; i < 10; i++)
+            {
+                yield return ReadGpuFields(host, (mats, _, __) =>
+                {
+                    for (int y = bedY + clumpTop + 1; y < height; y++)
+                    {
+                        Assert.That(IsLiquidPixel(mats[y * width + (x + 1)]), Is.False,
+                            $"Hydrostatic flux packed water at y={y}, above the airborne clump at {bedY + clumpTop}.");
+                    }
+                    Assert.That(TallestAirborneLiquidRun(mats, width, height, x + 1),
+                        Is.LessThanOrEqualTo(clumpTop - clumpBottom + 1));
+                });
+                yield return Step(host, 1);
+            }
+
+            yield return ReadGpuFields(host, (_, states, aux) =>
+            {
+                Assert.That(TrackedWater(states, aux), Is.EqualTo(waterBefore).Within(Math.Max(0.05d, waterBefore * 0.01d)));
             });
         }
     }
