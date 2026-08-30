@@ -124,8 +124,19 @@ namespace GeneSys.Tests
             Assert.That(ProbeController.AimLeadSign(ProbeFlightMode.Stopped), Is.EqualTo(1f));
             Assert.That(ProbeController.AimLeadSign(ProbeFlightMode.Counterclockwise), Is.EqualTo(-1f));
 
-            float clockwise = ProbeController.SpriteRotationZ(0.25f, 0f);
-            Assert.That(ProbeController.SpriteRotationZ(0.25f, 0f, true), Is.EqualTo(clockwise + 180f).Within(0.001f));
+            Vector3 clockwiseScale = ProbeController.SpriteLocalScale(0.025f, false);
+            Assert.That(clockwiseScale.x, Is.EqualTo(0.025f).Within(0.001f));
+            Assert.That(clockwiseScale.y, Is.EqualTo(0.025f).Within(0.001f));
+
+            Vector3 reverseScale = ProbeController.SpriteLocalScale(0.025f, true);
+            Assert.That(reverseScale.x, Is.EqualTo(0.025f).Within(0.001f));
+            Assert.That(reverseScale.y, Is.EqualTo(-0.025f).Within(0.001f));
+            Assert.That(reverseScale.z, Is.EqualTo(clockwiseScale.z).Within(0.001f));
+
+            float heading = ProbeController.SpriteRotationZ(0.25f, 0f);
+            Assert.That(ProbeController.SpriteRotationZ(0.25f, 10f), Is.EqualTo(heading + 10f).Within(0.001f));
+            Assert.That(ProbeController.SpriteRotationZ(0.25f, 10f, true), Is.EqualTo(heading - 10f).Within(0.001f));
+            Assert.That(ProbeController.SpriteRotationZ(0.25f, 0f, true), Is.EqualTo(heading).Within(0.001f));
 
             PolarGridDefinition grid = PolarGridDefinition.Validation;
             var probe = new GameObject("Probe").AddComponent<ProbeController>();

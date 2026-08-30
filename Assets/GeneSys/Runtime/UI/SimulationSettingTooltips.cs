@@ -803,7 +803,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.probeSpriteScale)] =
                 "Local scale of the probe sprite. Raise it to make the orbiter easier to see against the glow; lower it to keep the disc unobstructed.",
             [nameof(SimulationConfig.probeSpriteRotationOffset)] =
-                "Degrees added to the probe sprite's clockwise-tangent facing. Use it to align art that is not drawn pointing along the orbit path.",
+                "Degrees added to the probe sprite's tangent facing. The same offset aligns the art for clockwise and counterclockwise travel.",
             [nameof(SimulationConfig.probeOrbitPeriodSeconds)] =
                 "Seconds of simulation time for one clockwise lap. Independent of Day Length Seconds, so the probe can cross the sun instead of locking to night-side.",
             [nameof(SimulationConfig.probeVaporRate)] =

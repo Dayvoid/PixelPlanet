@@ -119,15 +119,21 @@ namespace GeneSys.Simulation
         }
 
         public static float SpriteRotationZ(float probeAngle01, float rotationOffsetDegrees) =>
-            SpriteRotationZ(probeAngle01, rotationOffsetDegrees, reverse: false);
+            SpriteRotationZ(probeAngle01, rotationOffsetDegrees, reverseTravel: false);
 
-        public static float SpriteRotationZ(float probeAngle01, float rotationOffsetDegrees, bool reverse)
+        public static float SpriteRotationZ(float probeAngle01, float rotationOffsetDegrees, bool reverseTravel)
         {
             float angle = -Mathf.Repeat(probeAngle01, 1f) * Mathf.PI * 2f;
             // Clockwise tangent: d/dt of (cos(-ωt), sin(-ωt)) points along (sin(a), -cos(a)).
             float heading = Mathf.Atan2(-Mathf.Cos(angle), Mathf.Sin(angle)) * Mathf.Rad2Deg;
-            if (reverse) heading += 180f;
-            return heading - 90f + rotationOffsetDegrees;
+            float artOffset = reverseTravel ? -rotationOffsetDegrees : rotationOffsetDegrees;
+            return heading - 90f + artOffset;
+        }
+
+        public static Vector3 SpriteLocalScale(float spriteScale, bool reverseTravel)
+        {
+            float scale = Mathf.Clamp(spriteScale, 0.01f, 1f);
+            return new Vector3(scale, reverseTravel ? -scale : scale, scale);
         }
 
         public static float AdvanceOrbitAngle01(float currentAngle01, ProbeFlightMode mode, int ticks, float periodTicks)
@@ -364,10 +370,11 @@ namespace GeneSys.Simulation
             probeRoot.localRotation = Quaternion.identity;
             probeRenderer.sprite = probeSprite;
             probeRenderer.enabled = probeSprite != null;
+            bool reverseTravel = lastTravelMode == ProbeFlightMode.Counterclockwise;
             probeRenderer.transform.localPosition = new Vector3(direction.x * radius, direction.y * radius, -0.05f);
-            probeRenderer.transform.localScale = Vector3.one * Mathf.Clamp(config.probeSpriteScale, 0.01f, 1f);
+            probeRenderer.transform.localScale = SpriteLocalScale(config.probeSpriteScale, reverseTravel);
             probeRenderer.transform.localRotation = Quaternion.Euler(0f, 0f,
-                SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset, lastTravelMode == ProbeFlightMode.Counterclockwise));
+                SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset, reverseTravel));
         }
 
         private static uint HashTick(long tick, uint salt)
