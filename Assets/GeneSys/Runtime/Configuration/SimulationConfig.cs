@@ -158,7 +158,7 @@ namespace GeneSys.Configuration
         [Range(0f, 8f)] public float mycologyElectricalTolerance = 0.65f;
         [Range(0f, 1f)] public float mycologyTraitEffectStrength = 0.35f;
 
-        [Header("Ecology - Flora")]
+        [Header("Ecology - Algae")]
         public bool floraSeedAtWorldgen = false;
         [Range(0f, 1f)] public float floraInitialSporeLoad = 0.06f;
         [Range(0f, 4f)] public float floraAirTransportRate = 0.5f;
@@ -194,7 +194,7 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float floraFragmentYield = 0.25f;
         [Range(0f, 4f)] public float floraAnchorGrip = 1f;
 
-        [Header("Ecology - Fauna")]
+        [Header("Ecology - Cricket")]
         public bool faunaSeedAtWorldgen = false;
         [Range(0f, 1f)] public float faunaInitialCalories = 0.45f;
         [Range(0f, 1f)] public float faunaInitialHydration = 0.7f;

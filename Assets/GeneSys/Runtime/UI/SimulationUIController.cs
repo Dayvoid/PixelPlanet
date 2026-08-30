@@ -24,16 +24,23 @@ namespace GeneSys.UI
             { "Geology", "geology" },
             { "Hydrology and erosion", "hydrology" },
             { "Solar and weather", "weather" },
-            { "Ecology - Mycology", "ecology" },
-            { "Ecology - Flora", "ecology" },
-            { "Ecology - Fauna", "ecology" },
-            { "Ecology - Grass", "ecology" },
-            { "Detritus", "ecology" },
+            { "Ecology - Mycology", "ecology-mycology" },
+            { "Ecology - Algae", "ecology-algae" },
+            { "Ecology - Cricket", "ecology-cricket" },
+            { "Ecology - Wasp", "ecology-wasp" },
+            { "Ecology - Grass", "ecology-grass" },
+            { "Ecology - Tree", "ecology-tree" },
+            { "Detritus", "ecology-detritus" },
             { "Combustion", "combustion" },
             { "Storm and lightning", "storm" },
             { "Graphics", "performance" },
             { "Tools and validation", "performance" },
             { "Probe", "probe" }
+        };
+
+        private static readonly string[] EcologySubTabs =
+        {
+            "mycology", "algae", "cricket", "wasp", "grass", "tree", "detritus"
         };
 
         private static readonly HashSet<string> ToggleSettingsFields = new()
@@ -212,6 +219,7 @@ namespace GeneSys.UI
             SetupSettingsModal(root);
             SetupDropdowns(root);
             SetupTabs(root);
+            SetupEcologySubTabs(root);
             BuildSettings(root);
             SetupProbeHud(root);
             SetupInspectPanels();
@@ -439,6 +447,30 @@ namespace GeneSys.UI
             }
 
             Show("world");
+        }
+
+        private void SetupEcologySubTabs(VisualElement root)
+        {
+            void Show(string name)
+            {
+                HideSettingTooltip();
+                foreach (string pageName in EcologySubTabs)
+                {
+                    VisualElement page = root.Q($"settings-ecology-{pageName}");
+                    if (page != null) page.style.display = pageName == name ? DisplayStyle.Flex : DisplayStyle.None;
+                    Button tab = root.Q<Button>($"ecology-tab-{pageName}");
+                    tab?.EnableInClassList("ecology-subtab--active", pageName == name);
+                }
+            }
+
+            foreach (string name in EcologySubTabs)
+            {
+                Button button = root.Q<Button>($"ecology-tab-{name}");
+                string captured = name;
+                button?.RegisterCallback<ClickEvent>(_ => Show(captured));
+            }
+
+            Show("mycology");
         }
 
         private void SetupProbeHud(VisualElement root)
@@ -898,7 +930,13 @@ namespace GeneSys.UI
                 { "hydrology", root.Q<ScrollView>("settings-hydrology") },
                 { "weather", root.Q<ScrollView>("settings-weather") },
                 { "performance", root.Q<ScrollView>("settings-performance") },
-                { "ecology", root.Q<ScrollView>("settings-ecology") },
+                { "ecology-mycology", root.Q<ScrollView>("settings-ecology-mycology") },
+                { "ecology-algae", root.Q<ScrollView>("settings-ecology-algae") },
+                { "ecology-cricket", root.Q<ScrollView>("settings-ecology-cricket") },
+                { "ecology-wasp", root.Q<ScrollView>("settings-ecology-wasp") },
+                { "ecology-grass", root.Q<ScrollView>("settings-ecology-grass") },
+                { "ecology-tree", root.Q<ScrollView>("settings-ecology-tree") },
+                { "ecology-detritus", root.Q<ScrollView>("settings-ecology-detritus") },
                 { "combustion", root.Q<ScrollView>("settings-combustion") },
                 { "storm", root.Q<ScrollView>("settings-storm") },
                 { "probe", root.Q<ScrollView>("settings-probe") }
@@ -919,7 +957,8 @@ namespace GeneSys.UI
                 if (header != null && HeaderToTab.TryGetValue(header.header, out string tab))
                 {
                     currentTab = tab;
-                    if (containers.TryGetValue(currentTab, out ScrollView sectionContainer) && sectionContainer != null)
+                    if (!currentTab.StartsWith("ecology-", StringComparison.Ordinal)
+                        && containers.TryGetValue(currentTab, out ScrollView sectionContainer) && sectionContainer != null)
                     {
                         string title = header.header == "Tools and validation" ? "Validation" : header.header;
                         var sectionLabel = new Label(title);
@@ -1189,6 +1228,11 @@ namespace GeneSys.UI
 
         private static string Humanize(string value)
         {
+            if (value.StartsWith("fauna", StringComparison.Ordinal))
+                value = "cricket" + value.Substring(5);
+            else if (value.StartsWith("flora", StringComparison.Ordinal))
+                value = "algae" + value.Substring(5);
+
             var result = new System.Text.StringBuilder(value.Length + 8);
             for (int i = 0; i < value.Length; i++)
             {

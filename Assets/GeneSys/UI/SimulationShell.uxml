@@ -145,7 +145,22 @@
                     <ui:VisualElement name="page-ecology" class="settings-page hidden">
                         <ui:Label text="Ecology" class="section-title" />
                         <ui:Label text="Mycology overlay shows spores and colony strength. Colonized soil tints forest green and sediment sage green in the Material view. Grass and trees share soil water and nutrients; Tree Sprout is a Life brush. The Tree overlay colors roles and health." class="help" />
-                        <ui:ScrollView name="settings-ecology" class="settings-scroll" />
+                        <ui:VisualElement class="tab-row ecology-subtab-row">
+                            <ui:Button name="ecology-tab-mycology" text="Mycology" class="ecology-subtab ecology-subtab--active" />
+                            <ui:Button name="ecology-tab-algae" text="Algae" class="ecology-subtab" />
+                            <ui:Button name="ecology-tab-cricket" text="Cricket" class="ecology-subtab" />
+                            <ui:Button name="ecology-tab-wasp" text="Wasp" class="ecology-subtab" />
+                            <ui:Button name="ecology-tab-grass" text="Grass" class="ecology-subtab" />
+                            <ui:Button name="ecology-tab-tree" text="Tree" class="ecology-subtab" />
+                            <ui:Button name="ecology-tab-detritus" text="Detritus" class="ecology-subtab" />
+                        </ui:VisualElement>
+                        <ui:ScrollView name="settings-ecology-mycology" class="settings-scroll" />
+                        <ui:ScrollView name="settings-ecology-algae" class="settings-scroll hidden" />
+                        <ui:ScrollView name="settings-ecology-cricket" class="settings-scroll hidden" />
+                        <ui:ScrollView name="settings-ecology-wasp" class="settings-scroll hidden" />
+                        <ui:ScrollView name="settings-ecology-grass" class="settings-scroll hidden" />
+                        <ui:ScrollView name="settings-ecology-tree" class="settings-scroll hidden" />
+                        <ui:ScrollView name="settings-ecology-detritus" class="settings-scroll hidden" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-combustion" class="settings-page hidden">

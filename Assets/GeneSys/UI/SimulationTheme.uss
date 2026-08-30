@@ -280,6 +280,38 @@
     color: rgb(72, 210, 230);
 }
 
+.ecology-subtab-row {
+    margin-top: 6px;
+    margin-bottom: 8px;
+}
+
+.ecology-subtab-row > .unity-button {
+    flex-grow: 1;
+    min-width: 0;
+    padding-left: 2px;
+    padding-right: 2px;
+    font-size: 11px;
+    background-image: none;
+    background-color: rgb(36, 88, 140);
+    border-color: rgb(96, 168, 214);
+    color: rgb(186, 224, 244);
+}
+
+.ecology-subtab-row > .unity-button:hover {
+    background-image: none;
+    background-color: rgb(48, 112, 168);
+    border-color: rgb(150, 214, 242);
+    color: rgb(230, 246, 255);
+}
+
+.ecology-subtab-row > .unity-button.ecology-subtab--active,
+.ecology-subtab-row > .unity-button.ecology-subtab--active:hover {
+    background-image: none;
+    background-color: rgb(64, 148, 198);
+    border-color: rgb(170, 232, 252);
+    color: rgb(236, 250, 255);
+}
+
 .settings-page {
     flex-grow: 1;
     min-height: 0;
@@ -300,6 +332,10 @@
 .settings-scroll {
     flex-grow: 1;
     min-height: 0;
+}
+
+.settings-scroll.hidden {
+    display: none;
 }
 
 .settings-scroll .unity-base-field {
@@ -365,6 +401,8 @@
     border-color: rgb(40, 90, 140);
     border-radius: 6px;
     color: rgb(210, 228, 240);
+    --unity-cursor-color: rgb(255, 255, 255);
+    cursor-color: rgb(255, 255, 255);
 }
 
 .unity-base-popup-field__text {
