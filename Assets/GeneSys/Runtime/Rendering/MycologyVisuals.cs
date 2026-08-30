@@ -49,7 +49,7 @@ namespace GeneSys.Rendering
         public static readonly Color Egg = new Color(0.82f, 0.74f, 0.48f, 1f);
         public const int OverlayMode = 23;
         public const int AcousticOverlayMode = 24;
-        public const int MaxOverlayMode = 25;
+        public const int MaxOverlayMode = 26;
 
         public static Color StageColor(uint stage)
         {
@@ -79,5 +79,13 @@ namespace GeneSys.Rendering
             if (slot == 2) return new Vector2(0.28f, 0.1f);
             return new Vector2(0f, 0.22f);
         }
+    }
+
+    public static class TreeVisuals
+    {
+        public static readonly Color Leaf = new Color(0.22f, 0.58f, 0.18f, 1f);
+        public static readonly Color Wood = new Color(0.28f, 0.16f, 0.08f, 1f);
+        public static readonly Color Shoot = new Color(0.32f, 0.7f, 0.22f, 1f);
+        public const int OverlayMode = 26;
     }
 }

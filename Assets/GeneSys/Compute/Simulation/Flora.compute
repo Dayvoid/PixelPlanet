@@ -27,6 +27,7 @@ RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
 Texture2DArray<float4> _GrassRead;
+Texture2DArray<float4> _TreeRead;
 Texture2D<float> _LightRead;
 RWTexture2D<float> _LightWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
@@ -51,6 +52,7 @@ float4 _FloraG; // maintenanceRate, nightDrain, dormancyMetabolicScale, initialS
 float4 _FloraH; // seedAtWorldgen, anchorGrip, unused, unused
 float4 _FloraI; // poleDriftRate, windShearRate, rainShearRate, fragmentYield
 float4 _GrassF; // pollenEmit, pollenTransport, seedTransport, canopyOpacity
+float4 _TreeH; // seedAtWorldgen, cohesionBonus, canopyOpacity, exposureDamage
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
@@ -419,6 +421,10 @@ void LightAttenuation(uint3 id : SV_DispatchThreadID)
         else if (IsFloraMaterial(material))
         {
             opacity += 0.08 + saturate(L(cell).y) * 0.12;
+        }
+        else if (IsTreeMaterial(material))
+        {
+            opacity += TreeCanopyOpacity(material, SampleTreePhysiology(_TreeRead, cell), saturate(_TreeH.z));
         }
         else if (category >= 3.0)
         {

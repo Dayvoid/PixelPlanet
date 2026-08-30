@@ -72,6 +72,7 @@ namespace GeneSys.Tests
             host.Config.floraSeedAtWorldgen = false;
             host.Config.faunaSeedAtWorldgen = false;
             host.Config.grassSeedAtWorldgen = false;
+            host.Config.treeSeedAtWorldgen = false;
             host.Config.waspSeedAtWorldgen = false;
             _presetSlowPassInterval = host.Config.slowPassInterval;
             _presetTransportPassInterval = host.Config.transportPassInterval;
@@ -118,6 +119,7 @@ namespace GeneSys.Tests
             host.Config.floraSeedAtWorldgen = false;
             host.Config.faunaSeedAtWorldgen = false;
             host.Config.grassSeedAtWorldgen = false;
+            host.Config.treeSeedAtWorldgen = false;
             host.Config.waspSeedAtWorldgen = false;
             host.Config.combustionBurnRate = 0f;
             host.Config.combustionIgnitionAccumulationRate = 0f;

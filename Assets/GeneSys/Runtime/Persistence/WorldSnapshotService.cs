@@ -27,10 +27,12 @@ namespace GeneSys.Persistence
         private const int Version9 = 9;
         private const int Version10 = 10;
         private const int Version11 = 11;
+        private const int Version12 = 12;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
         private const int PayloadCountV11 = 38;
+        private const int PayloadCountV12 = 41;
 
         private readonly string directoryOverride;
         private string resolvedDirectory;
@@ -94,19 +96,21 @@ namespace GeneSys.Persistence
         }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
-            Save(host, path, Version11, completed);
+            Save(host, path, Version12, completed);
 
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9);
+            int writeVersion = version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9));
             bool includeGrass = writeVersion >= Version10;
             bool includeWasp = writeVersion >= Version11;
-            byte[][] payloads = new byte[PayloadCountV11][];
+            bool includeTree = writeVersion >= Version12;
+            byte[][] payloads = new byte[PayloadCountV12][];
             int remaining = PayloadCountV9;
             bool failed = false;
             bool grassBatchStarted = !includeGrass;
             bool waspBatchStarted = !includeWasp;
+            bool treeBatchStarted = !includeTree;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -167,6 +171,18 @@ namespace GeneSys.Persistence
                 }
             }
 
+            void RequestTreeBatch()
+            {
+                RenderTexture tree = host.Resources.TreeRead;
+                for (int slice = 0; slice < SimulationResources.TreeSliceCount; slice++)
+                {
+                    int index = PayloadCountV11 + slice;
+                    int capture = slice;
+                    AsyncGPUReadback.Request(tree, 0, 0, tree.width, 0, tree.height, capture, 1,
+                        request => CompletePayload(index, request));
+                }
+            }
+
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
             {
                 if (request.hasError) failed = true;
@@ -185,6 +201,13 @@ namespace GeneSys.Persistence
                     waspBatchStarted = true;
                     remaining = PayloadCountV11 - PayloadCountV10;
                     RequestWaspBatch();
+                    return;
+                }
+                if (includeTree && !treeBatchStarted)
+                {
+                    treeBatchStarted = true;
+                    remaining = PayloadCountV12 - PayloadCountV11;
+                    RequestTreeBatch();
                     return;
                 }
                 if (!failed)
@@ -207,7 +230,9 @@ namespace GeneSys.Persistence
                         WriteGrassConfig(writer, config);
                     if (includeWasp)
                         WriteWaspConfig(writer, config);
-                    int payloadCount = includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9);
+                    if (includeTree)
+                        WriteTreeConfig(writer, config);
+                    int payloadCount = includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9));
                     for (int i = 0; i < payloadCount; i++)
                     {
                         writer.Write(payloads[i].Length);
@@ -225,7 +250,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version < Version1 || version > Version11) return false;
+            if (version < Version1 || version > Version12) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -246,6 +271,8 @@ namespace GeneSys.Persistence
                 ReadGrassConfig(reader, host.Config);
             if (version >= Version11)
                 ReadWaspConfig(reader, host.Config);
+            if (version >= Version12)
+                ReadTreeConfig(reader, host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -438,6 +465,25 @@ namespace GeneSys.Persistence
             else
             {
                 host.Resources.ClearWasp();
+            }
+
+            if (version >= Version12)
+            {
+                for (int slice = 0; slice < SimulationResources.TreeSliceCount; slice++)
+                {
+                    int length = reader.ReadInt32();
+                    byte[] payload = reader.ReadBytes(length);
+                    if (payload.Length != length) return false;
+                    Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                    staging.LoadRawTextureData(payload);
+                    staging.Apply(false, false);
+                    Graphics.CopyTexture(staging, 0, 0, host.Resources.TreeRead, slice, 0);
+                    UnityEngine.Object.Destroy(staging);
+                }
+            }
+            else
+            {
+                host.Resources.ClearTree();
             }
 
             host.Resources.CopyReadToWrite();
@@ -944,6 +990,88 @@ namespace GeneSys.Persistence
             config.waspSurvivalTempMin = reader.ReadSingle();
             config.waspSurvivalTempMax = reader.ReadSingle();
             config.waspThreatTemperature = reader.ReadSingle();
+        }
+
+        private static void WriteTreeConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.treeSeedAtWorldgen);
+            writer.Write(config.treeInitialEnergy);
+            writer.Write(config.treeInitialHydration);
+            writer.Write(config.treeInitialNutrient);
+            writer.Write(config.treeInitialHealth);
+            writer.Write(config.treePhotosynthesisRate);
+            writer.Write(config.treeGrowthRate);
+            writer.Write(config.treeDecayRate);
+            writer.Write(config.treeMaintenanceRate);
+            writer.Write(config.treeNightDrain);
+            writer.Write(config.treeWaterUptakeRate);
+            writer.Write(config.treeNutrientUptakeRate);
+            writer.Write(config.treeVascularRate);
+            writer.Write(config.treeGrowthCost);
+            writer.Write(config.treeWindBias);
+            writer.Write(config.treeGeneExpressionRange);
+            writer.Write(config.treeGrowthTempMin);
+            writer.Write(config.treeGrowthTempMax);
+            writer.Write(config.treeGrowthMoistureMin);
+            writer.Write(config.treeGrowthMoistureMax);
+            writer.Write(config.treeSurvivalTempMin);
+            writer.Write(config.treeSurvivalTempMax);
+            writer.Write(config.treeSurvivalMoistureMin);
+            writer.Write(config.treeSurvivalMoistureMax);
+            writer.Write(config.treeMinLight);
+            writer.Write(config.treeSproutHeight);
+            writer.Write(config.treeSaplingHeight);
+            writer.Write(config.treeMaxHeight);
+            writer.Write(config.treeMaxTrunkWidth);
+            writer.Write(config.treeSaplingBranchMin);
+            writer.Write(config.treeSaplingBranchMax);
+            writer.Write(config.treeRootCohesionBonus);
+            writer.Write(config.treeCanopyOpacity);
+            writer.Write(config.treeExposureDamage);
+            writer.Write(config.treeLeafLifeTicks);
+            writer.Write(config.treeRotTicks);
+            writer.Write(config.treeDisconnectTicks);
+        }
+
+        private static void ReadTreeConfig(BinaryReader reader, SimulationConfig config)
+        {
+            config.treeSeedAtWorldgen = reader.ReadBoolean();
+            config.treeInitialEnergy = reader.ReadSingle();
+            config.treeInitialHydration = reader.ReadSingle();
+            config.treeInitialNutrient = reader.ReadSingle();
+            config.treeInitialHealth = reader.ReadSingle();
+            config.treePhotosynthesisRate = reader.ReadSingle();
+            config.treeGrowthRate = reader.ReadSingle();
+            config.treeDecayRate = reader.ReadSingle();
+            config.treeMaintenanceRate = reader.ReadSingle();
+            config.treeNightDrain = reader.ReadSingle();
+            config.treeWaterUptakeRate = reader.ReadSingle();
+            config.treeNutrientUptakeRate = reader.ReadSingle();
+            config.treeVascularRate = reader.ReadSingle();
+            config.treeGrowthCost = reader.ReadSingle();
+            config.treeWindBias = reader.ReadSingle();
+            config.treeGeneExpressionRange = reader.ReadSingle();
+            config.treeGrowthTempMin = reader.ReadSingle();
+            config.treeGrowthTempMax = reader.ReadSingle();
+            config.treeGrowthMoistureMin = reader.ReadSingle();
+            config.treeGrowthMoistureMax = reader.ReadSingle();
+            config.treeSurvivalTempMin = reader.ReadSingle();
+            config.treeSurvivalTempMax = reader.ReadSingle();
+            config.treeSurvivalMoistureMin = reader.ReadSingle();
+            config.treeSurvivalMoistureMax = reader.ReadSingle();
+            config.treeMinLight = reader.ReadSingle();
+            config.treeSproutHeight = reader.ReadInt32();
+            config.treeSaplingHeight = reader.ReadInt32();
+            config.treeMaxHeight = reader.ReadInt32();
+            config.treeMaxTrunkWidth = reader.ReadInt32();
+            config.treeSaplingBranchMin = reader.ReadInt32();
+            config.treeSaplingBranchMax = reader.ReadInt32();
+            config.treeRootCohesionBonus = reader.ReadSingle();
+            config.treeCanopyOpacity = reader.ReadSingle();
+            config.treeExposureDamage = reader.ReadSingle();
+            config.treeLeafLifeTicks = reader.ReadInt32();
+            config.treeRotTicks = reader.ReadInt32();
+            config.treeDisconnectTicks = reader.ReadInt32();
         }
 
         private static Texture2D CreateStagingTexture(int width, int height, GraphicsFormat format)

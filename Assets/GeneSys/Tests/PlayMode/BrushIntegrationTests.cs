@@ -129,6 +129,7 @@ namespace GeneSys.Tests
             host.Config.validationIntervalTicks = 100000;
             host.Config.floraSeedAtWorldgen = false;
             host.Config.grassSeedAtWorldgen = false;
+            host.Config.treeSeedAtWorldgen = false;
             host.Config.grassDecayRate = 0f;
             host.Config.grassMaintenanceRate = 0f;
             host.Config.grassNightDrain = 0f;
@@ -142,6 +143,7 @@ namespace GeneSys.Tests
             host.Config.seed = 2026;
             host.Config.floraSeedAtWorldgen = false;
             host.Config.grassSeedAtWorldgen = false;
+            host.Config.treeSeedAtWorldgen = false;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
             FreezeWorld(host);
@@ -296,6 +298,48 @@ namespace GeneSys.Tests
                 stage = GrassGenome.Stage(genome);
             });
             Assert.That(stage, Is.EqualTo(GrassGenome.StageAdult));
+        }
+
+        [UnityTest]
+        public IEnumerator LifeBrushTreeSproutPlantsWoodRootOnSoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = DayX(host);
+            int y = SurfaceY(host);
+            Paint(host, x - 1, y - 1, MaterialIds.Rock);
+            Paint(host, x, y - 1, MaterialIds.Rock);
+            Paint(host, x + 1, y - 1, MaterialIds.Rock);
+            Paint(host, x, y, MaterialIds.Soil);
+            Paint(host, x, y + 1, MaterialIds.Air);
+            yield return Step(host, 1);
+
+            Assert.That(SimulationTools.TryBuildBrushCommand(
+                BrushMode.Life, BrushSelectionIds.TreeSprouts, new Vector2Int(x, y), 0, 1f, out var command, out bool grassSeed), Is.True);
+            Assert.That(grassSeed, Is.False);
+            host.QueueTreeSprout(command.center, command.radius);
+            yield return Step(host, 1);
+
+            uint material = 0;
+            uint stage = TreeGenome.StageEmpty;
+            yield return ReadMaterialsAndEcology(host, (materials, _) => material = materials[Index(host, x, y)]);
+            bool done = false;
+            bool failed = false;
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, host.Grid.WrapTheta(x), 1, y, 1, TreeGenome.GenomeSlice, 1, request =>
+            {
+                if (request.hasError) { failed = true; done = true; return; }
+                var data = request.GetData<Vector4>();
+                if (data.Length > 0)
+                    stage = TreeGenome.Stage(TreeGenome.FromFloatBits(data[0]));
+                done = true;
+            });
+            for (int i = 0; i < 240 && !done; i++)
+                yield return null;
+            Assert.That(failed, Is.False);
+            Assert.That(material, Is.EqualTo(MaterialIds.Wood));
+            Assert.That(stage, Is.EqualTo(TreeGenome.StageSprout));
         }
 
         private sealed class SimulationConfigSnapshot

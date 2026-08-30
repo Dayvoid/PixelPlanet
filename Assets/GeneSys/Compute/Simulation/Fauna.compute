@@ -157,7 +157,8 @@ int ClutchSizeOf(uint4 genome)
 float NutrientCue(int2 cell)
 {
     return saturate(L(cell).w) * 1.4 + saturate(L(cell).y) * 1.1 + saturate(A(cell).z) * 0.35
-        + (IsFloraMaterial(M(cell)) ? 2.0 : 0.0);
+        + (IsFloraMaterial(M(cell)) ? 2.0 : 0.0)
+        + (IsLeafMaterial(M(cell)) ? 2.2 : 0.0);
 }
 
 float2 SenseGradient(int2 cell, uint mode, uint4 genome)
@@ -216,8 +217,9 @@ int2 NeighborAlgae(int2 cell)
     for (int i = 0; i < 6; i++)
     {
         int2 neighbor = C(cell + offsets[i]);
-        if (!IsFloraMaterial(M(neighbor))) continue;
-        float score = saturate(L(neighbor).y) + 0.05 * CellHash(neighbor, 19u);
+        uint mat = M(neighbor);
+        if (!IsFloraMaterial(mat) && !IsLeafMaterial(mat)) continue;
+        float score = (IsLeafMaterial(mat) ? 0.85 : saturate(L(neighbor).y)) + 0.05 * CellHash(neighbor, 19u);
         if (score > bestScore)
         {
             bestScore = score;
@@ -615,9 +617,12 @@ void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
     uint packedSelf = PackFaunaCell(cell, _GridSize);
 
     uint feedWinner = ClaimAt(cell, FAUNA_CLAIM_FEED);
-    if (feedWinner != FAUNA_CLAIM_EMPTY && IsFloraMaterial(material))
+    if (feedWinner != FAUNA_CLAIM_EMPTY && (IsFloraMaterial(material) || IsLeafMaterial(material)))
     {
-        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_CONSUMED);
+        if (IsFloraMaterial(material))
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_CONSUMED);
+        else
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, 0u, 0u, ORGANISM_CAUSE_CONSUMED);
         material = 1u;
         life = float4(0.0, 0.0, 0.0, life.w * 0.15);
         genome = uint4(0u, 0u, 0u, PackFloraMeta(FLORA_STAGE_DEAD, 0u, 0u, 0u));
@@ -760,7 +765,9 @@ void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
     int2 algae = NeighborAlgae(cell);
     if (IsCricketMaterial(material) && !all(algae == cell) && ClaimAt(algae, FAUNA_CLAIM_FEED) == packedSelf)
     {
-        float meal = saturate(L(algae).y) * max(0.05, D(M(algae)).biology.y);
+        float meal = IsLeafMaterial(M(algae))
+            ? max(0.08, D(M(algae)).biology.y)
+            : saturate(L(algae).y) * max(0.05, D(M(algae)).biology.y);
         float moisture = saturate(S(algae).z + L(algae).y * 0.25);
         vitals.x = saturate(min(CalorieCap(genome), vitals.x + meal) - max(0.0, _FaunaD.x));
         vitals.y = saturate(vitals.y + moisture);

@@ -25,6 +25,9 @@ namespace GeneSys.Tests
             Assert.That(ids.Contains(MaterialIds.CricketEgg), Is.False);
             Assert.That(ids.Contains(BrushSelectionIds.MycoSpores), Is.False);
             Assert.That(ids.Contains(BrushSelectionIds.GrassSeeds), Is.False);
+            Assert.That(ids.Contains(BrushSelectionIds.TreeSprouts), Is.False);
+            Assert.That(ids.Contains(MaterialIds.Leaf), Is.False);
+            Assert.That(ids.Contains(MaterialIds.Wood), Is.False);
             Assert.That(ids.Count, Is.EqualTo(15));
         }
 
@@ -41,13 +44,18 @@ namespace GeneSys.Tests
             Assert.That(ids.Contains(MaterialIds.CricketEgg), Is.True);
             Assert.That(ids.Contains(BrushSelectionIds.MycoSpores), Is.True);
             Assert.That(ids.Contains(BrushSelectionIds.GrassSeeds), Is.True);
+            Assert.That(ids.Contains(BrushSelectionIds.TreeSprouts), Is.True);
+            Assert.That(ids.Contains(MaterialIds.Leaf), Is.False);
+            Assert.That(ids.Contains(MaterialIds.Wood), Is.False);
             Assert.That(ids.Contains(MaterialIds.Detritus), Is.False);
             Assert.That(ids.Contains(MaterialIds.Soil), Is.False);
-            Assert.That(ids[ids.Count - 2], Is.EqualTo(BrushSelectionIds.MycoSpores));
-            Assert.That(ids[ids.Count - 1], Is.EqualTo(BrushSelectionIds.GrassSeeds));
+            Assert.That(ids[ids.Count - 3], Is.EqualTo(BrushSelectionIds.MycoSpores));
+            Assert.That(ids[ids.Count - 2], Is.EqualTo(BrushSelectionIds.GrassSeeds));
+            Assert.That(ids[ids.Count - 1], Is.EqualTo(BrushSelectionIds.TreeSprouts));
             Assert.That(BrushSelectionCatalog.IsRegistryMaterial(MaterialIds.Algae), Is.True);
             Assert.That(BrushSelectionCatalog.IsRegistryMaterial(BrushSelectionIds.MycoSpores), Is.False);
             Assert.That(BrushSelectionCatalog.IsRegistryMaterial(BrushSelectionIds.GrassSeeds), Is.False);
+            Assert.That(BrushSelectionCatalog.IsRegistryMaterial(BrushSelectionIds.TreeSprouts), Is.False);
         }
 
         [Test]
@@ -85,6 +93,12 @@ namespace GeneSys.Tests
             Assert.That(grassCommand.center, Is.EqualTo(cell));
             Assert.That(grassCommand.radius, Is.EqualTo(2));
             Assert.That(grassCommand.materialId, Is.EqualTo(MaterialIds.Soil));
+
+            Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, BrushSelectionIds.TreeSprouts, cell, 3, 1f, out var treeCommand, out grass), Is.True);
+            Assert.That(grass, Is.False);
+            Assert.That(treeCommand.center, Is.EqualTo(cell));
+            Assert.That(treeCommand.radius, Is.EqualTo(3));
+            Assert.That(treeCommand.materialId, Is.EqualTo(MaterialIds.Soil));
         }
 
         [Test]

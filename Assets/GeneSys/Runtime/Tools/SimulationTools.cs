@@ -39,7 +39,8 @@ namespace GeneSys.Tools
             {
                 if (TryBuildBrushCommand(Mode, SelectedMaterialId, cell, Mathf.Max(1, Radius), Strength, out var command, out bool grassSeed))
                 {
-                    if (grassSeed) host.QueueGrassSeed(command.center, command.radius);
+                    if (SelectedMaterialId == BrushSelectionIds.TreeSprouts) host.QueueTreeSprout(command.center, command.radius);
+                    else if (grassSeed) host.QueueGrassSeed(command.center, command.radius);
                     else host.QueueBrush(command);
                 }
             }
@@ -78,6 +79,12 @@ namespace GeneSys.Tools
             if (mode == BrushMode.Life && selectedMaterialId == BrushSelectionIds.GrassSeeds)
             {
                 grassSeed = true;
+                command.materialId = MaterialIds.Soil;
+                command.values = Vector4.zero;
+                return true;
+            }
+            if (mode == BrushMode.Life && selectedMaterialId == BrushSelectionIds.TreeSprouts)
+            {
                 command.materialId = MaterialIds.Soil;
                 command.values = Vector4.zero;
                 return true;
@@ -285,8 +292,7 @@ namespace GeneSys.Tools
             inspection.waspCargo = new FaunaGenome.Packed[WaspGenome.CargoSlots];
             if (host.Resources.WaspRead == null)
             {
-                readbackPending = false;
-                Inspected?.Invoke(inspection);
+                ReadTreeSlices(host, cell, inspection);
                 return;
             }
 
@@ -338,6 +344,53 @@ namespace GeneSys.Tools
             {
                 remaining--;
                 if (remaining > 0) return;
+                ReadTreeSlices(host, cell, inspection);
+            }
+        }
+
+        private void ReadTreeSlices(SimulationHost host, Vector2Int cell, CellInspection inspection)
+        {
+            if (host.Resources.TreeRead == null)
+            {
+                readbackPending = false;
+                Inspected?.Invoke(inspection);
+                return;
+            }
+
+            int remaining = 3;
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, TreeGenome.PhysiologySlice, 1, request =>
+            {
+                if (!request.hasError)
+                {
+                    NativeArray<Vector4> data = request.GetData<Vector4>();
+                    if (data.Length > 0) inspection.treePhysiology = data[0];
+                }
+                CompleteTree();
+            });
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, TreeGenome.TopologySlice, 1, request =>
+            {
+                if (!request.hasError)
+                {
+                    NativeArray<Vector4> data = request.GetData<Vector4>();
+                    if (data.Length > 0) inspection.treeTopology = TreeGenome.FromFloatBits(data[0]);
+                }
+                CompleteTree();
+            });
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, TreeGenome.GenomeSlice, 1, request =>
+            {
+                if (!request.hasError)
+                {
+                    NativeArray<Vector4> data = request.GetData<Vector4>();
+                    if (data.Length > 0)
+                        inspection.treeGenome = TreeGenome.Sanitize(TreeGenome.FromFloatBits(data[0]));
+                }
+                CompleteTree();
+            });
+
+            void CompleteTree()
+            {
+                remaining--;
+                if (remaining > 0) return;
                 readbackPending = false;
                 Inspected?.Invoke(inspection);
             }
@@ -369,5 +422,8 @@ namespace GeneSys.Tools
         public Vector4[] grassTiming;
         public GrassGenome.Packed[] grassGenomes;
         public GrassGenome.Packed[] grassDonors;
+        public Vector4 treePhysiology;
+        public TreeGenome.Packed treeTopology;
+        public TreeGenome.Packed treeGenome;
     }
 }

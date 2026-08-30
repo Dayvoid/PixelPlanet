@@ -22,6 +22,7 @@ RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
 Texture2DArray<float4> _FaunaRead;
+Texture2DArray<float4> _TreeRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -102,7 +103,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
 
     float fuel = MycologyFuel(material, ecology) + FloraFuel(material, life, FloraStage(genome))
         + FaunaFuel(material, ReadFaunaVitals(cell), FaunaStage(ReadFaunaGenome(cell)))
-        + DetritusFuel(material, aux, definition);
+        + DetritusFuel(material, aux, definition)
+        + TreeFuel(material, SampleTreePhysiology(_TreeRead, cell), TreeStage(SampleTreeGenome(_TreeRead, cell)));
     float wetness = max(0.0, state.z) + max(0.0, aux.y) + max(0.0, aux.x) * steamSuppression;
     uint traits = DecodeMycologyTraits(ecology.z);
     float threshold = TraitModulatedIgnition(definition.combustion.x, traits, _MycologyE.z) + wetness * moisturePenalty;
@@ -131,6 +133,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
 
         float oxygenDemand = max(0.05, definition.combustion.z);
         float calories = max(0.0, definition.biology.y);
+        if (IsLeafMaterial(material)) calories *= 0.35;
+        else if (IsWoodMaterial(material)) calories *= 1.45;
         float burn = min(fuel * burnRate, combustion.x / oxygenDemand) * combustion.y * _DeltaTime;
         burn = max(0.0, min(burn, fuel));
 
@@ -142,6 +146,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
         }
         if (IsDetritusMaterial(material))
             aux.z = max(0.0, aux.z - burn);
+        if (IsTreeMaterial(material))
+            burn = max(burn, min(burn, saturate(SampleTreePhysiology(_TreeRead, cell).w)));
         if (IsFaunaMaterial(material))
         {
             float faunaShare = min(burn, saturate(ReadFaunaVitals(cell).x));

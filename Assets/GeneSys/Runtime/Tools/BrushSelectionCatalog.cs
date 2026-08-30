@@ -7,6 +7,7 @@ namespace GeneSys.Tools
     {
         public const uint MycoSpores = 252;
         public const uint GrassSeeds = 253;
+        public const uint TreeSprouts = 251;
         public const float MycoRandomTraitSentinel = -1f;
     }
 
@@ -25,7 +26,7 @@ namespace GeneSys.Tools
     public static class BrushSelectionCatalog
     {
         public static bool IsRegistryMaterial(uint id) =>
-            id != BrushSelectionIds.MycoSpores && id != BrushSelectionIds.GrassSeeds;
+            id != BrushSelectionIds.MycoSpores && id != BrushSelectionIds.GrassSeeds && id != BrushSelectionIds.TreeSprouts;
 
         public static List<BrushSelection> BuildChoices(BrushMode mode, MaterialRegistry registry)
         {
@@ -53,6 +54,7 @@ namespace GeneSys.Tools
                 }
                 choices.Add(new BrushSelection(BrushSelectionIds.MycoSpores, "Myco Spores"));
                 choices.Add(new BrushSelection(BrushSelectionIds.GrassSeeds, "Grass Seeds"));
+                choices.Add(new BrushSelection(BrushSelectionIds.TreeSprouts, "Tree Sprout"));
             }
 
             return choices;

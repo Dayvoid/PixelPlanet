@@ -489,6 +489,80 @@ namespace GeneSys.UI
                 "Inward gravity/settling of seeds onto exposed soil.",
             [nameof(SimulationConfig.grassNectarAmount)] =
                 "Nectar written into an open flower. Visiting wasps drink it and carry pollen between lineages.",
+            [nameof(SimulationConfig.treeSeedAtWorldgen)] =
+                "When enabled, worldgen plants a sparse set of tree sprouts on exposed soil. Off keeps worlds empty until you place a Tree Sprout with the Life brush.",
+            [nameof(SimulationConfig.treeInitialEnergy)] =
+                "Starting photosynthate reserve for a newly planted tree pixel.",
+            [nameof(SimulationConfig.treeInitialHydration)] =
+                "Starting water stored in a newly planted tree pixel.",
+            [nameof(SimulationConfig.treeInitialNutrient)] =
+                "Starting nutrient reserve for a newly planted tree pixel.",
+            [nameof(SimulationConfig.treeInitialHealth)] =
+                "Starting health of a newly planted tree pixel. Fire, exposure, and starvation debit this independently of the Wood or Leaf material.",
+            [nameof(SimulationConfig.treePhotosynthesisRate)] =
+                "How quickly leaves and juvenile shoots convert light and hydration into stored energy.",
+            [nameof(SimulationConfig.treeGrowthRate)] =
+                "How readily a living tip claims a new Wood or Leaf cell when reserves and the growth niche allow it.",
+            [nameof(SimulationConfig.treeDecayRate)] =
+                "Health drain outside the survival band, paid every tick until the pixel recovers or dies.",
+            [nameof(SimulationConfig.treeMaintenanceRate)] =
+                "Baseline energy drain paid by every living tree pixel, even in the growth band.",
+            [nameof(SimulationConfig.treeNightDrain)] =
+                "Extra energy drain when photosynthetically active radiation is near zero.",
+            [nameof(SimulationConfig.treeWaterUptakeRate)] =
+                "How aggressively live roots request water from neighboring soil. Grass and trees share one soil debit.",
+            [nameof(SimulationConfig.treeNutrientUptakeRate)] =
+                "How aggressively live roots request soil nutrients from neighboring soil.",
+            [nameof(SimulationConfig.treeVascularRate)] =
+                "How quickly energy, water, and nutrients mix between a pixel and its parent or children each tick.",
+            [nameof(SimulationConfig.treeGrowthCost)] =
+                "Energy a winning growth tip spends when it claims a new cell. Water and nutrients are spent at a fraction of this.",
+            [nameof(SimulationConfig.treeWindBias)] =
+                "How strongly wind and the wind-response gene lean new shoots and the sprout L leaf. Established Wood does not move.",
+            [nameof(SimulationConfig.treeGeneExpressionRange)] =
+                "How far tree genes may push metabolism, height, branching, leaf life, and wind response away from the baselines.",
+            [nameof(SimulationConfig.treeGrowthTempMin)] =
+                "Lower temperature of the healthy tree growth band.",
+            [nameof(SimulationConfig.treeGrowthTempMax)] =
+                "Upper temperature of the healthy tree growth band.",
+            [nameof(SimulationConfig.treeGrowthMoistureMin)] =
+                "Lower soil moisture of the healthy tree growth band.",
+            [nameof(SimulationConfig.treeGrowthMoistureMax)] =
+                "Upper soil moisture of the healthy tree growth band.",
+            [nameof(SimulationConfig.treeSurvivalTempMin)] =
+                "Lower temperature a living tree pixel can endure before taking decay damage.",
+            [nameof(SimulationConfig.treeSurvivalTempMax)] =
+                "Upper temperature a living tree pixel can endure before taking decay damage.",
+            [nameof(SimulationConfig.treeSurvivalMoistureMin)] =
+                "Lower moisture a living tree pixel can endure before taking decay damage.",
+            [nameof(SimulationConfig.treeSurvivalMoistureMax)] =
+                "Upper moisture a living tree pixel can endure before taking decay damage.",
+            [nameof(SimulationConfig.treeMinLight)] =
+                "Minimum PAR required for growth claims. Crowns still photosynthesize below this, just more slowly.",
+            [nameof(SimulationConfig.treeSproutHeight)] =
+                "Radial cells a sprout grows as a green juvenile shoot before placing its inverted-L leaf.",
+            [nameof(SimulationConfig.treeSaplingHeight)] =
+                "Radial cells at which a sprout becomes a sapling with a Wood trunk and the first 2–4 branches.",
+            [nameof(SimulationConfig.treeMaxHeight)] =
+                "Soft cap on mature crown height, scaled per genome. Wind curvature stays bounded inside this envelope.",
+            [nameof(SimulationConfig.treeMaxTrunkWidth)] =
+                "Maximum angular thickness of a mature trunk, in cells.",
+            [nameof(SimulationConfig.treeSaplingBranchMin)] =
+                "Fewest sapling branches a genome may select.",
+            [nameof(SimulationConfig.treeSaplingBranchMax)] =
+                "Most sapling branches a genome may select.",
+            [nameof(SimulationConfig.treeRootCohesionBonus)] =
+                "Added soil cohesion per adjacent live tree root, scaled by base soil cohesion.",
+            [nameof(SimulationConfig.treeCanopyOpacity)] =
+                "How strongly Leaf and Wood attenuate the shared flora light field so crowns shade grass, algae, and lower leaves.",
+            [nameof(SimulationConfig.treeExposureDamage)] =
+                "Health drain per second for live roots that touch Air. Buried roots are safe.",
+            [nameof(SimulationConfig.treeLeafLifeTicks)] =
+                "Baseline leaf lifetime in ticks, scaled by the leaf-longevity gene. Expired leaves become Detritus in place.",
+            [nameof(SimulationConfig.treeRotTicks)] =
+                "How long dead Wood stays Wood before converting to Detritus.",
+            [nameof(SimulationConfig.treeDisconnectTicks)] =
+                "How many ticks a pixel may survive after its parent is gone before it is marked dead.",
             [nameof(SimulationConfig.waspSeedAtWorldgen)] =
                 "Scatter a starting wasp population during world generation instead of waiting for the brush or probe.",
             [nameof(SimulationConfig.waspInitialCalories)] =

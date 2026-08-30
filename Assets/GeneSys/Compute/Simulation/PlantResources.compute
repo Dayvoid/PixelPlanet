@@ -1,0 +1,144 @@
+#pragma kernel RootDemand
+#pragma kernel SoilDebit
+#pragma target 5.1
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+Texture2DArray<float4> _GrassRead;
+Texture2DArray<float4> _TreeRead;
+RWTexture2D<float4> _GrassRootFlux;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float4 _GrassA; // waterUptake, nutrientUptake, photosynthesis, growth
+float4 _TreeA; // waterUptake, nutrientUptake, photosynthesis, growth
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+
+float MoistureOf(float4 state, float4 aux)
+{
+    return max(0.0, state.z) + max(0.0, aux.y);
+}
+
+uint CountBits3(uint mask)
+{
+    uint count = 0u;
+    [unroll]
+    for (uint i = 0u; i < 3u; i++)
+        if ((mask & (1u << i)) != 0u) count++;
+    return max(1u, count);
+}
+
+float SlotWaterDemand(float4 life)
+{
+    return max(0.0, 1.0 - saturate(life.z)) * max(0.0, _GrassA.x) * _DeltaTime;
+}
+
+float SlotNutrientDemand(float4 life)
+{
+    return max(0.0, 1.0 - saturate(life.y)) * max(0.0, _GrassA.y) * _DeltaTime;
+}
+
+void GatherGrassDemand(int2 target, out float demandW, out float demandN)
+{
+    demandW = 0.0;
+    demandN = 0.0;
+    [unroll]
+    for (uint bit = 0u; bit < 3u; bit++)
+    {
+        int2 parent = GrassTapParent(target, bit, _GridSize);
+        if (parent.y >= _GridSize.y) continue;
+        uint expected = GrassTapBitForParent(bit);
+        [unroll]
+        for (uint slot = 0u; slot < 3u; slot++)
+        {
+            uint4 genome = SampleGrassGenome(_GrassRead, parent, slot);
+            if (!GrassIsLiving(GrassStage(genome))) continue;
+            uint mask = GrassRootMask(SampleGrassTiming(_GrassRead, parent, slot));
+            if ((mask & (1u << expected)) == 0u) continue;
+            float4 life = SampleGrassLife(_GrassRead, parent, slot);
+            float taps = (float)CountBits3(mask);
+            demandW += SlotWaterDemand(life) / taps;
+            demandN += SlotNutrientDemand(life) / taps;
+        }
+    }
+}
+
+void GatherTreeDemand(int2 target, out float demandW, out float demandN)
+{
+    demandW = 0.0;
+    demandN = 0.0;
+    if (!IsTreeHabitat(M(target))) return;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = target + offsets[i];
+        if (offsets[i].y != 0 && (n.y < 0 || n.y >= _GridSize.y)) continue;
+        int2 neighbor = C(n);
+        uint4 topo = SampleTreeTopology(_TreeRead, neighbor);
+        if (!TreeIsOccupied(topo) || TreeRole(topo) != TREE_ROLE_ROOT) continue;
+        uint stage = TreeStage(SampleTreeGenome(_TreeRead, neighbor));
+        if (!TreeIsLiving(stage)) continue;
+        float4 phys = SampleTreePhysiology(_TreeRead, neighbor);
+        int hosts = 0;
+        [unroll]
+        for (int j = 0; j < 4; j++)
+        {
+            int2 h = neighbor + offsets[j];
+            if (offsets[j].y != 0 && (h.y < 0 || h.y >= _GridSize.y)) continue;
+            if (IsTreeHabitat(M(C(h)))) hosts++;
+        }
+        float share = 1.0 / (float)max(1, hosts);
+        demandW += max(0.0, 1.0 - saturate(phys.y)) * max(0.0, _TreeA.x) * _DeltaTime * share;
+        demandN += max(0.0, 1.0 - saturate(phys.z)) * max(0.0, _TreeA.y) * _DeltaTime * share;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void RootDemand(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    float grassW, grassN, treeW, treeN;
+    GatherGrassDemand(cell, grassW, grassN);
+    GatherTreeDemand(cell, treeW, treeN);
+    _GrassRootFlux[cell] = float4(max(0.0, grassW + treeW), max(0.0, grassN + treeN), 0.0, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void SoilDebit(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    float4 state = S(cell);
+    float4 aux = A(cell);
+    float4 flux = _GrassRootFlux[cell];
+    float demandW = max(0.0, flux.x);
+    float demandN = max(0.0, flux.y);
+    float availW = MoistureOf(state, aux);
+    float availN = max(0.0, aux.z);
+    float takenW = min(availW, demandW);
+    float takenN = min(availN, demandN);
+
+    float remainingW = takenW;
+    float fromSurface = min(max(0.0, state.z), remainingW);
+    state.z = max(0.0, state.z - fromSurface);
+    remainingW -= fromSurface;
+    aux.y = max(0.0, aux.y - remainingW);
+    aux.z = max(0.0, aux.z - takenN);
+
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _GrassRootFlux[cell] = float4(takenW, takenN, demandW, demandN);
+}

@@ -317,6 +317,45 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float grassNectarAmount = 0.35f;
         [Range(0f, 4f)] public float grassCanopyOpacity = 0.12f;
 
+        [Header("Ecology - Tree")]
+        public bool treeSeedAtWorldgen = false;
+        [Range(0f, 1f)] public float treeInitialEnergy = 0.55f;
+        [Range(0f, 1f)] public float treeInitialHydration = 0.6f;
+        [Range(0f, 1f)] public float treeInitialNutrient = 0.45f;
+        [Range(0f, 1f)] public float treeInitialHealth = 1f;
+        [Range(0f, 4f)] public float treePhotosynthesisRate = 0.28f;
+        [Range(0f, 4f)] public float treeGrowthRate = 0.12f;
+        [Range(0f, 4f)] public float treeDecayRate = 0.08f;
+        [Range(0f, 4f)] public float treeMaintenanceRate = 0.04f;
+        [Range(0f, 4f)] public float treeNightDrain = 0.025f;
+        [Range(0f, 4f)] public float treeWaterUptakeRate = 0.22f;
+        [Range(0f, 4f)] public float treeNutrientUptakeRate = 0.16f;
+        [Range(0f, 4f)] public float treeVascularRate = 0.35f;
+        [Range(0f, 1f)] public float treeGrowthCost = 0.18f;
+        [Range(0f, 1f)] public float treeWindBias = 0.35f;
+        [Range(0f, 1f)] public float treeGeneExpressionRange = 0.45f;
+        [Range(-40f, 80f)] public float treeGrowthTempMin = 6f;
+        [Range(-40f, 120f)] public float treeGrowthTempMax = 72f;
+        [Range(0f, 2f)] public float treeGrowthMoistureMin = 0.08f;
+        [Range(0f, 2f)] public float treeGrowthMoistureMax = 1.2f;
+        [Range(-80f, 80f)] public float treeSurvivalTempMin = -12f;
+        [Range(-40f, 160f)] public float treeSurvivalTempMax = 82f;
+        [Range(0f, 2f)] public float treeSurvivalMoistureMin = 0.02f;
+        [Range(0f, 2f)] public float treeSurvivalMoistureMax = 1.5f;
+        [Range(0f, 2f)] public float treeMinLight = 0.06f;
+        [Range(1, 8)] public int treeSproutHeight = 4;
+        [Range(6, 24)] public int treeSaplingHeight = 15;
+        [Range(12, 48)] public int treeMaxHeight = 30;
+        [Range(1, 8)] public int treeMaxTrunkWidth = 6;
+        [Range(1, 6)] public int treeSaplingBranchMin = 2;
+        [Range(1, 8)] public int treeSaplingBranchMax = 4;
+        [Range(0f, 1f)] public float treeRootCohesionBonus = 0.12f;
+        [Range(0f, 4f)] public float treeCanopyOpacity = 0.28f;
+        [Range(0f, 4f)] public float treeExposureDamage = 0.08f;
+        [Range(20, 8000)] public int treeLeafLifeTicks = 400;
+        [Range(20, 8000)] public int treeRotTicks = 500;
+        [Range(1, 64)] public int treeDisconnectTicks = 8;
+
         [Header("Detritus")]
         [Range(0f, 4f)] public float detritusVaporAbsorbRate = 0.08f;
         [Range(0f, 4f)] public float detritusEvaporationRate = 0.015f;
@@ -706,6 +745,62 @@ namespace GeneSys.Configuration
             grassSeedSettlingRate = Mathf.Max(0f, grassSeedSettlingRate);
             grassNectarAmount = Mathf.Clamp01(grassNectarAmount);
             grassCanopyOpacity = Mathf.Max(0f, grassCanopyOpacity);
+            treeInitialEnergy = Mathf.Clamp01(treeInitialEnergy);
+            treeInitialHydration = Mathf.Clamp01(treeInitialHydration);
+            treeInitialNutrient = Mathf.Clamp01(treeInitialNutrient);
+            treeInitialHealth = Mathf.Clamp01(treeInitialHealth);
+            treePhotosynthesisRate = Mathf.Max(0f, treePhotosynthesisRate);
+            treeGrowthRate = Mathf.Max(0f, treeGrowthRate);
+            treeDecayRate = Mathf.Max(0f, treeDecayRate);
+            treeMaintenanceRate = Mathf.Max(0f, treeMaintenanceRate);
+            treeNightDrain = Mathf.Max(0f, treeNightDrain);
+            treeWaterUptakeRate = Mathf.Max(0f, treeWaterUptakeRate);
+            treeNutrientUptakeRate = Mathf.Max(0f, treeNutrientUptakeRate);
+            treeVascularRate = Mathf.Max(0f, treeVascularRate);
+            treeGrowthCost = Mathf.Clamp01(treeGrowthCost);
+            treeWindBias = Mathf.Clamp01(treeWindBias);
+            treeGeneExpressionRange = Mathf.Clamp01(treeGeneExpressionRange);
+            if (treeGrowthTempMax < treeGrowthTempMin)
+            {
+                float swap = treeGrowthTempMin;
+                treeGrowthTempMin = treeGrowthTempMax;
+                treeGrowthTempMax = swap;
+            }
+            if (treeSurvivalTempMax < treeSurvivalTempMin)
+            {
+                float swap = treeSurvivalTempMin;
+                treeSurvivalTempMin = treeSurvivalTempMax;
+                treeSurvivalTempMax = swap;
+            }
+            treeSurvivalTempMin = Mathf.Min(treeSurvivalTempMin, treeGrowthTempMin);
+            treeSurvivalTempMax = Mathf.Max(treeSurvivalTempMax, treeGrowthTempMax);
+            if (treeGrowthMoistureMax < treeGrowthMoistureMin)
+            {
+                float swap = treeGrowthMoistureMin;
+                treeGrowthMoistureMin = treeGrowthMoistureMax;
+                treeGrowthMoistureMax = swap;
+            }
+            if (treeSurvivalMoistureMax < treeSurvivalMoistureMin)
+            {
+                float swap = treeSurvivalMoistureMin;
+                treeSurvivalMoistureMin = treeSurvivalMoistureMax;
+                treeSurvivalMoistureMax = swap;
+            }
+            treeSurvivalMoistureMin = Mathf.Min(treeSurvivalMoistureMin, treeGrowthMoistureMin);
+            treeSurvivalMoistureMax = Mathf.Max(treeSurvivalMoistureMax, treeGrowthMoistureMax);
+            treeMinLight = Mathf.Max(0f, treeMinLight);
+            treeSproutHeight = Mathf.Clamp(treeSproutHeight, 1, 8);
+            treeSaplingHeight = Mathf.Clamp(treeSaplingHeight, Mathf.Max(6, treeSproutHeight + 2), 24);
+            treeMaxHeight = Mathf.Clamp(treeMaxHeight, Mathf.Max(12, treeSaplingHeight + 2), 48);
+            treeMaxTrunkWidth = Mathf.Clamp(treeMaxTrunkWidth, 1, 8);
+            treeSaplingBranchMin = Mathf.Clamp(treeSaplingBranchMin, 1, 6);
+            treeSaplingBranchMax = Mathf.Clamp(treeSaplingBranchMax, treeSaplingBranchMin, 8);
+            treeRootCohesionBonus = Mathf.Clamp01(treeRootCohesionBonus);
+            treeCanopyOpacity = Mathf.Max(0f, treeCanopyOpacity);
+            treeExposureDamage = Mathf.Max(0f, treeExposureDamage);
+            treeLeafLifeTicks = Mathf.Clamp(treeLeafLifeTicks, 20, 8000);
+            treeRotTicks = Mathf.Clamp(treeRotTicks, 20, 8000);
+            treeDisconnectTicks = Mathf.Clamp(treeDisconnectTicks, 1, 64);
             detritusVaporAbsorbRate = Mathf.Max(0f, detritusVaporAbsorbRate);
             detritusEvaporationRate = Mathf.Max(0f, detritusEvaporationRate);
             detritusMoistureDistributeRate = Mathf.Max(0f, detritusMoistureDistributeRate);

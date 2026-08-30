@@ -531,6 +531,8 @@ float FloraFuel(uint material, float4 life, uint stage)
 #define FAUNA_EGG_ID 130u
 #define WASP_ID 132u
 #define WASP_EGG_ID 133u
+#define TREE_LEAF_ID 134u
+#define TREE_WOOD_ID 135u
 #define FAUNA_STAGE_EMPTY 0u
 #define FAUNA_STAGE_EGG 1u
 #define FAUNA_STAGE_JUVENILE 2u
@@ -605,7 +607,7 @@ bool IsFaunaSupport(uint material)
 {
     return material == 4u || material == 5u || material == 7u || material == 8u
         || material == 9u || material == 10u || material == 12u || material == 13u
-        || material == 131u || material == FLORA_ALGAE_ID || IsFaunaMaterial(material)
+        || material == 131u || material == FLORA_ALGAE_ID || material == TREE_WOOD_ID || IsFaunaMaterial(material)
         || IsWaspEggMaterial(material);
 }
 
@@ -1525,6 +1527,287 @@ uint DominantRareMycology(uint traitsA, uint traitsB, uint traitsC)
         }
     }
     return best;
+}
+
+#define TREE_SLICE_COUNT 3
+#define TREE_PHYSIOLOGY_SLICE 0
+#define TREE_TOPOLOGY_SLICE 1
+#define TREE_GENOME_SLICE 2
+#define TREE_STAGE_EMPTY 0u
+#define TREE_STAGE_SPROUT 1u
+#define TREE_STAGE_SAPLING 2u
+#define TREE_STAGE_TREE 3u
+#define TREE_STAGE_DEAD 4u
+#define TREE_ROLE_NONE 0u
+#define TREE_ROLE_ROOT 1u
+#define TREE_ROLE_JUVENILE 2u
+#define TREE_ROLE_TRUNK 3u
+#define TREE_ROLE_BRANCH 4u
+#define TREE_ROLE_STEM 5u
+#define TREE_ROLE_LEAF 6u
+#define TREE_GENE_TEMP_OPTIMUM 0u
+#define TREE_GENE_TEMP_TOLERANCE 1u
+#define TREE_GENE_MOISTURE_OPTIMUM 2u
+#define TREE_GENE_MOISTURE_TOLERANCE 3u
+#define TREE_GENE_LIGHT_AFFINITY 4u
+#define TREE_GENE_METABOLIC 5u
+#define TREE_GENE_ROOT_BRANCHING 6u
+#define TREE_GENE_MATURE_HEIGHT 7u
+#define TREE_GENE_BRANCH_CADENCE 8u
+#define TREE_GENE_LEAF_LONGEVITY 9u
+#define TREE_GENE_WIND_RESPONSE 10u
+#define TREE_GENE_MUTATION 11u
+#define TREE_FLAG_ANCHOR 1u
+#define TREE_FLAG_SHED 2u
+#define TREE_FLAG_CONVERT_WOOD 4u
+#define TREE_FLAG_CONVERT_DETRITUS 8u
+#define TREE_FLAG_CONVERT_ASH 16u
+#define TREE_FLAG_EXPOSED 32u
+#define TREE_CLAIM_EMPTY 0xffffffffu
+
+bool IsLeafMaterial(uint material)
+{
+    return material == TREE_LEAF_ID;
+}
+
+bool IsWoodMaterial(uint material)
+{
+    return material == TREE_WOOD_ID;
+}
+
+bool IsTreeMaterial(uint material)
+{
+    return IsLeafMaterial(material) || IsWoodMaterial(material);
+}
+
+bool IsTreeHabitat(uint material)
+{
+    return material == 7u || material == 8u;
+}
+
+bool IsTreeOpen(uint material)
+{
+    return material == 0u || material == 1u || material == 11u;
+}
+
+float4 SampleTreePhysiology(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, TREE_PHYSIOLOGY_SLICE, 0));
+}
+
+uint4 SampleTreeTopology(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, TREE_TOPOLOGY_SLICE, 0)));
+}
+
+uint4 SampleTreeGenome(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, TREE_GENOME_SLICE, 0)));
+}
+
+uint TreeStage(uint4 genome)
+{
+    return genome.w & 255u;
+}
+
+uint TreeGeneration(uint4 genome)
+{
+    return (genome.w >> 8) & 255u;
+}
+
+uint TreeLineage(uint4 genome)
+{
+    return (genome.w >> 16) & 255u;
+}
+
+uint TreeToxinDose(uint4 genome)
+{
+    return (genome.w >> 24) & 255u;
+}
+
+uint PackTreeMeta(uint stage, uint generation, uint lineage, uint toxinDose)
+{
+    return (stage & 255u) | ((generation & 255u) << 8) | ((lineage & 255u) << 16) | ((toxinDose & 255u) << 24);
+}
+
+uint TreeRole(uint4 topology)
+{
+    return (topology.z >> 8) & 255u;
+}
+
+uint TreeTopoStage(uint4 topology)
+{
+    return topology.z & 255u;
+}
+
+uint TreeFlags(uint4 topology)
+{
+    return (topology.z >> 16) & 255u;
+}
+
+uint TreeCause(uint4 topology)
+{
+    return (topology.z >> 24) & 255u;
+}
+
+uint PackTreeTopologyMeta(uint stage, uint role, uint flags, uint cause)
+{
+    return (stage & 255u) | ((role & 255u) << 8) | ((flags & 255u) << 16) | ((cause & 255u) << 24);
+}
+
+bool TreeIsLiving(uint stage)
+{
+    return stage == TREE_STAGE_SPROUT || stage == TREE_STAGE_SAPLING || stage == TREE_STAGE_TREE;
+}
+
+bool TreeIsOccupied(uint4 topology)
+{
+    return topology.x != 0u;
+}
+
+uint4 SanitizeTreeGenome(uint4 genome)
+{
+    uint stage = TreeStage(genome);
+    if (stage > TREE_STAGE_DEAD)
+        stage = TREE_STAGE_EMPTY;
+    genome.w = PackTreeMeta(stage, TreeGeneration(genome), TreeLineage(genome), TreeToxinDose(genome));
+    return genome;
+}
+
+float4 SanitizeTreePhysiology(float4 phys)
+{
+    float4 value = max(SafeFinite4(phys, 0.0), 0.0);
+    value.x = saturate(value.x);
+    value.y = saturate(value.y);
+    value.z = saturate(value.z);
+    value.w = saturate(value.w);
+    return value;
+}
+
+float TreeExpressFactor(uint gene, float range)
+{
+    return 1.0 + ((gene / 255.0) - 0.5) * 2.0 * saturate(range);
+}
+
+float TreeExpressShift(uint gene, float range)
+{
+    return ((gene / 255.0) - 0.5) * 2.0 * range;
+}
+
+int TreeSaplingBranchCount(uint4 genome, int configuredMin, int configuredMax)
+{
+    uint gene = DecodeGene(genome, TREE_GENE_BRANCH_CADENCE);
+    int lo = clamp(configuredMin, 1, 8);
+    int hi = clamp(configuredMax, lo, 8);
+    return clamp(lo + (int)(gene % 3u), lo, hi);
+}
+
+float TreeMatureHeightScale(uint4 genome)
+{
+    return 0.75 + DecodeGene(genome, TREE_GENE_MATURE_HEIGHT) / 255.0 * 0.35;
+}
+
+float TreeLeafLifeScale(uint4 genome)
+{
+    return 0.5 + DecodeGene(genome, TREE_GENE_LEAF_LONGEVITY) / 255.0;
+}
+
+float TreeWindResponse(uint4 genome)
+{
+    return DecodeGene(genome, TREE_GENE_WIND_RESPONSE) / 255.0;
+}
+
+int TreeRootForkBudget(uint4 genome)
+{
+    return 1 + (int)(DecodeGene(genome, TREE_GENE_ROOT_BRANCHING) % 3u);
+}
+
+void WriteTreeState(RWTexture2DArray<float4> tex, int2 cell, float4 phys, uint4 topology, uint4 genome)
+{
+    tex[uint3((uint2)cell, TREE_PHYSIOLOGY_SLICE)] = SanitizeTreePhysiology(phys);
+    tex[uint3((uint2)cell, TREE_TOPOLOGY_SLICE)] = asfloat(topology);
+    tex[uint3((uint2)cell, TREE_GENOME_SLICE)] = asfloat(SanitizeTreeGenome(genome));
+}
+
+void ClearTreeState(RWTexture2DArray<float4> tex, int2 cell)
+{
+    WriteTreeState(tex, cell, 0.0, uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u));
+}
+
+void CopyTreeState(Texture2DArray<float4> src, RWTexture2DArray<float4> dst, int2 cell)
+{
+    WriteTreeState(dst, cell, SampleTreePhysiology(src, cell), SampleTreeTopology(src, cell), SampleTreeGenome(src, cell));
+}
+
+uint4 RandomTreeGenome(uint2 cell, int seed, int tick)
+{
+    uint4 genome = 0;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float h = Hash01(cell.x * 40503u + cell.y * 73856093u + i * 83492791u + (uint)seed * 5779u);
+        EncodeGene(genome, i, (uint)round(h * 255.0));
+    }
+    uint lineage = 1u + (uint)round(Hash01(cell.x * 22543u + cell.y * 40503u + (uint)seed * 3323u) * 254.0);
+    genome.w = PackTreeMeta(TREE_STAGE_SPROUT, 0u, lineage, 0u);
+    return genome;
+}
+
+uint4 MutateTreeGenome(uint4 genome, float baseMutationRate, float toxinMutationScale, uint salt)
+{
+    genome = SanitizeTreeGenome(genome);
+    float toxin = TreeToxinDose(genome) / 255.0;
+    float mutationGene = TreeExpressFactor(DecodeGene(genome, TREE_GENE_MUTATION), 1.0);
+    float rate = max(0.0, baseMutationRate) * (1.0 + toxin * max(0.0, toxinMutationScale)) * mutationGene;
+    [unroll]
+    for (uint i = 0u; i < 12u; i++)
+    {
+        float unit = Hash01(salt + i * 83492791u + DecodeGene(genome, i) * 747796405u);
+        int step = (int)round((unit * 2.0 - 1.0) * rate * 255.0);
+        int next = clamp((int)DecodeGene(genome, i) + step, 0, 255);
+        EncodeGene(genome, i, (uint)next);
+    }
+    return genome;
+}
+
+float TreeFuel(uint material, float4 phys, uint stage)
+{
+    if (!IsTreeMaterial(material))
+        return 0.0;
+    float health = saturate(phys.w);
+    if (stage == TREE_STAGE_EMPTY)
+        return 0.0;
+    if (stage == TREE_STAGE_DEAD)
+        return health * 0.45;
+    return health;
+}
+
+float TreeCanopyOpacity(uint material, float4 phys, float scale)
+{
+    if (IsLeafMaterial(material))
+        return (0.18 + saturate(phys.w) * 0.22) * max(0.0, scale);
+    if (IsWoodMaterial(material))
+        return 0.4 * max(0.0, scale);
+    return 0.0;
+}
+
+uint CountTreeRootsOnCell(Texture2DArray<float4> tree, int2 cell, int2 gridSize)
+{
+    uint taps = 0u;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = cell + offsets[i];
+        if (offsets[i].y != 0 && (n.y < 0 || n.y >= gridSize.y)) continue;
+        int2 neighbor = ClampCell(n, gridSize);
+        uint4 topo = SampleTreeTopology(tree, neighbor);
+        if (!TreeIsOccupied(topo) || TreeRole(topo) != TREE_ROLE_ROOT) continue;
+        uint stage = TreeStage(SampleTreeGenome(tree, neighbor));
+        if (!TreeIsLiving(stage)) continue;
+        taps++;
+    }
+    return taps;
 }
 
 #endif

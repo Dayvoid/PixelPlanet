@@ -83,6 +83,19 @@ namespace GeneSys.Validation
         public float MeanGeneration;
     }
 
+    public struct TreeMetrics
+    {
+        public int AnchorCount;
+        public int PixelCount;
+        public int SproutCount;
+        public int SaplingCount;
+        public int TreeCount;
+        public int DeadCount;
+        public double TotalEnergy;
+        public double TotalHydration;
+        public double TotalHealth;
+    }
+
     public static class SimulationMetrics
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
@@ -307,7 +320,8 @@ namespace GeneSys.Validation
                     }
 
                     if (material == MaterialIds.Algae || material == MaterialIds.Cricket || material == MaterialIds.CricketEgg
-                        || material == MaterialIds.Wasp || material == MaterialIds.WaspEgg)
+                        || material == MaterialIds.Wasp || material == MaterialIds.WaspEgg
+                        || material == MaterialIds.Leaf || material == MaterialIds.Wood)
                         metrics.OrganismCount++;
 
                     if (flow != null && (material == MaterialIds.Air || material == MaterialIds.Vapor))
@@ -472,6 +486,69 @@ namespace GeneSys.Validation
             {
                 metrics.MeanAge = (float)(ageSum / living);
                 metrics.MeanGeneration = (float)(generationSum / living);
+            }
+            return metrics;
+        }
+
+        public static void MeasureTreeAsync(SimulationHost host, Action<TreeMetrics> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            RenderTexture materialTex = host.Resources.MaterialRead;
+            RenderTexture treeTex = host.Resources.TreeRead;
+            if (materialTex == null || treeTex == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+            Action fail = () => completed?.Invoke(default);
+            RequestField(materialTex, fail, materialRequest =>
+            {
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                RequestFieldSlice(treeTex, TreeGenome.PhysiologySlice, fail, physRequest =>
+                {
+                    Vector4[] phys = physRequest.GetData<Vector4>().ToArray();
+                    RequestFieldSlice(treeTex, TreeGenome.TopologySlice, fail, topoRequest =>
+                    {
+                        Vector4[] topologyBits = topoRequest.GetData<Vector4>().ToArray();
+                        RequestFieldSlice(treeTex, TreeGenome.GenomeSlice, fail, genomeRequest =>
+                        {
+                            Vector4[] genomeBits = genomeRequest.GetData<Vector4>().ToArray();
+                            var topology = new TreeGenome.Packed[topologyBits.Length];
+                            var genomes = new TreeGenome.Packed[genomeBits.Length];
+                            for (int i = 0; i < topologyBits.Length; i++)
+                                topology[i] = TreeGenome.FromFloatBits(topologyBits[i]);
+                            for (int i = 0; i < genomeBits.Length; i++)
+                                genomes[i] = TreeGenome.FromFloatBits(genomeBits[i]);
+                            completed?.Invoke(ComputeTreeMetrics(materials, phys, topology, genomes));
+                        });
+                    });
+                });
+            });
+        }
+
+        public static TreeMetrics ComputeTreeMetrics(uint[] materials, Vector4[] phys, TreeGenome.Packed[] topology, TreeGenome.Packed[] genomes)
+        {
+            var metrics = new TreeMetrics();
+            int count = Math.Min(materials.Length, Math.Min(phys.Length, Math.Min(topology.Length, genomes.Length)));
+            for (int i = 0; i < count; i++)
+            {
+                if (topology[i].X == 0) continue;
+                TreeGenome.Packed genome = TreeGenome.Sanitize(genomes[i]);
+                uint stage = TreeGenome.Stage(genome);
+                metrics.PixelCount++;
+                if ((TreeGenome.Flags(topology[i].Z) & TreeGenome.FlagAnchor) != 0)
+                    metrics.AnchorCount++;
+                if (stage == TreeGenome.StageSprout) metrics.SproutCount++;
+                else if (stage == TreeGenome.StageSapling) metrics.SaplingCount++;
+                else if (stage == TreeGenome.StageTree) metrics.TreeCount++;
+                else if (stage == TreeGenome.StageDead) metrics.DeadCount++;
+                metrics.TotalEnergy += Math.Max(0d, phys[i].x);
+                metrics.TotalHydration += Math.Max(0d, phys[i].y);
+                metrics.TotalHealth += Math.Max(0d, phys[i].w);
             }
             return metrics;
         }

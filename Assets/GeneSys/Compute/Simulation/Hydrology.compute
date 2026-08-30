@@ -26,6 +26,7 @@ RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
 Texture2DArray<float4> _GrassRead;
+Texture2DArray<float4> _TreeRead;
 Texture2D<uint> _GrassDropClaims;
 StructuredBuffer<float4> _WaterColumns;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
@@ -52,6 +53,7 @@ float4 _EruptionA;
 float4 _EruptionB;
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
 float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMoisture
+float4 _TreeH; // seedAtWorldgen, cohesionBonus, canopyOpacity, exposureDamage
 float4 _DetritusA; // vaporAbsorb, evaporate, distribute, leach
 float4 _DetritusB; // decomposition, unused
 
@@ -317,7 +319,8 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         + definition.physical.y
         + soilQuality * 0.35 * max(0.0, _EruptionB.w)
         + moistureProtection * max(0.0, _MoistureErosion.y)
-        + (float)CountGrassRootTapsOnCell(_GrassRead, cell, _GridSize) * saturate(_GrassI.y) * _Erosion.z);
+        + (float)CountGrassRootTapsOnCell(_GrassRead, cell, _GridSize) * saturate(_GrassI.y) * _Erosion.z
+        + (float)CountTreeRootsOnCell(_TreeRead, cell, _GridSize) * saturate(_TreeH.y) * _Erosion.z);
 
     // Continuous linear recovery for sediment-source solids. Sustained loading must
     // exceed stressDecayRate (_Erosion.w) on average to accumulate toward conversion.
@@ -580,8 +583,9 @@ void DetritusExchange(uint3 id : SV_DispatchThreadID)
 
     if (IsDetritusMaterial(material))
     {
-        aux.z = max(0.0, aux.z - decayRate * _DeltaTime);
-        if (aux.z <= 1e-4)
+        if (decayRate > 0.0)
+            aux.z = max(0.0, aux.z - decayRate * _DeltaTime);
+        if (decayRate > 0.0 && aux.z <= 1e-4)
         {
             bool exposed = IsExposedSurface(cell, material);
             material = exposed ? 1u : 7u;

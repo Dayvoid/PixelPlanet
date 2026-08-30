@@ -52,6 +52,7 @@ Shader "GeneSys/Planetoid Display"
             Texture2DArray<float4> _FaunaTex;
             Texture2DArray<float4> _GrassTex;
             Texture2DArray<float4> _WaspTex;
+            Texture2DArray<float4> _TreeTex;
             Texture2D<float2> _AcousticTex;
             Texture2D<float> _LightTex;
             Texture2D<float4> _Palette;
@@ -490,6 +491,28 @@ Shader "GeneSys/Planetoid Display"
                         if ((g.w & 255u) != 0u) occupied += 0.33;
                     }
                     color = lerp(float3(0.05, 0.06, 0.04), color, 0.35 + occupied);
+                }
+                else if (_OverlayMode == 26)
+                {
+                    float4 phys = _TreeTex.Load(int4(cell, 0, 0));
+                    uint4 topology = asuint(_TreeTex.Load(int4(cell, 1, 0)));
+                    uint4 treeGenome = asuint(_TreeTex.Load(int4(cell, 2, 0)));
+                    uint stage = treeGenome.w & 255u;
+                    uint role = (topology.z >> 8) & 255u;
+                    color = float3(0.05, 0.04, 0.03);
+                    if (topology.x != 0u)
+                    {
+                        if (role == 1u) color = float3(0.28, 0.16, 0.08);
+                        else if (role == 2u) color = float3(0.32, 0.7, 0.22);
+                        else if (role == 3u) color = float3(0.34, 0.2, 0.1);
+                        else if (role == 4u) color = float3(0.42, 0.26, 0.12);
+                        else if (role == 5u) color = float3(0.48, 0.32, 0.14);
+                        else color = float3(0.22, 0.62, 0.18);
+                        if (stage == 4u) color = lerp(color, float3(0.18, 0.12, 0.08), 0.65);
+                        color = lerp(color * 0.35, color, saturate(phys.w));
+                    }
+                    else if (material == 134u || material == 135u)
+                        color = float3(0.55, 0.12, 0.12);
                 }
 
                 float radialGrid = frac(simulationRadius * height);

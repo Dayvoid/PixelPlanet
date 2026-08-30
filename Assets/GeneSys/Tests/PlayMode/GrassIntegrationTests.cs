@@ -62,6 +62,7 @@ namespace GeneSys.Tests
             host.Config.floraSeedAtWorldgen = false;
             host.Config.faunaSeedAtWorldgen = false;
             host.Config.grassSeedAtWorldgen = false;
+            host.Config.treeSeedAtWorldgen = false;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
             FreezeWorld(host);
@@ -163,6 +164,7 @@ namespace GeneSys.Tests
             host.Config.floraSeedAtWorldgen = false;
             host.Config.faunaSeedAtWorldgen = false;
             host.Config.grassSeedAtWorldgen = false;
+            host.Config.treeSeedAtWorldgen = false;
             host.Config.combustionIgnitionAccumulationRate = 0f;
             host.Config.stormChargeSeparationRate = 0f;
             host.Config.densityExchangeRate = 0f;

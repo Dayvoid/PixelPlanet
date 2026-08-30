@@ -1,4 +1,5 @@
 using System;
+using GeneSys.Materials;
 using GeneSys.Simulation;
 using Unity.Collections;
 using UnityEngine;
@@ -188,10 +189,69 @@ namespace GeneSys.Validation
                                                             }
                                                             if (host == null || !host.IsReady || host.Config == null)
                                                             { Complete(false, "Simulation host unavailable."); return; }
-                                                            if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
-                                                            double drift = Math.Abs(water - baselineWater) / baselineWater;
-                                                            bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
-                                                            Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                                            RenderTexture treeTex = host.Resources.TreeRead;
+                                                            RenderTexture materialTex = host.Resources.MaterialRead;
+                                                            if (treeTex == null || materialTex == null)
+                                                            { Complete(false, "Tree GPU resources unavailable."); return; }
+                                                            AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, TreeGenome.PhysiologySlice, 1, treePhysRequest =>
+                                                            {
+                                                                if (treePhysRequest.hasError) { Complete(false, "Tree physiology GPU readback failed."); return; }
+                                                                NativeArray<Vector4> treePhys = treePhysRequest.GetData<Vector4>();
+                                                                for (int i = 0; i < treePhys.Length; i++)
+                                                                {
+                                                                    if (!Finite(treePhys[i])) { Complete(false, $"Non-finite tree physiology at cell {i}."); return; }
+                                                                    if (treePhys[i].x < -0.01f || treePhys[i].x > 1.01f) { Complete(false, $"Tree energy out of range at cell {i}."); return; }
+                                                                    if (treePhys[i].y < -0.01f || treePhys[i].y > 1.01f) { Complete(false, $"Tree hydration out of range at cell {i}."); return; }
+                                                                    if (treePhys[i].w < -0.01f || treePhys[i].w > 1.01f) { Complete(false, $"Tree health out of range at cell {i}."); return; }
+                                                                }
+                                                                AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, TreeGenome.TopologySlice, 1, treeTopoRequest =>
+                                                                {
+                                                                    if (treeTopoRequest.hasError) { Complete(false, "Tree topology GPU readback failed."); return; }
+                                                                    Vector4[] treeTopoBits = treeTopoRequest.GetData<Vector4>().ToArray();
+                                                                    AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, TreeGenome.GenomeSlice, 1, treeGenomeRequest =>
+                                                                    {
+                                                                        if (treeGenomeRequest.hasError) { Complete(false, "Tree genome GPU readback failed."); return; }
+                                                                        Vector4[] treeGenomeBits = treeGenomeRequest.GetData<Vector4>().ToArray();
+                                                                        if (host == null || !host.IsReady || host.Resources == null)
+                                                                        { Complete(false, "Simulation host unavailable."); return; }
+                                                                        AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+                                                                        {
+                                                                            if (materialRequest.hasError) { Complete(false, "Material GPU readback failed."); return; }
+                                                                            uint[] materials = materialRequest.GetData<uint>().ToArray();
+                                                                            int width = host.Resources.TreeRead != null ? host.Resources.TreeRead.width : 0;
+                                                                            int height = host.Resources.TreeRead != null ? host.Resources.TreeRead.height : 0;
+                                                                            for (int i = 0; i < treeGenomeBits.Length; i++)
+                                                                            {
+                                                                                TreeGenome.Packed genome = TreeGenome.Sanitize(TreeGenome.FromFloatBits(treeGenomeBits[i]));
+                                                                                TreeGenome.Packed topology = TreeGenome.FromFloatBits(treeTopoBits[i]);
+                                                                                uint stage = TreeGenome.Stage(genome);
+                                                                                uint role = TreeGenome.Role(topology.Z);
+                                                                                if (!TreeGenome.IsValidStage(stage))
+                                                                                { Complete(false, $"Invalid tree stage {stage} at cell {i}."); return; }
+                                                                                if (!TreeGenome.IsValidRole(role))
+                                                                                { Complete(false, $"Invalid tree role {role} at cell {i}."); return; }
+                                                                                uint material = i < materials.Length ? materials[i] : 0u;
+                                                                                bool occupied = topology.X != 0;
+                                                                                if (!occupied && (material == MaterialIds.Leaf || material == MaterialIds.Wood))
+                                                                                { Complete(false, $"Orphan tree material {material} at cell {i}."); return; }
+                                                                                if (occupied && topology.Y != 0)
+                                                                                {
+                                                                                    uint packed = topology.Y;
+                                                                                    int parent = (int)packed - 1;
+                                                                                    if (parent < 0 || parent >= width * height)
+                                                                                    { Complete(false, $"Invalid tree parent link at cell {i}."); return; }
+                                                                                }
+                                                                            }
+                                                                            if (host == null || !host.IsReady || host.Config == null)
+                                                                            { Complete(false, "Simulation host unavailable."); return; }
+                                                                            if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
+                                                                            double drift = Math.Abs(water - baselineWater) / baselineWater;
+                                                                            bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                                                                            Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                                                        });
+                                                                    });
+                                                                });
+                                                            });
                                                         });
                                                     });
                                                 });

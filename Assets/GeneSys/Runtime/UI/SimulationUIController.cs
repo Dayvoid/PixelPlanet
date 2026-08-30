@@ -319,7 +319,7 @@ namespace GeneSys.UI
                     "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor",
                     "Groundwater", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories", "Composite Water",
                     "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only", "Mycology",
-                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass"
+                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass", "Tree"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
@@ -1037,7 +1037,7 @@ namespace GeneSys.UI
                 "Selects what left-drag paints. Off does nothing; Material paints geology and Detritus; Life uses the Material field as a type picker for organisms and seeds; otherwise heat, water, pressure, vapor, or ignition. Hold right-click to inspect the cell under the cursor.");
             AttachNamedSettingTooltip(root, "material",
                 "Material",
-                "Material the brush paints in Material mode (0–13 plus Detritus). In Life mode this field picks the organism or seed type: Algae/Moss spores, Cricket, Cricket Egg, Myco Spores, or Grass Seeds. Registry materials still expose editable properties below.");
+                "Material the brush paints in Material mode (0–13 plus Detritus). In Life mode this field picks the organism or seed type: Algae/Moss spores, Cricket, Cricket Egg, Myco Spores, Grass Seeds, or Tree Sprout. Registry materials still expose editable properties below.");
             AttachNamedSettingTooltip(root, "brush-radius", nameof(SimulationConfig.brushRadius));
             AttachNamedSettingTooltip(root, "brush-strength", nameof(SimulationConfig.brushStrength));
             AttachNamedSettingTooltip(root, "probe-action-vapor",
@@ -1323,7 +1323,8 @@ namespace GeneSys.UI
                    $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
                    FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange) +
                    FormatGrassInspection(inspection, host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f) +
-                   FormatWaspInspection(inspection, host.Config != null ? host.Config.waspGeneExpressionRange : 0.45f);
+                   FormatWaspInspection(inspection, host.Config != null ? host.Config.waspGeneExpressionRange : 0.45f) +
+                   FormatTreeInspection(inspection, host.Config != null ? host.Config.treeGeneExpressionRange : 0.45f);
         }
 
         private static string FormatWaspInspection(CellInspection inspection, float expressionRange)
@@ -1350,6 +1351,23 @@ namespace GeneSys.UI
                 if (carried > 0) text.Append($"  donors {lineages}");
             }
             text.Append($"\n  {WaspGenome.DescribeGenes(inspection.waspGenome, expressionRange)}");
+            return text.ToString();
+        }
+
+        private static string FormatTreeInspection(CellInspection inspection, float expressionRange)
+        {
+            uint stage = TreeGenome.Stage(inspection.treeGenome);
+            if (stage == TreeGenome.StageEmpty && inspection.treeTopology.X == 0) return "";
+            uint role = TreeGenome.Role(inspection.treeTopology.Z);
+            var text = new System.Text.StringBuilder();
+            text.Append($"\nTree {TreeGenome.DescribeStage(stage)} / {TreeGenome.DescribeRole(role)}");
+            text.Append($" gen {TreeGenome.Generation(inspection.treeGenome)} lin {TreeGenome.Lineage(inspection.treeGenome)}");
+            text.Append($"\n  energy {inspection.treePhysiology.x:F2}  hyd {inspection.treePhysiology.y:F2}  nut {inspection.treePhysiology.z:F2}  hp {inspection.treePhysiology.w:F2}");
+            text.Append($"\n  owner {inspection.treeTopology.X}  parent {inspection.treeTopology.Y}  flags {TreeGenome.Flags(inspection.treeTopology.Z)}");
+            float timer = System.BitConverter.Int32BitsToSingle(unchecked((int)inspection.treeTopology.W));
+            if (role == TreeGenome.RoleLeaf || stage == TreeGenome.StageDead)
+                text.Append($"  timer {timer:F0}");
+            text.Append($"\n  {TreeGenome.DescribeGenes(inspection.treeGenome, expressionRange)}");
             return text.ToString();
         }
 
@@ -1437,6 +1455,8 @@ namespace GeneSys.UI
                 {
                     SimulationMetrics.MeasureWaspAsync(host, wasp =>
                     {
+                        SimulationMetrics.MeasureTreeAsync(host, tree =>
+                        {
                         metricsReadbackPending = false;
                         if (worldMetricsLabel != null)
                         {
@@ -1457,8 +1477,10 @@ namespace GeneSys.UI
                                 $"Organisms {metrics.OrganismCount}  cricket {fauna.AdultCount}  nymph {fauna.JuvenileCount}  eggs {fauna.EggCount}\n" +
                                 $"Fauna cal {fauna.TotalCalories:F2}  hyd {fauna.TotalHydration:F2}\n" +
                                 $"Wasps {wasp.AdultCount}  larvae {wasp.JuvenileCount}  eggs {wasp.EggCount}  carrying {wasp.PollenCarrierCount} ({wasp.PollenSampleCount} pollen)\n" +
-                                $"Wasp cal {wasp.TotalCalories:F2}  hyd {wasp.TotalHydration:F2}  gen {wasp.MeanGeneration:F1}";
+                                $"Wasp cal {wasp.TotalCalories:F2}  hyd {wasp.TotalHydration:F2}  gen {wasp.MeanGeneration:F1}\n" +
+                                $"Trees {tree.AnchorCount}  pixels {tree.PixelCount}  sprout {tree.SproutCount}  sapling {tree.SaplingCount}  mature {tree.TreeCount}  dead {tree.DeadCount}";
                         }
+                        });
                     });
                 });
             });

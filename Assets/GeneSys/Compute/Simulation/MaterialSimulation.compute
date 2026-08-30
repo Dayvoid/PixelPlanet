@@ -245,6 +245,7 @@ bool IsMovable(uint material)
     // Adult wasps fly: the wasp pass owns their vertical position. Letting the generic
     // solver drop them a cell per tick would outrun their altitude controller.
     if (IsWaspMaterial(material)) return false;
+    if (IsTreeMaterial(material)) return false;
     float category = Mat(material).metadata.x;
     return category == 2.0 || category == 3.0 || category == 5.0 || category == 6.0;
 }

@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
+  m_Name: 135_Wood
+  m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
+  stableId: 135
+  displayName: Wood
+  category: 4
+  displayColor: {r: 0.28, g: 0.16, b: 0.08, a: 1}
+  shadeVariation: 0.14
+  density: 0.75
+  rigidity: 0.88
+  angleOfRepose: 55
+  grainSize: 1.1
+  buoyancyBias: 0.15
+  densityDisplaceable: 0
+  thermalConductivity: 0.08
+  heatCapacity: 1.7
+  electricalConductivity: 0.01
+  absorbency: 0.35
+  porosity: 0.18
+  meltingTemperature: 380
+  boilingTemperature: 900
+  thermalExpansion: 0.01
+  electricalExpansion: 0
+  solidPhaseId: 135
+  liquidPhaseId: 135
+  gasPhaseId: 11
+  toxicity: 0
+  caloricContent: 0.75
+  bioModifiable: 1
+  ignitionTemperature: 320
+  flashPoint: 260
+  oxygenDemand: 0.85
+  smokeYield: 0.55

@@ -11,6 +11,7 @@ namespace GeneSys.Simulation.Gpu
         public const int WaspSliceCount = 7;
         public const int WaspClaimCount = 5;
         public const int GrassVisitSliceCount = 2;
+        public const int TreeSliceCount = 3;
 
         public RenderTexture MaterialRead { get; private set; }
         public RenderTexture MaterialWrite { get; private set; }
@@ -51,6 +52,10 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture WaspWrite { get; private set; }
         public RenderTexture WaspClaims { get; private set; }
         public RenderTexture GrassVisit { get; private set; }
+        public RenderTexture TreeRead { get; private set; }
+        public RenderTexture TreeWrite { get; private set; }
+        public RenderTexture TreeGrowthClaims { get; private set; }
+        public RenderTexture PlantRootFlux => GrassRootFlux;
         public ComputeBuffer WaterColumn { get; private set; }
         public ComputeBuffer WaterFaceFlux { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
@@ -99,11 +104,15 @@ namespace GeneSys.Simulation.Gpu
             WaspWrite = CreateTextureArray("GeneSys Wasp B", GraphicsFormat.R32G32B32A32_SFloat, WaspSliceCount);
             WaspClaims = CreateTextureArray("GeneSys Wasp Claims", GraphicsFormat.R32_UInt, WaspClaimCount);
             GrassVisit = CreateTextureArray("GeneSys Grass Visit", GraphicsFormat.R32G32B32A32_SFloat, GrassVisitSliceCount);
+            TreeRead = CreateTextureArray("GeneSys Tree A", GraphicsFormat.R32G32B32A32_SFloat, TreeSliceCount);
+            TreeWrite = CreateTextureArray("GeneSys Tree B", GraphicsFormat.R32G32B32A32_SFloat, TreeSliceCount);
+            TreeGrowthClaims = CreateTexture("GeneSys Tree Growth Claims", GraphicsFormat.R32_UInt);
             WaterColumn = CreateColumnBuffer();
             WaterFaceFlux = CreateColumnBuffer();
             ClearFaunaAndAcoustic();
             ClearGrass();
             ClearWasp();
+            ClearTree();
             ClearWaterColumns();
         }
 
@@ -131,6 +140,13 @@ namespace GeneSys.Simulation.Gpu
             ClearRenderTarget(WaspWrite);
             ClearRenderTarget(WaspClaims);
             ClearRenderTarget(GrassVisit);
+        }
+
+        public void ClearTree()
+        {
+            ClearRenderTarget(TreeRead);
+            ClearRenderTarget(TreeWrite);
+            ClearRenderTarget(TreeGrowthClaims);
         }
 
         public void ClearFaunaAndAcoustic()
@@ -253,6 +269,11 @@ namespace GeneSys.Simulation.Gpu
             (PropaguleRead, PropaguleWrite) = (PropaguleWrite, PropaguleRead);
         }
 
+        public void SwapTree()
+        {
+            (TreeRead, TreeWrite) = (TreeWrite, TreeRead);
+        }
+
         public void SwapAcoustic()
         {
             RenderTexture oldPrev = AcousticPrev;
@@ -277,6 +298,7 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(GrassRead, GrassWrite);
             Graphics.CopyTexture(PropaguleRead, PropaguleWrite);
             Graphics.CopyTexture(WaspRead, WaspWrite);
+            Graphics.CopyTexture(TreeRead, TreeWrite);
         }
 
         public void Dispose()
@@ -301,6 +323,8 @@ namespace GeneSys.Simulation.Gpu
             Release(WaspRead); Release(WaspWrite);
             Release(WaspClaims);
             Release(GrassVisit);
+            Release(TreeRead); Release(TreeWrite);
+            Release(TreeGrowthClaims);
             WaterColumn?.Release();
             WaterFaceFlux?.Release();
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
@@ -321,6 +345,8 @@ namespace GeneSys.Simulation.Gpu
             WaspRead = WaspWrite = null;
             WaspClaims = null;
             GrassVisit = null;
+            TreeRead = TreeWrite = null;
+            TreeGrowthClaims = null;
             WaterColumn = null;
             WaterFaceFlux = null;
         }

@@ -169,6 +169,7 @@ namespace GeneSys.Tests
             host.Config.transportPassInterval = 1;
             host.Config.floraSeedAtWorldgen = false;
             host.Config.faunaSeedAtWorldgen = false;
+            host.Config.treeSeedAtWorldgen = false;
             host.Config.floraGrowthRate = 0f;
             host.Config.floraPhotosynthesisRate = 0f;
             host.Config.floraSporulationRate = 0f;
