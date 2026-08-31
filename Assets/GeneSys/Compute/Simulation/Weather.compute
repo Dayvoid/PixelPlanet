@@ -484,6 +484,40 @@ bool PrecipitationReceiverOk(int2 below, uint belowMat)
     return belowMat != 0u && !IsAtmosphereCell(below, belowMat);
 }
 
+bool PrecipitationAirReceiver(int2 dest, uint destMat)
+{
+    return IsAtmosphereCell(dest, destMat) && IsOpenCarrier(destMat) && destMat != 9u && destMat != 10u;
+}
+
+int2 CloudPrecipReceiver(int2 source)
+{
+    int2 down = source + int2(0, -1);
+    uint downMat = M(down);
+    bool downOk = PrecipitationReceiverOk(down, downMat);
+    float h = Hash01((uint)source.x * 73856093u + (uint)source.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + 19u);
+    float wind = F(source).x;
+    int dx = abs(wind) > 0.12 ? (wind > 0.0 ? 1 : -1) : (h < 0.5 ? -1 : 1);
+    bool downAir = PrecipitationAirReceiver(down, downMat);
+    // Fan into neighboring air when the shaft is blocked by a falling drop, and
+    // sometimes even when it is clear so rain does not stay single-file.
+    bool trySide = !downOk || (downAir && h < 0.38);
+    if (trySide)
+    {
+        [unroll]
+        for (int i = 0; i < 2; i++)
+        {
+            int2 side = int2((int)WrapTheta(source.x + dx, _GridSize.x), source.y - 1);
+            uint sideMat = M(side);
+            if (PrecipitationReceiverOk(side, sideMat) && PrecipitationAirReceiver(side, sideMat))
+                return side;
+            if (!downOk && PrecipitationReceiverOk(side, sideMat))
+                return side;
+            dx = -dx;
+        }
+    }
+    return down;
+}
+
 float CloudPrecipTransfer(int2 source)
 {
     uint mat = M(source);
@@ -496,15 +530,16 @@ float CloudPrecipTransfer(int2 source)
     float cloud = max(0.0, state.z);
     if (cloud <= retain)
         return 0.0;
-    int2 below = source + int2(0, -1);
-    uint belowMat = M(below);
-    if (!PrecipitationReceiverOk(below, belowMat))
+    int2 dest = CloudPrecipReceiver(source);
+    uint destMat = M(dest);
+    if (!PrecipitationReceiverOk(dest, destMat))
         return 0.0;
-    if (IsAtmosphereCell(below, belowMat) && IsOpenCarrier(belowMat) && belowMat != 9u && belowMat != 10u
-        && max(0.0, S(below).z) > retain)
+    if (PrecipitationAirReceiver(dest, destMat) && max(0.0, S(dest).z) > retain)
         return 0.0;
     float eq = PressureEquilibriumAt(source.y, _GridSize.y, _PressureA.y, _PressureA.z);
-    return PrecipitationMass(cloud, retain, state.x, state.y, eq, F(source).y, _WeatherB.w, _WeatherE.z, _DeltaTime);
+    float ready = PrecipitationMass(cloud, retain, state.x, state.y, eq, F(source).y, _WeatherB.w, _WeatherE.z, _DeltaTime);
+    uint decision = (uint)source.x * 73856093u + (uint)source.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + 41u;
+    return PrecipitationEmitMass(ready, max(0.0, cloud - retain), PrecipitationAirReceiver(dest, destMat), decision);
 }
 
 [numthreads(8, 8, 1)]
@@ -523,24 +558,43 @@ void Precipitation(uint3 id : SV_DispatchThreadID)
 
     float outgoing = CloudPrecipTransfer(cell);
     float incoming = 0.0;
-    int2 above = cell + int2(0, 1);
+    int2 incomingSrc = cell + int2(0, 1);
     if (cell.y < _GridSize.y - 1)
-        incoming = CloudPrecipTransfer(above);
+    {
+        int2 candidates[3] = {
+            int2(cell.x, cell.y + 1),
+            int2((int)WrapTheta(cell.x - 1, _GridSize.x), cell.y + 1),
+            int2((int)WrapTheta(cell.x + 1, _GridSize.x), cell.y + 1)
+        };
+        [unroll]
+        for (int i = 0; i < 3; i++)
+        {
+            int2 src = candidates[i];
+            if (src.y >= _GridSize.y) continue;
+            if (!all(CloudPrecipReceiver(src) == cell)) continue;
+            float mass = CloudPrecipTransfer(src);
+            if (mass > 1e-8)
+            {
+                incoming += mass;
+                incomingSrc = src;
+            }
+        }
+    }
 
     if (outgoing > 1e-8)
     {
         state.z = max(0.0, state.z - outgoing);
         flow.y -= outgoing;
-        int2 below = cell + int2(0, -1);
-        uint belowMat = M(below);
-        if (IsAtmosphereCell(below, belowMat) && IsOpenCarrier(belowMat) && belowMat != 9u && belowMat != 10u)
-            aux.x += max(0.0, A(below).x);
+        int2 dest = CloudPrecipReceiver(cell);
+        uint destMat = M(dest);
+        if (PrecipitationAirReceiver(dest, destMat))
+            aux.x += max(0.0, A(dest).x);
     }
 
     if (incoming > 1e-8)
     {
-        float4 src = S(above);
-        if (IsAtmosphereCell(cell, material) && IsOpenCarrier(material) && material != 9u && material != 10u)
+        float4 src = S(incomingSrc);
+        if (PrecipitationAirReceiver(cell, material))
         {
             float residualCloud = max(0.0, state.z);
             aux.x = 0.0;

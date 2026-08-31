@@ -92,8 +92,18 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     }
 
     float donorDepth = max(0.0, donorHead - donorBedTop);
-    float retention = donorDepth < 0.999 ? saturate(max(0.0, _HydrologyC.y) * 0.15) : 0.0;
+    float pond = max(0.0, _HydrologyC.y);
+    float retention = donorDepth < 0.999 ? saturate(pond * 0.15) : 0.0;
     float mobility = max(0.0, _HydrologyC.x) * (1.0 - retention);
+    // Shallow rain film sheets across a dry shelf in one 32-iteration tick unless
+    // ponding holds it. Standing columns (depth >= 1) still level by head.
+    if (pond > 1e-6 && donorDepth < 1.0)
+    {
+        if (recvVol < 0.12)
+            mobility *= lerp(0.012, 0.08, saturate(donorDepth));
+        else
+            mobility *= lerp(0.22, 0.65, saturate(pond * 0.25));
+    }
     // A face may move at most half the head difference; beyond that the pair overshoots and
     // trades the imbalance back next iteration. Cap below the marginal value so the shortest
     // wavelength decays instead of ringing forever once the solver relaxes many times a tick.

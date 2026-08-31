@@ -250,6 +250,23 @@ namespace GeneSys.Tests
             return (float)sum;
         }
 
+        private static float ColumnSurfaceWater(uint[] mats, Vector4[] states, int width, int x, int bedY)
+        {
+            int height = mats.Length / Math.Max(1, width);
+            float water = 0f;
+            uint bed = mats[bedY * width + x];
+            if (bed != MaterialIds.Water && bed != MaterialIds.Ice)
+                water += Math.Max(0f, states[bedY * width + x].z);
+            for (int y = bedY + 1; y < height; y++)
+            {
+                uint id = mats[y * width + x];
+                if (id != MaterialIds.Water && id != MaterialIds.Ice)
+                    break;
+                water += Math.Max(0f, states[y * width + x].z);
+            }
+            return water;
+        }
+
         private static int CountMaterial(uint[] materials, uint materialId)
         {
             int count = 0;
@@ -1166,6 +1183,133 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator RainOnRockShelfPondsLocallyInsteadOfSheetingAway()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.runoffRate = 0.45f;
+            host.Config.pondingRate = 0.85f;
+            host.Config.gravityStrength = 1f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = SurfaceY(host);
+            const int cloudBase = 6;
+            const int cloudTop = 12;
+            for (int dx = -10; dx <= 10; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, bedY - 1, MaterialIds.Rock);
+                Paint(host, xx, bedY, MaterialIds.Rock);
+                for (int y = bedY + 1; y <= bedY + cloudTop + 1; y++)
+                    Paint(host, xx, y, MaterialIds.Air);
+            }
+            yield return Step(host, 1);
+            for (int dy = cloudBase; dy <= cloudTop; dy++)
+            {
+                PaintField(host, x, bedY + dy, 6f, -100f);
+                PaintField(host, x, bedY + dy, 2f, -100f);
+                PaintField(host, x, bedY + dy, 2f, 0.85f);
+            }
+            yield return Step(host, 1);
+
+            host.Config.precipitationRate = 1.5f;
+            yield return Step(host, 48);
+
+            yield return ReadFields(host, (mats, states, aux, _) =>
+            {
+                Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
+                float local = 0f;
+                float far = 0f;
+                for (int dx = -2; dx <= 2; dx++)
+                    local += ColumnSurfaceWater(mats, states, width, host.Grid.WrapTheta(x + dx), bedY);
+                for (int i = 0; i < 2; i++)
+                {
+                    int side = i == 0 ? -9 : 9;
+                    far += ColumnSurfaceWater(mats, states, width, host.Grid.WrapTheta(x + side), bedY);
+                }
+                Assert.That(local, Is.GreaterThan(0.7f),
+                    "Landed rain should remain as a local pond instead of vanishing.");
+                Assert.That(local, Is.GreaterThan(far + 0.35f),
+                    "Shallow rain must not sheet across a dry shelf in a few dozen ticks.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator FallingRainSpreadsAcrossNeighborColumns()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0.8f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.runoffRate = 0f;
+            host.Config.pondingRate = 1f;
+            host.Config.gravityStrength = 1f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = SurfaceY(host);
+            const int fall = 14;
+            for (int dx = -4; dx <= 4; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, bedY, MaterialIds.Rock);
+                for (int y = bedY + 1; y <= bedY + fall + 2; y++)
+                    Paint(host, xx, y, MaterialIds.Air);
+            }
+            yield return Step(host, 1);
+            for (int dy = fall - 2; dy <= fall; dy++)
+            {
+                PaintField(host, x, bedY + dy, 6f, -100f);
+                PaintField(host, x, bedY + dy, 2f, -100f);
+                PaintField(host, x, bedY + dy, 2f, 0.9f);
+            }
+            yield return Step(host, 1);
+
+            host.Config.precipitationRate = 2f;
+            yield return Step(host, 36);
+
+            yield return ReadFields(host, (mats, states, _, __) =>
+            {
+                int wetColumns = 0;
+                for (int dx = -3; dx <= 3; dx++)
+                {
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    if (ColumnSurfaceWater(mats, states, width, xx, bedY) > 0.12f)
+                        wetColumns++;
+                }
+                Assert.That(wetColumns, Is.GreaterThanOrEqualTo(2),
+                    "Falling rain should fan into neighboring columns instead of a single-file shaft.");
+            });
+        }
+
+        [UnityTest]
         public IEnumerator SameSeedProducesIdenticalWeatherStateAfterNTicks()
         {
             SceneManager.LoadScene("Terrarium");
@@ -1353,6 +1497,7 @@ namespace GeneSys.Tests
             PaintField(host, x, cloudY, 2f, 0.55f);
             PaintField(host, x, cloudY, 6f, 0.4f);
             yield return Step(host, 1);
+            host.Config.condensationRate = 0f;
 
             float waterBefore = 0f;
             yield return ReadFields(host, (_, states, aux, __) => waterBefore = SumWaterBox(states, aux, width, x - 2, x + 2, floorY, cloudY + 1));
@@ -1365,14 +1510,18 @@ namespace GeneSys.Tests
                 yield return ReadFields(host, (mats, states, aux, _) =>
                 {
                     Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
-                    for (int y = floorY + 1; y <= cloudY; y++)
+                    for (int dx = -1; dx <= 1 && formedY < 0; dx++)
                     {
-                        uint id = mats[y * width + x];
-                        if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                        int xx = host.Grid.WrapTheta(x + dx);
+                        for (int y = floorY + 1; y <= cloudY; y++)
                         {
-                            formedY = y;
-                            formedId = id;
-                            break;
+                            uint id = mats[y * width + xx];
+                            if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                            {
+                                formedY = y;
+                                formedId = id;
+                                break;
+                            }
                         }
                     }
                     float waterAfter = SumWaterBox(states, aux, width, x - 2, x + 2, floorY, cloudY + 1);
@@ -1390,13 +1539,17 @@ namespace GeneSys.Tests
             yield return ReadFields(host, (mats, _, __, ___) =>
             {
                 int laterY = -1;
-                for (int y = floorY; y <= cloudY; y++)
+                for (int dx = -1; dx <= 1 && laterY < 0; dx++)
                 {
-                    uint id = mats[y * width + x];
-                    if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    for (int y = floorY; y <= cloudY; y++)
                     {
-                        laterY = y;
-                        break;
+                        uint id = mats[y * width + xx];
+                        if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                        {
+                            laterY = y;
+                            break;
+                        }
                     }
                 }
                 Assert.That(laterY, Is.GreaterThan(0));
@@ -1472,13 +1625,17 @@ namespace GeneSys.Tests
                 yield return Step(host, 1);
                 yield return ReadFields(host, (mats, _, __, ___) =>
                 {
-                    for (int y = floorY + 1; y <= cloudY; y++)
+                    for (int dx = -1; dx <= 1 && formedId == 0; dx++)
                     {
-                        uint id = mats[y * width + x];
-                        if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                        int xx = host.Grid.WrapTheta(x + dx);
+                        for (int y = floorY + 1; y <= cloudY; y++)
                         {
-                            formedId = id;
-                            break;
+                            uint id = mats[y * width + xx];
+                            if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                            {
+                                formedId = id;
+                                break;
+                            }
                         }
                     }
                 });

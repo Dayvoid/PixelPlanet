@@ -155,7 +155,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.hydrostaticIterations)] =
                 "How many times surface water re-levels against its neighbours each tick. One pass moves water a single column, so low counts leave ocean slopes and rain mounds standing; higher counts settle wide basins quickly at a small solver cost.",
             [nameof(SimulationConfig.pondingRate)] =
-                "How strongly shallow surface film resists hydrostatic flow. Higher ponding holds water in depressions as wetlands; standing water columns still level by head.",
+                "How strongly shallow surface film resists hydrostatic flow. Higher ponding keeps rain in local puddles instead of sheeting across dry ground; standing water columns still level by head.",
             [nameof(SimulationConfig.springHeadThreshold)] =
                 "Groundwater saturation needed before a spring discharges. Lower thresholds weep widely; higher ones concentrate flow into fewer, stronger springs.",
             [nameof(SimulationConfig.springDischargeRate)] =
@@ -184,7 +184,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.condensationRate)] =
                 "How fast saturated air becomes cloud condensate. Higher rates build visible clouds sooner and feed precipitation.",
             [nameof(SimulationConfig.precipitationRate)] =
-                "How quickly cloud water falls as rain or snow. Higher rates dump storms fast; lower rates keep long-lived clouds and drizzle.",
+                "How often dense cloud sheds a rain or snow pixel. Higher rates form drops more often; lower rates keep long-lived clouds. Each airborne drop carries a substantial mass so landed water can pond.",
             [nameof(SimulationConfig.vaporPressureScale)] =
                 "Extra pressure generated when liquid boils to vapor. Higher scale makes steam explosions, geysers, and boiling more dynamically violent.",
             [nameof(SimulationConfig.pressureRate)] =

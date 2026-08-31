@@ -894,6 +894,10 @@ float WaterLatentHeatDelta(float mass, float latentScale, float strength)
     return clamp(max(0.0, mass) * max(0.0, latentScale) * strength, -12.0, 12.0);
 }
 
+#ifndef PRECIP_MIN_DROP
+#define PRECIP_MIN_DROP 0.45
+#endif
+
 float PrecipitationMass(float cloud, float retain, float temperature, float pressure, float equilibrium, float radialFlow, float precipitationRate, float pressureResponse, float dt)
 {
     float excess = max(0.0, cloud - max(0.01, retain));
@@ -906,6 +910,21 @@ float PrecipitationMass(float cloud, float retain, float temperature, float pres
     float vertical = saturate(1.0 - updraft * 0.35) * (1.0 + saturate(downdraft) * 0.25);
     float efficiency = max(0.05, coldBoost * pressureBoost * vertical);
     return min(min(excess, 1.0), max(0.0, precipitationRate) * efficiency * max(0.0, dt));
+}
+
+// Rate is mean mass per tick. Airborne receivers wait for a real drop so falling
+// pixels carry enough mass to pond instead of collapsing into invisible film.
+float PrecipitationEmitMass(float ready, float excess, bool airReceiver, uint decisionHash)
+{
+    if (ready <= 1e-8)
+        return 0.0;
+    if (excess < PRECIP_MIN_DROP)
+        return airReceiver ? 0.0 : ready;
+    float drop = min(1.0, excess);
+    float p = saturate(ready / PRECIP_MIN_DROP * 6.0);
+    if (Hash01(decisionHash) < p)
+        return drop;
+    return airReceiver ? 0.0 : ready;
 }
 
 float4 SanitizeStorm(float4 storm)

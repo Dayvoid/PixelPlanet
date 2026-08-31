@@ -1,6 +1,10 @@
 #ifndef GENESYS_SURFACE_WATER_INCLUDED
 #define GENESYS_SURFACE_WATER_INCLUDED
 
+#ifndef PRECIP_MIN_DROP
+#define PRECIP_MIN_DROP 0.45
+#endif
+
 // Shared surface-water profiling for the hydrostatic column solver. The flux pass and
 // the apply pass must agree cell for cell on where a column starts and how much water
 // it holds, or the face exchange stops conserving mass. Include this after the file's
@@ -157,6 +161,17 @@ void PartitionSurfaceVolume(float volume, bool canFilm, out int cells, out float
         cells = volume > 1e-6 ? (int)ceil(volume - 1e-6) : 0;
         remainder = 0.0;
     }
+}
+
+// A landed rain pixel should stay visible until the column shrinks below a drop.
+// Film-only beds (no pixel yet) still use exact floor/remainder so thin wetting
+// does not spawn a standing cell.
+void KeepLandedRainPixel(bool hadPixels, float volume, inout int cells, inout float remainder)
+{
+    if (!hadPixels || cells > 0 || volume < PRECIP_MIN_DROP)
+        return;
+    cells = 1;
+    remainder = 0.0;
 }
 
 #endif

@@ -96,7 +96,7 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float capillaryEvaporationFraction = 0.5f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
         [Range(1, 64)] public int hydrostaticIterations = 32;
-        [Range(0f, 4f)] public float pondingRate = 0.05f;
+        [Range(0f, 4f)] public float pondingRate = 0.85f;
         [Range(0f, 1f)] public float springHeadThreshold = 0.9f;
         [Range(0f, 4f)] public float springDischargeRate = 0.9f;
         [Range(0f, 500f)] public float geyserHeatThreshold = 320f;

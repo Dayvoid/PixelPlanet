@@ -583,6 +583,7 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
     int expectedCells;
     float remainder;
     PartitionSurfaceVolume(newVolume, canFilm, expectedCells, remainder);
+    KeepLandedRainPixel(hadPixels, newVolume, expectedCells, remainder);
     bool spawnPixels = expectedCells > 0 && bedY >= 0;
     int currentCells = hadPixels ? max(0, waterTop - bedY) : 0;
     float currentFilm = 0.0;
@@ -623,7 +624,14 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             int slot = y - (bedY + 1);
             float slotMass = 0.0;
             if (spawnPixels && slot >= 0 && slot < newCells)
-                slotMass = canFilm ? 1.0 : min(1.0, max(0.0, newVolume - (float)slot));
+            {
+                if (canFilm && newCells == 1 && newVolume < 1.0 - 1e-6)
+                    slotMass = newVolume;
+                else if (canFilm)
+                    slotMass = 1.0;
+                else
+                    slotMass = min(1.0, max(0.0, newVolume - (float)slot));
+            }
             if (slotMass > 1e-6)
             {
                 float rescued = max(0.0, aux.x);

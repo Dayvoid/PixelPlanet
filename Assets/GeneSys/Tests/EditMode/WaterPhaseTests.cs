@@ -51,10 +51,15 @@ namespace GeneSys.Tests
             Assert.That(structs, Does.Contain("WaterVaporCapacity"));
             Assert.That(structs, Does.Contain("WaterBoilTemperature"));
             Assert.That(structs, Does.Contain("PrecipitationMass"));
+            Assert.That(structs, Does.Contain("PrecipitationEmitMass"));
+            Assert.That(structs, Does.Contain("PRECIP_MIN_DROP"));
             Assert.That(structs, Does.Contain("WaterLatentHeatDelta"));
             string surface = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SurfaceWater.hlsl");
             Assert.That(surface, Does.Contain("PartitionSurfaceVolume"));
+            Assert.That(surface, Does.Contain("KeepLandedRainPixel"));
             ComputeShader weather = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute"), Does.Contain("CloudPrecipReceiver"));
+            Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute"), Does.Contain("AirbornePrecipDestination"));
             Assert.That(weather.FindKernel("Precipitation"), Is.GreaterThanOrEqualTo(0));
             Assert.That(weather.FindKernel("WaterCycle"), Is.GreaterThanOrEqualTo(0));
             ComputeShader hydrology = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrology.compute");

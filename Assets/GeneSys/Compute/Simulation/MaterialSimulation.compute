@@ -62,6 +62,12 @@ float4 ReadCombustion(int2 cell) { cell = ClampCell(cell, _GridSize); return _Co
 float4 ReadLife(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleLife(_LifeGenomeRead, cell); }
 uint4 ReadGenome(int2 cell) { cell = ClampCell(cell, _GridSize); return SampleGenome(_LifeGenomeRead, cell); }
 MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return ReadMaterial(value); }
+float4 S(int2 value) { return ReadState(value); }
+MaterialGpuData D(uint material) { return Mat(material); }
+
+#include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 
 void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux, out float4 ecology, out float4 combustion, out float4 life, out uint4 genome)
 {
@@ -345,16 +351,57 @@ void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
+int2 AirbornePrecipDestination(int2 source, int2 below)
+{
+    bool downOpen = IsOpen(ReadMaterial(below));
+    if (_Mechanics.x <= 1e-8)
+        return downOpen ? below : source;
+
+    float wind = ReadFlow(source).x;
+    float h = Hash01((uint)source.x * 73856093u + (uint)source.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + 7u);
+    int dx = 0;
+    if (abs(wind) > 0.12)
+        dx = wind > 0.0 ? 1 : -1;
+    if (dx == 0)
+    {
+        if (h < 0.30) dx = -1;
+        else if (h > 0.70) dx = 1;
+    }
+    else if (h < 0.20)
+        dx = 0;
+    else if (h > 0.90)
+        dx = -dx;
+
+    if (dx != 0)
+    {
+        int2 diag = ClampCell(source + int2(dx, -1), _GridSize);
+        if (IsOpen(ReadMaterial(diag)))
+        {
+            int2 competitor = ClampCell(diag + int2(0, 1), _GridSize);
+            uint competitorMat = ReadMaterial(competitor);
+            bool blocked = !all(competitor == source)
+                && (competitorMat == 9u || competitorMat == 10u)
+                && IsAirborneLiquid(competitor, competitorMat);
+            if (!blocked)
+                return diag;
+        }
+    }
+    if (downOpen) return below;
+    return source;
+}
+
 int2 MovementDestination(int2 source)
 {
     uint sourceMaterial = ReadMaterial(source);
     if (!IsMovable(sourceMaterial) || source.y <= 0) return source;
     int2 below = ClampCell(source + int2(0, -1), _GridSize);
+    if ((sourceMaterial == 9u || sourceMaterial == 10u) && IsAirborneLiquid(source, sourceMaterial))
+        return AirbornePrecipDestination(source, below);
     if (IsOpen(ReadMaterial(below))) return below;
 
     MaterialGpuData definition = Mat(sourceMaterial);
     if (definition.physical.y >= 0.9) return source;
-    // Surface water levels by hydraulic head; diagonal whole-cell slides would pile hills.
+    // Standing surface water levels by hydraulic head; diagonal slides would pile hills.
     if (sourceMaterial == 9u) return source;
     int direction = ((source.x + _Tick) & 1) == 0 ? -1 : 1;
     int2 diagonal = ClampCell(source + int2(direction, -1), _GridSize);

@@ -89,7 +89,7 @@ MonoBehaviour:
   capillaryEvaporationFraction: 0.5
   runoffRate: 0.45
   hydrostaticIterations: 32
-  pondingRate: 0.05
+  pondingRate: 0.85
   springHeadThreshold: 0.9
   springDischargeRate: 0.9
   geyserHeatThreshold: 320
