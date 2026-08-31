@@ -22,6 +22,8 @@ namespace GeneSys.Simulation
         public void Reset() { accumulator = 0f; stepRequested = false; TickCount = 0; }
         public void SetTickCount(long value) { TickCount = Math.Max(0L, value); accumulator = 0f; }
 
+        public const int MaxTicksPerFrame = 2;
+
         public int Advance(float unscaledDeltaTime, float ticksPerSecond, Action<float> tick)
         {
             float fixedDelta = 1f / Mathf.Max(1f, ticksPerSecond);
@@ -34,16 +36,38 @@ namespace GeneSys.Simulation
             }
             if (!IsRunning) return 0;
 
-            accumulator += Mathf.Min(unscaledDeltaTime, 0.25f) * Speed;
+            float dt = Mathf.Min(unscaledDeltaTime, 0.1f);
+            accumulator += dt * Speed;
             int count = 0;
-            while (accumulator >= fixedDelta && count < 8)
+
+            if (Speed <= 1f)
             {
-                accumulator -= fixedDelta;
-                tick(fixedDelta);
-                TickCount++;
-                count++;
+                while (accumulator >= fixedDelta && count < MaxTicksPerFrame)
+                {
+                    accumulator -= fixedDelta;
+                    tick(fixedDelta);
+                    TickCount++;
+                    count++;
+                }
+                if (count == MaxTicksPerFrame)
+                    accumulator = Mathf.Min(accumulator, fixedDelta);
             }
-            if (count == 8) accumulator = Mathf.Min(accumulator, fixedDelta);
+            else
+            {
+                float targetTicks = accumulator / fixedDelta;
+                if (targetTicks >= 1f)
+                {
+                    int stepsToRun = targetTicks >= 2f ? MaxTicksPerFrame : 1;
+                    float stepDt = Mathf.Min(accumulator / stepsToRun, fixedDelta * Speed);
+                    for (int i = 0; i < stepsToRun; i++)
+                    {
+                        tick(stepDt);
+                        TickCount++;
+                        count++;
+                    }
+                    accumulator = 0f;
+                }
+            }
             return count;
         }
     }

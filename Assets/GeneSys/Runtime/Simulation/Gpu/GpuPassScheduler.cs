@@ -4,6 +4,7 @@ using System.Diagnostics;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace GeneSys.Simulation.Gpu
 {
@@ -99,17 +100,40 @@ namespace GeneSys.Simulation.Gpu
             organismHistoryCounterBuffer.SetData(organismHistoryCounterZero);
         }
 
+        private bool historyReadbackPending;
+
         public void DrainOrganismHistory(OrganismHistoryLog log)
         {
-            if (log == null) return;
-            organismHistoryCounterBuffer.GetData(organismHistoryCounterRead);
-            int count = (int)Math.Min(organismHistoryCounterRead[0], (uint)OrganismHistoryGpuCapacity);
-            if (count > 0)
+            if (log == null || historyReadbackPending) return;
+            historyReadbackPending = true;
+            AsyncGPUReadback.Request(organismHistoryCounterBuffer, countRequest =>
             {
-                organismHistoryBuffer.GetData(organismHistoryScratch, 0, 0, count);
-                log.AppendFromGpu(organismHistoryScratch, count);
-            }
-            ResetOrganismHistoryCounter();
+                if (countRequest.hasError)
+                {
+                    historyReadbackPending = false;
+                    return;
+                }
+                var countData = countRequest.GetData<uint>();
+                uint rawCount = countData.Length > 0 ? countData[0] : 0u;
+                int count = (int)Math.Min(rawCount, (uint)OrganismHistoryGpuCapacity);
+                if (count <= 0)
+                {
+                    historyReadbackPending = false;
+                    return;
+                }
+                AsyncGPUReadback.Request(organismHistoryBuffer, count * OrganismHistoryLog.GpuEvent.Stride, 0, eventRequest =>
+                {
+                    historyReadbackPending = false;
+                    if (eventRequest.hasError || log == null) return;
+                    var eventData = eventRequest.GetData<OrganismHistoryLog.GpuEvent>();
+                    int copyCount = Math.Min(count, eventData.Length);
+                    for (int i = 0; i < copyCount; i++)
+                        organismHistoryScratch[i] = eventData[i];
+                    if (copyCount > 0)
+                        log.AppendFromGpu(organismHistoryScratch, copyCount);
+                    ResetOrganismHistoryCounter();
+                });
+            });
         }
 
         public void GenerateWorld()
