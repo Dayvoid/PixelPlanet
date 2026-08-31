@@ -299,7 +299,7 @@ namespace GeneSys.Simulation.Gpu
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
 
-            // Atmospheric loop: forcing → continuity → pressure diffusion → dynamics → transport → water cycle.
+            // Atmospheric loop: forcing → continuity → pressure diffusion → dynamics → transport → water cycle → precipitation.
             DispatchPass(weather, weather.FindKernel("AtmosphericForcing"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericContinuity"), deltaTime);
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PressureDiffusion"), deltaTime);
@@ -307,6 +307,7 @@ namespace GeneSys.Simulation.Gpu
             DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
+            DispatchPass(weather, weather.FindKernel("Precipitation"), deltaTime);
 
             if (storm != null)
                 DispatchStorm(deltaTime);
@@ -314,7 +315,6 @@ namespace GeneSys.Simulation.Gpu
             // Soak this tick's rain/ponding, then springs/geysers see the updated water table.
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
-            DispatchPass(hydrology, hydrology.FindKernel("WaterMaterialization"), deltaTime);
             DispatchHydrostaticLeveling(deltaTime);
 
             // Erosion sees the current tick's moisture, exposure, and flow after weather/runoff.
@@ -476,7 +476,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));
             shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, config.magmaViscosity));
             shader.SetVector("_WeatherD", new Vector4(config.atmosphericAdvectionRate, config.vaporDiffusionRate, config.atmosphericBuoyancy, config.humidityBuoyancy));
-            shader.SetVector("_WeatherE", new Vector4(config.saturationCapacityScale, config.cloudPrecipitationThreshold, config.rainPixelFormationThreshold, config.surfaceWaterPixelThreshold));
+            shader.SetVector("_WeatherE", new Vector4(config.saturationCapacityScale, config.cloudPrecipitationThreshold, config.waterPressureResponse, config.latentHeatScale));
             shader.SetVector("_WeatherF", new Vector4(config.surfaceAirHeatExchange, config.temperatureAdvectionRate, config.pressureCompressibility, config.atmosphericCflLimit));
             shader.SetVector("_WeatherG", new Vector4(config.surfaceAirTemperature, config.atmosphericLapseRate, 0f, 0f));
             shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, 0f));

@@ -168,8 +168,7 @@ namespace GeneSys.Tests
             host.Config.combustionIgnitionAccumulationRate = 0f;
             host.Config.stormChargeSeparationRate = 0f;
             host.Config.densityExchangeRate = 0f;
-            host.Config.surfaceWaterPixelThreshold = 1f;
-            host.Config.rainPixelFormationThreshold = 1f;
+            host.Config.precipitationRate = 0f;
             host.Config.grassGrowthTempMin = -50f;
             host.Config.grassGrowthTempMax = 80f;
             host.Config.grassGrowthMoistureMin = 0f;

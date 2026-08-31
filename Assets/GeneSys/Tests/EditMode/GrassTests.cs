@@ -149,6 +149,9 @@ namespace GeneSys.Tests
             Assert.That(hydrology.FindKernel("ApplyFlowerDrop"), Is.GreaterThanOrEqualTo(0));
             Assert.That(hydrology.FindKernel("DetritusExchange"), Is.GreaterThanOrEqualTo(0));
             Assert.That(hydrology.FindKernel("ApplyHydrostaticColumns"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute"), Does.Not.Contain("WaterMaterialization"));
+            ComputeShader weather = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(weather.FindKernel("Precipitation"), Is.GreaterThanOrEqualTo(0));
             ComputeShader hydrostatic = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrostatic.compute");
             Assert.That(hydrostatic, Is.Not.Null);
             Assert.That(hydrostatic.FindKernel("BuildSurfaceWaterColumns"), Is.GreaterThanOrEqualTo(0));

@@ -156,8 +156,6 @@ namespace GeneSys.UI
                 "How many times surface water re-levels against its neighbours each tick. One pass moves water a single column, so low counts leave ocean slopes and rain mounds standing; higher counts settle wide basins quickly at a small solver cost.",
             [nameof(SimulationConfig.pondingRate)] =
                 "How strongly shallow surface film resists hydrostatic flow. Higher ponding holds water in depressions as wetlands; standing water columns still level by head.",
-            [nameof(SimulationConfig.surfaceWaterPixelThreshold)] =
-                "Surface liquid film required before standing Water or Ice pixels spawn above wet ground. Zero keeps moisture as a field on soil; higher values delay visible pooling until rain has accumulated.",
             [nameof(SimulationConfig.springHeadThreshold)] =
                 "Groundwater saturation needed before a spring discharges. Lower thresholds weep widely; higher ones concentrate flow into fewer, stronger springs.",
             [nameof(SimulationConfig.springDischargeRate)] =
@@ -216,9 +214,11 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.saturationCapacityScale)] =
                 "How much vapor air can hold before condensing. Higher capacity delays clouds in warm air; lower capacity rains out easily and dries the column.",
             [nameof(SimulationConfig.cloudPrecipitationThreshold)] =
-                "Cloud condensate needed before rain starts. Higher thresholds build thicker clouds; lower thresholds produce light, frequent precipitation.",
-            [nameof(SimulationConfig.rainPixelFormationThreshold)] =
-                "Cloud condensate required before an Air cell becomes a falling Water or Ice pixel. Zero keeps rain as a field flux onto terrain; lower values make dense clouds rain out as discrete drops.",
+                "Cloud condensate retained before autoconversion. Higher values keep thicker clouds; lower values let rain and snow form from thinner decks.",
+            [nameof(SimulationConfig.waterPressureResponse)] =
+                "How strongly local pressure shifts boiling point, saturation, and precipitation efficiency. Higher response makes lows rain out and highs hold vapor; zero ignores pressure.",
+            [nameof(SimulationConfig.latentHeatScale)] =
+                "Heat exchanged when water evaporates, condenses, freezes, melts, or boils. Higher values couple storms and thaw to temperature; zero disables latent feedback.",
             [nameof(SimulationConfig.surfaceAirHeatExchange)] =
                 "Heat flow between ground and the air above it. Stronger coupling lets soil, water, and lava drive local weather more directly.",
             [nameof(SimulationConfig.temperatureAdvectionRate)] =

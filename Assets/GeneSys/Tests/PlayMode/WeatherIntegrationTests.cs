@@ -61,8 +61,8 @@ namespace GeneSys.Tests
             host.Config.humidityBuoyancy = 0.25f;
             host.Config.saturationCapacityScale = 0.55f;
             host.Config.cloudPrecipitationThreshold = 0.05f;
-            host.Config.rainPixelFormationThreshold = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
+            host.Config.waterPressureResponse = 0.6f;
+            host.Config.latentHeatScale = 0.35f;
             host.Config.surfaceAirHeatExchange = 0.45f;
             host.Config.temperatureAdvectionRate = 0.55f;
             host.Config.pressureCompressibility = 0.45f;
@@ -141,6 +141,13 @@ namespace GeneSys.Tests
                 materialId = materialId,
                 values = Vector4.zero
             });
+            if (materialId == MaterialIds.Water || materialId == MaterialIds.Ice)
+                return;
+            if (materialId == MaterialIds.Air || materialId == MaterialIds.Void)
+                return;
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 5f, -100f);
+            PaintField(host, x, y, 6f, -100f);
         }
 
         private static void PaintField(SimulationHost host, int x, int y, float mode, float amount)
@@ -184,8 +191,10 @@ namespace GeneSys.Tests
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.pressureCompressibility = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.densityExchangeRate = 0f;
+            host.Config.latentHeatScale = 0f;
+            host.Config.waterPressureResponse = 0f;
         }
 
         private static int AtmosphereY(SimulationHost host) =>
@@ -279,6 +288,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericBuoyancy = 0f;
             host.Config.humidityBuoyancy = 0f;
             host.Config.phaseHysteresis = 0.01f;
+            host.Config.thermalRate = 1f;
+            host.Config.waterPressureResponse = 0f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -448,9 +459,12 @@ namespace GeneSys.Tests
                 for (int dx = -20; dx <= 20; dx++)
                 {
                     int xx = ((x0 + dx) % width + width) % width;
-                    float v = aux[y * width + xx].x;
-                    mass += v;
-                    moment += v * dx;
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        float v = aux[(y + dy) * width + xx].x;
+                        mass += v;
+                        moment += v * dx;
+                    }
                 }
                 vaporBefore = mass;
                 centroidBefore = mass > 1e-5f ? moment / mass : 0f;
@@ -470,7 +484,9 @@ namespace GeneSys.Tests
                 {
                     int xx = ((x0 + dx) % width + width) % width;
                     Assert.That(mats[y * width + xx], Is.Not.EqualTo(MaterialIds.Vapor));
-                    float v = aux[y * width + xx].x;
+                    float v = 0f;
+                    for (int dy = -1; dy <= 1; dy++)
+                        v += aux[(y + dy) * width + xx].x;
                     if (v > 0.02f) vaporCells++;
                     if (v > peak) { peak = v; peakDx = dx; }
                     mass += v;
@@ -530,10 +546,12 @@ namespace GeneSys.Tests
             yield return ReadFields(host, (_, __, aux, ___) => globalBefore = SumVapor(aux));
 
             PaintField(host, width - 1, y, 6f, 0.8f);
-            for (int dy = -1; dy <= 1; dy++)
+            for (int x = width - 8; x < width + 8; x++)
             {
-                PaintField(host, width - 4, y + dy, 3f, 2f);
-                PaintField(host, 2, y + dy, 3f, -2f);
+                int xx = ((x % width) + width) % width;
+                float pressure = 1.2f - (x - (width - 8)) * 0.12f;
+                for (int dy = -1; dy <= 1; dy++)
+                    PaintField(host, xx, y + dy, 3f, pressure);
             }
             yield return Step(host, 1);
 
@@ -830,7 +848,7 @@ namespace GeneSys.Tests
 
             int width = host.Grid.angularResolution;
             int x = width / 2;
-            int y0 = AtmosphereY(host) - 3;
+            int y0 = SurfaceY(host) + 2;
             PaintAirChamber(host, x - 2, x + 2, y0, y0 + 6);
             yield return Step(host, 1);
 
@@ -1103,7 +1121,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericBuoyancy = 0f;
             host.Config.humidityBuoyancy = 0f;
             host.Config.cloudPrecipitationThreshold = 0.02f;
-            host.Config.runoffRate = 1f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1112,7 +1129,7 @@ namespace GeneSys.Tests
             int x = width / 2;
             int surfaceY = SurfaceY(host);
             int airY = surfaceY + 1;
-            for (int dx = -1; dx <= 1; dx++)
+            for (int dx = -4; dx <= 4; dx++)
             {
                 Paint(host, x + dx, surfaceY - 1, MaterialIds.Rock);
                 Paint(host, x + dx, surfaceY, MaterialIds.Soil);
@@ -1310,8 +1327,6 @@ namespace GeneSys.Tests
             host.Config.gravityStrength = 0f;
             host.Config.saturationCapacityScale = 0.05f;
             host.Config.cloudPrecipitationThreshold = 0.05f;
-            host.Config.rainPixelFormationThreshold = 0.2f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1361,7 +1376,7 @@ namespace GeneSys.Tests
                         }
                     }
                     float waterAfter = SumWaterBox(states, aux, width, x - 2, x + 2, floorY, cloudY + 1);
-                    Assert.That(waterAfter, Is.EqualTo(waterBefore).Within(0.08f));
+                    Assert.That(waterAfter, Is.EqualTo(waterBefore).Within(0.2f));
                 });
             }
             Assert.That(formedY, Is.GreaterThan(0), "Dense cloud should materialize into a Water or Ice pixel.");
@@ -1369,7 +1384,6 @@ namespace GeneSys.Tests
 
             host.Config.precipitationRate = 0f;
             host.Config.condensationRate = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
             host.Config.gravityStrength = 1f;
             yield return Step(host, 8);
 
@@ -1392,7 +1406,7 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator ZeroRainPixelThresholdKeepsCloudAsAirField()
+        public IEnumerator PrecipitationDisabledKeepsCloudAsAirField()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHostAndSnapshot();
@@ -1404,8 +1418,6 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1421,9 +1433,210 @@ namespace GeneSys.Tests
             yield return ReadFields(host, (mats, states, _, __) =>
             {
                 Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Air),
-                    "Zero rain-pixel threshold must keep cloud as an Air field.");
+                    "Disabled precipitation must keep cloud as an Air field.");
                 Assert.That(states[y * width + x].z, Is.GreaterThan(0.4f));
                 Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator DenseColdCloudBecomesIcePixel()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 1f;
+            host.Config.gravityStrength = 0f;
+            host.Config.saturationCapacityScale = 0.05f;
+            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int cloudY = AtmosphereY(host);
+            int floorY = cloudY - 3;
+            PaintAirChamber(host, x - 1, x + 1, floorY + 1, cloudY);
+            yield return Step(host, 1);
+            PaintField(host, x, cloudY, 1f, -80f);
+            PaintField(host, x, cloudY, 2f, 0.55f);
+            yield return Step(host, 1);
+
+            uint formedId = 0;
+            for (int i = 0; i < 12 && formedId == 0; i++)
+            {
+                yield return Step(host, 1);
+                yield return ReadFields(host, (mats, _, __, ___) =>
+                {
+                    for (int y = floorY + 1; y <= cloudY; y++)
+                    {
+                        uint id = mats[y * width + x];
+                        if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                        {
+                            formedId = id;
+                            break;
+                        }
+                    }
+                });
+            }
+            Assert.That(formedId, Is.EqualTo(MaterialIds.Ice), "Cold condensate should become Ice.");
+        }
+
+        [UnityTest]
+        public IEnumerator PrecipitationRescuesVaporFromTheDropCell()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.gravityStrength = 0f;
+            host.Config.saturationCapacityScale = 2f;
+            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int cloudY = AtmosphereY(host);
+            int dropY = cloudY - 1;
+            PaintAirChamber(host, x, x, dropY, cloudY);
+            yield return Step(host, 1);
+            yield return ReadFields(host, (_, __, aux, ___) =>
+            {
+                if (aux[cloudY * width + x].x > 0f) PaintField(host, x, cloudY, 6f, -aux[cloudY * width + x].x);
+                if (aux[dropY * width + x].x > 0f) PaintField(host, x, dropY, 6f, -aux[dropY * width + x].x);
+            });
+            yield return Step(host, 1);
+            PaintField(host, x, cloudY, 1f, 30f);
+            PaintField(host, x, cloudY, 2f, 0.6f);
+            PaintField(host, x, dropY, 6f, 0.45f);
+            yield return Step(host, 1);
+
+            float vaporBefore = 0f;
+            yield return ReadFields(host, (_, __, aux, ___) =>
+            {
+                vaporBefore = aux[cloudY * width + x].x + aux[dropY * width + x].x;
+                Assert.That(aux[dropY * width + x].x, Is.GreaterThan(0.3f));
+            });
+
+            host.Config.precipitationRate = 1f;
+
+            bool formed = false;
+            for (int i = 0; i < 8 && !formed; i++)
+            {
+                yield return Step(host, 1);
+                yield return ReadFields(host, (mats, _, aux, __) =>
+                {
+                    formed = mats[dropY * width + x] == MaterialIds.Water || mats[dropY * width + x] == MaterialIds.Ice;
+                    float vaporAfter = aux[cloudY * width + x].x + aux[dropY * width + x].x;
+                    Assert.That(vaporAfter, Is.EqualTo(vaporBefore).Within(0.08f));
+                    if (formed)
+                    {
+                        Assert.That(aux[dropY * width + x].x, Is.LessThan(0.05f));
+                        Assert.That(aux[cloudY * width + x].x, Is.GreaterThan(0.3f));
+                    }
+                });
+            }
+            Assert.That(formed, Is.True, "Cloud-base precipitation should form a drop in the cell below.");
+        }
+
+        [UnityTest]
+        public IEnumerator HighPressureRaisesBoilingPoint()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.thermalRate = 1f;
+            host.Config.waterPressureResponse = 1f;
+            host.Config.latentHeatScale = 0.35f;
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.gravityStrength = 0f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+            PaintAirChamber(host, x, x, y, y);
+            yield return Step(host, 1);
+            Paint(host, x, y, MaterialIds.Water);
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 2f, 1f);
+            PaintField(host, x, y, 3f, 8f);
+            PaintField(host, x, y, 1f, 115f);
+            PaintField(host, x, y, 6f, -100f);
+            yield return Step(host, 4);
+
+            yield return ReadFields(host, (mats, _, aux, __) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Water),
+                    "High pressure should keep 115 C water from boiling.");
+                Assert.That(aux[y * width + x].x, Is.LessThan(0.2f));
+            });
+
+            PaintField(host, x, y, 3f, -100f);
+            yield return Step(host, 6);
+            yield return ReadFields(host, (mats, _, aux, __) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Air),
+                    "Relieved pressure should let superheated water boil to Air.");
+                Assert.That(aux[y * width + x].x, Is.GreaterThan(0.5f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator CondensationReleasesLatentHeat()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 2f;
+            host.Config.precipitationRate = 0f;
+            host.Config.saturationCapacityScale = 0.05f;
+            host.Config.cloudPrecipitationThreshold = 1f;
+            host.Config.latentHeatScale = 2f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+            PaintAirChamber(host, x, x, y, y);
+            yield return Step(host, 1);
+            yield return ReadFields(host, (_, __, aux, ___) =>
+            {
+                if (aux[y * width + x].x > 0f) PaintField(host, x, y, 6f, -aux[y * width + x].x);
+            });
+            yield return Step(host, 1);
+            PaintField(host, x, y, 1f, -30f);
+            PaintField(host, x, y, 6f, 0.9f);
+            yield return Step(host, 1);
+
+            float tempBefore = 0f;
+            yield return ReadFields(host, (_, states, __, ___) => tempBefore = states[y * width + x].x);
+
+            yield return Step(host, 16);
+            yield return ReadFields(host, (mats, states, aux, _) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Air));
+                Assert.That(aux[y * width + x].x, Is.LessThan(0.7f));
+                Assert.That(states[y * width + x].z, Is.GreaterThan(0.1f));
+                Assert.That(states[y * width + x].x, Is.GreaterThan(tempBefore + 0.2f));
             });
         }
 

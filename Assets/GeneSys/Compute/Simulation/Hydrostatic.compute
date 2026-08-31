@@ -18,6 +18,7 @@ float _DeltaTime;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _HydrologyC; // runoffRate, pondingRate, fieldCapacityFraction, geyserCooldownSeconds
+float4 _WeatherC; // vaporPressureScale, solarAngle01, phaseHysteresis, magmaViscosity
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -77,7 +78,14 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     float recvVol = leftDonates ? volR : volL;
     int recvBed = leftDonates ? bedR : bedL;
     float donorBedTop = leftDonates ? bedTopL : bedTopR;
+    float donorTemp = leftDonates ? leftCol.z : rightCol.z;
+    float bedTemp = leftDonates ? S(int2(left, bedL)).x : S(int2(right, bedR)).x;
     if (donorHead <= saddle + 1e-5 || donorVol <= 1e-6)
+    {
+        _WaterFaceFlux[left] = 0;
+        return;
+    }
+    if (min(donorTemp, bedTemp) <= WATER_MELT_TEMP)
     {
         _WaterFaceFlux[left] = 0;
         return;
@@ -101,7 +109,6 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     }
 
     float signedMass = leftDonates ? amount : -amount;
-    float donorTemp = leftDonates ? leftCol.z : rightCol.z;
     _WaterFaceFlux[left] = float4(signedMass, signedMass * donorTemp, 0.0, 0.0);
 }
 

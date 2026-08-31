@@ -200,7 +200,7 @@ namespace GeneSys.Tests
             host.Config.validationIntervalTicks = 100000;
             host.Config.seed = 90210;
             // Every path that moves water runs at once: rain, runoff, ponding, infiltration,
-            // percolation, springs, evaporation, and both pixel materialization rules.
+            // percolation, springs, evaporation, and hydrostatic volume partitioning.
             host.Config.evaporationRate = 0.3f;
             host.Config.condensationRate = 0.4f;
             host.Config.precipitationRate = 0.5f;
@@ -209,8 +209,6 @@ namespace GeneSys.Tests
             host.Config.runoffRate = 1f;
             host.Config.pondingRate = 0.5f;
             host.Config.springDischargeRate = 0.5f;
-            host.Config.rainPixelFormationThreshold = 0.35f;
-            host.Config.surfaceWaterPixelThreshold = 0.55f;
             host.Config.slowPassInterval = 2;
             host.Config.floraGrowthRate = 0f;
             host.Config.grassWaterUptakeRate = 0f;
@@ -300,6 +298,11 @@ namespace GeneSys.Tests
                 materialId = materialId,
                 values = Vector4.zero
             });
+            if (materialId == MaterialIds.Water || materialId == MaterialIds.Ice)
+                return;
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 5f, -100f);
+            PaintField(host, x, y, 6f, -100f);
         }
 
         private static void PaintField(SimulationHost host, int x, int y, float mode, float amount)
@@ -347,8 +350,6 @@ namespace GeneSys.Tests
             host.Config.mycologySettlingRate = 0f;
             host.Config.fieldCapacityFraction = 0.45f;
             host.Config.densityExchangeRate = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
             host.Config.grassWaterUptakeRate = 0f;
             host.Config.floraGrowthRate = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
@@ -357,11 +358,15 @@ namespace GeneSys.Tests
 
         private static void PaintSoakColumn(SimulationHost host, int x, int y)
         {
+            int width = host.Grid.angularResolution;
+            int top = host.Grid.radialResolution - 1;
             for (int dx = -2; dx <= 2; dx++)
             {
-                Paint(host, x + dx, y - 1, MaterialIds.Mantle);
-                Paint(host, x + dx, y, MaterialIds.Soil);
-                Paint(host, x + dx, y + 1, MaterialIds.Air);
+                int xx = ((x + dx) % width + width) % width;
+                Paint(host, xx, y - 1, MaterialIds.Mantle);
+                Paint(host, xx, y, MaterialIds.Soil);
+                for (int yy = y + 1; yy <= top; yy++)
+                    Paint(host, xx, yy, MaterialIds.Air);
             }
         }
 
@@ -713,8 +718,6 @@ namespace GeneSys.Tests
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.densityExchangeRate = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0.5f;
             host.Config.seed = 4242;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -727,7 +730,7 @@ namespace GeneSys.Tests
             PaintField(host, x, y + 1, 1f, 20f);
             PaintField(host, x, y, 2f, -100f);
             PaintField(host, x, y, 5f, -100f);
-            PaintField(host, x, y, 2f, 0.3f);
+            PaintField(host, x, y, 2f, 0.6f);
             yield return Step(host, 1);
 
             float waterBefore = 0f;
@@ -735,7 +738,7 @@ namespace GeneSys.Tests
             {
                 Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil));
                 Assert.That(mats[(y + 1) * width + x], Is.EqualTo(MaterialIds.Air));
-                Assert.That(states[y * width + x].z, Is.GreaterThan(0.2f).And.LessThan(0.45f));
+                Assert.That(states[y * width + x].z, Is.GreaterThan(0.45f).And.LessThan(0.75f));
                 waterBefore = states[y * width + x].z + states[(y + 1) * width + x].z + aux[y * width + x].x + aux[y * width + x].y
                     + aux[(y + 1) * width + x].x + aux[(y + 1) * width + x].y;
             });
@@ -743,7 +746,7 @@ namespace GeneSys.Tests
             yield return Step(host, 4);
             yield return ReadGpuFields(host, (mats, _, __) =>
             {
-                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil), "Sub-threshold film must stay on soil.");
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil), "Sub-cell film must stay on soil.");
                 Assert.That(mats[(y + 1) * width + x], Is.EqualTo(MaterialIds.Air));
             });
 
@@ -755,9 +758,9 @@ namespace GeneSys.Tests
                 Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil));
                 uint above = mats[(y + 1) * width + x];
                 Assert.That(above == MaterialIds.Water || above == MaterialIds.Ice, Is.True,
-                    "Sustained film should spawn a standing water pixel in the open cell above.");
+                    "A full cell of film should become a standing water pixel in the open cell above.");
                 Assert.That(states[y * width + x].z, Is.LessThan(0.45f));
-                Assert.That(states[(y + 1) * width + x].z, Is.GreaterThan(0.45f));
+                Assert.That(states[(y + 1) * width + x].z, Is.GreaterThan(0.9f));
                 float waterAfter = states[y * width + x].z + states[(y + 1) * width + x].z + aux[y * width + x].x + aux[y * width + x].y
                     + aux[(y + 1) * width + x].x + aux[(y + 1) * width + x].y;
                 Assert.That(waterAfter, Is.EqualTo(waterBefore + 0.6f).Within(0.08f));
@@ -767,7 +770,7 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator ZeroSurfacePixelThresholdKeepsFilmOnSoil()
+        public IEnumerator SubCellFilmStaysOnSoil()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHost();
@@ -775,8 +778,6 @@ namespace GeneSys.Tests
             ConfigureSoakIsolation(host);
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
@@ -796,6 +797,132 @@ namespace GeneSys.Tests
             });
         }
 
+        [UnityTest]
+        public IEnumerator PartialStandingPixelCollapsesBackToFilm()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.seed = 4243;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            int width = host.Grid.angularResolution;
+            PaintSoakColumn(host, x, y);
+            PaintField(host, x, y, 1f, 20f);
+            PaintField(host, x, y + 1, 1f, 20f);
+            PaintField(host, x, y, 2f, -100f);
+            Paint(host, x, y + 1, MaterialIds.Water);
+            PaintField(host, x, y + 1, 2f, -100f);
+            PaintField(host, x, y + 1, 2f, 0.4f);
+            yield return Step(host, 2);
+
+            yield return ReadGpuFields(host, (mats, states, _) =>
+            {
+                Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Soil));
+                Assert.That(mats[(y + 1) * width + x], Is.EqualTo(MaterialIds.Air));
+                Assert.That(states[y * width + x].z, Is.GreaterThan(0.3f).And.LessThan(0.55f));
+                Assert.That(IsLiquidPixel(mats[(y + 1) * width + x]), Is.False);
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator FrozenFilmResistsRunoffUntilThaw()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            host.Config.seed = 33011;
+            host.Config.runoffRate = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 10, host.Grid.radialResolution - 10);
+            int x0 = x - 6;
+            int x1 = x + 6;
+            PaintRockShelf(host, x0, x1, bedY, 4);
+            for (int xx = x0; xx <= x1; xx++)
+            {
+                PaintField(host, xx, bedY, 1f, -5000f);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+                float film = Mathf.Abs(xx - x) <= 1 ? 0.9f : 0.15f;
+                PaintField(host, xx, bedY, 2f, film);
+            }
+            yield return Step(host, 1);
+
+            float varianceBefore = 0f;
+            yield return ReadGpuFields(host, (_, states, __) =>
+            {
+                float sum = 0f;
+                float sumSq = 0f;
+                int count = 0;
+                for (int xx = x0; xx <= x1; xx++)
+                {
+                    float film = states[bedY * width + xx].z;
+                    sum += film;
+                    sumSq += film * film;
+                    count++;
+                }
+                float mean = sum / count;
+                varianceBefore = sumSq / count - mean * mean;
+                Assert.That(varianceBefore, Is.GreaterThan(0.02f));
+            });
+
+            host.Config.runoffRate = 2f;
+            yield return Step(host, 40);
+            yield return ReadGpuFields(host, (_, states, __) =>
+            {
+                float sum = 0f;
+                float sumSq = 0f;
+                int count = 0;
+                for (int xx = x0; xx <= x1; xx++)
+                {
+                    float film = states[bedY * width + xx].z;
+                    sum += film;
+                    sumSq += film * film;
+                    count++;
+                }
+                float mean = sum / count;
+                float varianceFrozen = sumSq / count - mean * mean;
+                Assert.That(varianceFrozen, Is.GreaterThan(varianceBefore * 0.6f),
+                    "Frozen film should not hydrostatically level.");
+            });
+
+            for (int xx = x0; xx <= x1; xx++)
+                PaintField(host, xx, bedY, 1f, 5050f);
+            yield return Step(host, 40);
+            yield return ReadGpuFields(host, (_, states, __) =>
+            {
+                float sum = 0f;
+                float sumSq = 0f;
+                float min = 1e9f;
+                float max = -1e9f;
+                int count = 0;
+                for (int xx = x0; xx <= x1; xx++)
+                {
+                    float film = states[bedY * width + xx].z;
+                    sum += film;
+                    sumSq += film * film;
+                    min = Mathf.Min(min, film);
+                    max = Mathf.Max(max, film);
+                    count++;
+                }
+                float mean = sum / count;
+                float varianceAfter = sumSq / count - mean * mean;
+                Assert.That(varianceAfter, Is.LessThan(varianceBefore * 0.35f));
+                Assert.That(max - min, Is.LessThan(0.2f));
+            });
+        }
+
         private static void ConfigureHydrostaticIsolation(SimulationHost host)
         {
             ConfigureSoakIsolation(host);
@@ -803,8 +930,6 @@ namespace GeneSys.Tests
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 2f;
             host.Config.pondingRate = 0f;
-            host.Config.surfaceWaterPixelThreshold = 0f;
-            host.Config.rainPixelFormationThreshold = 0f;
             host.Config.materialSubsteps = 1;
             host.Config.grassWaterUptakeRate = 0f;
             host.Config.floraGrowthRate = 0f;
@@ -966,7 +1091,6 @@ namespace GeneSys.Tests
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureHydrostaticIsolation(host);
-            host.Config.surfaceWaterPixelThreshold = 0.2f;
             host.Config.seed = 33002;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -974,7 +1098,7 @@ namespace GeneSys.Tests
             int width = host.Grid.angularResolution;
             int x = width / 2;
             int bedY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 10, host.Grid.radialResolution - 12);
-            PaintRockShelf(host, x - 2, x + 3, bedY, 8);
+            PaintRockShelf(host, x, x + 1, bedY, 8);
             for (int xx = x - 2; xx <= x + 3; xx++)
             {
                 PaintField(host, xx, bedY, 2f, -100f);
@@ -1028,7 +1152,6 @@ namespace GeneSys.Tests
             ConfigureHydrostaticIsolation(host);
             // Deliberately the shipping values rather than the tuned ones the other tests use.
             host.Config.runoffRate = 0.45f;
-            host.Config.surfaceWaterPixelThreshold = 0.2f;
             host.Config.seed = 33009;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1118,7 +1241,6 @@ namespace GeneSys.Tests
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureHydrostaticIsolation(host);
-            host.Config.surfaceWaterPixelThreshold = 0.2f;
             host.Config.seed = 33003;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1150,7 +1272,7 @@ namespace GeneSys.Tests
                 Paint(host, xx, bedY + 1, MaterialIds.Rock);
                 Paint(host, xx, bedY + 2, MaterialIds.Rock);
             }
-            for (int dy = 3; dy <= 5; dy++)
+            for (int dy = 3; dy <= 8; dy++)
             {
                 Paint(host, x - 2, bedY + dy, MaterialIds.Water);
                 PaintField(host, x - 2, bedY + dy, 2f, -100f);
@@ -1163,6 +1285,12 @@ namespace GeneSys.Tests
             Paint(host, x + 5, bedY + 1, MaterialIds.Water);
             PaintField(host, x + 5, bedY + 1, 2f, -100f);
             PaintField(host, x + 5, bedY + 1, 2f, 1f);
+            Paint(host, x + 5, bedY + 2, MaterialIds.Water);
+            PaintField(host, x + 5, bedY + 2, 2f, -100f);
+            PaintField(host, x + 5, bedY + 2, 2f, 1f);
+            Paint(host, x + 5, bedY + 3, MaterialIds.Water);
+            PaintField(host, x + 5, bedY + 3, 2f, -100f);
+            PaintField(host, x + 5, bedY + 3, 2f, 1f);
 
             yield return Step(host, 1);
             double waterBefore = 0d;
@@ -1193,14 +1321,13 @@ namespace GeneSys.Tests
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureHydrostaticIsolation(host);
-            host.Config.surfaceWaterPixelThreshold = 0.2f;
             host.Config.seed = 33004;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
             int width = host.Grid.angularResolution;
             int bedY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 10, host.Grid.radialResolution - 10);
-            PaintRockShelf(host, width - 3, width + 2, bedY, 6);
+            PaintRockShelf(host, width - 1, width + 1, bedY, 6);
             int left = width - 1;
             int right = 0;
             for (int dy = 1; dy <= 3; dy++)
@@ -1241,7 +1368,6 @@ namespace GeneSys.Tests
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureHydrostaticIsolation(host);
-            host.Config.surfaceWaterPixelThreshold = 0.2f;
             host.Config.seed = 33005;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1302,9 +1428,7 @@ namespace GeneSys.Tests
             // shed separated drops instead of converting every cell in one dispatch, which
             // used to drop a solid bar that re-piled into a one-wide tower on the shelf.
             host.Config.precipitationRate = 1f;
-            host.Config.rainPixelFormationThreshold = 0.5f;
-            host.Config.cloudPrecipitationThreshold = 1f;
-            host.Config.surfaceWaterPixelThreshold = 0.2f;
+            host.Config.cloudPrecipitationThreshold = 0.2f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.seed = 33006;
@@ -1365,7 +1489,6 @@ namespace GeneSys.Tests
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureHydrostaticIsolation(host);
-            host.Config.surfaceWaterPixelThreshold = 0.2f;
             host.Config.seed = 33007;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;

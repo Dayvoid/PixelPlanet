@@ -90,7 +90,6 @@ MonoBehaviour:
   runoffRate: 0.45
   hydrostaticIterations: 32
   pondingRate: 0.05
-  surfaceWaterPixelThreshold: 0.2
   springHeadThreshold: 0.9
   springDischargeRate: 0.9
   geyserHeatThreshold: 320
@@ -120,7 +119,8 @@ MonoBehaviour:
   humidityBuoyancy: 0.8
   saturationCapacityScale: 0.01
   cloudPrecipitationThreshold: 0.9
-  rainPixelFormationThreshold: 0.7
+  waterPressureResponse: 0.6
+  latentHeatScale: 0.35
   surfaceAirHeatExchange: 1
   temperatureAdvectionRate: 0.8
   pressureCompressibility: 0.6

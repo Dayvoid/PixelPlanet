@@ -70,9 +70,9 @@
 // Atmosphere representation:
 //   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
 //   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
-//   Clouds are atmospheric state.z; rain drains that condensate onto the surface below.
-//   WaterMaterialization converts dense cloud (rainPixelFormationThreshold) or pooled
-//   surface film (surfaceWaterPixelThreshold) into Water/Ice pixels. Zero disables.
+//   Clouds are atmospheric state.z. Precipitation converts cloud-base condensate into
+//   Water/Ice pixels or surface film from temperature, pressure, and updraft; it is not
+//   a configurable pixel-mass threshold.
 // Moisture-aware soil erosion:
 //   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
 //   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.
@@ -106,9 +106,10 @@
 //   exchange probability and cannot reverse float/sink. Equal densities within epsilon stay put.
 //   Foundational solids (Core/Mantle) and Ash remain opted out; Ash keeps AshTransport.
 // Surface hydrostatic leveling:
-//   After groundwater and materialization, hydrology profiles each angular column's
+//   After groundwater and precipitation, hydrology profiles each angular column's
 //   atmosphere-connected liquid (film plus contiguous Water pixels), then exchanges mass
 //   across wrapped faces from hydraulic head. Head is substrate radius plus liquid volume.
+//   Film-capable beds keep the fractional remainder; complete cells become Water/Ice pixels.
 //   Terrain saddles block flow; ice lids and enclosed cave water are excluded.
 //   state.y remains atmospheric/material pressure and is never reused as water head.
 
@@ -831,6 +832,80 @@ float MixTemperature(float destTemp, float destHeatCapacity, float sourceTemp, f
     float destMassHeat = max(0.001, destHeatCapacity);
     float srcMassHeat = max(0.0, transferredMass) * max(0.001, waterHeatCapacity);
     return (destTemp * destMassHeat + sourceTemp * srcMassHeat) / (destMassHeat + srcMassHeat);
+}
+
+#define WATER_MELT_TEMP 0.0
+#define WATER_BOIL_TEMP 100.0
+
+float PressureEquilibriumAt(int radiusIndex, int radialSize, float gradient, float maximum)
+{
+    float radius = Radius01(radiusIndex, radialSize);
+    return min(maximum, max(0.0, (1.0 - radius) * gradient));
+}
+
+float WaterPressureNorm(float pressure, float equilibrium)
+{
+    return saturate(pressure / max(0.05, equilibrium + 0.25));
+}
+
+float WaterBoilTemperature(float pressure, float equilibrium, float pressureResponse)
+{
+    float anomaly = pressure - equilibrium;
+    float shift = clamp(anomaly * max(0.0, pressureResponse) * 25.0, -40.0, 60.0);
+    return WATER_BOIL_TEMP + shift;
+}
+
+float WaterVaporCapacity(float temperature, float radius, float pressure, float atmosphereStartRadius, float saturationScale, float pressureResponse)
+{
+    float altitudeCooling = saturate((radius - atmosphereStartRadius) / max(0.01, 1.0 - atmosphereStartRadius));
+    float thermal = saturate((temperature + 20.0) / 60.0);
+    float pressureBoost = 1.0 + saturate(pressure) * (0.15 + 0.35 * saturate(pressureResponse));
+    return max(0.01, max(0.01, saturationScale) * thermal * (1.0 - altitudeCooling * 0.65) * pressureBoost);
+}
+
+float WaterFrozenFraction(float temperature, float hysteresis)
+{
+    float h = max(0.001, hysteresis);
+    return 1.0 - saturate((temperature - (WATER_MELT_TEMP - h)) / max(2.0 * h, 1e-4));
+}
+
+float WaterLiquidFraction(float temperature, float hysteresis)
+{
+    return 1.0 - WaterFrozenFraction(temperature, hysteresis);
+}
+
+uint LiquidPixelId(float temperature, float hysteresis)
+{
+    return temperature < WATER_MELT_TEMP - max(0.001, hysteresis) ? 10u : 9u;
+}
+
+uint WaterPhaseId(float temperature, uint current, float hysteresis)
+{
+    float h = max(0.001, hysteresis);
+    if (current == 10u)
+        return temperature > WATER_MELT_TEMP + h ? 9u : 10u;
+    if (current == 9u)
+        return temperature < WATER_MELT_TEMP - h ? 10u : 9u;
+    return LiquidPixelId(temperature, hysteresis);
+}
+
+float WaterLatentHeatDelta(float mass, float latentScale, float strength)
+{
+    return clamp(max(0.0, mass) * max(0.0, latentScale) * strength, -12.0, 12.0);
+}
+
+float PrecipitationMass(float cloud, float retain, float temperature, float pressure, float equilibrium, float radialFlow, float precipitationRate, float pressureResponse, float dt)
+{
+    float excess = max(0.0, cloud - max(0.01, retain));
+    if (excess <= 1e-8 || precipitationRate <= 1e-8)
+        return 0.0;
+    float coldBoost = lerp(1.45, 0.7, saturate((temperature + 10.0) / 50.0));
+    float pressureBoost = 1.0 + (WaterPressureNorm(pressure, equilibrium) - 0.5) * saturate(pressureResponse) * 0.6;
+    float updraft = max(0.0, radialFlow);
+    float downdraft = max(0.0, -radialFlow);
+    float vertical = saturate(1.0 - updraft * 0.35) * (1.0 + saturate(downdraft) * 0.25);
+    float efficiency = max(0.05, coldBoost * pressureBoost * vertical);
+    return min(min(excess, 1.0), max(0.0, precipitationRate) * efficiency * max(0.0, dt));
 }
 
 float4 SanitizeStorm(float4 storm)

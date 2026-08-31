@@ -40,7 +40,7 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _WeatherA; // solarIntensity, ...
 float4 _WeatherC; // vaporPressureScale, solarAngle01, ...
-float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, rainPixelFormationThreshold, surfaceWaterPixelThreshold
+float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // ..., atmosphericCflLimit
 float4 _FloraA; // airTransport, waterTransport, diffusion, settling
 float4 _FloraB; // sporulation, growth, decay, photosynthesis
@@ -282,10 +282,8 @@ void SampleShear(int2 cell, out float wind, out float rain, out int windDir)
     {
         int2 above = cell + int2(0, 1);
         uint aboveMat = M(above);
-        if (IsSporeAirCarrier(aboveMat))
-            rain = max(0.0, S(above).z - max(0.01, _WeatherE.y));
-        else if (aboveMat == 9u || aboveMat == 10u)
-            rain = 0.5;
+        if (aboveMat == 9u || aboveMat == 10u)
+            rain = max(0.0, S(above).z);
     }
 }
 

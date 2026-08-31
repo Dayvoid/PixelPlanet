@@ -3,6 +3,7 @@
 #pragma kernel AtmosphericDynamics
 #pragma kernel AtmosphericTransport
 #pragma kernel WaterCycle
+#pragma kernel Precipitation
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -41,9 +42,10 @@ float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
 float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, humidityBuoyancy
-float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, rainPixelFormationThreshold, surfaceWaterPixelThreshold
+float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureCompressibility, atmosphericCflLimit
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, unused, unused
+float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
@@ -59,22 +61,12 @@ float4 E(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
 float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
-bool IsAtmosphereCell(int2 cell, uint material)
-{
-    float category = D(material).metadata.x;
-    if (category == 1.0 || material == 11u) return true;
-    return material == 0u && Radius01(cell.y, _GridSize.y) >= _AtmosphereStartRadius;
-}
+#include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 
 bool IsExposedSurface(int2 cell, uint material)
 {
     uint above = M(cell + int2(0, 1));
     return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
-}
-
-bool IsOpenCarrier(uint material)
-{
-    return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
@@ -93,12 +85,9 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
 }
 
-float AtmosphericVaporCapacity(float temperature, float radius, float pressure)
+float LocalVaporCapacity(float temperature, float radius, float pressure)
 {
-    float altitudeCooling = saturate((radius - _AtmosphereStartRadius) / max(0.01, 1.0 - _AtmosphereStartRadius));
-    float thermal = saturate((temperature + 20.0) / 60.0);
-    float pressureBoost = 1.0 + saturate(pressure) * 0.25;
-    return max(0.01, _WeatherE.x * thermal * (1.0 - altitudeCooling * 0.65) * pressureBoost);
+    return WaterVaporCapacity(temperature, radius, pressure, _AtmosphereStartRadius, _WeatherE.x, _WeatherE.z);
 }
 
 float4 DonorFaceFlux(float2 flow, float mass, float advectionRate, float4 validFaces, float tangentialWeight)
@@ -442,33 +431,34 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     bool atmosphere = IsAtmosphereCell(cell, material);
     bool exposed = IsExposedSurface(cell, material);
     MaterialGpuData definition = D(material);
+    float hysteresis = max(0.001, _WeatherC.z);
+    float liquidFrac = WaterLiquidFraction(state.x, hysteresis);
+    float frozenFrac = 1.0 - liquidFrac;
     float evaporativeDrive = saturate((state.x - 5.0) / 80.0);
     float evaporationBudget = _WeatherB.y * evaporativeDrive * _DeltaTime;
-    // Rain is sized from pre-tick cloud and pre-tick surface film. Evaporation and condensation
-    // below only move mass within this cell, and a raining pair must agree on one number.
-    float filmRead = max(0.0, state.z);
 
-    if (state.x > 5.0 && !atmosphere)
+    if (state.x > -20.0 && !atmosphere)
     {
         float evapScale = material == 9u ? 0.75 : 1.0;
-        float surfaceEvap = min(max(0.0, state.z), evaporationBudget * evapScale);
+        float phaseScale = liquidFrac + frozenFrac * 0.15;
+        float surfaceEvap = min(max(0.0, state.z), evaporationBudget * evapScale * phaseScale);
         state.z -= surfaceEvap;
         aux.x += surfaceEvap;
-        state.x -= surfaceEvap * 0.25;
+        state.x -= WaterLatentHeatDelta(surfaceEvap, _WeatherE.w, 0.8);
 
         float remainingBudget = max(0.0, evaporationBudget - surfaceEvap);
-        if (exposed && IsGroundwaterHost(material, definition) && aux.y > 0.0 && remainingBudget > 0.0)
+        if (exposed && IsGroundwaterHost(material, definition) && aux.y > 0.0 && remainingBudget > 0.0 && liquidFrac > 0.05)
         {
-            float capillary = min(aux.y, max(0.0, _MoistureErosion.z) * remainingBudget);
+            float capillary = min(aux.y, max(0.0, _MoistureErosion.z) * remainingBudget * liquidFrac);
             aux.y -= capillary;
             aux.x += capillary;
-            state.x -= capillary * 0.15;
+            state.x -= WaterLatentHeatDelta(capillary, _WeatherE.w, 0.6);
         }
     }
 
     if (atmosphere)
     {
-        float capacity = AtmosphericVaporCapacity(state.x, radius, state.y);
+        float capacity = LocalVaporCapacity(state.x, radius, state.y);
         if (aux.x > capacity)
         {
             float excess = aux.x - capacity;
@@ -476,48 +466,94 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
             aux.x -= condensation;
             state.z += condensation;
             state.y = max(0.0, state.y - condensation * _WeatherC.x);
-        }
-
-        float rainThreshold = max(0.01, _WeatherE.y);
-        if (filmRead > rainThreshold && cell.y > 0)
-        {
-            uint belowMaterial = M(cell + int2(0, -1));
-            if (!IsAtmosphereCell(cell + int2(0, -1), belowMaterial))
-            {
-                float rain = min(filmRead - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
-                rain = max(0.0, rain);
-                float belowRoom = max(0.0, 1.0 - S(cell + int2(0, -1)).z);
-                rain = min(rain, belowRoom);
-                state.z -= rain;
-                flow.y -= rain;
-            }
+            state.x += WaterLatentHeatDelta(condensation, _WeatherE.w, 0.8);
         }
     }
-    else
+
+    if (material == 11u) material = 1u;
+
+    Write(cell, material, state, flow, aux, ecology, combustion);
+}
+
+bool PrecipitationReceiverOk(int2 below, uint belowMat)
+{
+    if (belowMat == 9u || belowMat == 10u)
+        return !IsAirborneLiquid(below, belowMat);
+    if (IsAtmosphereCell(below, belowMat) && IsOpenCarrier(belowMat))
+        return true;
+    return belowMat != 0u && !IsAtmosphereCell(below, belowMat);
+}
+
+float CloudPrecipTransfer(int2 source)
+{
+    uint mat = M(source);
+    if (!IsAtmosphereCell(source, mat) || source.y <= 0)
+        return 0.0;
+    if (_WeatherB.w <= 1e-8)
+        return 0.0;
+    float4 state = S(source);
+    float retain = max(0.01, _WeatherE.y);
+    float cloud = max(0.0, state.z);
+    if (cloud <= retain)
+        return 0.0;
+    int2 below = source + int2(0, -1);
+    uint belowMat = M(below);
+    if (!PrecipitationReceiverOk(below, belowMat))
+        return 0.0;
+    if (IsAtmosphereCell(below, belowMat) && IsOpenCarrier(belowMat) && belowMat != 9u && belowMat != 10u
+        && max(0.0, S(below).z) > retain)
+        return 0.0;
+    float eq = PressureEquilibriumAt(source.y, _GridSize.y, _PressureA.y, _PressureA.z);
+    return PrecipitationMass(cloud, retain, state.x, state.y, eq, F(source).y, _WeatherB.w, _WeatherE.z, _DeltaTime);
+}
+
+[numthreads(8, 8, 1)]
+void Precipitation(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
+    float hysteresis = max(0.001, _WeatherC.z);
+    float waterCp = max(0.001, D(9u).transport.y);
+
+    float outgoing = CloudPrecipTransfer(cell);
+    float incoming = 0.0;
+    int2 above = cell + int2(0, 1);
+    if (cell.y < _GridSize.y - 1)
+        incoming = CloudPrecipTransfer(above);
+
+    if (outgoing > 1e-8)
     {
-        int2 above = cell + int2(0, 1);
-        uint aboveMaterial = M(above);
-        if (IsAtmosphereCell(above, aboveMaterial))
-        {
-            float rainThreshold = max(0.01, _WeatherE.y);
-            float aboveCloud = S(above).z;
-            if (aboveCloud > rainThreshold)
-            {
-                float rain = min(aboveCloud - rainThreshold * 0.25, _WeatherB.w * _DeltaTime);
-                rain = max(0.0, rain);
-                rain = min(rain, max(0.0, 1.0 - filmRead));
-                float rainTemp = S(above).x;
-                state.z += rain;
-                state.x = MixTemperature(state.x, definition.transport.y, rainTemp, rain, max(0.001, D(9u).transport.y));
-                if ((material == 1u || material == 11u) && state.z > 0.15)
-                    material = state.x < 0.0 ? 10u : 9u;
-            }
-        }
+        state.z = max(0.0, state.z - outgoing);
+        flow.y -= outgoing;
+        int2 below = cell + int2(0, -1);
+        uint belowMat = M(below);
+        if (IsAtmosphereCell(below, belowMat) && IsOpenCarrier(belowMat) && belowMat != 9u && belowMat != 10u)
+            aux.x += max(0.0, A(below).x);
     }
 
-    if (material == 9u && state.x < 0.0) material = 10u;
-    else if (material == 10u && state.x > 1.0) material = 9u;
-    else if (material == 11u) material = 1u;
+    if (incoming > 1e-8)
+    {
+        float4 src = S(above);
+        if (IsAtmosphereCell(cell, material) && IsOpenCarrier(material) && material != 9u && material != 10u)
+        {
+            float residualCloud = max(0.0, state.z);
+            aux.x = 0.0;
+            state.z = incoming + residualCloud;
+            material = LiquidPixelId(src.x, hysteresis);
+            state.x = MixTemperature(state.x, max(0.001, D(1u).transport.y), src.x, incoming, waterCp);
+        }
+        else
+        {
+            state.z += incoming;
+            state.x = MixTemperature(state.x, max(0.001, D(material).transport.y), src.x, incoming, waterCp);
+        }
+    }
 
     Write(cell, material, state, flow, aux, ecology, combustion);
 }

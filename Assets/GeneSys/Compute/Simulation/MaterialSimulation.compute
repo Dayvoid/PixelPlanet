@@ -44,6 +44,7 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
@@ -200,6 +201,10 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     uint liquidId = (packed >> 10) & 1023u;
     uint gasId = (packed >> 20) & 1023u;
     float hysteresis = max(0.001, _WeatherC.z);
+    float equilibrium = PressureEquilibriumAt(cell.y, _GridSize.y, _PressureA.y, _PressureA.z);
+    float boilPoint = definition.phase.y;
+    if (material == 9u || material == 10u)
+        boilPoint = WaterBoilTemperature(state.y, equilibrium, _WeatherE.z);
 
     // Legacy Vapor pixels migrate to Air while preserving vapor/cloud mass fields.
     if (material == 11u)
@@ -219,22 +224,29 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
-    if (gasId > 0u && state.x > definition.phase.y + hysteresis)
+    if (gasId > 0u && state.x > boilPoint + hysteresis)
     {
         // Boiling vacates the cell to Air and moves only existing liquid/ice mass into aux.x.
         float boiled = max(0.0, state.z);
         aux.x += boiled;
         state.z = 0.0;
         state.y += boiled * _WeatherC.x;
+        state.x -= WaterLatentHeatDelta(boiled, _WeatherE.w, 2.0);
         material = 1u;
     }
     else if (liquidId > 0u && state.x > definition.phase.x + hysteresis)
     {
+        float melted = max(0.0, state.z);
         material = liquidId;
+        if (liquidId == 9u)
+            state.x = max(WATER_MELT_TEMP + hysteresis, state.x - WaterLatentHeatDelta(melted, _WeatherE.w, 0.4));
     }
     else if (solidId > 0u && state.x < definition.phase.x - hysteresis)
     {
+        float frozen = max(0.0, state.z);
         material = solidId;
+        if (solidId == 10u)
+            state.x = min(WATER_MELT_TEMP - hysteresis, state.x + WaterLatentHeatDelta(frozen, _WeatherE.w, 0.4));
     }
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
@@ -416,8 +428,7 @@ void Electrical(uint3 id : SV_DispatchThreadID)
 
 float PressureEquilibrium(int radiusIndex)
 {
-    float radius = Radius01(radiusIndex, _GridSize.y);
-    return min(_PressureA.z, max(0.0, (1.0 - radius) * _PressureA.y));
+    return PressureEquilibriumAt(radiusIndex, _GridSize.y, _PressureA.y, _PressureA.z);
 }
 
 float PressureConductance(uint material)

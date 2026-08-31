@@ -139,4 +139,24 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
     head = (float)(bedY + 1) + volume;
 }
 
+void PartitionSurfaceVolume(float volume, bool canFilm, out int cells, out float remainder)
+{
+    volume = max(0.0, volume);
+    if (canFilm)
+    {
+        cells = (int)floor(volume + 1e-6);
+        remainder = max(0.0, volume - (float)cells);
+        if (remainder >= 1.0 - 1e-6)
+        {
+            cells += 1;
+            remainder = max(0.0, remainder - 1.0);
+        }
+    }
+    else
+    {
+        cells = volume > 1e-6 ? (int)ceil(volume - 1e-6) : 0;
+        remainder = 0.0;
+    }
+}
+
 #endif
