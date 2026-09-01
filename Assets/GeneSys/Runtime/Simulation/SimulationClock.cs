@@ -22,7 +22,7 @@ namespace GeneSys.Simulation
         public void Reset() { accumulator = 0f; stepRequested = false; TickCount = 0; }
         public void SetTickCount(long value) { TickCount = Math.Max(0L, value); accumulator = 0f; }
 
-        public const int MaxTicksPerFrame = 2;
+        public const int MaxTicksPerFrame = 4;
 
         public int Advance(float unscaledDeltaTime, float ticksPerSecond, Action<float> tick)
         {
@@ -36,9 +36,9 @@ namespace GeneSys.Simulation
             }
             if (!IsRunning) return 0;
 
-            float dt = Mathf.Min(unscaledDeltaTime, 0.1f);
+            float dt = Mathf.Min(unscaledDeltaTime, 0.05f);
             accumulator += dt * Speed;
-            int maxTicksThisFrame = Mathf.Clamp(Mathf.CeilToInt(Speed * 2.5f), 2, 32);
+            int maxTicksThisFrame = Mathf.Clamp(Mathf.CeilToInt(Speed * 2.5f), 1, MaxTicksPerFrame);
             int count = 0;
 
             while (accumulator >= fixedDelta && count < maxTicksThisFrame)

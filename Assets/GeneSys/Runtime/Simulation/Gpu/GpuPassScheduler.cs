@@ -966,9 +966,10 @@ namespace GeneSys.Simulation.Gpu
                 return;
             }
 
-            if (!paintedThisTick)
+            if (Due(config.transportPassInterval) && !paintedThisTick)
             {
-                SetCommon(tree, physiology, deltaTime);
+                float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
+                SetCommon(tree, physiology, transportDt);
                 tree.SetBuffer(physiology, "_MaterialDefinitions", materialBuffer);
                 BindTreeWorldReads(physiology);
                 tree.SetTexture(physiology, "_LightRead", resources.LightField);
@@ -979,11 +980,11 @@ namespace GeneSys.Simulation.Gpu
                 Dispatch(tree, physiology);
                 resources.SwapTree();
 
-                SetCommon(tree, clear, deltaTime);
+                SetCommon(tree, clear, transportDt);
                 tree.SetTexture(clear, "_TreeGrowthClaimsWrite", resources.TreeGrowthClaims);
                 Dispatch(tree, clear);
 
-                SetCommon(tree, claim, deltaTime);
+                SetCommon(tree, claim, transportDt);
                 tree.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
                 BindTreeWorldReads(claim);
                 tree.SetTexture(claim, "_TreeRead", resources.TreeRead);
@@ -1077,6 +1078,9 @@ namespace GeneSys.Simulation.Gpu
 
         private void DispatchFauna(float deltaTime)
         {
+            if (!Due(config.transportPassInterval)) return;
+            float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
+
             int seed = fauna.FindKernel("SeedFauna");
             int acoustic = fauna.FindKernel("AcousticPropagate");
             int metabolism = fauna.FindKernel("FaunaMetabolism");
@@ -1090,7 +1094,7 @@ namespace GeneSys.Simulation.Gpu
                 return;
             }
 
-            SetCommon(fauna, seed, deltaTime);
+            SetCommon(fauna, seed, transportDt);
             fauna.SetTexture(seed, "_MaterialRead", resources.MaterialRead);
             fauna.SetTexture(seed, "_FaunaRead", resources.FaunaRead);
             fauna.SetTexture(seed, "_FaunaWrite", resources.FaunaWrite);
@@ -1098,7 +1102,7 @@ namespace GeneSys.Simulation.Gpu
             Dispatch(fauna, seed);
             resources.SwapFauna();
 
-            SetCommon(fauna, acoustic, deltaTime);
+            SetCommon(fauna, acoustic, transportDt);
             fauna.SetBuffer(acoustic, "_MaterialDefinitions", materialBuffer);
             fauna.SetTexture(acoustic, "_MaterialRead", resources.MaterialRead);
             fauna.SetTexture(acoustic, "_FaunaRead", resources.FaunaRead);
@@ -1108,7 +1112,7 @@ namespace GeneSys.Simulation.Gpu
             Dispatch(fauna, acoustic);
             resources.SwapAcoustic();
 
-            SetCommon(fauna, metabolism, deltaTime);
+            SetCommon(fauna, metabolism, transportDt);
             fauna.SetBuffer(metabolism, "_MaterialDefinitions", materialBuffer);
             BindFaunaWorldReads(metabolism);
             fauna.SetTexture(metabolism, "_FaunaRead", resources.FaunaRead);
@@ -1118,18 +1122,18 @@ namespace GeneSys.Simulation.Gpu
             Dispatch(fauna, metabolism);
             resources.SwapFauna();
 
-            SetCommon(fauna, clear, deltaTime);
+            SetCommon(fauna, clear, transportDt);
             fauna.SetTexture(clear, "_FaunaClaimsWrite", resources.FaunaClaims);
             Dispatch(fauna, clear);
 
-            SetCommon(fauna, claim, deltaTime);
+            SetCommon(fauna, claim, transportDt);
             fauna.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
             BindFaunaWorldReads(claim);
             fauna.SetTexture(claim, "_FaunaRead", resources.FaunaRead);
             fauna.SetTexture(claim, "_FaunaClaimsWrite", resources.FaunaClaims);
             Dispatch(fauna, claim);
 
-            SetCommon(fauna, applyWorld, deltaTime);
+            SetCommon(fauna, applyWorld, transportDt);
             fauna.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
             fauna.SetTexture(applyWorld, "_MaterialRead", resources.MaterialRead);
             fauna.SetTexture(applyWorld, "_MaterialWrite", resources.MaterialWrite);
@@ -1152,7 +1156,7 @@ namespace GeneSys.Simulation.Gpu
             BindOrganismHistory(fauna, applyWorld);
             Dispatch(fauna, applyWorld);
 
-            SetCommon(fauna, applyState, deltaTime);
+            SetCommon(fauna, applyState, transportDt);
             fauna.SetBuffer(applyState, "_MaterialDefinitions", materialBuffer);
             BindFaunaWorldReads(applyState);
             fauna.SetTexture(applyState, "_FaunaRead", resources.FaunaRead);
@@ -1167,6 +1171,9 @@ namespace GeneSys.Simulation.Gpu
 
         private void DispatchWasp(float deltaTime)
         {
+            if (!Due(config.transportPassInterval)) return;
+            float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
+
             int seed = wasp.FindKernel("SeedWasp");
             int metabolism = wasp.FindKernel("WaspMetabolism");
             int clear = wasp.FindKernel("ClearWaspClaims");
@@ -1180,7 +1187,7 @@ namespace GeneSys.Simulation.Gpu
                 return;
             }
 
-            SetCommon(wasp, seed, deltaTime);
+            SetCommon(wasp, seed, transportDt);
             wasp.SetTexture(seed, "_MaterialRead", resources.MaterialRead);
             wasp.SetTexture(seed, "_WaspRead", resources.WaspRead);
             wasp.SetTexture(seed, "_WaspWrite", resources.WaspWrite);
@@ -1188,7 +1195,7 @@ namespace GeneSys.Simulation.Gpu
             Dispatch(wasp, seed);
             resources.SwapWasp();
 
-            SetCommon(wasp, metabolism, deltaTime);
+            SetCommon(wasp, metabolism, transportDt);
             wasp.SetBuffer(metabolism, "_MaterialDefinitions", materialBuffer);
             BindWaspWorldReads(metabolism);
             wasp.SetTexture(metabolism, "_WaspRead", resources.WaspRead);
@@ -1200,11 +1207,11 @@ namespace GeneSys.Simulation.Gpu
             Dispatch(wasp, metabolism);
             resources.SwapWasp();
 
-            SetCommon(wasp, clear, deltaTime);
+            SetCommon(wasp, clear, transportDt);
             wasp.SetTexture(clear, "_WaspClaimsWrite", resources.WaspClaims);
             Dispatch(wasp, clear);
 
-            SetCommon(wasp, claim, deltaTime);
+            SetCommon(wasp, claim, transportDt);
             wasp.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
             BindWaspWorldReads(claim);
             wasp.SetTexture(claim, "_WaspRead", resources.WaspRead);
@@ -1216,7 +1223,7 @@ namespace GeneSys.Simulation.Gpu
 
             // Records the visit for the next grass pass. Runs before the world pass so it
             // still sees the pre-kill material grid.
-            SetCommon(wasp, flower, deltaTime);
+            SetCommon(wasp, flower, transportDt);
             wasp.SetBuffer(flower, "_MaterialDefinitions", materialBuffer);
             wasp.SetTexture(flower, "_MaterialRead", resources.MaterialRead);
             wasp.SetTexture(flower, "_WaspRead", resources.WaspRead);
@@ -1225,7 +1232,7 @@ namespace GeneSys.Simulation.Gpu
             wasp.SetTexture(flower, "_GrassVisitWrite", resources.GrassVisit);
             Dispatch(wasp, flower);
 
-            SetCommon(wasp, applyWorld, deltaTime);
+            SetCommon(wasp, applyWorld, transportDt);
             wasp.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
             wasp.SetTexture(applyWorld, "_MaterialRead", resources.MaterialRead);
             wasp.SetTexture(applyWorld, "_MaterialWrite", resources.MaterialWrite);
@@ -1249,7 +1256,7 @@ namespace GeneSys.Simulation.Gpu
             BindOrganismHistory(wasp, applyWorld);
             Dispatch(wasp, applyWorld);
 
-            SetCommon(wasp, applyState, deltaTime);
+            SetCommon(wasp, applyState, transportDt);
             wasp.SetBuffer(applyState, "_MaterialDefinitions", materialBuffer);
             BindWaspWorldReads(applyState);
             wasp.SetTexture(applyState, "_WaspRead", resources.WaspRead);
