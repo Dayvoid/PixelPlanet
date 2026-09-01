@@ -512,11 +512,13 @@ int2 CloudPrecipReceiver(int2 source)
     bool downOk = PrecipitationReceiverOk(down, downMat);
     float h = Hash01((uint)source.x * 73856093u + (uint)source.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + 19u);
     float wind = F(source).x;
-    int dx = abs(wind) > 0.12 ? (wind > 0.0 ? 1 : -1) : (h < 0.5 ? -1 : 1);
+    bool frozen = LiquidPixelId(S(source).x, max(0.001, _WeatherC.z)) == 10u;
+    int dx = abs(wind) > 0.12 ? (wind > 0.0 ? 1 : -1)
+           : (frozen && h < 0.5 ? -1 : 1);
     bool downAir = PrecipitationAirReceiver(down, downMat);
-    // Fan into neighboring air when the shaft is blocked by a falling drop, and
-    // sometimes even when it is clear so rain does not stay single-file.
-    bool trySide = !downOk || (downAir && h < 0.38);
+    // Sidestep when the shaft is blocked. Frozen condensate also fans while the
+    // shaft is clear so snow/ice does not stay single-file; rain does not.
+    bool trySide = !downOk || (frozen && downAir && h < 0.38);
     if (trySide)
     {
         [unroll]

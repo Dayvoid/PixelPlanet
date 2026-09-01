@@ -1307,7 +1307,7 @@ namespace GeneSys.Tests
                         wetColumns++;
                 }
                 Assert.That(wetColumns, Is.GreaterThanOrEqualTo(2),
-                    "Falling rain should fan into neighboring columns instead of a single-file shaft.");
+                    "Wind-driven rain should slant into neighboring columns instead of a single-file shaft.");
             });
         }
 
