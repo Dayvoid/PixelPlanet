@@ -23,6 +23,12 @@ namespace GeneSys.Validation
         public float MeanPressure;
         public float MeanMoisture;
         public float MeanWindSpeed;
+        public float MaxAtmosphericTemperature;
+        public int MaxAtmosphericTemperatureX;
+        public int MaxAtmosphericTemperatureY;
+        public float MaxVaporMass;
+        public int MaxVaporX;
+        public int MaxVaporY;
         public int BurningCellCount;
         public float TotalFireIntensity;
         public float MeanOxygen;
@@ -44,6 +50,12 @@ namespace GeneSys.Validation
         public float CirculationEnergy;
         public int UpdraftCells;
         public int DowndraftCells;
+        public float MaxAtmosphericTemperature;
+        public int MaxAtmosphericTemperatureX;
+        public int MaxAtmosphericTemperatureY;
+        public float MaxVaporMass;
+        public int MaxVaporX;
+        public int MaxVaporY;
     }
 
     public struct FloraMetrics
@@ -310,6 +322,22 @@ namespace GeneSys.Validation
                     metrics.SurfaceWaterMass += Math.Max(0d, state.z);
                     metrics.GroundwaterMass += Math.Max(0d, auxValue.y);
                     metrics.VaporMass += Math.Max(0d, auxValue.x);
+                    if (material == MaterialIds.Air || material == MaterialIds.Vapor)
+                    {
+                        if (state.x > metrics.MaxAtmosphericTemperature)
+                        {
+                            metrics.MaxAtmosphericTemperature = state.x;
+                            metrics.MaxAtmosphericTemperatureX = x;
+                            metrics.MaxAtmosphericTemperatureY = y;
+                        }
+                        float vapor = Math.Max(0f, auxValue.x);
+                        if (vapor > metrics.MaxVaporMass)
+                        {
+                            metrics.MaxVaporMass = vapor;
+                            metrics.MaxVaporX = x;
+                            metrics.MaxVaporY = y;
+                        }
+                    }
 
                     if (material != MaterialIds.Void)
                     {
@@ -634,6 +662,18 @@ namespace GeneSys.Validation
                         float vapor = Math.Max(0f, auxValue.x);
                         metrics.CloudMass += cloud;
                         vaporMass += vapor;
+                        if (state.x > metrics.MaxAtmosphericTemperature)
+                        {
+                            metrics.MaxAtmosphericTemperature = state.x;
+                            metrics.MaxAtmosphericTemperatureX = x;
+                            metrics.MaxAtmosphericTemperatureY = y;
+                        }
+                        if (vapor > metrics.MaxVaporMass)
+                        {
+                            metrics.MaxVaporMass = vapor;
+                            metrics.MaxVaporX = x;
+                            metrics.MaxVaporY = y;
+                        }
                         vaporAltitudeMoment += vapor * radius;
                         vaporAltitudeSecond += vapor * radius * radius;
 

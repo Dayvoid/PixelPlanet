@@ -20,7 +20,37 @@ namespace GeneSys.Validation
 
         public void Initialize(SimulationHost simulationHost) => host = simulationHost;
 
-        public void ResetBaseline() => baselineWater = -1d;
+        public void ResetBaseline()
+        {
+            baselineWater = -1d;
+            CaptureBaseline();
+        }
+
+        public void CaptureBaseline()
+        {
+            if (host == null || !host.IsReady || host.Resources == null || pending) return;
+            RenderTexture stateTex = host.Resources.StateRead;
+            RenderTexture auxTex = host.Resources.AuxRead;
+            if (stateTex == null || auxTex == null) return;
+            pending = true;
+            AsyncGPUReadback.Request(stateTex, 0, stateRequest =>
+            {
+                if (stateRequest.hasError) { pending = false; return; }
+                NativeArray<Vector4> state = stateRequest.GetData<Vector4>();
+                double water = 0d;
+                for (int i = 0; i < state.Length; i++)
+                    water += Math.Max(0d, state[i].z);
+                AsyncGPUReadback.Request(auxTex, 0, auxRequest =>
+                {
+                    if (auxRequest.hasError) { pending = false; return; }
+                    NativeArray<Vector4> aux = auxRequest.GetData<Vector4>();
+                    for (int i = 0; i < aux.Length; i++)
+                        water += Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
+                    baselineWater = Math.Max(1d, water);
+                    pending = false;
+                });
+            });
+        }
 
         private void Update()
         {
@@ -245,9 +275,20 @@ namespace GeneSys.Validation
                                                                             if (host == null || !host.IsReady || host.Config == null)
                                                                             { Complete(false, "Simulation host unavailable."); return; }
                                                                             if (baselineWater < 0d) baselineWater = Math.Max(1d, water);
-                                                                            double drift = Math.Abs(water - baselineWater) / baselineWater;
-                                                                            bool passed = drift <= Math.Max(host.Config.conservationTolerance * 5f, 0.1f);
-                                                                            Complete(passed, passed ? $"Fields finite; tracked water drift {drift:P2}." : $"Tracked water drift {drift:P2} exceeds tolerance.");
+                                                                            double signedDrift = (water - baselineWater) / baselineWater;
+                                                                            float duplicationLimit = Mathf.Max(host.Config.conservationTolerance, 0.02f);
+                                                                            float sinkLimit = Mathf.Max(host.Config.conservationTolerance * 5f, 0.1f);
+                                                                            if (signedDrift > duplicationLimit)
+                                                                            {
+                                                                                Complete(false, $"Positive tracked water drift {signedDrift:P2} (duplication).");
+                                                                                return;
+                                                                            }
+                                                                            if (signedDrift < -sinkLimit)
+                                                                            {
+                                                                                Complete(false, $"Tracked water sink {-signedDrift:P2} exceeds tolerance.");
+                                                                                return;
+                                                                            }
+                                                                            Complete(true, $"Fields finite; tracked water drift {signedDrift:P2}.");
                                                                         });
                                                                     });
                                                                 });

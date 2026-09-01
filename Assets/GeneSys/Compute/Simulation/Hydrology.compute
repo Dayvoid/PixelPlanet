@@ -69,6 +69,7 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 
 bool IsExposedSurface(int2 cell, uint material)
 {
+    if (cell.y >= _GridSize.y - 1) return false;
     uint above = M(cell + int2(0, 1));
     return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
 }
@@ -265,28 +266,32 @@ void GeothermalDischarge(uint3 id : SV_DispatchThreadID)
     float phase = frac((float)_Tick / cooldownTicks + Hash01(cell.x * 19349669u + cell.y * 83492791u + (uint)_Tick));
     bool geyserReady = phase > 0.92;
 
+    float waterCp = max(0.001, D(9u).transport.y);
+    float hostCp = max(0.001, D(material).transport.y);
+
     if (exposed && aux.y > _HydrologyB.x && hotBelow > _HydrologyB.z && aux.w > 0.35 && geyserReady)
     {
         float burst = min(aux.y, _HydrologyB.w * _DeltaTime * 3.0);
         aux.y -= burst;
-        state.z += burst * 0.65;
-        aux.x += burst * 0.35;
-        state.x += burst * 40.0;
-        state.y += burst * 0.4;
+        float steam = burst * 0.35;
+        float liquid = burst - steam;
+        state.z += liquid;
+        aux.x += steam;
+        state.x = MixTowardTemperature(state.x, hostCp, hotBelow, burst, waterCp);
+        state.x -= WaterLatentHeatDelta(steam, _WeatherE.w, 0.8);
         flow.y += burst * 4.0;
     }
 
-    if (material == 9u && (belowMat == 6u || belowMat == 5u) && hotBelow > 200.0 && aux.w > 0.25)
+    if ((material == 9u || material == 10u) && (belowMat == 6u || belowMat == 5u) && hotBelow > 200.0)
     {
         float vent = min(state.z, _GeologyB.x * _DeltaTime);
-        // The steam that leaves comes out of this cell's liquid rather than out of nowhere.
         float steam = vent * 0.15;
         state.z -= steam;
         aux.x += steam;
-        state.x += vent * 35.0;
+        state.x = MixTowardTemperature(state.x, hostCp, hotBelow, vent, waterCp);
+        state.x -= WaterLatentHeatDelta(steam, _WeatherE.w, 0.8);
         aux.z += vent * _GeologyB.y;
         flow.y += vent * 1.5;
-        state.y += vent * 0.1;
     }
 
     Write(cell, material, state, flow, aux, ecology, combustion);

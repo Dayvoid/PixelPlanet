@@ -66,6 +66,32 @@ namespace GeneSys.Tests
             Assert.That(done, Is.True);
         }
 
+        private static IEnumerator ReadMaterialsStateAux(SimulationHost host, Action<uint[], Vector4[], Vector4[]> consume)
+        {
+            bool done = false;
+            bool failed = false;
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            {
+                if (materialRequest.hasError) { failed = true; done = true; return; }
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                {
+                    if (stateRequest.hasError) { failed = true; done = true; return; }
+                    Vector4[] states = stateRequest.GetData<Vector4>().ToArray();
+                    AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
+                    {
+                        if (auxRequest.hasError) { failed = true; done = true; return; }
+                        consume(materials, states, auxRequest.GetData<Vector4>().ToArray());
+                        done = true;
+                    });
+                });
+            });
+            for (int i = 0; i < 240 && !done; i++)
+                yield return null;
+            Assert.That(failed, Is.False);
+            Assert.That(done, Is.True);
+        }
+
         private static IEnumerator ReadMaterialsAndState(SimulationHost host, Action<uint[], Vector4[]> consume)
         {
             bool done = false;
@@ -994,6 +1020,160 @@ namespace GeneSys.Tests
             Assert.That(after, Is.EqualTo(before + 50f).Within(0.1f));
 
             RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator FaultedValleyMagmaContactConservesWater()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+
+            double water1 = 0d;
+            float maxWaterTemp1 = 0f;
+            float maxAirTemp1 = 0f;
+            uint[] materials1 = null;
+            yield return RunFaultedValleyCase(host, 1, (water, waterTemp, airTemp, mats) =>
+            {
+                water1 = water;
+                maxWaterTemp1 = waterTemp;
+                maxAirTemp1 = airTemp;
+                materials1 = mats;
+            });
+
+            double water1b = 0d;
+            uint[] materials1b = null;
+            yield return RunFaultedValleyCase(host, 1, (water, _, __, mats) =>
+            {
+                water1b = water;
+                materials1b = mats;
+            });
+            Assert.That(materials1b, Is.EqualTo(materials1));
+            Assert.That(water1b, Is.EqualTo(water1).Within(0.01d));
+
+            double water4 = 0d;
+            float maxWaterTemp4 = 0f;
+            float maxAirTemp4 = 0f;
+            yield return RunFaultedValleyCase(host, 4, (water, waterTemp, airTemp, _) =>
+            {
+                water4 = water;
+                maxWaterTemp4 = waterTemp;
+                maxAirTemp4 = airTemp;
+            });
+
+            Assert.That(water4, Is.EqualTo(water1).Within(Math.Max(0.05d, water1 * 0.02d)));
+            Assert.That(maxWaterTemp4, Is.EqualTo(maxWaterTemp1).Within(12f));
+            Assert.That(maxAirTemp4, Is.EqualTo(maxAirTemp1).Within(12f));
+
+            host.Config.materialSubsteps = 1;
+            RestoreStressIsolation(host);
+        }
+
+        private static IEnumerator RunFaultedValleyCase(
+            SimulationHost host,
+            int substeps,
+            Action<double, float, float, uint[]> consume)
+        {
+            ConfigureStressIsolation(host);
+            host.Config.seed = 77113;
+            host.Config.gravityStrength = 1f;
+            host.Config.runoffRate = 1f;
+            host.Config.pondingRate = 0.4f;
+            host.Config.hydrothermalStrength = 0.8f;
+            host.Config.geyserDischargeRate = 0f;
+            host.Config.volcanicCooling = 0f;
+            host.Config.magmaEruption = 0f;
+            host.Config.densityExchangeRate = 0f;
+            host.Config.materialSubsteps = substeps;
+            host.Config.slowPassInterval = 1;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 10, height - 16);
+            PaintFaultedValley(host, x, bedY);
+            yield return Step(host, 1);
+
+            double waterBefore = 0d;
+            float magmaTemp = 0f;
+            yield return ReadMaterialsStateAux(host, (mats, states, aux) =>
+            {
+                waterBefore = TrackedWater(states, aux);
+                magmaTemp = states[bedY * width + x].x;
+                Assert.That(mats[bedY * width + x], Is.EqualTo(MaterialIds.Magma));
+                Assert.That(mats[(bedY + 1) * width + x] == MaterialIds.Water || states[(bedY + 1) * width + x].z > 0.2f, Is.True);
+            });
+            Assert.That(waterBefore, Is.GreaterThan(1d));
+
+            yield return Step(host, 80);
+
+            double waterAfter = 0d;
+            float maxWaterTemp = float.MinValue;
+            float maxAirTemp = float.MinValue;
+            uint[] materials = null;
+            yield return ReadMaterialsStateAux(host, (mats, states, aux) =>
+            {
+                materials = (uint[])mats.Clone();
+                waterAfter = TrackedWater(states, aux);
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    Assert.That(float.IsFinite(states[i].x) && float.IsFinite(states[i].y) && float.IsFinite(states[i].z), Is.True);
+                    Assert.That(float.IsFinite(aux[i].x) && float.IsFinite(aux[i].y), Is.True);
+                    if (mats[i] == MaterialIds.Water || mats[i] == MaterialIds.Ice)
+                        maxWaterTemp = Mathf.Max(maxWaterTemp, states[i].x);
+                    if (mats[i] == MaterialIds.Air || mats[i] == MaterialIds.Vapor)
+                        maxAirTemp = Mathf.Max(maxAirTemp, states[i].x);
+                }
+            });
+
+            Assert.That(waterAfter, Is.LessThanOrEqualTo(waterBefore + Math.Max(0.05d, waterBefore * 0.01d)),
+                $"Faulted valley gained water ({waterBefore:F3} → {waterAfter:F3}) at {substeps} substeps.");
+            Assert.That(maxWaterTemp, Is.LessThanOrEqualTo(Mathf.Max(magmaTemp, 850f) + 5f));
+            Assert.That(maxAirTemp, Is.LessThanOrEqualTo(Mathf.Max(magmaTemp, 850f) + 5f));
+            consume(waterAfter, maxWaterTemp, maxAirTemp, materials);
+        }
+
+        private static void PaintFaultedValley(SimulationHost host, int x, int bedY)
+        {
+            int height = host.Grid.radialResolution;
+            int top = Mathf.Min(bedY + 8, height - 2);
+            for (int dx = -6; dx <= 6; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                int floor = bedY + Mathf.Max(0, Mathf.Abs(dx) - 1);
+                for (int y = bedY - 2; y <= top; y++)
+                {
+                    if (y < floor)
+                        Paint(host, xx, y, y == floor - 1 && Mathf.Abs(dx) <= 1 ? MaterialIds.Magma : MaterialIds.Rock);
+                    else if (y == floor && Mathf.Abs(dx) <= 1)
+                        Paint(host, xx, y, MaterialIds.Water);
+                    else
+                        Paint(host, xx, y, MaterialIds.Air);
+                }
+            }
+            Paint(host, x, bedY, MaterialIds.Magma);
+            PaintHeat(host, x, bedY, 900f);
+            Paint(host, x, bedY + 1, MaterialIds.Water);
+            PaintWater(host, x, bedY + 1, -100f);
+            PaintWater(host, x, bedY + 1, 1f);
+            Paint(host, x - 1, bedY + 1, MaterialIds.Water);
+            PaintWater(host, x - 1, bedY + 1, -100f);
+            PaintWater(host, x - 1, bedY + 1, 0.8f);
+            Paint(host, x + 1, bedY + 1, MaterialIds.Water);
+            PaintWater(host, x + 1, bedY + 1, -100f);
+            PaintWater(host, x + 1, bedY + 1, 0.8f);
+            for (int dx = -2; dx <= 2; dx++)
+                PaintWater(host, host.Grid.WrapTheta(x + dx), bedY + 4, 0.35f);
+        }
+
+        private static double TrackedWater(Vector4[] states, Vector4[] aux)
+        {
+            double total = 0d;
+            for (int i = 0; i < states.Length; i++)
+                total += Math.Max(0d, states[i].z) + Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
+            return total;
         }
     }
 }

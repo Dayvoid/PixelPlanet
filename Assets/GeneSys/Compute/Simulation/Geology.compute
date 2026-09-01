@@ -162,19 +162,6 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    uint aboveMat = ReadMaterial(cell + int2(0, 1));
-    if (magma && (aboveMat == 9u || aboveMat == 10u))
-    {
-        float4 aboveState = ReadState(cell + int2(0, 1));
-        float4 aboveAux = ReadAux(cell + int2(0, 1));
-        float heatTransfer = min(aboveState.z, _GeologyB.x * _DeltaTime);
-        aboveState.x += heatTransfer * 60.0;
-        aboveAux.x += heatTransfer * 0.25;
-        aboveAux.z += heatTransfer * _GeologyB.y;
-        flow.y += heatTransfer;
-        WriteCell(Cell(cell + int2(0, 1)), aboveMat, aboveState, ReadFlow(cell + int2(0, 1)), aboveAux, ReadEcology(cell + int2(0, 1)), ReadCombustion(cell + int2(0, 1)), ReadLife(cell + int2(0, 1)), ReadGenome(cell + int2(0, 1)));
-    }
-
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 

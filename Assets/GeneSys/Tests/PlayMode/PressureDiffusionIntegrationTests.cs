@@ -314,15 +314,14 @@ namespace GeneSys.Tests
                 rigidNeighbor2 = states[y * width + rigidX + 1].y;
             });
 
-            float gasSpread = gasNeighbor2 - gasNeighbor;
-            float fluidSpread = fluidNeighbor2 - fluidNeighbor;
-            float porousSpread = porousNeighbor2 - porousNeighbor;
-            float rigidSpread = rigidNeighbor2 - rigidNeighbor;
-
-            Assert.That(gasSpread, Is.GreaterThan(fluidSpread - 0.002f));
-            Assert.That(fluidSpread, Is.GreaterThan(porousSpread));
-            Assert.That(porousSpread, Is.GreaterThanOrEqualTo(rigidSpread - 0.01f));
+            // Compare how far each category has actually carried the pulse after the
+            // same window. Fast gas can already be near equilibrium by the first
+            // post-paint sample, so neighbor deltas after that are not ordered.
+            Assert.That(gasNeighbor2, Is.GreaterThan(fluidNeighbor2 - 0.002f));
+            Assert.That(fluidNeighbor2, Is.GreaterThan(porousNeighbor2));
+            Assert.That(porousNeighbor2, Is.GreaterThanOrEqualTo(rigidNeighbor2 - 0.01f));
             Assert.That(gasCenter2, Is.LessThan(gasCenter));
+            Assert.That(gasCenter2, Is.LessThan(fluidCenter2 + 0.002f));
             Assert.That(rigidCenter - rigidCenter2, Is.LessThan(gasCenter - gasCenter2));
         }
 
@@ -449,6 +448,148 @@ namespace GeneSys.Tests
             Assert.That(leftAfter, Is.GreaterThan(leftBefore));
             Assert.That(rightAfter, Is.GreaterThan(rightBefore));
             Assert.That(centerAfter, Is.GreaterThan(0.5f));
+        }
+
+        [UnityTest]
+        public IEnumerator HighGradientDoesNotInventPressure()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisablePressureSourcesAndDecay(host);
+            ConfigureCategoryDiffusivities(host, gas: 1f, fluid: 0.01f, porous: 0.01f, rigid: 0.01f);
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.92f), 4, host.Grid.radialResolution - 4);
+            FillBlock(host, x - 2, x + 2, y - 1, y + 1, MaterialIds.Air);
+            yield return Step(host, 1);
+
+            yield return ReadMaterialsAndState(host, (_, states) =>
+            {
+                for (int yy = y - 1; yy <= y + 1; yy++)
+                for (int xx = x - 2; xx <= x + 2; xx++)
+                {
+                    float current = states[yy * width + xx].y;
+                    if (current > 0f)
+                        PaintPressure(host, xx, yy, -current);
+                }
+            });
+            yield return Step(host, 1);
+
+            const float high = 8f;
+            const float low = 0.05f;
+            PaintPressure(host, x, y, high);
+            PaintPressure(host, x + 1, y, low);
+            yield return Step(host, 1);
+
+            float donorBefore = 0f;
+            float receiverBefore = 0f;
+            float totalBefore = 0f;
+            yield return ReadMaterialsAndState(host, (_, states) =>
+            {
+                donorBefore = states[y * width + x].y;
+                receiverBefore = states[y * width + (x + 1)].y;
+                totalBefore = SumPressure(states, width, x - 2, x + 2, y - 1, y + 1);
+            });
+
+            yield return Step(host, 1);
+
+            float donorAfter = 0f;
+            float receiverAfter = 0f;
+            float totalAfter = 0f;
+            yield return ReadMaterialsAndState(host, (_, states) =>
+            {
+                donorAfter = states[y * width + x].y;
+                receiverAfter = states[y * width + (x + 1)].y;
+                totalAfter = SumPressure(states, width, x - 2, x + 2, y - 1, y + 1);
+            });
+
+            Assert.That(totalAfter, Is.EqualTo(totalBefore).Within(0.05f));
+            Assert.That(receiverAfter - receiverBefore, Is.LessThanOrEqualTo(donorBefore * 0.25f + 0.02f));
+            Assert.That(donorBefore - donorAfter, Is.GreaterThanOrEqualTo(receiverAfter - receiverBefore - 0.02f));
+            Assert.That(donorAfter, Is.GreaterThanOrEqualTo(-0.001f));
+            Assert.That(receiverAfter, Is.GreaterThanOrEqualTo(-0.001f));
+        }
+
+        [UnityTest]
+        public IEnumerator AlternatingThermalGradientDoesNotPumpPressure()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisablePressureSourcesAndDecay(host);
+            host.Config.thermalRate = 1f;
+            host.Config.pressureRate = 0f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.92f), 4, host.Grid.radialResolution - 4);
+            FillBlock(host, x - 2, x + 2, y - 1, y + 1, MaterialIds.Rock);
+            Paint(host, x, y, MaterialIds.Air);
+            Paint(host, x + 1, y, MaterialIds.Air);
+            yield return Step(host, 1);
+
+            yield return ReadMaterialsAndState(host, (_, states) =>
+            {
+                for (int xx = x; xx <= x + 1; xx++)
+                {
+                    float pressure = states[y * width + xx].y;
+                    if (pressure > 0f)
+                        PaintPressure(host, xx, y, -pressure);
+                }
+            });
+            yield return Step(host, 1);
+            PaintPressure(host, x, y, 1f);
+            PaintPressure(host, x + 1, y, 1f);
+            yield return Step(host, 1);
+
+            float totalBefore = 0f;
+            yield return ReadMaterialsAndState(host, (_, states) =>
+            {
+                totalBefore = states[y * width + x].y + states[y * width + (x + 1)].y;
+            });
+
+            for (int i = 0; i < 16; i++)
+            {
+                bool flip = (i & 1) == 0;
+                yield return ReadMaterialsAndState(host, (_, states) =>
+                {
+                    float left = states[y * width + x].x;
+                    float right = states[y * width + (x + 1)].x;
+                    float leftTarget = flip ? 40f : 0f;
+                    float rightTarget = flip ? 0f : 40f;
+                    PaintHeat(host, x, y, leftTarget - left);
+                    PaintHeat(host, x + 1, y, rightTarget - right);
+                });
+                yield return Step(host, 1);
+            }
+
+            float totalAfter = 0f;
+            yield return ReadMaterialsAndState(host, (_, states) =>
+            {
+                totalAfter = states[y * width + x].y + states[y * width + (x + 1)].y;
+                Assert.That(states[y * width + x].y, Is.GreaterThanOrEqualTo(-0.001f));
+                Assert.That(states[y * width + (x + 1)].y, Is.GreaterThanOrEqualTo(-0.001f));
+            });
+            Assert.That(totalAfter, Is.EqualTo(totalBefore).Within(0.35f),
+                $"Alternating thermal gradient pumped pressure from {totalBefore:F3} to {totalAfter:F3}.");
+        }
+
+        private static void PaintHeat(SimulationHost host, int x, int y, float amount)
+        {
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(x, y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(1f, amount, 0f, 0f)
+            });
         }
     }
 }

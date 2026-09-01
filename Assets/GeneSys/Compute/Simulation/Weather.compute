@@ -65,8 +65,26 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 
 bool IsExposedSurface(int2 cell, uint material)
 {
+    if (cell.y >= _GridSize.y - 1) return false;
     uint above = M(cell + int2(0, 1));
     return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
+}
+
+float CellEffectivePressure(float4 state, float4 aux)
+{
+    return EffectivePressure(state.y, aux.x, _WeatherC.x);
+}
+
+float SurfaceAirHeatEnergy(int2 surfaceCell, int2 airCell)
+{
+    uint surfaceMat = M(surfaceCell);
+    uint airMat = M(airCell);
+    if (!IsExposedSurface(surfaceCell, surfaceMat) || !IsAtmosphereCell(airCell, airMat))
+        return 0.0;
+    float surfaceCp = max(0.001, D(surfaceMat).transport.y);
+    float airCp = max(0.001, D(airMat).transport.y);
+    float Qeq = (S(surfaceCell).x - S(airCell).x) * (airCp * surfaceCp) / max(1e-5, airCp + surfaceCp);
+    return Qeq * saturate(_WeatherF.x * _DeltaTime);
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
@@ -136,22 +154,16 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     float cooling = (state.x - _WeatherA.y) * _WeatherA.z * (1.0 - insolation) * exposure * 0.01;
     state.x += (heating - cooling) * _DeltaTime;
 
-    if (atmosphere)
+    float heatCapacity = max(0.001, definition.transport.y);
+    if (atmosphere && cell.y > 0)
     {
-        state.y += aux.x * _WeatherC.x * _DeltaTime;
-
-        // Sensible heat exchange between exposed surface and the lowest Air cell.
-        if (cell.y > 0)
-        {
-            int2 below = cell + int2(0, -1);
-            uint belowMaterial = M(below);
-            if (IsExposedSurface(below, belowMaterial))
-            {
-                float surfaceTemp = S(below).x;
-                float exchange = (surfaceTemp - state.x) * saturate(_WeatherF.x * _DeltaTime);
-                state.x += exchange;
-            }
-        }
+        float Q = SurfaceAirHeatEnergy(cell + int2(0, -1), cell);
+        state.x += Q / heatCapacity;
+    }
+    else if (IsExposedSurface(cell, material) && cell.y < _GridSize.y - 1)
+    {
+        float Q = SurfaceAirHeatEnergy(cell, cell + int2(0, 1));
+        state.x -= Q / heatCapacity;
     }
 
     Write(cell, material, state, flow, aux, ecology, combustion);
@@ -182,14 +194,16 @@ void AtmosphericContinuity(uint3 id : SV_DispatchThreadID)
         // neighbor differences without an extra 1/dr amplification by radial resolution.
         float angularDiv = ((fR.x * faces.y) - (fL.x * faces.x)) * 0.5 * tanW;
         float radialDiv = ((fU.y * faces.w) - (fD.y * faces.z)) * 0.5;
-        // Blocked radial faces convert attempted outflow into local convergence (high pressure).
-        float blockedSink =
-            (1.0 - faces.z) * max(0.0, -flow.y) +
-            (1.0 - faces.w) * max(0.0, flow.y);
-        float divergence = angularDiv + radialDiv - blockedSink;
+        float divergence = angularDiv + radialDiv;
         float compress = max(0.0, _WeatherF.z);
         float dp = clamp(-divergence * compress * _DeltaTime, -2.0, 2.0);
         state.y = max(0.0, state.y + dp);
+        // No-flux solids: reflect/damp the normal so one wall impact is not reintegrated
+        // as compression on every later tick.
+        if (faces.z < 0.5)
+            flow.y = max(0.0, flow.y);
+        if (faces.w < 0.5)
+            flow.y = min(0.0, flow.y);
     }
 
     Write(cell, material, state, flow, aux, ecology, combustion);
@@ -210,10 +224,10 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
     float4 faces = AtmosphereFaceMask(cell);
     float cfl = saturate(_WeatherF.w);
 
-    float pressureLeft = S(cell + int2(-1, 0)).y;
-    float pressureRight = S(cell + int2(1, 0)).y;
-    float pressureBelow = cell.y > 0 ? S(cell + int2(0, -1)).y : state.y;
-    float pressureAbove = cell.y < _GridSize.y - 1 ? S(cell + int2(0, 1)).y : state.y;
+    float pressureLeft = CellEffectivePressure(S(cell + int2(-1, 0)), A(cell + int2(-1, 0)));
+    float pressureRight = CellEffectivePressure(S(cell + int2(1, 0)), A(cell + int2(1, 0)));
+    float pressureBelow = cell.y > 0 ? CellEffectivePressure(S(cell + int2(0, -1)), A(cell + int2(0, -1))) : CellEffectivePressure(state, aux);
+    float pressureAbove = cell.y < _GridSize.y - 1 ? CellEffectivePressure(S(cell + int2(0, 1)), A(cell + int2(0, 1))) : CellEffectivePressure(state, aux);
 
     float tanW = TangentialEdgeWeight(cell.y, _GridSize.y);
     float2 gradient = float2(
@@ -374,12 +388,6 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
                 float neighborVapor = max(0.0, neighborAux.x);
                 float vent = min(neighborVapor, neighborVapor * saturate(0.35 + advectionRate) * _DeltaTime);
                 vaporIn += vent;
-
-                // Couple venting to a thermal plume in the first Air cell.
-                float surfaceTemp = neighborState.x;
-                float plumeMix = saturate(_WeatherF.x * 0.5 * _DeltaTime);
-                state.x = lerp(state.x, surfaceTemp, plumeMix);
-
                 sootSettled += min(soot, soot * sootSettle * _DeltaTime);
             }
         }
@@ -458,14 +466,13 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
 
     if (atmosphere)
     {
-        float capacity = LocalVaporCapacity(state.x, radius, state.y);
+        float capacity = LocalVaporCapacity(state.x, radius, CellEffectivePressure(state, aux));
         if (aux.x > capacity)
         {
             float excess = aux.x - capacity;
             float condensation = min(excess, _WeatherB.z * max(excess, 0.05) * _DeltaTime);
             aux.x -= condensation;
             state.z += condensation;
-            state.y = max(0.0, state.y - condensation * _WeatherC.x);
             state.x += WaterLatentHeatDelta(condensation, _WeatherE.w, 0.8);
         }
     }
@@ -537,7 +544,7 @@ float CloudPrecipTransfer(int2 source)
     if (PrecipitationAirReceiver(dest, destMat) && max(0.0, S(dest).z) > retain)
         return 0.0;
     float eq = PressureEquilibriumAt(source.y, _GridSize.y, _PressureA.y, _PressureA.z);
-    float ready = PrecipitationMass(cloud, retain, state.x, state.y, eq, F(source).y, _WeatherB.w, _WeatherE.z, _DeltaTime);
+    float ready = PrecipitationMass(cloud, retain, state.x, CellEffectivePressure(state, A(source)), eq, F(source).y, _WeatherB.w, _WeatherE.z, _DeltaTime);
     uint decision = (uint)source.x * 73856093u + (uint)source.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + 41u;
     return PrecipitationEmitMass(ready, max(0.0, cloud - retain), PrecipitationAirReceiver(dest, destMat), decision);
 }
@@ -558,7 +565,7 @@ void Precipitation(uint3 id : SV_DispatchThreadID)
 
     float outgoing = CloudPrecipTransfer(cell);
     float incoming = 0.0;
-    int2 incomingSrc = cell + int2(0, 1);
+    float incomingHeat = 0.0;
     if (cell.y < _GridSize.y - 1)
     {
         int2 candidates[3] = {
@@ -576,7 +583,7 @@ void Precipitation(uint3 id : SV_DispatchThreadID)
             if (mass > 1e-8)
             {
                 incoming += mass;
-                incomingSrc = src;
+                incomingHeat += S(src).x * mass;
             }
         }
     }
@@ -585,27 +592,27 @@ void Precipitation(uint3 id : SV_DispatchThreadID)
     {
         state.z = max(0.0, state.z - outgoing);
         flow.y -= outgoing;
-        int2 dest = CloudPrecipReceiver(cell);
-        uint destMat = M(dest);
-        if (PrecipitationAirReceiver(dest, destMat))
-            aux.x += max(0.0, A(dest).x);
     }
 
     if (incoming > 1e-8)
     {
-        float4 src = S(incomingSrc);
         if (PrecipitationAirReceiver(cell, material))
         {
             float residualCloud = max(0.0, state.z);
-            aux.x = 0.0;
+            float destCp = max(0.001, D(1u).transport.y);
+            float destMassHeat = destCp + residualCloud * waterCp;
+            float srcMassHeat = incoming * waterCp;
+            state.x = (state.x * destMassHeat + incomingHeat * waterCp) / max(1e-5, destMassHeat + srcMassHeat);
             state.z = incoming + residualCloud;
-            material = LiquidPixelId(src.x, hysteresis);
-            state.x = MixTemperature(state.x, max(0.001, D(1u).transport.y), src.x, incoming, waterCp);
+            material = LiquidPixelId(state.x, hysteresis);
         }
         else
         {
+            float destCp = max(0.001, D(material).transport.y);
+            float destMassHeat = destCp + max(0.0, state.z) * waterCp;
+            float srcMassHeat = incoming * waterCp;
+            state.x = (state.x * destMassHeat + incomingHeat * waterCp) / max(1e-5, destMassHeat + srcMassHeat);
             state.z += incoming;
-            state.x = MixTemperature(state.x, max(0.001, D(material).transport.y), src.x, incoming, waterCp);
         }
     }
 

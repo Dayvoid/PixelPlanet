@@ -66,6 +66,7 @@ int2 C(int2 value) { return ClampCell(value, _GridSize); }
 uint M(int2 value) { return ReadMaterial(value); }
 float4 S(int2 value) { return ReadState(value); }
 MaterialGpuData D(uint material) { return Mat(material); }
+float HarmonicMean(float a, float b);
 
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 
@@ -180,16 +181,34 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
     CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
     MaterialGpuData definition = Mat(material);
 
-    float neighborTemperature = ReadState(cell + int2(-1, 0)).x + ReadState(cell + int2(1, 0)).x
-        + ReadState(cell + int2(0, -1)).x + ReadState(cell + int2(0, 1)).x;
-    neighborTemperature *= 0.25;
-    float conductivity = definition.transport.x;
     float wetCapacity = max(0.0, aux.y) * max(0.001, Mat(9u).transport.y) * 0.75;
     float heatCapacity = max(0.001, definition.transport.y + wetCapacity);
-    float deltaTemperature = (neighborTemperature - state.x) * conductivity * _Mechanics.y * _DeltaTime / heatCapacity;
-    state.x += clamp(deltaTemperature, -25.0, 25.0);
+    float energy = 0.0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 offset = offsets[i];
+        if (offset.y != 0)
+        {
+            int neighborY = cell.y + offset.y;
+            if (neighborY < 0 || neighborY >= _GridSize.y) continue;
+        }
 
-    float expansion = abs(deltaTemperature) * definition.phase.z;
+        int2 neighbor = C(cell + offset);
+        uint neighborMaterial = ReadMaterial(neighbor);
+        float4 neighborState = ReadState(neighbor);
+        float4 neighborAux = ReadAux(neighbor);
+        MaterialGpuData neighborDef = Mat(neighborMaterial);
+        float neighborWet = max(0.0, neighborAux.y) * max(0.001, Mat(9u).transport.y) * 0.75;
+        float neighborCapacity = max(0.001, neighborDef.transport.y + neighborWet);
+        float edgeConductance = HarmonicMean(max(0.0, definition.transport.x), max(0.0, neighborDef.transport.x));
+        energy += FaceHeatEnergy(state.x, heatCapacity, neighborState.x, neighborCapacity, edgeConductance, _Mechanics.y, _DeltaTime);
+    }
+
+    float deltaTemperature = clamp(energy / heatCapacity, -25.0, 25.0);
+    state.x += deltaTemperature;
+    float expansion = deltaTemperature * definition.phase.z;
     state.y = max(0.0, state.y + expansion - state.y * _Mechanics.w * 0.01 * _DeltaTime);
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
@@ -210,7 +229,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     float equilibrium = PressureEquilibriumAt(cell.y, _GridSize.y, _PressureA.y, _PressureA.z);
     float boilPoint = definition.phase.y;
     if (material == 9u || material == 10u)
-        boilPoint = WaterBoilTemperature(state.y, equilibrium, _WeatherE.z);
+        boilPoint = WaterBoilTemperature(EffectivePressure(state.y, aux.x, _WeatherC.x), equilibrium, _WeatherE.z);
 
     // Legacy Vapor pixels migrate to Air while preserving vapor/cloud mass fields.
     if (material == 11u)
@@ -236,7 +255,6 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         float boiled = max(0.0, state.z);
         aux.x += boiled;
         state.z = 0.0;
-        state.y += boiled * _WeatherC.x;
         state.x -= WaterLatentHeatDelta(boiled, _WeatherE.w, 2.0);
         material = 1u;
     }
@@ -545,7 +563,10 @@ void PressureDiffusion(uint3 id : SV_DispatchThreadID)
         float edgeConductance = HarmonicMean(selfConductance, PressureConductance(neighborMaterial));
         float neighborAnomaly = neighborState.y - PressureEquilibrium(neighbor.y);
         float flux = edgeConductance * (neighborAnomaly - selfAnomaly) * alpha * 0.25;
-        if (flux < 0.0)
+        float neighborBudget = max(0.0, neighborState.y) * 0.25;
+        if (flux > 0.0)
+            flux = min(flux, neighborBudget);
+        else
             flux = max(flux, -edgeBudget);
         delta += flux;
     }

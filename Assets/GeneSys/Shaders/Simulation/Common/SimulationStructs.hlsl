@@ -88,8 +88,10 @@
 // Purely local moves between one cell's own reservoirs may use running values freely.
 //
 // Pressure (state.y):
-//   Local sources/sinks (thermal expansion, mantle feed, vapor, brushes) still write absolute
-//   pressure. AtmosphericContinuity adds divergence feedback so rising columns lower pressure
+//   Local sources/sinks (thermal expansion, mantle feed, brushes) write dry/absolute pressure.
+//   Humidity contributes a derived partial pressure (aux.x * vaporPressureScale) at read time
+//   for atmospheric gradients and saturation capacity; it is not integrated into state.y.
+//   AtmosphericContinuity adds divergence feedback so rising columns lower pressure
 //   and converging columns raise it, enabling return flow. PressureDiffusion then transports
 //   the anomaly relative to a radial equilibrium profile
 //   min(pressureEquilibriumMaximum, (1 - radius) * pressureEquilibriumGradient).
@@ -832,6 +834,28 @@ float MixTemperature(float destTemp, float destHeatCapacity, float sourceTemp, f
     float destMassHeat = max(0.001, destHeatCapacity);
     float srcMassHeat = max(0.0, transferredMass) * max(0.001, waterHeatCapacity);
     return (destTemp * destMassHeat + sourceTemp * srcMassHeat) / (destMassHeat + srcMassHeat);
+}
+
+float MixTowardTemperature(float destTemp, float destHeatCapacity, float sourceTemp, float transferredMass, float waterHeatCapacity)
+{
+    float mixed = MixTemperature(destTemp, destHeatCapacity, sourceTemp, transferredMass, waterHeatCapacity);
+    return sourceTemp >= destTemp ? min(mixed, sourceTemp) : max(mixed, sourceTemp);
+}
+
+float EffectivePressure(float pressure, float vapor, float vaporPressureScale)
+{
+    return max(0.0, pressure) + max(0.0, vapor) * max(0.0, vaporPressureScale);
+}
+
+float FaceHeatEnergy(float selfTemp, float selfHeatCapacity, float neighborTemp, float neighborHeatCapacity, float edgeConductance, float thermalRate, float dt)
+{
+    float selfCp = max(0.001, selfHeatCapacity);
+    float neighborCp = max(0.001, neighborHeatCapacity);
+    float Q = (neighborTemp - selfTemp) * max(0.0, edgeConductance) * max(0.0, thermalRate) * max(0.0, dt) * 0.25;
+    float Qeq = (neighborTemp - selfTemp) * (selfCp * neighborCp) / max(1e-5, selfCp + neighborCp);
+    if (Qeq >= 0.0)
+        return min(max(0.0, Q), Qeq);
+    return max(min(0.0, Q), Qeq);
 }
 
 #define WATER_MELT_TEMP 0.0

@@ -1546,5 +1546,130 @@ namespace GeneSys.Tests
                 Assert.That(TrackedWater(states, aux), Is.EqualTo(waterBefore).Within(Math.Max(0.05d, waterBefore * 0.01d)));
             });
         }
+
+        [UnityTest]
+        public IEnumerator ShippingCliffValleySoakDoesNotRunAway()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            float floraGrowth = host.Config.floraGrowthRate;
+            float grassUptake = host.Config.grassWaterUptakeRate;
+            host.Config.seed = 44011;
+            host.Config.validationIntervalTicks = 100000;
+            host.Config.floraGrowthRate = 0f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Regenerate();
+            host.Clock.SetRunning(false);
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.62f), 12, height - 14);
+            int valleyTop = Mathf.Min(bedY + 10, height - 2);
+            PaintCliffValley(host, x, bedY);
+            yield return Step(host, 1);
+            yield return ReadGpuFields(host, (_, states, __) =>
+            {
+                for (int y = bedY - 1; y <= valleyTop; y++)
+                {
+                    for (int dx = -8; dx <= 8; dx++)
+                    {
+                        int xx = host.Grid.WrapTheta(x + dx);
+                        PaintField(host, xx, y, 1f, 18f - states[y * width + xx].x);
+                    }
+                }
+            });
+            yield return Step(host, 1);
+
+            double waterBefore = 0d;
+            float tempBefore = 0f;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                waterBefore = TrackedWater(states, aux);
+                tempBefore = MaxValleySurfaceTemperature(mats, states, width, x, bedY, valleyTop);
+            });
+            Assert.That(waterBefore, Is.GreaterThan(1d));
+
+            float peakTemp = tempBefore;
+            int risingTempStreak = 0;
+            float previousTemp = tempBefore;
+            for (int tick = 1; tick <= 80; tick++)
+            {
+                yield return Step(host, 1);
+                double water = 0d;
+                float temp = 0f;
+                bool finite = true;
+                yield return ReadGpuFields(host, (mats, states, aux) =>
+                {
+                    water = TrackedWater(states, aux);
+                    temp = MaxValleySurfaceTemperature(mats, states, width, x, bedY, valleyTop);
+                    for (int i = 0; i < states.Length; i++)
+                    {
+                        if (!float.IsFinite(states[i].x) || !float.IsFinite(aux[i].x))
+                            finite = false;
+                    }
+                });
+                Assert.That(finite, Is.True, $"Non-finite field at soak tick {tick}.");
+                Assert.That(water, Is.LessThanOrEqualTo(waterBefore + Math.Max(0.05d, waterBefore * 0.02d)),
+                    $"Positive tracked-water drift at soak tick {tick}: {waterBefore:F3} → {water:F3}.");
+                if (temp > previousTemp + 2.5f) risingTempStreak++;
+                else risingTempStreak = 0;
+                Assert.That(risingTempStreak, Is.LessThan(8),
+                    $"Valley surface temperature ran away at tick {tick} ({previousTemp:F2} → {temp:F2} C).");
+                peakTemp = Mathf.Max(peakTemp, temp);
+                previousTemp = temp;
+            }
+            Assert.That(peakTemp, Is.LessThan(120f),
+                $"Valley surface temperature peaked at {peakTemp:F1} C during the cliff/valley soak.");
+
+            host.Config.floraGrowthRate = floraGrowth;
+            host.Config.grassWaterUptakeRate = grassUptake;
+        }
+
+        private static void PaintCliffValley(SimulationHost host, int x, int bedY)
+        {
+            int height = host.Grid.radialResolution;
+            int top = Mathf.Min(bedY + 10, height - 2);
+            for (int dx = -8; dx <= 8; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                int floor = bedY + Mathf.Max(0, Mathf.Abs(dx) - 2);
+                for (int y = bedY - 1; y <= top; y++)
+                {
+                    if (y < floor)
+                        Paint(host, xx, y, MaterialIds.Rock);
+                    else if (y == floor && Mathf.Abs(dx) <= 2)
+                    {
+                        Paint(host, xx, y, MaterialIds.Water);
+                        PaintField(host, xx, y, 2f, -100f);
+                        PaintField(host, xx, y, 2f, 0.9f);
+                    }
+                    else
+                        Paint(host, xx, y, MaterialIds.Air);
+                }
+            }
+        }
+
+        private static float MaxValleySurfaceTemperature(uint[] mats, Vector4[] states, int width, int x, int bedY, int top)
+        {
+            float max = float.MinValue;
+            for (int y = bedY; y <= top; y++)
+            {
+                for (int dx = -8; dx <= 8; dx++)
+                {
+                    int xx = ((x + dx) % width + width) % width;
+                    uint id = mats[y * width + xx];
+                    if (id == MaterialIds.Core || id == MaterialIds.Mantle || id == MaterialIds.Magma)
+                        continue;
+                    if (id != MaterialIds.Air && id != MaterialIds.Water && id != MaterialIds.Ice
+                        && id != MaterialIds.Soil && id != MaterialIds.Sediment && id != MaterialIds.Ash)
+                        continue;
+                    max = Mathf.Max(max, states[y * width + xx].x);
+                }
+            }
+            return max;
+        }
     }
 }

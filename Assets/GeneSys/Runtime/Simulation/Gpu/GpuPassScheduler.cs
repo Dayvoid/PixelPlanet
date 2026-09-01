@@ -305,12 +305,13 @@ namespace GeneSys.Simulation.Gpu
             {
                 float subDt = deltaTime / config.materialSubsteps;
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("ThermalAndPressure"), subDt);
-                DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("LiquidDensityExchange"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotion"), subDt);
                 DispatchPass(geology, geology.FindKernel("EruptionMotion"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
             }
+
+            DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), deltaTime);
 
             if (Due(config.slowPassInterval))
                 DispatchPass(geology, geology.FindKernel("Volcanism"), CadenceDt(deltaTime, config.slowPassInterval));
