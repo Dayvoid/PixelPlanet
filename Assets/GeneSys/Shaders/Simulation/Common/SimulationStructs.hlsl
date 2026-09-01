@@ -891,7 +891,7 @@ uint WaterPhaseId(float temperature, uint current, float hysteresis)
 
 float WaterLatentHeatDelta(float mass, float latentScale, float strength)
 {
-    return clamp(max(0.0, mass) * max(0.0, latentScale) * strength, -8.0, 8.0);
+    return clamp(max(0.0, mass) * max(0.0, latentScale) * strength, -12.0, 12.0);
 }
 
 #ifndef PRECIP_MIN_DROP

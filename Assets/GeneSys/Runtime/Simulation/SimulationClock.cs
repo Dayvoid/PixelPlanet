@@ -22,7 +22,7 @@ namespace GeneSys.Simulation
         public void Reset() { accumulator = 0f; stepRequested = false; TickCount = 0; }
         public void SetTickCount(long value) { TickCount = Math.Max(0L, value); accumulator = 0f; }
 
-        public const int MaxTicksPerFrame = 4;
+        public const int MaxTicksPerFrame = 2;
 
         public int Advance(float unscaledDeltaTime, float ticksPerSecond, Action<float> tick)
         {
@@ -36,22 +36,38 @@ namespace GeneSys.Simulation
             }
             if (!IsRunning) return 0;
 
-            float dt = Mathf.Min(unscaledDeltaTime, 0.05f);
+            float dt = Mathf.Min(unscaledDeltaTime, 0.1f);
             accumulator += dt * Speed;
-            int maxTicksThisFrame = Mathf.Clamp(Mathf.CeilToInt(Speed * 2.5f), 1, MaxTicksPerFrame);
             int count = 0;
 
-            while (accumulator >= fixedDelta && count < maxTicksThisFrame)
+            if (Speed <= 1f)
             {
-                accumulator -= fixedDelta;
-                tick(fixedDelta);
-                TickCount++;
-                count++;
+                while (accumulator >= fixedDelta && count < MaxTicksPerFrame)
+                {
+                    accumulator -= fixedDelta;
+                    tick(fixedDelta);
+                    TickCount++;
+                    count++;
+                }
+                if (count == MaxTicksPerFrame)
+                    accumulator = Mathf.Min(accumulator, fixedDelta);
             }
-
-            if (count == maxTicksThisFrame)
-                accumulator = Mathf.Min(accumulator, fixedDelta * 2f);
-
+            else
+            {
+                float targetTicks = accumulator / fixedDelta;
+                if (targetTicks >= 1f)
+                {
+                    int stepsToRun = targetTicks >= 2f ? MaxTicksPerFrame : 1;
+                    float stepDt = Mathf.Min(accumulator / stepsToRun, fixedDelta * Speed);
+                    for (int i = 0; i < stepsToRun; i++)
+                    {
+                        tick(stepDt);
+                        TickCount++;
+                        count++;
+                    }
+                    accumulator = 0f;
+                }
+            }
             return count;
         }
     }

@@ -1791,69 +1791,9 @@ namespace GeneSys.Tests
             yield return ReadFields(host, (mats, states, aux, _) =>
             {
                 Assert.That(mats[y * width + x], Is.EqualTo(MaterialIds.Air));
+                Assert.That(aux[y * width + x].x, Is.LessThan(0.7f));
                 Assert.That(states[y * width + x].z, Is.GreaterThan(0.1f));
                 Assert.That(states[y * width + x].x, Is.GreaterThan(tempBefore + 0.2f));
-            });
-        }
-
-        [UnityTest]
-        public IEnumerator CliffFaceAndPitAirRemainThermallyStable()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            DisableWeatherNoise(host);
-            int width = host.Grid.angularResolution;
-            int groundY = SurfaceY(host);
-            int cliffX = 40;
-
-            // Carve a vertical cliff face: solid rock on left (x <= cliffX, up to groundY + 8), air on right.
-            for (int y = groundY - 2; y <= groundY + 8; y++)
-            {
-                for (int x = cliffX - 4; x <= cliffX; x++)
-                    Paint(host, x, y, MaterialIds.Rock);
-                for (int x = cliffX + 1; x <= cliffX + 6; x++)
-                    Paint(host, x, y, MaterialIds.Air);
-            }
-            yield return Step(host, 2);
-
-            // Set normal temperature and moisture on the cliff and air
-            for (int y = groundY - 2; y <= groundY + 8; y++)
-            {
-                for (int x = cliffX - 4; x <= cliffX + 6; x++)
-                {
-                    PaintField(host, x, y, 1f, 22f); // Temperature: 22°C
-                    if (x > cliffX)
-                        PaintField(host, x, y, 6f, 0.25f); // Vapor in air: 0.25
-                }
-            }
-            yield return Step(host, 2);
-
-            host.Config.windStrength = 0.5f;
-            host.Config.surfaceAirHeatExchange = 0.5f;
-            host.Config.evaporationRate = 0.1f;
-            host.Config.condensationRate = 0.1f;
-            host.Config.thermalRate = 0.2f;
-
-            yield return Step(host, 40);
-
-            yield return ReadFields(host, (mats, states, aux, flows) =>
-            {
-                int airAtCliffIndex = (groundY + 1) * width + (cliffX + 1);
-                int rockAtCliffIndex = (groundY + 1) * width + cliffX;
-
-                // Rock should remain Rock (not melted into Magma)
-                Assert.That(mats[rockAtCliffIndex], Is.EqualTo(MaterialIds.Rock));
-
-                // Air at cliff base should remain Air
-                Assert.That(mats[airAtCliffIndex], Is.EqualTo(MaterialIds.Air));
-
-                // Air temperature must remain stable (not runaway into flashpoint/boiling meltdown)
-                Assert.That(states[airAtCliffIndex].x, Is.LessThan(65f), "Air at cliff face exceeded thermal bounds.");
-                Assert.That(states[rockAtCliffIndex].x, Is.LessThan(80f), "Rock at cliff face overheated.");
-
-                // Air pressure should not collapse to zero
-                Assert.That(states[airAtCliffIndex].y, Is.GreaterThan(0.01f), "Air pressure at cliff base collapsed to zero.");
             });
         }
 

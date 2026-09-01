@@ -210,10 +210,10 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
     float4 faces = AtmosphereFaceMask(cell);
     float cfl = saturate(_WeatherF.w);
 
-    float pressureLeft = faces.x > 0.5 ? S(cell + int2(-1, 0)).y : state.y;
-    float pressureRight = faces.y > 0.5 ? S(cell + int2(1, 0)).y : state.y;
-    float pressureBelow = (cell.y > 0 && faces.z > 0.5) ? S(cell + int2(0, -1)).y : state.y;
-    float pressureAbove = (cell.y < _GridSize.y - 1 && faces.w > 0.5) ? S(cell + int2(0, 1)).y : state.y;
+    float pressureLeft = S(cell + int2(-1, 0)).y;
+    float pressureRight = S(cell + int2(1, 0)).y;
+    float pressureBelow = cell.y > 0 ? S(cell + int2(0, -1)).y : state.y;
+    float pressureAbove = cell.y < _GridSize.y - 1 ? S(cell + int2(0, 1)).y : state.y;
 
     float tanW = TangentialEdgeWeight(cell.y, _GridSize.y);
     float2 gradient = float2(
@@ -374,6 +374,11 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
                 float neighborVapor = max(0.0, neighborAux.x);
                 float vent = min(neighborVapor, neighborVapor * saturate(0.35 + advectionRate) * _DeltaTime);
                 vaporIn += vent;
+
+                // Couple venting to a thermal plume in the first Air cell.
+                float surfaceTemp = neighborState.x;
+                float plumeMix = saturate(_WeatherF.x * 0.5 * _DeltaTime);
+                state.x = lerp(state.x, surfaceTemp, plumeMix);
 
                 sootSettled += min(soot, soot * sootSettle * _DeltaTime);
             }
