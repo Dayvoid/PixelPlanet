@@ -98,7 +98,8 @@ MonoBehaviour:
   dayLengthSeconds: 180
   solarIntensity: 0.8
   spaceTemperature: 0
-  radiativeCooling: 0.25
+  terrainRadiativeCooling: 0.25
+  atmosphereRadiativeCooling: 0.25
   windStrength: 2
   windDamping: 0.001
   evaporationRate: 0.5

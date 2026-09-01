@@ -48,7 +48,8 @@ namespace GeneSys.Tests
             host.Config.dayLengthSeconds = 180f;
             host.Config.solarIntensity = 0.8f;
             host.Config.spaceTemperature = -25f;
-            host.Config.radiativeCooling = 0.2f;
+            host.Config.terrainRadiativeCooling = 0.2f;
+            host.Config.atmosphereRadiativeCooling = 0.2f;
             host.Config.windStrength = 0.35f;
             host.Config.windDamping = 0.06f;
             host.Config.evaporationRate = 0.1f;
@@ -187,7 +188,8 @@ namespace GeneSys.Tests
             host.Config.collapseRate = 0f;
             host.Config.erosionRate = 0f;
             host.Config.solarIntensity = 0f;
-            host.Config.radiativeCooling = 0f;
+            host.Config.terrainRadiativeCooling = 0f;
+            host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.pressureCompressibility = 0f;

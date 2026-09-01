@@ -24,8 +24,8 @@ float4 _WorldGenParams;
 float4 _WorldWaterA;
 float4 _WorldWaterB;
 float4 _WorldWaterC;
-float4 _WeatherA; // solarIntensity, spaceTemperature, radiativeCooling, windStrength
-float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, unused, unused
+float4 _WeatherA; // solarIntensity, spaceTemperature, atmosphereRadiativeCooling, windStrength
+float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, unused
 float4 _MycologyA; // initialSporeLoad, rareStrainChance, unused, unused
 float4 _WorldGenV2A; // metalVeinCount, metalVeinMinSize, metalVeinMaxSize, metalVeinProtrusionChance
 float4 _WorldGenV2B; // metalVeinProtrusionDistance, iceCapRadius, iceCapHeight, iceCapRadiusVariation

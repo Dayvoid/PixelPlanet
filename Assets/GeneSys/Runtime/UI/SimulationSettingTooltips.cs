@@ -173,8 +173,10 @@ namespace GeneSys.UI
                 "How strongly the sun heats exposed surfaces and air. Higher intensity drives evaporation, buoyancy, wind, and daytime thaw; lower intensity favors ice and calm air.",
             [nameof(SimulationConfig.spaceTemperature)] =
                 "Temperature the upper atmosphere radiates toward. Colder space strengthens night cooling, lapse, and polar ice; warmer space keeps vapor aloft.",
-            [nameof(SimulationConfig.radiativeCooling)] =
-                "How fast heat is lost to space. Stronger cooling steepens night-side temperatures and can collapse vapor into rain or snow.",
+            [nameof(SimulationConfig.terrainRadiativeCooling)] =
+                "How fast the crust radiates heat. Strongest at the outermost terrain cells and falls off exponentially inward, so the mantle stays insulated.",
+            [nameof(SimulationConfig.atmosphereRadiativeCooling)] =
+                "How fast air above the terrain radius radiates toward space. Stronger cooling steepens night-side temperatures and can collapse vapor into rain or snow.",
             [nameof(SimulationConfig.windStrength)] =
                 "Forcing that turns pressure and temperature gradients into wind. Stronger wind advects heat, vapor, ash, and spores around the planetoid.",
             [nameof(SimulationConfig.windDamping)] =

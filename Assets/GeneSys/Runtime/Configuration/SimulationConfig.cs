@@ -107,7 +107,9 @@ namespace GeneSys.Configuration
         [Min(1f)] public float dayLengthSeconds = 180f;
         [Range(0f, 4f)] public float solarIntensity = 0.8f;
         [Range(-100f, 100f)] public float spaceTemperature = 0f;
-        [Range(0f, 4f)] public float radiativeCooling = 0.25f;
+        [FormerlySerializedAs("radiativeCooling")]
+        [Range(0f, 4f)] public float terrainRadiativeCooling = 0.25f;
+        [Range(0f, 4f)] public float atmosphereRadiativeCooling = 0.25f;
         [Range(0f, 4f)] public float windStrength = 2f;
         [Range(0f, 1f)] public float windDamping = 0.001f;
         [Range(0f, 4f)] public float evaporationRate = 0.5f;

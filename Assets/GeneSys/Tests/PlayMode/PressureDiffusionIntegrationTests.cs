@@ -106,7 +106,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.solarIntensity = 0f;
-            host.Config.radiativeCooling = 0f;
+            host.Config.terrainRadiativeCooling = 0f;
+            host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
             host.Config.precipitationRate = 0f;

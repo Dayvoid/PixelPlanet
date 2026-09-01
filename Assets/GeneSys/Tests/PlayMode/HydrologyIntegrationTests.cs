@@ -326,7 +326,8 @@ namespace GeneSys.Tests
             host.Config.thermalRate = 0f;
             host.Config.electricalRate = 0f;
             host.Config.solarIntensity = 0f;
-            host.Config.radiativeCooling = 0f;
+            host.Config.terrainRadiativeCooling = 0f;
+            host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.windStrength = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
