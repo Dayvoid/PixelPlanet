@@ -38,36 +38,20 @@ namespace GeneSys.Simulation
 
             float dt = Mathf.Min(unscaledDeltaTime, 0.1f);
             accumulator += dt * Speed;
+            int maxTicksThisFrame = Mathf.Clamp(Mathf.CeilToInt(Speed * 2.5f), 2, 32);
             int count = 0;
 
-            if (Speed <= 1f)
+            while (accumulator >= fixedDelta && count < maxTicksThisFrame)
             {
-                while (accumulator >= fixedDelta && count < MaxTicksPerFrame)
-                {
-                    accumulator -= fixedDelta;
-                    tick(fixedDelta);
-                    TickCount++;
-                    count++;
-                }
-                if (count == MaxTicksPerFrame)
-                    accumulator = Mathf.Min(accumulator, fixedDelta);
+                accumulator -= fixedDelta;
+                tick(fixedDelta);
+                TickCount++;
+                count++;
             }
-            else
-            {
-                float targetTicks = accumulator / fixedDelta;
-                if (targetTicks >= 1f)
-                {
-                    int stepsToRun = targetTicks >= 2f ? MaxTicksPerFrame : 1;
-                    float stepDt = Mathf.Min(accumulator / stepsToRun, fixedDelta * Speed);
-                    for (int i = 0; i < stepsToRun; i++)
-                    {
-                        tick(stepDt);
-                        TickCount++;
-                        count++;
-                    }
-                    accumulator = 0f;
-                }
-            }
+
+            if (count == maxTicksThisFrame)
+                accumulator = Mathf.Min(accumulator, fixedDelta * 2f);
+
             return count;
         }
     }

@@ -1802,13 +1802,13 @@ namespace GeneSys.Tests
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
             int width = host.Grid.angularResolution;
-            int height = host.Grid.radialResolution;
-            int groundY = Mathf.Clamp(Mathf.RoundToInt(height * 0.70f), 10, height - 30);
+            int groundY = SurfaceY(host);
             int cliffX = 40;
 
             // Carve a vertical cliff face: solid rock on left (x <= cliffX, up to groundY + 8), air on right.
-            for (int y = groundY; y <= groundY + 8; y++)
+            for (int y = groundY - 2; y <= groundY + 8; y++)
             {
                 for (int x = cliffX - 4; x <= cliffX; x++)
                     Paint(host, x, y, MaterialIds.Rock);
@@ -1818,7 +1818,7 @@ namespace GeneSys.Tests
             yield return Step(host, 2);
 
             // Set normal temperature and moisture on the cliff and air
-            for (int y = groundY; y <= groundY + 8; y++)
+            for (int y = groundY - 2; y <= groundY + 8; y++)
             {
                 for (int x = cliffX - 4; x <= cliffX + 6; x++)
                 {
