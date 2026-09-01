@@ -213,6 +213,8 @@ namespace GeneSys.UI
                 "How much warm air rises. Stronger buoyancy builds updrafts, storms, ash lofting, and vertical mixing of spores.",
             [nameof(SimulationConfig.humidityBuoyancy)] =
                 "Extra lift from moist air. Higher values make humid parcels rise into clouds; lower values treat dry and wet air more equally.",
+            [nameof(SimulationConfig.verticalBuoyancyStrength)] =
+                "How strongly a parcel compares itself to the air above and below, after subtracting the expected lapse-rate cooling. Higher values loft uniformly hot or humid surface layers; zero keeps only same-altitude contrast.",
             [nameof(SimulationConfig.saturationCapacityScale)] =
                 "How much vapor air can hold before condensing. Higher capacity delays clouds in warm air; lower capacity rains out easily and dries the column.",
             [nameof(SimulationConfig.cloudPrecipitationThreshold)] =

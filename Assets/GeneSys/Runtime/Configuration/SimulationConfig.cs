@@ -128,6 +128,7 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float vaporDiffusionRate = 0.33f;
         [Range(0f, 4f)] public float atmosphericBuoyancy = 0.9f;
         [Range(0f, 4f)] public float humidityBuoyancy = 0.8f;
+        [Range(0f, 4f)] public float verticalBuoyancyStrength = 1f;
         [Range(0.01f, 2f)] public float saturationCapacityScale = 0.01f;
         [Range(0.01f, 1f)] public float cloudPrecipitationThreshold = 0.9f;
         [Range(0f, 4f)] public float waterPressureResponse = 0.6f;
@@ -504,6 +505,7 @@ namespace GeneSys.Configuration
             vaporDiffusionRate = Mathf.Max(0f, vaporDiffusionRate);
             atmosphericBuoyancy = Mathf.Max(0f, atmosphericBuoyancy);
             humidityBuoyancy = Mathf.Max(0f, humidityBuoyancy);
+            verticalBuoyancyStrength = Mathf.Max(0f, verticalBuoyancyStrength);
             saturationCapacityScale = Mathf.Max(0.01f, saturationCapacityScale);
             cloudPrecipitationThreshold = Mathf.Max(0.01f, cloudPrecipitationThreshold);
             waterPressureResponse = Mathf.Max(0f, waterPressureResponse);

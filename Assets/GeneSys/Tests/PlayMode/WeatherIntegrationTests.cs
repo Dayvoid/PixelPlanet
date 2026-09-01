@@ -60,6 +60,7 @@ namespace GeneSys.Tests
             host.Config.vaporDiffusionRate = 0.05f;
             host.Config.atmosphericBuoyancy = 0.4f;
             host.Config.humidityBuoyancy = 0.25f;
+            host.Config.verticalBuoyancyStrength = 1f;
             host.Config.saturationCapacityScale = 0.55f;
             host.Config.cloudPrecipitationThreshold = 0.05f;
             host.Config.waterPressureResponse = 0.6f;
@@ -613,6 +614,7 @@ namespace GeneSys.Tests
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
             host.Config.humidityBuoyancy = 1f;
+            host.Config.verticalBuoyancyStrength = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.pressureCompressibility = 0f;
             host.Regenerate();
@@ -658,6 +660,7 @@ namespace GeneSys.Tests
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
             host.Config.humidityBuoyancy = 1f;
+            host.Config.verticalBuoyancyStrength = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.pressureCompressibility = 0f;
             host.Regenerate();
@@ -702,6 +705,7 @@ namespace GeneSys.Tests
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
             host.Config.humidityBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
             host.Config.surfaceAirHeatExchange = 2f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.pressureCompressibility = 0f;
@@ -897,6 +901,159 @@ namespace GeneSys.Tests
                     highBand += aux[(y0 + dy) * width + x].x;
             });
             Assert.That(highBand, Is.GreaterThan(0.05f), "Vapor should loft several radial cells without relying on diffusion.");
+        }
+
+        [UnityTest]
+        public IEnumerator UniformHotHumidLayerProducesVerticalUpdraft()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 2.5f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 2f;
+            host.Config.humidityBuoyancy = 1f;
+            host.Config.verticalBuoyancyStrength = 1f;
+            host.Config.atmosphericLapseRate = 0f;
+            host.Config.atmosphericCflLimit = 0.7f;
+            host.Config.saturationCapacityScale = 2f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.pressureCompressibility = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y0 = AtmosphereY(host);
+            PaintAirChamber(host, x - 3, x + 3, y0, y0 + 4);
+            yield return Step(host, 1);
+
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                for (int dy = 0; dy <= 4; dy++)
+                    PaintField(host, x + dx, y0 + dy, 1f, -20f);
+            }
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (_, __, aux, ___) =>
+            {
+                for (int dx = -3; dx <= 3; dx++)
+                {
+                    for (int dy = 0; dy <= 4; dy++)
+                    {
+                        float vapor = aux[(y0 + dy) * width + ((x + dx + width) % width)].x;
+                        if (vapor > 0f) PaintField(host, x + dx, y0 + dy, 6f, -vapor);
+                    }
+                }
+            });
+            yield return Step(host, 1);
+
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                PaintField(host, x + dx, y0, 1f, 60f);
+                PaintField(host, x + dx, y0, 6f, 0.8f);
+            }
+
+            float highBefore = 0f;
+            yield return ReadFields(host, (_, __, aux, ___) =>
+            {
+                for (int dy = 1; dy <= 4; dy++)
+                    highBefore += aux[(y0 + dy) * width + x].x;
+            });
+
+            yield return Step(host, 45);
+
+            float layerFlow = 0f;
+            float highAfter = 0f;
+            yield return ReadFields(host, (_, __, aux, flow) =>
+            {
+                layerFlow = flow[y0 * width + x].y;
+                for (int dy = 1; dy <= 4; dy++)
+                    highAfter += aux[(y0 + dy) * width + x].x;
+            });
+            Assert.That(layerFlow, Is.GreaterThan(0.01f), "Angularly uniform hot humid air should still produce an updraft.");
+            Assert.That(highAfter, Is.GreaterThan(highBefore + 0.02f), "Vapor should migrate upward from a uniform surface steam layer.");
+        }
+
+        [UnityTest]
+        public IEnumerator LapseConformingColumnStaysNearNeutral()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.windDamping = 0.25f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 2f;
+            host.Config.humidityBuoyancy = 1f;
+            host.Config.verticalBuoyancyStrength = 1f;
+            host.Config.atmosphericLapseRate = 12f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.pressureCompressibility = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y0 = AtmosphereY(host);
+            const int height = 4;
+            PaintAirChamber(host, x - 2, x + 2, y0, y0 + height);
+            yield return Step(host, 1);
+
+            float expectedStep = host.Config.atmosphericLapseRate /
+                Mathf.Max(1f, (1f - host.Grid.atmosphereStartRadius) * host.Grid.radialResolution);
+            const float baseTemp = 20f;
+            yield return ReadFields(host, (_, states, aux, ___) =>
+            {
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    int xx = (x + dx + width) % width;
+                    for (int dy = 0; dy <= height; dy++)
+                    {
+                        int index = (y0 + dy) * width + xx;
+                        float targetTemp = baseTemp - expectedStep * dy;
+                        PaintField(host, xx, y0 + dy, 1f, targetTemp - states[index].x);
+                        float vapor = aux[index].x;
+                        if (vapor > 0f) PaintField(host, xx, y0 + dy, 6f, -vapor);
+                    }
+                }
+            });
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    int xx = (x + dx + width) % width;
+                    for (int dy = 0; dy <= height; dy++)
+                    {
+                        int index = (y0 + dy) * width + xx;
+                        if (Mathf.Abs(flow[index].y) > 1e-5f)
+                            PaintField(host, xx, y0 + dy, 12f, -flow[index].y);
+                        PaintField(host, xx, y0 + dy, 13f, 0f);
+                    }
+                }
+            });
+            yield return Step(host, 16);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                Assert.That(flow[y0 * width + x].y, Is.EqualTo(0f).Within(0.03f),
+                    "A lapse-conforming column should not drive runaway convection.");
+                Assert.That(flow[(y0 + 2) * width + x].y, Is.EqualTo(0f).Within(0.03f));
+            });
         }
 
         [UnityTest]
@@ -1197,6 +1354,9 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.humidityBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
             host.Config.cloudPrecipitationThreshold = 0.05f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
@@ -1264,6 +1424,9 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0.8f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.humidityBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
             host.Config.cloudPrecipitationThreshold = 0.05f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;

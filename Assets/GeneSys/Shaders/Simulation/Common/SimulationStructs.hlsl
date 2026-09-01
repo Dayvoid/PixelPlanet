@@ -99,8 +99,9 @@
 //   persist for material-appropriate durations while fields eventually equilibrate.
 // Atmosphere dynamics:
 //   flow.x = angular wind, flow.y = radial wind (positive = outward/up). Signed buoyancy from
-//   same-altitude temperature/humidity anomalies drives updrafts and downdrafts. Heat, vapor,
-//   and cloud condensate advect with flow under a CFL outbound-mass cap.
+//   same-altitude temperature/humidity anomalies plus a lapse-adjusted vertical comparison
+//   drives updrafts and downdrafts. Heat, vapor, and cloud condensate advect with flow under
+//   a CFL outbound-mass cap.
 // Liquid density exchange:
 //   LiquidDensityExchange swaps whole cells across liquid interfaces when both materials opt in
 //   via motion.x (densityDisplaceable). Density (physical.x) alone decides direction: a denser
