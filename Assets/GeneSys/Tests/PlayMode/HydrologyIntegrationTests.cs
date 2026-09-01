@@ -944,6 +944,27 @@ namespace GeneSys.Tests
             return total;
         }
 
+        private static uint GpuHash(uint value)
+        {
+            value ^= value >> 16;
+            value *= 0x7feb352d;
+            value ^= value >> 15;
+            value *= 0x846ca68b;
+            value ^= value >> 16;
+            return value;
+        }
+
+        private static float GpuHash01(uint value) =>
+            (GpuHash(value) & 0x00ffffffu) / 16777215.0f;
+
+        private static bool IceKeepsWindDx(int x, int y, int tick, int seed)
+        {
+            uint input = (uint)x * 73856093u + (uint)y * 19349663u + (uint)tick * 83492791u
+                + (uint)seed * 9137u + 7u;
+            float h = GpuHash01(input);
+            return h >= 0.20f && h <= 0.90f;
+        }
+
         private static bool IsLiquidPixel(uint material) =>
             material == MaterialIds.Water || material == MaterialIds.Ice;
 
@@ -1546,6 +1567,104 @@ namespace GeneSys.Tests
             {
                 Assert.That(TrackedWater(states, aux), Is.EqualTo(waterBefore).Within(Math.Max(0.05d, waterBefore * 0.01d)));
             });
+        }
+
+        [UnityTest]
+        public IEnumerator CollidingAirborneIceDoesNotDuplicateSurfaceVapor()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.seed = 55117;
+            host.Config.gravityStrength = 1f;
+            host.Config.materialSubsteps = 1;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.hydrothermalStrength = 0f;
+            host.Config.combustionFlashVaporizationRate = 0f;
+            host.Config.humidityBuoyancy = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int y = Mathf.Clamp(Mathf.RoundToInt(height * 0.7f), 8, height - 8);
+            int tick = host.TickIndex;
+            int seed = host.Config.seed;
+            int x = -1;
+            for (int candidate = 4; candidate < width - 4; candidate++)
+            {
+                if (IceKeepsWindDx(candidate - 1, y + 1, tick, seed)
+                    && IceKeepsWindDx(candidate + 1, y + 1, tick, seed))
+                {
+                    x = candidate;
+                    break;
+                }
+            }
+            Assert.That(x, Is.GreaterThan(0), "No column where both ice pixels keep their wind slant.");
+
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, y - 1, MaterialIds.Rock);
+                Paint(host, xx, y, MaterialIds.Air);
+                Paint(host, xx, y + 1, MaterialIds.Air);
+                Paint(host, xx, y + 2, MaterialIds.Air);
+            }
+
+            Paint(host, x - 1, y + 1, MaterialIds.Ice);
+            PaintField(host, x - 1, y + 1, 2f, -100f);
+            PaintField(host, x - 1, y + 1, 2f, 1f);
+            PaintField(host, x - 1, y + 1, 6f, -100f);
+            PaintField(host, x - 1, y + 1, 13f, 1f);
+
+            Paint(host, x + 1, y + 1, MaterialIds.Ice);
+            PaintField(host, x + 1, y + 1, 2f, -100f);
+            PaintField(host, x + 1, y + 1, 2f, 1f);
+            PaintField(host, x + 1, y + 1, 6f, -100f);
+            PaintField(host, x + 1, y + 1, 13f, -1f);
+
+            PaintField(host, x, y, 6f, -100f);
+            PaintField(host, x, y, 6f, 0.4f);
+
+            yield return Step(host, 1);
+
+            int iceAfter = 0;
+            uint destMat = 0;
+            uint rightMat = 0;
+            uint leftMat = 0;
+            double boxWater = 0d;
+            double boxVapor = 0d;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                destMat = mats[y * width + host.Grid.WrapTheta(x)];
+                leftMat = mats[(y + 1) * width + host.Grid.WrapTheta(x - 1)];
+                rightMat = mats[(y + 1) * width + host.Grid.WrapTheta(x + 1)];
+                for (int dx = -3; dx <= 3; dx++)
+                {
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    for (int yy = y - 1; yy <= y + 2; yy++)
+                    {
+                        int i = yy * width + xx;
+                        if (mats[i] == MaterialIds.Ice) iceAfter++;
+                        boxWater += Math.Max(0d, states[i].z) + Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
+                        boxVapor += Math.Max(0d, aux[i].x);
+                    }
+                }
+            });
+
+            Assert.That(destMat, Is.EqualTo(MaterialIds.Ice),
+                "Left ice with +wind should win the shared air cell.");
+            Assert.That(rightMat, Is.EqualTo(MaterialIds.Ice),
+                "Right ice that lost arbitration must stay put instead of vacating into duplicated vapor.");
+            Assert.That(leftMat, Is.Not.EqualTo(MaterialIds.Ice));
+            Assert.That(iceAfter, Is.EqualTo(2),
+                "The losing ice pixel must not be destroyed by a vacate-without-receive.");
+            Assert.That(boxVapor, Is.EqualTo(0.4d).Within(0.05d),
+                "Destination humidity must move with the vacated winner, not copy onto the loser.");
+            Assert.That(boxWater, Is.EqualTo(2.4d).Within(0.05d));
         }
 
         [UnityTest]

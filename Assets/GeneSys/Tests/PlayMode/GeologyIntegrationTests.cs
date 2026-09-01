@@ -176,6 +176,17 @@ namespace GeneSys.Tests
             });
         }
 
+        private static void PaintVapor(SimulationHost host, int x, int y, float amount)
+        {
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(x, y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(6f, amount, 0f, 0f)
+            });
+        }
+
         private static void DriveWindErosion(SimulationHost host, int x, int y)
         {
             // Lateral pressure gradient → AtmosphericDynamics flow. Keep soil dry.
@@ -497,6 +508,87 @@ namespace GeneSys.Tests
             });
 
             Assert.That(lofted > 0 || settled, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator SettlingAshDoesNotDuplicateSurfaceVapor()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureEruptionDefaults(host);
+            host.Config.magmaEruption = 0f;
+            host.Config.ashUpdraftStrength = 0f;
+            host.Config.ashSettlingStrength = 4f;
+            host.Config.ashFertilityStrength = 0f;
+            host.Config.slowPassInterval = 100000;
+            host.Config.transportPassInterval = 100000;
+            host.Config.thermalRate = 0f;
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.hydrothermalStrength = 0f;
+            host.Config.geyserDischargeRate = 0f;
+            host.Config.combustionFlashVaporizationRate = 0f;
+            host.Config.materialSubsteps = 1;
+            host.Config.seed = 66221;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.7f), 8, host.Grid.radialResolution - 8);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, y - 1, MaterialIds.Rock);
+                Paint(host, xx, y, MaterialIds.Air);
+                Paint(host, xx, y + 1, MaterialIds.Air);
+                Paint(host, xx, y + 2, MaterialIds.Air);
+                for (int yy = y - 1; yy <= y + 2; yy++)
+                {
+                    PaintWater(host, xx, yy, -100f);
+                    PaintGroundwater(host, xx, yy, -100f);
+                    PaintVapor(host, xx, yy, -100f);
+                }
+            }
+            Paint(host, x, y + 1, MaterialIds.Ash);
+            PaintVapor(host, x, y + 1, -100f);
+            PaintVapor(host, x, y, 0.8f);
+            yield return Step(host, 1);
+
+            int ashCount = 0;
+            uint destMat = 0;
+            uint sourceMat = 0;
+            double boxWater = 0d;
+            double boxVapor = 0d;
+            yield return ReadMaterialsStateAux(host, (mats, states, aux) =>
+            {
+                destMat = mats[y * width + x];
+                sourceMat = mats[(y + 1) * width + x];
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    for (int yy = y - 1; yy <= y + 2; yy++)
+                    {
+                        int i = yy * width + xx;
+                        if (mats[i] == MaterialIds.Ash) ashCount++;
+                        boxWater += Math.Max(0d, states[i].z) + Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
+                        boxVapor += Math.Max(0d, aux[i].x);
+                    }
+                }
+            });
+
+            Assert.That(destMat, Is.EqualTo(MaterialIds.Ash),
+                "Settling ash must be received by the open cell below it.");
+            Assert.That(sourceMat, Is.Not.EqualTo(MaterialIds.Ash));
+            Assert.That(ashCount, Is.EqualTo(1),
+                "Ash must not vanish (or duplicate) when it settles into humid surface air.");
+            Assert.That(boxVapor, Is.EqualTo(0.8d).Within(0.05d),
+                "Humid air under settling ash must move with the vacated cell, not be copied.");
+            Assert.That(boxWater, Is.EqualTo(0.8d).Within(0.05d));
         }
 
         [UnityTest]

@@ -337,6 +337,33 @@ int2 AshDestination(int2 source)
     return source;
 }
 
+int2 AshMovementWinner(int2 target)
+{
+    int2 candidates[8] = {
+        ClampCell(target + int2(0, -1), _GridSize),
+        ClampCell(target + int2(-1, -1), _GridSize),
+        ClampCell(target + int2(1, -1), _GridSize),
+        ClampCell(target + int2(-1, 0), _GridSize),
+        ClampCell(target + int2(1, 0), _GridSize),
+        ClampCell(target + int2(0, 1), _GridSize),
+        ClampCell(target + int2(-1, 1), _GridSize),
+        ClampCell(target + int2(1, 1), _GridSize)
+    };
+    [unroll]
+    for (int i = 0; i < 8; i++)
+    {
+        int2 candidate = candidates[i];
+        if (ReadMaterial(candidate) == 12u && all(AshDestination(candidate) == target))
+            return candidate;
+    }
+    return target;
+}
+
+bool AshMoveWins(int2 source, int2 target)
+{
+    return all(AshMovementWinner(target) == source);
+}
+
 [numthreads(8, 8, 1)]
 void AshTransport(uint3 id : SV_DispatchThreadID)
 {
@@ -352,7 +379,7 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
     uint4 genome = ReadGenome(cell);
 
     int2 destination = AshDestination(cell);
-    if (material == 12u && !all(destination == cell))
+    if (material == 12u && !all(destination == cell) && AshMoveWins(cell, destination))
     {
         material = ReadMaterial(destination);
         state = ReadState(destination);
@@ -368,25 +395,7 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
 
     if (IsOpenCell(material))
     {
-        int2 candidates[5];
-        candidates[0] = ClampCell(cell + int2(0, -1), _GridSize);
-        candidates[1] = ClampCell(cell + int2(-1, -1), _GridSize);
-        candidates[2] = ClampCell(cell + int2(1, -1), _GridSize);
-        candidates[3] = ClampCell(cell + int2(-1, 0), _GridSize);
-        candidates[4] = ClampCell(cell + int2(1, 0), _GridSize);
-
-        int2 source = cell;
-        [unroll]
-        for (int i = 0; i < 5; i++)
-        {
-            int2 candidate = candidates[i];
-            if (ReadMaterial(candidate) == 12u && all(AshDestination(candidate) == cell))
-            {
-                source = candidate;
-                break;
-            }
-        }
-
+        int2 source = AshMovementWinner(cell);
         if (!all(source == cell))
         {
             material = ReadMaterial(source);

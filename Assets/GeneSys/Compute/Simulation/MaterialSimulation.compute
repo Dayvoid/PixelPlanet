@@ -431,6 +431,25 @@ int2 MovementDestination(int2 source)
     return source;
 }
 
+// Receiver priority: above, then left-above, then right-above. First candidate whose
+// MovementDestination equals the target wins. Movers must replay this or a collision
+// vacates into humid air that nobody pulled, duplicating aux.x.
+int2 MovementWinner(int2 target)
+{
+    int2 above = ClampCell(target + int2(0, 1), _GridSize);
+    if (all(MovementDestination(above) == target)) return above;
+    int2 leftSource = ClampCell(target + int2(-1, 1), _GridSize);
+    if (all(MovementDestination(leftSource) == target)) return leftSource;
+    int2 rightSource = ClampCell(target + int2(1, 1), _GridSize);
+    if (all(MovementDestination(rightSource) == target)) return rightSource;
+    return target;
+}
+
+bool MoveWins(int2 source, int2 target)
+{
+    return all(MovementWinner(target) == source);
+}
+
 [numthreads(8, 8, 1)]
 void MaterialMotion(uint3 id : SV_DispatchThreadID)
 {
@@ -440,7 +459,7 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
     CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 
     int2 destination = MovementDestination(cell);
-    if (IsMovable(material) && !all(destination == cell))
+    if (IsMovable(material) && !all(destination == cell) && MoveWins(cell, destination))
     {
         material = ReadMaterial(destination);
         state = ReadState(destination);
@@ -453,15 +472,7 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
     }
     else if (IsOpen(material) && cell.y < _GridSize.y - 1)
     {
-        int2 source = ClampCell(cell + int2(0, 1), _GridSize);
-        if (!all(MovementDestination(source) == cell))
-        {
-            int2 leftSource = ClampCell(cell + int2(-1, 1), _GridSize);
-            int2 rightSource = ClampCell(cell + int2(1, 1), _GridSize);
-            if (all(MovementDestination(leftSource) == cell)) source = leftSource;
-            else if (all(MovementDestination(rightSource) == cell)) source = rightSource;
-            else source = cell;
-        }
+        int2 source = MovementWinner(cell);
         if (!all(source == cell))
         {
             material = ReadMaterial(source);

@@ -445,6 +445,12 @@ void DetritusExchange(uint3 id : SV_DispatchThreadID)
     float distRate = max(0.0, _DetritusA.z);
     float leachRate = max(0.0, _DetritusA.w);
     float decayRate = max(0.0, _DetritusB.x);
+    float vaporRead = max(0.0, aux.x);
+    float moistureRead = max(0.0, aux.y);
+    float nutrientRead = max(0.0, aux.z);
+    float vaporDelta = 0.0;
+    float moistureDelta = 0.0;
+    float nutrientDelta = 0.0;
 
     [unroll]
     for (int i = 0; i < 4; i++)
@@ -462,47 +468,51 @@ void DetritusExchange(uint3 id : SV_DispatchThreadID)
 
         if (IsDetritusMaterial(material) && IsAtmosphereCell(neighbor, nMat))
         {
-            float room = max(0.0, 1.0 - aux.y);
+            float room = max(0.0, 1.0 - moistureRead);
             float absorb = min(min(max(0.0, nAux.x), room), absorbRate * max(0.0, nAux.x) * _DeltaTime * 0.25);
-            aux.y += absorb;
-            float evap = min(max(0.0, aux.y), evapRate * max(0.0, aux.y) * _DeltaTime * 0.25);
-            aux.y -= evap;
+            moistureDelta += absorb;
+            float evap = min(moistureRead, evapRate * moistureRead * _DeltaTime * 0.25);
+            moistureDelta -= evap;
         }
         else if (IsAtmosphereCell(cell, material) && IsDetritusMaterial(nMat))
         {
             float room = max(0.0, 1.0 - nAux.y);
-            float absorb = min(min(max(0.0, aux.x), room), absorbRate * max(0.0, aux.x) * _DeltaTime * 0.25);
-            aux.x = max(0.0, aux.x - absorb);
+            float absorb = min(min(vaporRead, room), absorbRate * vaporRead * _DeltaTime * 0.25);
+            vaporDelta -= absorb;
             float evap = min(max(0.0, nAux.y), evapRate * max(0.0, nAux.y) * _DeltaTime * 0.25);
-            aux.x += evap;
+            vaporDelta += evap;
         }
 
         if (IsDetritusMaterial(material) && IsGroundwaterHost(nMat, nDef))
         {
-            float excess = max(0.0, aux.y - 0.45);
+            float excess = max(0.0, moistureRead - 0.45);
             float nCap = max(0.0, GroundwaterCapacity(nDef) - nAux.y);
             float give = min(excess, min(nCap, distRate * excess * _DeltaTime * 0.25));
-            aux.y -= give;
+            moistureDelta -= give;
         }
         else if (IsGroundwaterHost(material, D(material)) && IsDetritusMaterial(nMat))
         {
             float excess = max(0.0, nAux.y - 0.45);
-            float cap = max(0.0, GroundwaterCapacity(D(material)) - aux.y);
+            float cap = max(0.0, GroundwaterCapacity(D(material)) - moistureRead);
             float recv = min(excess, min(cap, distRate * excess * _DeltaTime * 0.25));
-            aux.y += recv;
+            moistureDelta += recv;
         }
 
         if (IsDetritusMaterial(material) && nMat == 7u)
         {
-            float leach = min(max(0.0, aux.z), leachRate * max(0.0, aux.z) * _DeltaTime * 0.25);
-            aux.z -= leach;
+            float leach = min(nutrientRead, leachRate * nutrientRead * _DeltaTime * 0.25);
+            nutrientDelta -= leach;
         }
         else if (material == 7u && IsDetritusMaterial(nMat))
         {
             float leach = min(max(0.0, nAux.z), leachRate * max(0.0, nAux.z) * _DeltaTime * 0.25);
-            aux.z += leach;
+            nutrientDelta += leach;
         }
     }
+
+    aux.x = max(0.0, vaporRead + vaporDelta);
+    aux.y = max(0.0, moistureRead + moistureDelta);
+    aux.z = max(0.0, nutrientRead + nutrientDelta);
 
     if (IsDetritusMaterial(material))
     {
