@@ -193,6 +193,12 @@ namespace GeneSys.UI
                 "Forcing that turns pressure and temperature gradients into wind. Stronger wind advects heat, vapor, ash, and spores around the planetoid.",
             [nameof(SimulationConfig.windDamping)] =
                 "How quickly wind dies without forcing. Higher damping calms storms; lower damping lets jets persist and carry weather farther.",
+            [nameof(SimulationConfig.coriolisStrength)] =
+                "Planetary rotation forcing. Deflects vertical updrafts into horizontal winds and vice-versa, breaking diurnal symmetry to generate prevailing trade winds and jet streams. Set to 0 to disable.",
+            [nameof(SimulationConfig.velocityAdvectionRate)] =
+                "How strongly moving air carries its own momentum across cells. Allows high-speed wind jets to carry forward across weather fronts instead of halting locally. Set to 0 to disable.",
+            [nameof(SimulationConfig.prevailingWind)] =
+                "Direct background zonal wind bias across the atmosphere. Pushes air eastward (positive) or westward (negative) to establish a global prevailing drift. Set to 0 to disable.",
             [nameof(SimulationConfig.evaporationRate)] =
                 "How fast surface water and moist ground become vapor. Higher rates dry soils, load clouds, and couple hydrology to weather.",
             [nameof(SimulationConfig.condensationRate)] =
@@ -814,6 +820,8 @@ namespace GeneSys.UI
                 "Intensity of incandescent thermal radiation and thermal bloom at the core-mantle boundary. Visual only.",
             [nameof(SimulationConfig.coreVisualScale)] =
                 "Multiplier on the visual extent of the molten metal core quad relative to the planetary core boundary. Visual only.",
+            [nameof(SimulationConfig.uiFadeDelay)] =
+                "Seconds after the last inspect refresh or probe HUD idle before chrome fades. Inspect info fades out completely; probe controls fade to about 10% opacity and return on mouse-over.",
 
             [nameof(SimulationConfig.brushRadius)] =
                 "Radius of the paint/inspect brush in cells. Larger brushes edit more geology, water, and ecology at once.",

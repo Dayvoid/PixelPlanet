@@ -19,6 +19,12 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode);
         }
 
+        [MenuItem("Tools/GeneSys/Run Weather PlayMode Tests")]
+        public static void RunWeatherPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.WeatherIntegrationTests");
+        }
+
         public static void RunPlayModeGroup(string groupName)
         {
             GeneSysTestObserver.Run(TestMode.PlayMode, groupName);

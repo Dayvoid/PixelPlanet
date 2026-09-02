@@ -119,6 +119,9 @@ namespace GeneSys.Configuration
         [Range(0f, 20f)] public float rimCoolingStrength = 0f;
         [Range(0f, 4f)] public float windStrength = 2f;
         [Range(0f, 1f)] public float windDamping = 0.001f;
+        [Range(-4f, 4f)] public float coriolisStrength = 0f;
+        [Range(0f, 4f)] public float velocityAdvectionRate = 0f;
+        [Range(-4f, 4f)] public float prevailingWind = 0f;
         [Range(0f, 4f)] public float evaporationRate = 0.5f;
         [Range(0f, 4f)] public float condensationRate = 0.0125f;
         [Range(0f, 4f)] public float precipitationRate = 0.125f;
@@ -446,6 +449,7 @@ namespace GeneSys.Configuration
         [Range(0.2f, 3f)] public float coreCirculationSpeed = 1f;
         [Range(0f, 2f)] public float coreHeatGlow = 1f;
         [Range(0.5f, 2f)] public float coreVisualScale = 1f;
+        [Min(0f)] public float uiFadeDelay = 8f;
 
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;
@@ -515,6 +519,9 @@ namespace GeneSys.Configuration
             iceCapRadiusVariation = Mathf.Clamp01(iceCapRadiusVariation);
             iceCapHeightVariation = Mathf.Clamp01(iceCapHeightVariation);
             fieldCapacityFraction = Mathf.Clamp01(fieldCapacityFraction);
+            coriolisStrength = Mathf.Clamp(coriolisStrength, -4f, 4f);
+            velocityAdvectionRate = Mathf.Max(0f, velocityAdvectionRate);
+            prevailingWind = Mathf.Clamp(prevailingWind, -4f, 4f);
             atmosphericAdvectionRate = Mathf.Max(0f, atmosphericAdvectionRate);
             vaporDiffusionRate = Mathf.Max(0f, vaporDiffusionRate);
             atmosphericBuoyancy = Mathf.Max(0f, atmosphericBuoyancy);
@@ -898,6 +905,7 @@ namespace GeneSys.Configuration
             coreCirculationSpeed = Mathf.Max(0f, coreCirculationSpeed);
             coreHeatGlow = Mathf.Max(0f, coreHeatGlow);
             coreVisualScale = Mathf.Clamp(coreVisualScale, 0.5f, 2f);
+            uiFadeDelay = Mathf.Max(0f, uiFadeDelay);
             coreReactionFrequency = Mathf.Max(0, coreReactionFrequency);
             coreReactionMagnitude = Mathf.Max(0f, coreReactionMagnitude);
             probeOrbitRadius = Mathf.Clamp(probeOrbitRadius, 0.8f, 2f);

@@ -13,9 +13,9 @@
                 <ui:Label name="status" text="Initializing GeneSys..." class="status" />
             </ui:VisualElement>
 
-            <ui:VisualElement name="tools-drawer" class="drawer tools-drawer">
-                <ui:Button name="tools-header" text="Tools ▾" class="drawer-header" />
-                <ui:VisualElement name="tools-body" class="drawer-body">
+            <ui:VisualElement name="tools-drawer" class="drawer tools-drawer collapsed">
+                <ui:Button name="tools-header" text="Tools ▸" class="drawer-header" />
+                <ui:VisualElement name="tools-body" class="drawer-body collapsed">
                     <ui:Label text="Brush and Material Tools" class="section-title" />
                     <ui:DropdownField name="brush-mode" label="Brush Mode" />
                     <ui:DropdownField name="material" label="Material" />
@@ -36,16 +36,16 @@
         <ui:VisualElement name="right-column" class="right-column" picking-mode="Ignore">
             <ui:Button name="settings-open" text="Simulation Settings" class="drawer-header settings-open-button" />
 
-            <ui:VisualElement name="status-drawer" class="drawer status-drawer">
-                <ui:Button name="status-header" text="Simulation Status ▾" class="drawer-header" />
-                <ui:VisualElement name="status-body" class="drawer-body">
+            <ui:VisualElement name="status-drawer" class="drawer status-drawer collapsed">
+                <ui:Button name="status-header" text="Simulation Status ▸" class="drawer-header" />
+                <ui:VisualElement name="status-body" class="drawer-body collapsed">
                     <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
                 </ui:VisualElement>
             </ui:VisualElement>
 
-            <ui:VisualElement name="history-drawer" class="drawer history-drawer">
-                <ui:Button name="history-header" text="History ▾" class="drawer-header" />
-                <ui:VisualElement name="history-body" class="drawer-body">
+            <ui:VisualElement name="history-drawer" class="drawer history-drawer collapsed">
+                <ui:Button name="history-header" text="History ▸" class="drawer-header" />
+                <ui:VisualElement name="history-body" class="drawer-body collapsed">
                     <ui:ScrollView name="history-log" class="history-scroll" />
                 </ui:VisualElement>
             </ui:VisualElement>

@@ -75,6 +75,29 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void HudFadeAlphaHoldsThenFadesToZero()
+        {
+            const float delay = 8f;
+            const float duration = 1f;
+            Assert.That(SimulationUIController.HudFadeAlpha(0f, delay, duration), Is.EqualTo(1f).Within(0.001f));
+            Assert.That(SimulationUIController.HudFadeAlpha(delay, delay, duration), Is.EqualTo(1f).Within(0.001f));
+            Assert.That(SimulationUIController.HudFadeAlpha(delay + duration * 0.5f, delay, duration), Is.EqualTo(0.5f).Within(0.001f));
+            Assert.That(SimulationUIController.HudFadeAlpha(delay + duration, delay, duration), Is.EqualTo(0f).Within(0.001f));
+            Assert.That(SimulationUIController.HudFadeAlpha(delay + duration + 4f, delay, duration), Is.EqualTo(0f).Within(0.001f));
+        }
+
+        [Test]
+        public void HudFadeAlphaCanSettleAtIdleOpacity()
+        {
+            const float delay = 8f;
+            const float duration = 1f;
+            const float idle = 0.1f;
+            Assert.That(SimulationUIController.HudFadeAlpha(delay, delay, duration, idle), Is.EqualTo(1f).Within(0.001f));
+            Assert.That(SimulationUIController.HudFadeAlpha(delay + duration * 0.5f, delay, duration, idle), Is.EqualTo(0.55f).Within(0.001f));
+            Assert.That(SimulationUIController.HudFadeAlpha(delay + duration, delay, duration, idle), Is.EqualTo(idle).Within(0.001f));
+        }
+
+        [Test]
         public void EnergyDrainsWhileActiveAndClampsAtZero()
         {
             float drained = ProbeController.ApplyEnergyTick(100f, true, true, 3f, 10f, 0.05f, 100f);

@@ -106,6 +106,9 @@ MonoBehaviour:
   atmosphereRadiativeCooling: 0.25
   windStrength: 2
   windDamping: 0.001
+  coriolisStrength: 0
+  velocityAdvectionRate: 0
+  prevailingWind: 0
   evaporationRate: 0.5
   condensationRate: 0.0125
   precipitationRate: 0.125

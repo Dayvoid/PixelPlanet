@@ -47,6 +47,7 @@ float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, water
 float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureCompressibility, atmosphericCflLimit
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, verticalBuoyancyStrength
 float4 _WeatherH; // solarTerrainPenetration, terrainSolarHeating, rimCoolingRadius, rimCoolingStrength
+float4 _WeatherI; // coriolisStrength, velocityAdvectionRate, prevailingWind, unused
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _EruptionA;
 float4 _EruptionB;
@@ -326,6 +327,20 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
 
         flow.y += clamp(buoyancy, -2.0, 2.0) * _DeltaTime;
 
+        float coriolis = _WeatherI.x;
+        if (abs(coriolis) > 1e-6)
+        {
+            // 2D polar Coriolis acceleration: a = -2 * (Omega x v) = (-2 * Omega * v_r) theta_hat + (2 * Omega * v_theta) r_hat
+            float2 cAccel = float2(-2.0 * coriolis * flow.y, 2.0 * coriolis * flow.x);
+            flow += clamp(cAccel * _DeltaTime, -2.0, 2.0);
+        }
+
+        float prevailing = _WeatherI.z;
+        if (abs(prevailing) > 1e-6)
+        {
+            flow.x += prevailing * _DeltaTime;
+        }
+
         // Top boundary: suppress outward radial wind. Surface no-flux is enforced
         // in transport face masks; downdraft momentum remains for continuity/pressure.
         if (cell.y >= _GridSize.y - 1)
@@ -371,6 +386,10 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
         float soot = max(0.0, combustion.z);
         float4 validFaces = AtmosphereFaceMask(cell);
 
+        float velAdvRate = max(0.0, _WeatherI.y);
+        float4 outFlowUnit = velAdvRate > 1e-6 ? DonorFaceFlux(flow, 1.0, velAdvRate, validFaces, tanW) : 0.0;
+        float flowOutFrac = outFlowUnit.x + outFlowUnit.y + outFlowUnit.z + outFlowUnit.w;
+
         float4 outVapor = DonorFaceFlux(flow, vapor, advectionRate, validFaces, tanW);
         float4 outCloud = DonorFaceFlux(flow, cloud, advectionRate, validFaces, tanW);
         float4 outHeatUnit = DonorFaceFlux(flow, 1.0, tempAdvRate, validFaces, tanW);
@@ -382,6 +401,8 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
         float oxygenOut = outOxygen.x + outOxygen.y + outOxygen.z + outOxygen.w;
         float sootOut = outSoot.x + outSoot.y + outSoot.z + outSoot.w;
 
+        float2 flowIn = 0.0;
+        float flowInFrac = 0.0;
         float vaporIn = 0.0;
         float cloudIn = 0.0;
         float heatIn = 0.0;
@@ -419,23 +440,27 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
                 float4 neighborOutVapor = DonorFaceFlux(neighborFlow, max(0.0, neighborAux.x), advectionRate, neighborValid, neighborTan);
                 float4 neighborOutCloud = DonorFaceFlux(neighborFlow, max(0.0, neighborState.z), advectionRate, neighborValid, neighborTan);
                 float4 neighborOutHeat = DonorFaceFlux(neighborFlow, 1.0, tempAdvRate, neighborValid, neighborTan);
+                float4 neighborOutFlow = velAdvRate > 1e-6 ? DonorFaceFlux(neighborFlow, 1.0, velAdvRate, neighborValid, neighborTan) : 0.0;
                 float4 neighborOutOxygen = DonorFaceFlux(neighborFlow, max(0.0, neighborCombustion.x), advectionRate, neighborValid, neighborTan);
                 float4 neighborOutSoot = DonorFaceFlux(neighborFlow, max(0.0, neighborCombustion.z), advectionRate, neighborValid, neighborTan);
 
                 float faceVapor = 0.0;
                 float faceCloud = 0.0;
                 float faceHeatFrac = 0.0;
+                float faceFlowFrac = 0.0;
                 float faceOxygen = 0.0;
                 float faceSoot = 0.0;
-                if (offset.x == 1) { faceVapor = neighborOutVapor.x; faceCloud = neighborOutCloud.x; faceHeatFrac = neighborOutHeat.x; faceOxygen = neighborOutOxygen.x; faceSoot = neighborOutSoot.x; }
-                else if (offset.x == -1) { faceVapor = neighborOutVapor.y; faceCloud = neighborOutCloud.y; faceHeatFrac = neighborOutHeat.y; faceOxygen = neighborOutOxygen.y; faceSoot = neighborOutSoot.y; }
-                else if (offset.y == 1) { faceVapor = neighborOutVapor.z; faceCloud = neighborOutCloud.z; faceHeatFrac = neighborOutHeat.z; faceOxygen = neighborOutOxygen.z; faceSoot = neighborOutSoot.z; }
-                else if (offset.y == -1) { faceVapor = neighborOutVapor.w; faceCloud = neighborOutCloud.w; faceHeatFrac = neighborOutHeat.w; faceOxygen = neighborOutOxygen.w; faceSoot = neighborOutSoot.w; }
+                if (offset.x == 1) { faceVapor = neighborOutVapor.x; faceCloud = neighborOutCloud.x; faceHeatFrac = neighborOutHeat.x; faceFlowFrac = neighborOutFlow.x; faceOxygen = neighborOutOxygen.x; faceSoot = neighborOutSoot.x; }
+                else if (offset.x == -1) { faceVapor = neighborOutVapor.y; faceCloud = neighborOutCloud.y; faceHeatFrac = neighborOutHeat.y; faceFlowFrac = neighborOutFlow.y; faceOxygen = neighborOutOxygen.y; faceSoot = neighborOutSoot.y; }
+                else if (offset.y == 1) { faceVapor = neighborOutVapor.z; faceCloud = neighborOutCloud.z; faceHeatFrac = neighborOutHeat.z; faceFlowFrac = neighborOutFlow.z; faceOxygen = neighborOutOxygen.z; faceSoot = neighborOutSoot.z; }
+                else if (offset.y == -1) { faceVapor = neighborOutVapor.w; faceCloud = neighborOutCloud.w; faceHeatFrac = neighborOutHeat.w; faceFlowFrac = neighborOutFlow.w; faceOxygen = neighborOutOxygen.w; faceSoot = neighborOutSoot.w; }
 
                 vaporIn += faceVapor;
                 cloudIn += faceCloud;
                 heatIn += neighborState.x * faceHeatFrac;
                 heatInFrac += faceHeatFrac;
+                flowIn += neighborFlow * faceFlowFrac;
+                flowInFrac += faceFlowFrac;
                 oxygenIn += faceOxygen;
                 sootIn += faceSoot;
 
@@ -460,6 +485,13 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
         float remain = max(0.0, 1.0 - heatOutFrac);
         float denom = max(1e-5, remain + heatInFrac);
         state.x = (state.x * remain + heatIn) / denom;
+
+        if (velAdvRate > 1e-6)
+        {
+            float remainFlow = max(0.0, 1.0 - flowOutFrac);
+            float denomFlow = max(1e-5, remainFlow + flowInFrac);
+            flow = (flow * remainFlow + flowIn) / denomFlow;
+        }
     }
     else if (IsExposedSurface(cell, material) && cell.y < _GridSize.y - 1)
     {

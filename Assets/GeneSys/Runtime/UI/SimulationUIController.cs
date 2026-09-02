@@ -129,6 +129,14 @@ namespace GeneSys.UI
         private Button steerStopButton;
         private Button steerRightButton;
         private VisualElement probeEnergyFill;
+        private VisualElement probeSteerCard;
+        private VisualElement probeToolsCard;
+        private VisualElement probeCameraCard;
+        private int probeHoverCount;
+        private float inspectActivityTime;
+        private float probeActivityTime;
+        private const float HudFadeDuration = 1f;
+        private const float ProbeHudIdleAlpha = 0.1f;
         private bool initialized;
         private bool metricsReadbackPending;
         private float metricsRefreshTimer;
@@ -237,6 +245,9 @@ namespace GeneSys.UI
 
         private void SetupDrawers()
         {
+            SetDrawerCollapsed(toolsHeader, toolsBody, toolsDrawer, "Tools", true);
+            SetDrawerCollapsed(statusHeader, statusBody, statusDrawer, "Simulation Status", true);
+            SetDrawerCollapsed(historyHeader, historyBody, historyDrawer, "History", true);
             toolsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(toolsHeader, toolsBody, toolsDrawer, "Tools"));
             statusHeader?.RegisterCallback<ClickEvent>(_ =>
             {
@@ -303,19 +314,15 @@ namespace GeneSys.UI
         {
             HideSettingTooltip();
             if (header == null || body == null) return;
-            bool collapsed = body.ClassListContains("collapsed");
-            if (collapsed)
-            {
-                body.RemoveFromClassList("collapsed");
-                drawer?.RemoveFromClassList("collapsed");
-                header.text = title + " ▾";
-            }
-            else
-            {
-                body.AddToClassList("collapsed");
-                drawer?.AddToClassList("collapsed");
-                header.text = title + " ▸";
-            }
+            SetDrawerCollapsed(header, body, drawer, title, !body.ClassListContains("collapsed"));
+        }
+
+        private static void SetDrawerCollapsed(Button header, VisualElement body, VisualElement drawer, string title, bool collapsed)
+        {
+            if (header == null || body == null) return;
+            body.EnableInClassList("collapsed", collapsed);
+            drawer?.EnableInClassList("collapsed", collapsed);
+            header.text = title + (collapsed ? " ▸" : " ▾");
         }
 
         private void SetupDropdowns(VisualElement root)
@@ -480,12 +487,17 @@ namespace GeneSys.UI
                 probe = host.GetComponent<ProbeController>();
             if (display != null) display.FollowProbe = probe;
 
-            VisualElement toolsCard = root.Q("probe-tools-card");
-            VisualElement steerCard = root.Q("probe-steer-card");
-            VisualElement cameraCard = root.Q("probe-camera-card");
-            if (toolsCard != null) toolsCard.pickingMode = PickingMode.Position;
-            if (steerCard != null) steerCard.pickingMode = PickingMode.Position;
-            if (cameraCard != null) cameraCard.pickingMode = PickingMode.Position;
+            probeToolsCard = root.Q("probe-tools-card");
+            probeSteerCard = root.Q("probe-steer-card");
+            probeCameraCard = root.Q("probe-camera-card");
+            if (probeToolsCard != null) probeToolsCard.pickingMode = PickingMode.Position;
+            if (probeSteerCard != null) probeSteerCard.pickingMode = PickingMode.Position;
+            if (probeCameraCard != null) probeCameraCard.pickingMode = PickingMode.Position;
+            BindProbeFadeHover(probeToolsCard);
+            BindProbeFadeHover(probeSteerCard);
+            BindProbeFadeHover(probeCameraCard);
+            probeHoverCount = 0;
+            probeActivityTime = Time.unscaledTime;
 
             probeEnergyFill = root.Q("probe-energy-fill");
             BindProbeActionButton(root.Q<Button>("probe-action-vapor"), ProbeAction.Vapor);
@@ -518,6 +530,29 @@ namespace GeneSys.UI
             RefreshSteerButtons();
             RefreshCameraModeButtons();
             RefreshProbeEnergy();
+            ApplyProbeFade(1f);
+        }
+
+        private void BindProbeFadeHover(VisualElement card)
+        {
+            if (card == null) return;
+            card.UnregisterCallback<PointerEnterEvent>(OnProbeFadePointerEnter);
+            card.UnregisterCallback<PointerLeaveEvent>(OnProbeFadePointerLeave);
+            card.RegisterCallback<PointerEnterEvent>(OnProbeFadePointerEnter);
+            card.RegisterCallback<PointerLeaveEvent>(OnProbeFadePointerLeave);
+        }
+
+        private void OnProbeFadePointerEnter(PointerEnterEvent _)
+        {
+            probeHoverCount++;
+            probeActivityTime = Time.unscaledTime;
+        }
+
+        private void OnProbeFadePointerLeave(PointerLeaveEvent _)
+        {
+            probeHoverCount = Mathf.Max(0, probeHoverCount - 1);
+            if (probeHoverCount == 0)
+                probeActivityTime = Time.unscaledTime;
         }
 
         private void OnFollowCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.ProbeFollow);
@@ -988,7 +1023,7 @@ namespace GeneSys.UI
                 }
                 else if (field.Name == nameof(SimulationConfig.useOgWorldgen) && field.FieldType == typeof(bool))
                 {
-                    var control = new Toggle("Use OG Worldgen") { value = (bool)field.GetValue(host.Config) };
+                    var control = new Toggle(SettingLabel(field.Name)) { value = (bool)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
                     AddSettingControl(container, control, field.Name);
                 }
@@ -1000,7 +1035,7 @@ namespace GeneSys.UI
                 }
                 else if (field.FieldType == typeof(float))
                 {
-                    var control = new FloatField(Humanize(field.Name)) { value = (float)field.GetValue(host.Config) };
+                    var control = new FloatField(SettingLabel(field.Name)) { value = (float)field.GetValue(host.Config) };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
                     AddSettingControl(container, control, field.Name);
                 }
@@ -1136,8 +1171,7 @@ namespace GeneSys.UI
         {
             if (SimulationSettingTooltips.TryGet(fieldName, out string tooltip))
             {
-                string title = fieldName == nameof(SimulationConfig.useOgWorldgen) ? "Use OG Worldgen" : Humanize(fieldName);
-                BindSettingTooltip(control, title, tooltip);
+                BindSettingTooltip(control, SettingLabel(fieldName), tooltip);
             }
             container.Add(control);
         }
@@ -1227,6 +1261,13 @@ namespace GeneSys.UI
             settingTooltip.style.visibility = StyleKeyword.Null;
         }
 
+        private static string SettingLabel(string fieldName)
+        {
+            if (fieldName == nameof(SimulationConfig.useOgWorldgen)) return "Use OG Worldgen";
+            if (fieldName == nameof(SimulationConfig.uiFadeDelay)) return "UI Fade Delay";
+            return Humanize(fieldName);
+        }
+
         private static string Humanize(string value)
         {
             if (value.StartsWith("fauna", StringComparison.Ordinal))
@@ -1268,6 +1309,66 @@ namespace GeneSys.UI
             RefreshLifeSeedButton();
             RefreshSteerButtons();
             RefreshProbeEnergy();
+            RefreshHudFades();
+        }
+
+        private void RefreshHudFades()
+        {
+            float delay = host.Config != null ? host.Config.uiFadeDelay : 8f;
+            if (ProbeHudIsActive())
+                probeActivityTime = Time.unscaledTime;
+            ApplyProbeFade(HudFadeAlpha(Time.unscaledTime - probeActivityTime, delay, HudFadeDuration, ProbeHudIdleAlpha));
+
+            if (!hasInspection) return;
+            ApplyInspectFade(HudFadeAlpha(Time.unscaledTime - inspectActivityTime, delay, HudFadeDuration));
+        }
+
+        private bool ProbeHudIsActive() =>
+            probeHoverCount > 0 || (probe != null && probe.ActiveAction != ProbeAction.None);
+
+        private void ApplyProbeFade(float alpha)
+        {
+            SetElementOpacity(probeSteerCard, alpha);
+            SetElementOpacity(probeToolsCard, alpha);
+            SetElementOpacity(probeCameraCard, alpha);
+        }
+
+        private void ApplyInspectFade(float alpha)
+        {
+            if (inspectBar == null) return;
+            SetElementOpacity(inspectBar, alpha);
+            if (alpha <= 0f)
+            {
+                inspectBar.AddToClassList("hidden");
+                SetInspectPicking(false);
+            }
+            else
+            {
+                inspectBar.RemoveFromClassList("hidden");
+                SetInspectPicking(true);
+            }
+        }
+
+        private void SetInspectPicking(bool enabled)
+        {
+            PickingMode mode = enabled ? PickingMode.Position : PickingMode.Ignore;
+            if (envInspectPanel != null) envInspectPanel.pickingMode = mode;
+            if (lifeInspectPanel != null) lifeInspectPanel.pickingMode = mode;
+        }
+
+        private static void SetElementOpacity(VisualElement element, float alpha)
+        {
+            if (element != null)
+                element.style.opacity = alpha;
+        }
+
+        public static float HudFadeAlpha(float secondsSinceActivity, float delay, float duration, float idleAlpha = 0f)
+        {
+            idleAlpha = Mathf.Clamp01(idleAlpha);
+            if (secondsSinceActivity <= delay) return 1f;
+            if (duration <= 0f) return idleAlpha;
+            float t = Mathf.Clamp01((secondsSinceActivity - delay) / duration);
+            return Mathf.Lerp(1f, idleAlpha, t);
         }
 
         public static Vector2 ToUiToolkitScreenPosition(Vector2 screenPosition, float screenHeight) =>
@@ -1310,7 +1411,10 @@ namespace GeneSys.UI
         {
             lastInspection = inspection;
             hasInspection = true;
+            inspectActivityTime = Time.unscaledTime;
             inspectBar?.RemoveFromClassList("hidden");
+            SetElementOpacity(inspectBar, 1f);
+            SetInspectPicking(true);
             RefreshInspectionDisplay();
         }
 

@@ -55,6 +55,9 @@ namespace GeneSys.Tests
             host.Config.rimCoolingStrength = 0f;
             host.Config.windStrength = 0.35f;
             host.Config.windDamping = 0.06f;
+            host.Config.coriolisStrength = 0f;
+            host.Config.velocityAdvectionRate = 0f;
+            host.Config.prevailingWind = 0f;
             host.Config.evaporationRate = 0.1f;
             host.Config.condensationRate = 0.12f;
             host.Config.precipitationRate = 0.2f;
@@ -182,6 +185,9 @@ namespace GeneSys.Tests
             host.Config.volcanicCooling = 0f;
             host.Config.magmaEruption = 0f;
             host.Config.windDamping = 0f;
+            host.Config.coriolisStrength = 0f;
+            host.Config.velocityAdvectionRate = 0f;
+            host.Config.prevailingWind = 0f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 0f;
@@ -2307,6 +2313,97 @@ namespace GeneSys.Tests
                     "Rim cooling must not drop air below space temperature.");
                 Assert.That(states[midY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
                     "Inward rim rings must also floor at space temperature.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator CoriolisDeflectsVerticalUpdraftIntoHorizontalWind()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.windStrength = 0f;
+            host.Config.windDamping = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.coriolisStrength = 1.5f;
+            host.Config.velocityAdvectionRate = 0f;
+            host.Config.prevailingWind = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+
+            PaintField(host, x, y, 12f, 1.5f);
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                Assert.That(flow[y * width + x].x, Is.LessThan(-0.01f),
+                    "Coriolis acceleration must deflect positive radial updraft into negative angular wind.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator PrevailingWindAcceleratesAtmosphericFlow()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.windStrength = 0f;
+            host.Config.windDamping = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.coriolisStrength = 0f;
+            host.Config.velocityAdvectionRate = 0f;
+            host.Config.prevailingWind = 2.0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+
+            yield return Step(host, 2);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                Assert.That(flow[y * width + x].x, Is.GreaterThan(0.05f),
+                    "Positive prevailing wind must accelerate atmospheric air eastward.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator VelocityAdvectionTransportsWindMomentum()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.windStrength = 0f;
+            host.Config.windDamping = 0f;
+            host.Config.coriolisStrength = 0f;
+            host.Config.prevailingWind = 0f;
+            host.Config.velocityAdvectionRate = 2.0f;
+            host.Config.atmosphericCflLimit = 0.5f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+
+            PaintField(host, x, y, 13f, 3.0f);
+            yield return Step(host, 1);
+            yield return Step(host, 3);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                int downstreamX = (x + 1) % width;
+                Assert.That(flow[y * width + downstreamX].x, Is.GreaterThan(0.05f),
+                    "Downstream cell must gain eastward velocity via momentum advection.");
             });
         }
 
