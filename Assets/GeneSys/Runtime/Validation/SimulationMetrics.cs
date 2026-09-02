@@ -302,7 +302,7 @@ namespace GeneSys.Validation
                     uint material = materials[index];
                     Vector4 state = states[index];
                     if (material == MaterialIds.Air || material == MaterialIds.Void) continue;
-                    if (material == MaterialIds.Water)
+                    if (material == MaterialIds.Water || material == MaterialIds.Ice)
                         oceanAngles[x] = true;
                     break;
                 }

@@ -43,6 +43,7 @@ namespace GeneSys.Configuration
         [Range(0.01f, 0.2f)] public float basinDepth = 0.08f;
         [Range(0f, 0.15f)] public float terrainRelief = 0.045f;
         [Range(0f, 0.08f)] public float coastRoughness = 0.025f;
+        public bool frozenOceans = false;
         [Range(0f, 1f)] public float initialGroundwaterSaturation = 0.65f;
         [Range(0f, 1f)] public float initialAtmosphericHumidity = 0.7f;
         [Range(0, 64)] public int metalVeinCount = 12;

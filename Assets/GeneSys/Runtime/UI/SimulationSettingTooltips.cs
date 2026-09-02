@@ -57,6 +57,8 @@ namespace GeneSys.UI
                 "Vertical roughness of generated land. Higher relief creates headlands, inland ponds, runoff channels, and varied solar heating across slopes.",
             [nameof(SimulationConfig.coastRoughness)] =
                 "How jagged generated coastlines are. Rougher coasts lengthen the shoreline, increase spray and vapor exchange, and fragment near-shore mycology habitat.",
+            [nameof(SimulationConfig.frozenOceans)] =
+                "Fills generated ocean basins with ice instead of liquid water. Glaciers stay frozen only while temperatures stay below 0°C; default warm air will thaw them after regenerate unless you also cool the world.",
             [nameof(SimulationConfig.initialGroundwaterSaturation)] =
                 "Starting fill of aquifer cells. Wetter ground feeds springs and capillary moisture into soil; drier ground delays hydrology until rain and infiltration catch up.",
             [nameof(SimulationConfig.initialAtmosphericHumidity)] =

@@ -42,6 +42,7 @@ MonoBehaviour:
   basinDepth: 0.08
   terrainRelief: 0.045
   coastRoughness: 0.025
+  frozenOceans: 0
   initialGroundwaterSaturation: 0.65
   initialAtmosphericHumidity: 0.7
   metalVeinCount: 12

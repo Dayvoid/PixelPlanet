@@ -59,6 +59,7 @@ namespace GeneSys.Tests
             host.Config.metalVeinCount = 12;
             host.Config.seed = 5150;
             host.Config.targetOceanCoverage = 0.5f;
+            host.Config.frozenOceans = false;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
 
@@ -83,6 +84,40 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator FrozenOceansFillsBasinsWithIce()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Config.ApplyPreset(SimulationPreset.Validation);
+            host.Config.useOgWorldgen = false;
+            host.Config.metalVeinCount = 12;
+            host.Config.seed = 5150;
+            host.Config.targetOceanCoverage = 0.5f;
+            host.Config.frozenOceans = true;
+            host.Regenerate();
+            for (int i = 0; i < 8; i++) yield return null;
+
+            uint[] materials = null;
+            yield return ReadMaterials(host, result => materials = result);
+
+            Assert.That(CountMaterial(materials, MaterialIds.Water), Is.EqualTo(0), "Frozen oceans should not place liquid water.");
+            Assert.That(CountMaterial(materials, MaterialIds.Ice), Is.GreaterThan(100), "Frozen oceans should fill basins with ice.");
+
+            WorldWaterMetrics metrics = default;
+            bool metricsReady = false;
+            SimulationMetrics.MeasureAsync(host, result =>
+            {
+                metrics = result;
+                metricsReady = true;
+            });
+            for (int i = 0; i < 240 && !metricsReady; i++)
+                yield return null;
+
+            Assert.That(metrics.OceanCoverage, Is.InRange(0.2f, 0.8f));
+        }
+
+        [UnityTest]
         public IEnumerator OgPipelineDoesNotSeedMetalOrIceAtGeneration()
         {
             SceneManager.LoadScene("Terrarium");
@@ -91,6 +126,7 @@ namespace GeneSys.Tests
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.useOgWorldgen = true;
             host.Config.seed = 5150;
+            host.Config.frozenOceans = false;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
 
@@ -111,6 +147,7 @@ namespace GeneSys.Tests
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.useOgWorldgen = false;
             host.Config.seed = 9090;
+            host.Config.frozenOceans = false;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
 
