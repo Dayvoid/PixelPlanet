@@ -97,6 +97,7 @@ MonoBehaviour:
   geyserCooldownSeconds: 2.5
   dayLengthSeconds: 180
   solarIntensity: 0.8
+  solarPolarOutputMin: 0.66
   spaceTemperature: 0
   terrainRadiativeCooling: 0.25
   atmosphereRadiativeCooling: 0.25

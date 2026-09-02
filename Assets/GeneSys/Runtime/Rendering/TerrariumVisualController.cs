@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using GeneSys.Configuration;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -344,6 +345,16 @@ namespace GeneSys.Rendering
             // Sit slightly behind the disc so the corona never overdraws simulation cells.
             solarRenderer.transform.localPosition = new Vector3(Mathf.Cos(angle) * radius, Mathf.Sin(angle) * radius, 0.12f);
             solarRenderer.transform.localRotation = Quaternion.identity;
+
+            if (solarMaterial != null)
+            {
+                float polar = PolarPoleGeometry.SolarPolarOutput(
+                    host.SolarAngle01,
+                    PolarPoleGeometry.PoleAngle01(host.Config.seed),
+                    host.Config.solarPolarOutputMin);
+                solarMaterial.SetFloat("_CoreIntensity", host.Config.solarBodyStrength * polar);
+                solarMaterial.SetFloat("_CoronaIntensity", host.Config.solarCoronaStrength * polar);
+            }
         }
 
         private void FollowCameraFrustum()

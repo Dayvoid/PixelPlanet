@@ -76,5 +76,38 @@ namespace GeneSys.Tests
                 Assert.That(after, Is.LessThan(before), $"theta {theta} step {step} across seam={theta == 0 || theta == width - 1}");
             }
         }
+
+        [Test]
+        public void SolarPolarOutputIsMinAtPolesAndFullAtEquators()
+        {
+            const float polarMin = 0.66f;
+            const float pole = 0.1f;
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole, pole, polarMin), Is.EqualTo(polarMin).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole + 0.5f, pole, polarMin), Is.EqualTo(polarMin).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole + 0.25f, pole, polarMin), Is.EqualTo(1f).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole + 0.75f, pole, polarMin), Is.EqualTo(1f).Within(1e-4f));
+        }
+
+        [Test]
+        public void SolarPolarOutputWrapsAndCanDisable()
+        {
+            const float polarMin = 0.66f;
+            const float pole = 0.1f;
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole + 1.5f, pole, polarMin), Is.EqualTo(polarMin).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole - 0.25f, pole, polarMin), Is.EqualTo(1f).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole, pole, 1f), Is.EqualTo(1f).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole + 0.25f, pole, 1f), Is.EqualTo(1f).Within(1e-4f));
+        }
+
+        [Test]
+        public void SolarPolarOutputAlignsWithSeedPoles()
+        {
+            const int seed = 12345;
+            const float polarMin = 0.66f;
+            float pole = PolarPoleGeometry.PoleAngle01(seed);
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole, pole, polarMin), Is.EqualTo(polarMin).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole + 0.5f, pole, polarMin), Is.EqualTo(polarMin).Within(1e-4f));
+            Assert.That(PolarPoleGeometry.SolarPolarOutput(pole + 0.25f, pole, polarMin), Is.EqualTo(1f).Within(1e-4f));
+        }
     }
 }

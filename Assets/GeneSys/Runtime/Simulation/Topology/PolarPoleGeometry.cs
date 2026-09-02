@@ -30,6 +30,18 @@ namespace GeneSys.Simulation.Topology
             return Mathf.Min(d, 1f - d);
         }
 
+        /// <summary>
+        /// Global solar energy scale for an elliptical-orbit approximation: 1 at the
+        /// equators (midway between ice-cap poles) and <paramref name="polarMin"/> when
+        /// the sun is over either cap. Two cosine minima per day.
+        /// </summary>
+        public static float SolarPolarOutput(float solarAngle01, float poleAngle01, float polarMin)
+        {
+            float rel = Frac(solarAngle01 - poleAngle01);
+            float t = 0.5f * (1f - Mathf.Cos(rel * 4f * Mathf.PI));
+            return Mathf.Lerp(Mathf.Clamp01(polarMin), 1f, t);
+        }
+
         private static float Frac(float value) => value - Mathf.Floor(value);
 
         private static float Hash01(uint value) => (Hash(value) & 0x00ffffff) / 16777215f;

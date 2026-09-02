@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using GeneSys.Configuration;
 using GeneSys.Materials;
+using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -497,7 +498,9 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, config.fieldCapacityFraction, config.geyserCooldownSeconds));
             shader.SetVector("_Erosion", new Vector4(config.erosionRate, 0f, config.baseSoilCohesion, config.stressDecayRate));
             shader.SetVector("_MoistureErosion", new Vector4(config.dryMoistureThreshold, config.moistureCohesionStrength, config.capillaryEvaporationFraction, 0f));
-            shader.SetVector("_WeatherA", new Vector4(config.solarIntensity, config.spaceTemperature, config.atmosphereRadiativeCooling, config.windStrength));
+            float polarOutput = PolarPoleGeometry.SolarPolarOutput(
+                SolarAngle01, PolarPoleGeometry.PoleAngle01(config.seed), config.solarPolarOutputMin);
+            shader.SetVector("_WeatherA", new Vector4(config.solarIntensity * polarOutput, config.spaceTemperature, config.atmosphereRadiativeCooling, config.windStrength));
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));
             shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, config.magmaViscosity));
             shader.SetVector("_WeatherD", new Vector4(config.atmosphericAdvectionRate, config.vaporDiffusionRate, config.atmosphericBuoyancy, config.humidityBuoyancy));

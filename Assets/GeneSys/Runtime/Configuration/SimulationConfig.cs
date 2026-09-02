@@ -106,6 +106,7 @@ namespace GeneSys.Configuration
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
         [Range(0f, 4f)] public float solarIntensity = 0.8f;
+        [Range(0.05f, 1f)] public float solarPolarOutputMin = 0.66f;
         [Range(-100f, 100f)] public float spaceTemperature = 0f;
         [FormerlySerializedAs("radiativeCooling")]
         [Range(0f, 4f)] public float terrainRadiativeCooling = 0.25f;
@@ -489,6 +490,7 @@ namespace GeneSys.Configuration
             slowPassInterval = Mathf.Clamp(slowPassInterval, 1, 32);
             transportPassInterval = Mathf.Clamp(transportPassInterval, 1, 8);
             dayLengthSeconds = Mathf.Max(1f, dayLengthSeconds);
+            solarPolarOutputMin = Mathf.Clamp(solarPolarOutputMin, 0.05f, 1f);
             minOceanBasins = Mathf.Clamp(minOceanBasins, 2, 3);
             maxOceanBasins = Mathf.Clamp(maxOceanBasins, minOceanBasins, 3);
             metalVeinCount = Mathf.Clamp(metalVeinCount, 0, 64);
