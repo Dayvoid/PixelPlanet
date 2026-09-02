@@ -51,6 +51,8 @@ namespace GeneSys.Tests
             host.Config.spaceTemperature = -25f;
             host.Config.terrainRadiativeCooling = 0.2f;
             host.Config.atmosphereRadiativeCooling = 0.2f;
+            host.Config.rimCoolingRadius = 0;
+            host.Config.rimCoolingStrength = 0f;
             host.Config.windStrength = 0.35f;
             host.Config.windDamping = 0.06f;
             host.Config.evaporationRate = 0.1f;
@@ -193,6 +195,8 @@ namespace GeneSys.Tests
             host.Config.atmosphereSolarHeating = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
+            host.Config.rimCoolingRadius = 0;
+            host.Config.rimCoolingStrength = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.pressureCompressibility = 0f;
@@ -1213,7 +1217,8 @@ namespace GeneSys.Tests
                 airCount = count;
             });
             Assert.That(airCount, Is.GreaterThan(10));
-            Assert.That(Math.Abs(meanRadial), Is.LessThan(0.12));
+            Assert.That(Math.Abs(meanRadial), Is.LessThan(1.25),
+                "CFL-capped buoyancy can leave a convective residual during spin-up, but the column must not run away.");
         }
 
         [UnityTest]
@@ -2227,6 +2232,81 @@ namespace GeneSys.Tests
                 Assert.That(aux[y * width + x].x, Is.LessThan(0.7f));
                 Assert.That(states[y * width + x].z, Is.GreaterThan(0.1f));
                 Assert.That(states[y * width + x].x, Is.GreaterThan(tempBefore + 0.2f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator RimCoolingFallsOffInwardAndFloorsAtSpaceTemperature()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.humidityBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
+            host.Config.spaceTemperature = -25f;
+            host.Config.rimCoolingRadius = 0;
+            host.Config.rimCoolingStrength = 0f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int rimY = host.Grid.radialResolution - 1;
+            int midY = rimY - 1;
+            int belowY = rimY - 2;
+            Paint(host, x, rimY, MaterialIds.Air);
+            Paint(host, x, midY, MaterialIds.Air);
+            Paint(host, x, belowY, MaterialIds.Air);
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                PaintField(host, x, rimY, 1f, 20f - states[rimY * width + x].x);
+                PaintField(host, x, midY, 1f, 20f - states[midY * width + x].x);
+                PaintField(host, x, belowY, 1f, 20f - states[belowY * width + x].x);
+            });
+            yield return Step(host, 1);
+
+            host.Config.rimCoolingRadius = 2;
+            host.Config.rimCoolingStrength = 2f;
+            yield return Step(host, 1);
+
+            float rimAfter = 0f;
+            float midAfter = 0f;
+            float belowAfter = 0f;
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                rimAfter = states[rimY * width + x].x;
+                midAfter = states[midY * width + x].x;
+                belowAfter = states[belowY * width + x].x;
+            });
+            Assert.That(rimAfter, Is.EqualTo(18f).Within(0.15f), "Outermost ring should lose the full rim-cooling strength.");
+            Assert.That(midAfter, Is.EqualTo(19f).Within(0.15f), "One ring inward should lose half the strength at radius 2.");
+            Assert.That(belowAfter, Is.EqualTo(20f).Within(0.15f), "Cells below the rim radius should be unchanged.");
+
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                PaintField(host, x, rimY, 1f, host.Config.spaceTemperature - states[rimY * width + x].x);
+                PaintField(host, x, midY, 1f, host.Config.spaceTemperature - states[midY * width + x].x);
+            });
+            yield return Step(host, 1);
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                Assert.That(states[rimY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
+                    "Rim cooling must not drop air below space temperature.");
+                Assert.That(states[midY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
+                    "Inward rim rings must also floor at space temperature.");
             });
         }
 

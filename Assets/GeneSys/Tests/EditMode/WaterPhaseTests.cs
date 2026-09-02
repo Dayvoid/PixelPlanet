@@ -85,6 +85,32 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void RimCoolingPackingAndTooltipsMatchNewControls()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.rimCoolingRadius, Is.EqualTo(8));
+            Assert.That(config.rimCoolingStrength, Is.EqualTo(0f).Within(0.001f));
+            config.rimCoolingRadius = -4;
+            config.rimCoolingStrength = -2f;
+            typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
+            Assert.That(config.rimCoolingRadius, Is.EqualTo(0));
+            Assert.That(config.rimCoolingStrength, Is.EqualTo(0f).Within(0.001f));
+            Object.DestroyImmediate(config);
+
+            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
+            Assert.That(scheduler, Does.Contain("config.rimCoolingRadius"));
+            Assert.That(scheduler, Does.Contain("config.rimCoolingStrength"));
+            Assert.That(scheduler, Does.Contain("_WeatherH"));
+            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(weather, Does.Contain("_WeatherH.z"));
+            Assert.That(weather, Does.Contain("_WeatherH.w"));
+            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.rimCoolingRadius), out string radius), Is.True);
+            Assert.That(radius.Length, Is.GreaterThan(40));
+            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.rimCoolingStrength), out string strength), Is.True);
+            Assert.That(strength.Length, Is.GreaterThan(40));
+        }
+
+        [Test]
         public void SharedHelpersAndKernelsAreWired()
         {
             string structs = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SimulationStructs.hlsl");

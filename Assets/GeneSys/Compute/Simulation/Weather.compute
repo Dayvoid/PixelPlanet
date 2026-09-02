@@ -46,7 +46,7 @@ float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, hum
 float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureCompressibility, atmosphericCflLimit
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, verticalBuoyancyStrength
-float4 _WeatherH; // solarTerrainPenetration, terrainSolarHeating, unused, unused
+float4 _WeatherH; // solarTerrainPenetration, terrainSolarHeating, rimCoolingRadius, rimCoolingStrength
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _EruptionA;
 float4 _EruptionB;
@@ -171,6 +171,18 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     }
     float cooling = (state.x - _WeatherA.y) * coolingRate * (1.0 - insolation) * 0.01;
     state.x += (heating - cooling) * _DeltaTime;
+
+    float rimRadius = max(0.0, _WeatherH.z);
+    float rimStrength = max(0.0, _WeatherH.w);
+    if (atmosphere && rimRadius > 0.0 && rimStrength > 0.0)
+    {
+        int dist = (_GridSize.y - 1) - cell.y;
+        if (dist >= 0 && dist < (int)rimRadius)
+        {
+            float factor = (rimRadius - (float)dist) / rimRadius;
+            state.x = max(_WeatherA.y, state.x - rimStrength * factor);
+        }
+    }
 
     float heatCapacity = max(0.001, definition.transport.y);
     if (atmosphere && cell.y > 0)

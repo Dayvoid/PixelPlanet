@@ -115,6 +115,8 @@ namespace GeneSys.Configuration
         [FormerlySerializedAs("radiativeCooling")]
         [Range(0f, 4f)] public float terrainRadiativeCooling = 0.25f;
         [Range(0f, 4f)] public float atmosphereRadiativeCooling = 0.25f;
+        [Range(0, 64)] public int rimCoolingRadius = 8;
+        [Range(0f, 20f)] public float rimCoolingStrength = 0f;
         [Range(0f, 4f)] public float windStrength = 2f;
         [Range(0f, 1f)] public float windDamping = 0.001f;
         [Range(0f, 4f)] public float evaporationRate = 0.5f;
@@ -527,6 +529,8 @@ namespace GeneSys.Configuration
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
             atmosphericCflLimit = Mathf.Clamp(atmosphericCflLimit, 0.05f, 1f);
             atmosphericLapseRate = Mathf.Max(0f, atmosphericLapseRate);
+            rimCoolingRadius = Mathf.Clamp(rimCoolingRadius, 0, 64);
+            rimCoolingStrength = Mathf.Max(0f, rimCoolingStrength);
             mycologyInitialSporeLoad = Mathf.Max(0f, mycologyInitialSporeLoad);
             mycologyRareStrainChance = Mathf.Clamp01(mycologyRareStrainChance);
             mycologyAirTransportRate = Mathf.Max(0f, mycologyAirTransportRate);
