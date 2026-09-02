@@ -46,7 +46,7 @@ float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, hum
 float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureCompressibility, atmosphericCflLimit
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, verticalBuoyancyStrength
-float4 _WeatherH; // solarTerrainPenetration, terrainSolarHeating, unused, unused
+float4 _WeatherH; // solarTerrainPenetration, terrainSolarHeating, atmosphereCoolingAltitudeBias, unused
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _EruptionA;
 float4 _EruptionB;
@@ -162,7 +162,11 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     float heating = insolation * solarHeating * exposure / max(0.05, definition.transport.y);
     float coolingRate;
     if (radius > _AtmosphereStartRadius)
-        coolingRate = _WeatherA.z;
+    {
+        float alt01 = saturate((radius - _AtmosphereStartRadius) / max(1e-5, 1.0 - _AtmosphereStartRadius));
+        float bias = saturate(_WeatherH.z);
+        coolingRate = _WeatherA.z * lerp(1.0 - bias, 1.0 + bias, alt01);
+    }
     else
     {
         float depth = max(0.0, _AtmosphereStartRadius - radius);
@@ -208,11 +212,14 @@ void AtmosphericContinuity(uint3 id : SV_DispatchThreadID)
         float2 fU = cell.y < _GridSize.y - 1 ? F(cell + int2(0, 1)) : float2(0.0, min(0.0, flow.y));
 
         float tanW = TangentialEdgeWeight(cell.y, _GridSize.y);
-        // Flow is stored in cell-space units (matching pressure-gradient wind), so use
-        // neighbor differences without an extra 1/dr amplification by radial resolution.
-        float angularDiv = ((fR.x * faces.y) - (fL.x * faces.x)) * 0.5 * tanW;
-        float radialDiv = ((fU.y * faces.w) - (fD.y * faces.z)) * 0.5;
-        float divergence = angularDiv + radialDiv;
+        // Donor-cell divergence matches AtmosphericTransport: a cell's own updraft
+        // rarefies itself and compresses the receiver, so lofting is not cancelled
+        // by an odd-even central-difference null mode.
+        float outflow = (max(0.0, flow.x) * faces.y + max(0.0, -flow.x) * faces.x) * tanW
+            + max(0.0, flow.y) * faces.w + max(0.0, -flow.y) * faces.z;
+        float inflow = (max(0.0, fL.x) * faces.x + max(0.0, -fR.x) * faces.y) * tanW
+            + max(0.0, fD.y) * faces.z + max(0.0, -fU.y) * faces.w;
+        float divergence = outflow - inflow;
         float compress = max(0.0, _WeatherF.z);
         float dp = clamp(-divergence * compress * _DeltaTime, -2.0, 2.0);
         state.y = max(0.0, state.y + dp);
@@ -242,10 +249,11 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
     float4 faces = AtmosphereFaceMask(cell);
     float cfl = saturate(_WeatherF.w);
 
-    float pressureLeft = CellEffectivePressure(S(cell + int2(-1, 0)), A(cell + int2(-1, 0)));
-    float pressureRight = CellEffectivePressure(S(cell + int2(1, 0)), A(cell + int2(1, 0)));
-    float pressureBelow = cell.y > 0 ? CellEffectivePressure(S(cell + int2(0, -1)), A(cell + int2(0, -1))) : CellEffectivePressure(state, aux);
-    float pressureAbove = cell.y < _GridSize.y - 1 ? CellEffectivePressure(S(cell + int2(0, 1)), A(cell + int2(0, 1))) : CellEffectivePressure(state, aux);
+    float selfPressure = CellEffectivePressure(state, aux);
+    float pressureLeft = faces.x > 0.5 ? CellEffectivePressure(S(cell + int2(-1, 0)), A(cell + int2(-1, 0))) : selfPressure;
+    float pressureRight = faces.y > 0.5 ? CellEffectivePressure(S(cell + int2(1, 0)), A(cell + int2(1, 0))) : selfPressure;
+    float pressureBelow = faces.z > 0.5 ? CellEffectivePressure(S(cell + int2(0, -1)), A(cell + int2(0, -1))) : selfPressure;
+    float pressureAbove = faces.w > 0.5 ? CellEffectivePressure(S(cell + int2(0, 1)), A(cell + int2(0, 1))) : selfPressure;
 
     float tanW = TangentialEdgeWeight(cell.y, _GridSize.y);
     float2 gradient = float2(
@@ -312,7 +320,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
             buoyancy += _WeatherG.w * (vertTemp * _WeatherD.z + vertVapor * _WeatherD.w);
         }
 
-        flow.y += clamp(buoyancy, -2.0, 2.0) * _DeltaTime;
+        flow.y += clamp(buoyancy * _DeltaTime, -accelCap, accelCap);
 
         // Top boundary: suppress outward radial wind. Surface no-flux is enforced
         // in transport face masks; downdraft momentum remains for continuity/pressure.

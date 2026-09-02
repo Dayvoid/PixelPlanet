@@ -185,6 +185,8 @@ namespace GeneSys.UI
                 "How fast the crust radiates heat. Strongest at the outermost terrain cells and falls off exponentially inward, so the mantle stays insulated.",
             [nameof(SimulationConfig.atmosphereRadiativeCooling)] =
                 "How fast air above the terrain radius radiates toward space. Stronger cooling steepens night-side temperatures and can collapse vapor into rain or snow.",
+            [nameof(SimulationConfig.atmosphereCoolingAltitudeBias)] =
+                "How much atmospheric cooling concentrates at the outer edge. Zero cools the column evenly; higher values leave surface air warmer and make the rim the cold sink that lofted heat can reach.",
             [nameof(SimulationConfig.windStrength)] =
                 "Forcing that turns pressure and temperature gradients into wind. Stronger wind advects heat, vapor, ash, and spores around the planetoid.",
             [nameof(SimulationConfig.windDamping)] =
