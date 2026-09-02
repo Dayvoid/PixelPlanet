@@ -16,6 +16,7 @@ MonoBehaviour:
   displayName: Detritus
   category: 3
   displayColor: {r: 0.38, g: 0.28, b: 0.14, a: 1}
+  shadeVariation: 0.18
   density: 0.48
   rigidity: 0.04
   angleOfRepose: 28
@@ -36,8 +37,8 @@ MonoBehaviour:
   gasPhaseId: 11
   toxicity: 0.02
   caloricContent: 0.55
+  bioModifiable: 1
   ignitionTemperature: 220
   flashPoint: 180
   oxygenDemand: 0.65
   smokeYield: 0.45
-  bioModifiable: 1

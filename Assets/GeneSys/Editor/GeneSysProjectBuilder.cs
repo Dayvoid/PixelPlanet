@@ -191,6 +191,7 @@ namespace GeneSys.Editor
             SetObject(visuals, "spaceParticleShader", Shader.Find("GeneSys/Space Particle"));
             SetObject(visuals, "atmosphereGlowShader", Shader.Find("GeneSys/Atmosphere Glow"));
             SetObject(visuals, "solarBodyShader", Shader.Find("GeneSys/Solar Body"));
+            SetObject(visuals, "moltenCoreShader", Shader.Find("GeneSys/Molten Core"));
             SetObject(tools, "host", host);
             SetObject(tools, "display", display);
             SetObject(tools, "ui", ui);

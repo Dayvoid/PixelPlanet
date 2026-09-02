@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: 133_WaspEgg
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
   stableId: 133
-  displayName: Wasp Egg
+  displayName: WaspEgg
   category: 6
   displayColor: {r: 0.88, g: 0.84, b: 0.6, a: 1}
   shadeVariation: 0.1

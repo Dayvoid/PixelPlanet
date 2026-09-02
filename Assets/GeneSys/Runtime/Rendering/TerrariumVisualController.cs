@@ -35,19 +35,23 @@ namespace GeneSys.Rendering
         [SerializeField] private Shader spaceParticleShader;
         [SerializeField] private Shader atmosphereGlowShader;
         [SerializeField] private Shader solarBodyShader;
+        [SerializeField] private Shader moltenCoreShader;
 
         private Transform visualsRoot;
         private Transform solarRoot;
+        private Transform coreRoot;
         private ParticleSystem starSystem;
         private ParticleSystem nebulaSystem;
         private ParticleSystemRenderer starRenderer;
         private ParticleSystemRenderer nebulaRenderer;
         private MeshRenderer atmosphereRenderer;
         private MeshRenderer solarRenderer;
+        private MeshRenderer coreRenderer;
         private Material starMaterial;
         private Material nebulaMaterial;
         private Material atmosphereMaterial;
         private Material solarMaterial;
+        private Material coreMaterial;
         private Texture2D softParticleTexture;
         private readonly List<Vector4> customDataScratch = new(512);
         private readonly List<ParticleSystemVertexStream> starStreams = new(8);
@@ -87,7 +91,8 @@ namespace GeneSys.Rendering
             if (spaceParticleShader == null) spaceParticleShader = Shader.Find("GeneSys/Space Particle");
             if (atmosphereGlowShader == null) atmosphereGlowShader = Shader.Find("GeneSys/Atmosphere Glow");
             if (solarBodyShader == null) solarBodyShader = Shader.Find("GeneSys/Solar Body");
-            if (spaceParticleShader == null || atmosphereGlowShader == null || solarBodyShader == null)
+            if (moltenCoreShader == null) moltenCoreShader = Shader.Find("GeneSys/Molten Core");
+            if (spaceParticleShader == null || atmosphereGlowShader == null || solarBodyShader == null || moltenCoreShader == null)
             {
                 Debug.LogError("GeneSys visuals: one or more shaders are missing.", this);
                 return;
@@ -101,6 +106,7 @@ namespace GeneSys.Rendering
             nebulaMaterial = CreateParticleMaterial("GeneSys Nebula Material", 1f);
             atmosphereMaterial = new Material(atmosphereGlowShader) { name = "GeneSys Atmosphere Glow Runtime" };
             solarMaterial = new Material(solarBodyShader) { name = "GeneSys Solar Body Runtime" };
+            coreMaterial = new Material(moltenCoreShader) { name = "GeneSys Molten Core Runtime" };
 
             starSystem = CreateParticleLayer("Starfield", visualsRoot, starMaterial, out starRenderer, 512);
             nebulaSystem = CreateParticleLayer("Nebula", visualsRoot, nebulaMaterial, out nebulaRenderer, 64);
@@ -114,6 +120,14 @@ namespace GeneSys.Rendering
             solarRoot.SetParent(solarParent, false);
             solarRenderer = CreateQuad("Solar Body", solarRoot, solarMaterial, 20);
             solarRenderer.transform.localScale = Vector3.one * 0.12f;
+
+            Transform coreParent = display != null ? display.transform : visualsRoot;
+            coreRoot = new GameObject("Planetary Core").transform;
+            coreRoot.SetParent(coreParent, false);
+            coreRoot.localPosition = new Vector3(0f, 0f, -0.01f);
+            coreRenderer = CreateQuad("Molten Core", coreRoot, coreMaterial, 55);
+            coreRenderer.transform.localPosition = Vector3.zero;
+            coreRenderer.transform.localRotation = Quaternion.identity;
 
             built = true;
         }
@@ -274,6 +288,25 @@ namespace GeneSys.Rendering
                     float sunScale = 0.12f * Mathf.Lerp(0.8f, 1.4f,
                         Mathf.Clamp01(config.solarBodyStrength * 0.5f + config.solarCoronaStrength * 0.5f));
                     solarRenderer.transform.localScale = Vector3.one * sunScale;
+                }
+            }
+
+            bool coreEnabled = config.enableCoreVisual != 0 && config.coreVisualStrength > 0.001f;
+            if (coreRoot != null)
+            {
+                coreRoot.gameObject.SetActive(coreEnabled);
+                if (coreEnabled && coreMaterial != null && display != null)
+                {
+                    PolarGridDefinition gridDef = host.Grid;
+                    float displayedCore = gridDef.visualCoreRadius * gridDef.visualCoreSquash;
+                    // Quad spans [-0.5, 0.5] in local display space; diameter of core disc is 2.0 * displayedCore
+                    float coreScale = (displayedCore * 2.0f) * config.coreVisualScale;
+                    coreRenderer.transform.localScale = Vector3.one * coreScale;
+                    coreMaterial.SetFloat("_Intensity", config.coreVisualStrength);
+                    coreMaterial.SetFloat("_CirculationSpeed", config.coreCirculationSpeed);
+                    coreMaterial.SetFloat("_HeatGlow", config.coreHeatGlow);
+                    coreMaterial.SetFloat("_CoreRadius", 0.85f);
+                    coreMaterial.SetFloat("_EdgeSoftness", 1.6f);
                 }
             }
         }
@@ -456,9 +489,11 @@ namespace GeneSys.Rendering
             if (nebulaMaterial != null) Destroy(nebulaMaterial);
             if (atmosphereMaterial != null) Destroy(atmosphereMaterial);
             if (solarMaterial != null) Destroy(solarMaterial);
+            if (coreMaterial != null) Destroy(coreMaterial);
             if (softParticleTexture != null) Destroy(softParticleTexture);
             if (visualsRoot != null) Destroy(visualsRoot.gameObject);
             if (solarRoot != null) Destroy(solarRoot.gameObject);
+            if (coreRoot != null) Destroy(coreRoot.gameObject);
         }
 
         public static Vector2 SolarDirectionFromAngle01(float solarAngle01)

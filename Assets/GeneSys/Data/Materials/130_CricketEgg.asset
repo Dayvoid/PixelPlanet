@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: 130_CricketEgg
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
   stableId: 130
-  displayName: Cricket Egg
+  displayName: CricketEgg
   category: 6
   displayColor: {r: 0.78, g: 0.72, b: 0.48, a: 1}
   shadeVariation: 0.12

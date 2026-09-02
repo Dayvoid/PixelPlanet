@@ -16,6 +16,7 @@ MonoBehaviour:
   displayName: Soil
   category: 3
   displayColor: {r: 0.28, g: 0.14, b: 0.055, a: 1}
+  shadeVariation: 0.18
   density: 1.5
   rigidity: 0.15
   angleOfRepose: 34

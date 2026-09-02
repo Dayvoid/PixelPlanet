@@ -800,6 +800,16 @@ namespace GeneSys.UI
                 "How far the sun mesh orbits the planetoid. Visual placement only; day length still comes from Day Length Seconds.",
             [nameof(SimulationConfig.dayNightLightingStrength)] =
                 "How strongly the display shades the night side. Visual lighting only; temperatures still come from the weather pass.",
+            [nameof(SimulationConfig.enableCoreVisual)] =
+                "Toggles the animated molten metal planetary core visual effect anchored to the center of the planetoid. Visual only.",
+            [nameof(SimulationConfig.coreVisualStrength)] =
+                "Overall brightness and opacity of the molten metal core and convective circulation. Visual only.",
+            [nameof(SimulationConfig.coreCirculationSpeed)] =
+                "Speed of fluid convection, differential rotation, and eddy currents in the molten core dynamo. Visual only.",
+            [nameof(SimulationConfig.coreHeatGlow)] =
+                "Intensity of incandescent thermal radiation and thermal bloom at the core-mantle boundary. Visual only.",
+            [nameof(SimulationConfig.coreVisualScale)] =
+                "Multiplier on the visual extent of the molten metal core quad relative to the planetary core boundary. Visual only.",
 
             [nameof(SimulationConfig.brushRadius)] =
                 "Radius of the paint/inspect brush in cells. Larger brushes edit more geology, water, and ecology at once.",

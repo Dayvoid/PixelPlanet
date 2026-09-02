@@ -48,7 +48,8 @@ namespace GeneSys.UI
             nameof(SimulationConfig.enableStarfield),
             nameof(SimulationConfig.enableNebula),
             nameof(SimulationConfig.enableAtmosphereGlow),
-            nameof(SimulationConfig.enableSolarBody)
+            nameof(SimulationConfig.enableSolarBody),
+            nameof(SimulationConfig.enableCoreVisual)
         };
 
         private static readonly HashSet<string> SkipSettingsFields = new()

@@ -439,6 +439,11 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float solarCoronaStrength = 0.85f;
         [Range(0.5f, 2f)] public float solarOrbitRadius = 1.35f;
         [Range(0f, 2f)] public float dayNightLightingStrength = 1f;
+        [Range(0, 1)] public int enableCoreVisual = 1;
+        [Range(0f, 2f)] public float coreVisualStrength = 1f;
+        [Range(0.2f, 3f)] public float coreCirculationSpeed = 1f;
+        [Range(0f, 2f)] public float coreHeatGlow = 1f;
+        [Range(0.5f, 2f)] public float coreVisualScale = 1f;
 
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;
@@ -884,6 +889,11 @@ namespace GeneSys.Configuration
             solarCoronaStrength = Mathf.Max(0f, solarCoronaStrength);
             solarOrbitRadius = Mathf.Clamp(solarOrbitRadius, 0.5f, 2f);
             dayNightLightingStrength = Mathf.Max(0f, dayNightLightingStrength);
+            enableCoreVisual = enableCoreVisual != 0 ? 1 : 0;
+            coreVisualStrength = Mathf.Max(0f, coreVisualStrength);
+            coreCirculationSpeed = Mathf.Max(0f, coreCirculationSpeed);
+            coreHeatGlow = Mathf.Max(0f, coreHeatGlow);
+            coreVisualScale = Mathf.Clamp(coreVisualScale, 0.5f, 2f);
             coreReactionFrequency = Mathf.Max(0, coreReactionFrequency);
             coreReactionMagnitude = Mathf.Max(0f, coreReactionMagnitude);
             probeOrbitRadius = Mathf.Clamp(probeOrbitRadius, 0.8f, 2f);

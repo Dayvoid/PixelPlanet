@@ -122,6 +122,7 @@ MonoBehaviour:
   vaporDiffusionRate: 0.33
   atmosphericBuoyancy: 0.9
   humidityBuoyancy: 0.8
+  verticalBuoyancyStrength: 1
   saturationCapacityScale: 0.01
   cloudPrecipitationThreshold: 0.9
   waterPressureResponse: 0.6
@@ -226,6 +227,48 @@ MonoBehaviour:
   faunaWanderRate: 0.35
   faunaSurvivalTempMin: -12
   faunaSurvivalTempMax: 75
+  waspSeedAtWorldgen: 0
+  waspInitialCalories: 0.5
+  waspInitialHydration: 0.7
+  waspMaturityTicks: 1600
+  waspDecisionInterval: 2
+  waspMaintenanceRate: 0.035
+  waspFlightDrain: 0.05
+  waspHydrationDrain: 0.04
+  waspCalorieCapacity: 1
+  waspFullThreshold: 0.75
+  waspHungerThreshold: 0.45
+  waspStarvationThreshold: 0.12
+  waspCruiseAltitude: 5
+  waspAltitudeGain: 1.2
+  waspLiftPower: 4.5
+  waspSurfaceScanRange: 12
+  waspBodyMass: 0.22
+  waspDrag: 1.4
+  waspWindCoupling: 0.6
+  waspUpdraftCoupling: 0.9
+  waspSwoopImpulse: 3.5
+  waspSenseRadius: 7
+  waspPreyCalorieConversion: 0.85
+  waspPreyHydrationTransfer: 0.6
+  waspNectarDraw: 0.2
+  waspNectarCalories: 0.05
+  waspNectarHydration: 0.8
+  waspPollenCapacity: 3
+  waspGeneExpressionRange: 0.45
+  waspBaseMutationRate: 0.05
+  waspMateCooldownTicks: 300
+  waspReproduceCooldownTicks: 700
+  waspClutchMin: 1
+  waspClutchMax: 3
+  waspHatchTicksMin: 900
+  waspHatchTicksMax: 1400
+  waspReproductionCalorieThreshold: 0.6
+  waspEggDesiccationMoisture: 0.04
+  waspEggHeatDeath: 90
+  waspSurvivalTempMin: -8
+  waspSurvivalTempMax: 78
+  waspThreatTemperature: 90
   grassSeedAtWorldgen: 0
   grassInitialBiomass: 0.4
   grassInitialEnergy: 0.55
@@ -260,6 +303,43 @@ MonoBehaviour:
   grassSeedSettlingRate: 0.2
   grassNectarAmount: 0.35
   grassCanopyOpacity: 0.12
+  treeSeedAtWorldgen: 0
+  treeInitialEnergy: 0.55
+  treeInitialHydration: 0.6
+  treeInitialNutrient: 0.45
+  treeInitialHealth: 1
+  treePhotosynthesisRate: 0.28
+  treeGrowthRate: 0.12
+  treeDecayRate: 0.08
+  treeMaintenanceRate: 0.04
+  treeNightDrain: 0.025
+  treeWaterUptakeRate: 0.22
+  treeNutrientUptakeRate: 0.16
+  treeVascularRate: 0.35
+  treeGrowthCost: 0.18
+  treeWindBias: 0.35
+  treeGeneExpressionRange: 0.45
+  treeGrowthTempMin: 6
+  treeGrowthTempMax: 72
+  treeGrowthMoistureMin: 0.08
+  treeGrowthMoistureMax: 1.2
+  treeSurvivalTempMin: -12
+  treeSurvivalTempMax: 82
+  treeSurvivalMoistureMin: 0.02
+  treeSurvivalMoistureMax: 1.5
+  treeMinLight: 0.06
+  treeSproutHeight: 4
+  treeSaplingHeight: 15
+  treeMaxHeight: 30
+  treeMaxTrunkWidth: 6
+  treeSaplingBranchMin: 2
+  treeSaplingBranchMax: 4
+  treeRootCohesionBonus: 0.12
+  treeCanopyOpacity: 0.28
+  treeExposureDamage: 0.08
+  treeLeafLifeTicks: 400
+  treeRotTicks: 500
+  treeDisconnectTicks: 8
   detritusVaporAbsorbRate: 0.08
   detritusEvaporationRate: 0.015
   detritusMoistureDistributeRate: 0.15
@@ -328,6 +408,11 @@ MonoBehaviour:
   solarCoronaStrength: 0.85
   solarOrbitRadius: 1.35
   dayNightLightingStrength: 1
+  enableCoreVisual: 1
+  coreVisualStrength: 1
+  coreCirculationSpeed: 1
+  coreHeatGlow: 1
+  coreVisualScale: 1
   brushRadius: 5
   brushStrength: 1
   validationIntervalTicks: 1000

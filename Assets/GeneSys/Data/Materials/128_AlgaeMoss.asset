@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: 128_AlgaeMoss
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
   stableId: 128
-  displayName: Algae/Moss
+  displayName: AlgaeMoss
   category: 6
   displayColor: {r: 0.18, g: 0.55, b: 0.22, a: 1}
   shadeVariation: 0.22

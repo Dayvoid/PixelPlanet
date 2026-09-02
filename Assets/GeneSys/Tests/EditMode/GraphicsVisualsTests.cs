@@ -56,5 +56,39 @@ namespace GeneSys.Tests
             Assert.That(display.Contains("SolarInsolation(theta01, _SolarAngle01)"));
             Assert.That(display.Contains("float3(0.62, 0.70, 0.95)"));
         }
+
+        [Test]
+        public void MoltenCoreShaderExistsAndHasConvectionProperties()
+        {
+            string shader = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/MoltenCore.shader");
+            Assert.That(shader.Contains("Shader \"GeneSys/Molten Core\""));
+            Assert.That(shader.Contains("_CirculationSpeed"));
+            Assert.That(shader.Contains("_HeatGlow"));
+            Assert.That(shader.Contains("_Intensity"));
+            Assert.That(shader.Contains("_CoreColor"));
+            Assert.That(shader.Contains("_MagmaColor"));
+            Assert.That(shader.Contains("_DeepColor"));
+            Assert.That(shader.Contains("_SlagColor"));
+        }
+
+        [Test]
+        public void MoltenCoreConfigDefaultsAreConfigured()
+        {
+            var config = ScriptableObject.CreateInstance<GeneSys.Configuration.SimulationConfig>();
+            Assert.That(config.enableCoreVisual, Is.EqualTo(1));
+            Assert.That(config.coreVisualStrength, Is.EqualTo(1f).Within(0.001f));
+            Assert.That(config.coreCirculationSpeed, Is.EqualTo(1f).Within(0.001f));
+            Assert.That(config.coreHeatGlow, Is.EqualTo(1f).Within(0.001f));
+            Assert.That(config.coreVisualScale, Is.EqualTo(1f).Within(0.001f));
+            Object.DestroyImmediate(config);
+        }
+
+        [Test]
+        public void PlanetoidDisplayAttenuatesDayNightAndGridAtCore()
+        {
+            string display = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");
+            Assert.That(display.Contains("depthFade = saturate((simulationRadius - _VisualCoreRadius) / max(0.01, 1.0 - _VisualCoreRadius));"));
+            Assert.That(display.Contains("coreGridFade"));
+        }
     }
 }

@@ -332,12 +332,15 @@ Shader "GeneSys/Planetoid Display"
                     float strength = saturate(_DayNightLightingStrength);
                     if (strength > 0.001)
                     {
+                        // Attenuate sunlight with depth so subterranean mantle/core depths are not sliced by surface day/night
+                        float depthFade = saturate((simulationRadius - _VisualCoreRadius) / max(0.01, 1.0 - _VisualCoreRadius));
+                        float effectiveStrength = strength * depthFade;
                         float theta01 = angle / 6.28318530718;
                         float insolation = SolarInsolation(theta01, _SolarAngle01);
                         float dayFactor = saturate(insolation * 0.94 + 0.03);
-                        float lighting = lerp(1.0 - 0.92 * strength, 1.0 + 0.22 * strength, dayFactor);
+                        float lighting = lerp(1.0 - 0.92 * effectiveStrength, 1.0 + 0.22 * effectiveStrength, dayFactor);
                         color *= lighting;
-                        color = lerp(color * float3(0.62, 0.70, 0.95), color, dayFactor);
+                        color = lerp(lerp(color, color * float3(0.62, 0.70, 0.95), depthFade), color, dayFactor);
                     }
                 }
                 else if (_OverlayMode == 1) color = HeatColor(state.x);
@@ -520,7 +523,8 @@ Shader "GeneSys/Planetoid Display"
                 float radialGrid = frac(simulationRadius * height);
                 float angularGrid = frac(angle / 6.28318530718 * width);
                 float gridLine = step(radialGrid, 0.025) + step(angularGrid, 0.025);
-                color *= 1.0 - saturate(gridLine) * 0.12;
+                float coreGridFade = saturate((simulationRadius - _VisualCoreRadius * 0.5) / max(0.01, _VisualCoreRadius * 0.5));
+                color *= 1.0 - saturate(gridLine) * (0.12 * coreGridFade);
                 return half4(color, baseColor.a > 0.0 ? 1.0 : 0.0);
             }
             ENDHLSL
