@@ -100,10 +100,8 @@
 // Atmosphere dynamics:
 //   flow.x = angular wind, flow.y = radial wind (positive = outward/up). Signed buoyancy from
 //   same-altitude temperature/humidity anomalies plus a lapse-adjusted vertical comparison
-//   drives updrafts and downdrafts; buoyancy increment is CFL-capped like pressure accel.
-//   Continuity uses the same donor-cell stencil as transport so a rising cell rarefies itself.
-//   Non-atmosphere faces use a one-sided (self) pressure so soil vapor cannot pin surface air.
-//   Heat, vapor, and cloud condensate advect with flow under a CFL outbound-mass cap.
+//   drives updrafts and downdrafts. Heat, vapor, and cloud condensate advect with flow under
+//   a CFL outbound-mass cap.
 // Liquid density exchange:
 //   LiquidDensityExchange swaps whole cells across liquid interfaces when both materials opt in
 //   via motion.x (densityDisplaceable). Density (physical.x) alone decides direction: a denser
