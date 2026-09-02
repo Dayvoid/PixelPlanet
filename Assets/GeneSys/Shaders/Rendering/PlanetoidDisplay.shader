@@ -27,6 +27,7 @@ Shader "GeneSys/Planetoid Display"
             #pragma vertex Vert
             #pragma fragment Frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "../Simulation/Common/SolarInsolation.hlsl"
 
             struct Attributes
             {
@@ -327,15 +328,16 @@ Shader "GeneSys/Planetoid Display"
                     if (bolt > 0.02)
                         color = lerp(color, float3(0.82, 0.92, 1.0), saturate(bolt)) + float3(0.55, 0.72, 1.0) * bolt * 0.8;
 
-                    // Soft ambient + directional day/night, matching Weather AtmosphericForcing insolation.
+                    // Linear solar falloff + stronger day/night, matching Weather AtmosphericForcing.
                     float strength = saturate(_DayNightLightingStrength);
                     if (strength > 0.001)
                     {
                         float theta01 = angle / 6.28318530718;
-                        float insolation = max(0.0, cos((theta01 - _SolarAngle01) * 6.28318530718));
-                        float dayFactor = saturate(insolation * 0.75 + 0.25);
-                        float lighting = lerp(1.0 - 0.82 * strength, 1.0 + 0.12 * strength, dayFactor);
+                        float insolation = SolarInsolation(theta01, _SolarAngle01);
+                        float dayFactor = saturate(insolation * 0.94 + 0.03);
+                        float lighting = lerp(1.0 - 0.92 * strength, 1.0 + 0.22 * strength, dayFactor);
                         color *= lighting;
+                        color = lerp(color * float3(0.62, 0.70, 0.95), color, dayFactor);
                     }
                 }
                 else if (_OverlayMode == 1) color = HeatColor(state.x);

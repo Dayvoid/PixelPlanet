@@ -7,6 +7,7 @@
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#include "../../Shaders/Simulation/Common/SolarInsolation.hlsl"
 #define GENESYS_DISABLE_ORGANISM_HISTORY_UAV
 #include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
 
@@ -391,8 +392,7 @@ void LightAttenuation(uint3 id : SV_DispatchThreadID)
     if (id.x >= (uint)_GridSize.x) return;
     int theta = (int)id.x;
     float theta01 = (theta + 0.5) / _GridSize.x;
-    float angle = (theta01 - _WeatherC.y) * 6.28318530718;
-    float light = max(0.0, cos(angle)) * max(0.0, _WeatherA.x);
+    float light = SolarInsolation(theta01, _WeatherC.y) * max(0.0, _WeatherA.x);
 
     for (int r = _GridSize.y - 1; r >= 0; r--)
     {

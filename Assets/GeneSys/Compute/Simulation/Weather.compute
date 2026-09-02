@@ -6,6 +6,7 @@
 #pragma kernel Precipitation
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#include "../../Shaders/Simulation/Common/SolarInsolation.hlsl"
 
 Texture2D<uint> _MaterialRead;
 RWTexture2D<uint> _MaterialWrite;
@@ -147,8 +148,7 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     bool atmosphere = IsAtmosphereCell(cell, material);
 
     float theta01 = (cell.x + 0.5) / _GridSize.x;
-    float angle = (theta01 - _WeatherC.y) * 6.28318530718;
-    float insolation = max(0.0, cos(angle));
+    float insolation = SolarInsolation(theta01, _WeatherC.y);
     float exposure = smoothstep(_PlayableInnerRadius, _AtmosphereStartRadius, radius);
     float heating = insolation * _WeatherA.x * exposure / max(0.05, definition.transport.y);
     float coolingRate;

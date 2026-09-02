@@ -455,5 +455,12 @@ namespace GeneSys.Rendering
             float angle = Mathf.Repeat(solarAngle01, 1f) * Mathf.PI * 2f;
             return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
         }
+
+        public static float SolarInsolation(float theta01, float solarAngle01)
+        {
+            float wrapped = Mathf.Repeat(theta01 - solarAngle01, 1f);
+            float dist = Mathf.Min(wrapped, 1f - wrapped);
+            return Mathf.Clamp01(1f - dist * 4f);
+        }
     }
 }

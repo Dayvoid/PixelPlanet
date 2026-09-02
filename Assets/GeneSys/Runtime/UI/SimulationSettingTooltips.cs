@@ -170,7 +170,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",
             [nameof(SimulationConfig.solarIntensity)] =
-                "How strongly the sun heats exposed surfaces and air. Higher intensity drives evaporation, buoyancy, wind, and daytime thaw; lower intensity favors ice and calm air.",
+                "Peak heating directly under the sun, falling linearly to zero at the terminators. Higher intensity drives evaporation, buoyancy, wind, and daytime thaw; lower intensity favors ice and calm air.",
             [nameof(SimulationConfig.spaceTemperature)] =
                 "Temperature the upper atmosphere radiates toward. Colder space strengthens night cooling, lapse, and polar ice; warmer space keeps vapor aloft.",
             [nameof(SimulationConfig.terrainRadiativeCooling)] =
