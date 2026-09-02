@@ -133,7 +133,7 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
             host.Config.humidityBuoyancy = 0f;
-            host.Config.solarIntensity = 0.8f;
+            host.Config.atmosphereSolarHeating = 0.8f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;

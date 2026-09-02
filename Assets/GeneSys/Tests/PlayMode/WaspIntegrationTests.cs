@@ -287,7 +287,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.solarIntensity = 1.5f;
+            host.Config.atmosphereSolarHeating = 1.5f;
             host.Config.grassGrowthTempMin = -50f;
             host.Config.grassGrowthTempMax = 80f;
             host.Config.grassGrowthMoistureMin = 0f;

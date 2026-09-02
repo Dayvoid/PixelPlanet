@@ -46,7 +46,8 @@ namespace GeneSys.Tests
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.ticksPerSecond = 20f;
             host.Config.dayLengthSeconds = 180f;
-            host.Config.solarIntensity = 0.8f;
+            host.Config.terrainSolarHeating = 0.8f;
+            host.Config.atmosphereSolarHeating = 0.8f;
             host.Config.spaceTemperature = -25f;
             host.Config.terrainRadiativeCooling = 0.2f;
             host.Config.atmosphereRadiativeCooling = 0.2f;
@@ -188,7 +189,8 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.collapseRate = 0f;
             host.Config.erosionRate = 0f;
-            host.Config.solarIntensity = 0f;
+            host.Config.terrainSolarHeating = 0f;
+            host.Config.atmosphereSolarHeating = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;

@@ -96,8 +96,10 @@ MonoBehaviour:
   geyserDischargeRate: 0.5
   geyserCooldownSeconds: 2.5
   dayLengthSeconds: 180
-  solarIntensity: 0.8
+  terrainSolarHeating: 0.8
+  atmosphereSolarHeating: 0.8
   solarPolarOutputMin: 0.66
+  solarTerrainPenetration: 1
   spaceTemperature: 0
   terrainRadiativeCooling: 0.25
   atmosphereRadiativeCooling: 0.25

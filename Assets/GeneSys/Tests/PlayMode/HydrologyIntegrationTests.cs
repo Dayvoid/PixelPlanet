@@ -325,7 +325,8 @@ namespace GeneSys.Tests
             host.Config.gravityStrength = 0f;
             host.Config.thermalRate = 0f;
             host.Config.electricalRate = 0f;
-            host.Config.solarIntensity = 0f;
+            host.Config.terrainSolarHeating = 0f;
+            host.Config.atmosphereSolarHeating = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.windStrength = 0f;

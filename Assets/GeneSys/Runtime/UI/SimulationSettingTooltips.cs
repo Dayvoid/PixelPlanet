@@ -169,10 +169,14 @@ namespace GeneSys.UI
 
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",
-            [nameof(SimulationConfig.solarIntensity)] =
-                "Peak heating directly under the sun, falling linearly to zero at the terminators. Higher intensity drives evaporation, buoyancy, wind, and daytime thaw; lower intensity favors ice and calm air.",
+            [nameof(SimulationConfig.terrainSolarHeating)] =
+                "Peak day heating in the crust, falling linearly to zero at the terminators. Depth is gated by Solar Terrain Penetration so the interior can stay independent of day and night.",
+            [nameof(SimulationConfig.atmosphereSolarHeating)] =
+                "Peak day heating in air above the terrain radius, falling linearly to zero at the terminators. Higher values drive evaporation, buoyancy, and wind; this scale also lights flora and grass.",
             [nameof(SimulationConfig.solarPolarOutputMin)] =
                 "Solar heat and light as a fraction of peak when the sun is over an ice-cap pole. Output eases from 1 at the equator down to this value at both poles, approximating a more distant apoapsis. 1 keeps constant output.",
+            [nameof(SimulationConfig.solarTerrainPenetration)] =
+                "How deeply solar heating reaches into the crust. 1 ramps from the inner playable radius to the atmosphere, warming the full playable mantle; lower values confine day heat to a thinner surface band so the interior stays independent of day and night.",
             [nameof(SimulationConfig.spaceTemperature)] =
                 "Temperature the upper atmosphere radiates toward. Colder space strengthens night cooling, lapse, and polar ice; warmer space keeps vapor aloft.",
             [nameof(SimulationConfig.terrainRadiativeCooling)] =
@@ -787,7 +791,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.enableSolarBody)] =
                 "Toggles the orbiting sun mesh. Lighting can still follow orbit; disabling hides the disc and corona.",
             [nameof(SimulationConfig.solarBodyStrength)] =
-                "Brightness of the sun's core disc. Visual only; solar heating uses Solar Intensity instead.",
+                "Brightness of the sun's core disc. Visual only; solar heating uses Terrain Solar Heating and Atmosphere Solar Heating instead.",
             [nameof(SimulationConfig.solarCoronaStrength)] =
                 "Brightness of the sun's corona. Visual only.",
             [nameof(SimulationConfig.solarOrbitRadius)] =

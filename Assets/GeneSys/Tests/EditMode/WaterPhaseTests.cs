@@ -45,6 +45,46 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void SplitSolarHeatingPackingAndTooltipsMatchNewControls()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.terrainSolarHeating, Is.EqualTo(0.8f).Within(0.001f));
+            Assert.That(config.atmosphereSolarHeating, Is.EqualTo(0.8f).Within(0.001f));
+            Object.DestroyImmediate(config);
+
+            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
+            Assert.That(scheduler, Does.Contain("config.terrainSolarHeating"));
+            Assert.That(scheduler, Does.Contain("config.atmosphereSolarHeating"));
+            Assert.That(scheduler, Does.Contain("_WeatherH"));
+            Assert.That(scheduler, Does.Contain("_WeatherA"));
+            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(weather, Does.Contain("_WeatherH.y"));
+            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.terrainSolarHeating), out string terrain), Is.True);
+            Assert.That(terrain.Length, Is.GreaterThan(40));
+            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.atmosphereSolarHeating), out string atmosphere), Is.True);
+            Assert.That(atmosphere.Length, Is.GreaterThan(40));
+        }
+
+        [Test]
+        public void SolarTerrainPenetrationPackingAndTooltipsMatchNewControl()
+        {
+            var config = ScriptableObject.CreateInstance<SimulationConfig>();
+            Assert.That(config.solarTerrainPenetration, Is.EqualTo(1f).Within(0.001f));
+            config.solarTerrainPenetration = -0.5f;
+            typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
+            Assert.That(config.solarTerrainPenetration, Is.EqualTo(0f).Within(0.001f));
+            Object.DestroyImmediate(config);
+
+            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
+            Assert.That(scheduler, Does.Contain("config.solarTerrainPenetration"));
+            Assert.That(scheduler, Does.Contain("_WeatherH"));
+            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(weather, Does.Contain("_WeatherH.x"));
+            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.solarTerrainPenetration), out string tooltip), Is.True);
+            Assert.That(tooltip.Length, Is.GreaterThan(40));
+        }
+
+        [Test]
         public void SharedHelpersAndKernelsAreWired()
         {
             string structs = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SimulationStructs.hlsl");

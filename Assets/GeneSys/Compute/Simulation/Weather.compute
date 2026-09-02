@@ -39,13 +39,14 @@ float4 _Hydrology;
 float4 _HydrologyB;
 float4 _HydrologyC;
 float4 _Erosion;
-float4 _WeatherA; // solarIntensity, spaceTemperature, atmosphereRadiativeCooling, windStrength
+float4 _WeatherA; // atmosphereSolarHeating, spaceTemperature, atmosphereRadiativeCooling, windStrength
 float4 _WeatherB;
 float4 _WeatherC;
 float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, humidityBuoyancy
 float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureCompressibility, atmosphericCflLimit
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, verticalBuoyancyStrength
+float4 _WeatherH; // solarTerrainPenetration, terrainSolarHeating, unused, unused
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _EruptionA;
 float4 _EruptionB;
@@ -149,8 +150,16 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
 
     float theta01 = (cell.x + 0.5) / _GridSize.x;
     float insolation = SolarInsolation(theta01, _WeatherC.y);
-    float exposure = smoothstep(_PlayableInnerRadius, _AtmosphereStartRadius, radius);
-    float heating = insolation * _WeatherA.x * exposure / max(0.05, definition.transport.y);
+    float exposure = 1.0;
+    if (radius < _AtmosphereStartRadius)
+    {
+        float band = max(1e-5, _AtmosphereStartRadius - _PlayableInnerRadius);
+        float penetration = saturate(_WeatherH.x);
+        float inner = _AtmosphereStartRadius - penetration * band;
+        exposure = penetration <= 0.0 ? 0.0 : smoothstep(inner, _AtmosphereStartRadius, radius);
+    }
+    float solarHeating = radius > _AtmosphereStartRadius ? _WeatherA.x : _WeatherH.y;
+    float heating = insolation * solarHeating * exposure / max(0.05, definition.transport.y);
     float coolingRate;
     if (radius > _AtmosphereStartRadius)
         coolingRate = _WeatherA.z;

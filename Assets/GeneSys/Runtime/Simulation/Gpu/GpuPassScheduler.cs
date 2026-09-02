@@ -500,13 +500,14 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_MoistureErosion", new Vector4(config.dryMoistureThreshold, config.moistureCohesionStrength, config.capillaryEvaporationFraction, 0f));
             float polarOutput = PolarPoleGeometry.SolarPolarOutput(
                 SolarAngle01, PolarPoleGeometry.PoleAngle01(config.seed), config.solarPolarOutputMin);
-            shader.SetVector("_WeatherA", new Vector4(config.solarIntensity * polarOutput, config.spaceTemperature, config.atmosphereRadiativeCooling, config.windStrength));
+            shader.SetVector("_WeatherA", new Vector4(config.atmosphereSolarHeating * polarOutput, config.spaceTemperature, config.atmosphereRadiativeCooling, config.windStrength));
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));
             shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, config.magmaViscosity));
             shader.SetVector("_WeatherD", new Vector4(config.atmosphericAdvectionRate, config.vaporDiffusionRate, config.atmosphericBuoyancy, config.humidityBuoyancy));
             shader.SetVector("_WeatherE", new Vector4(config.saturationCapacityScale, config.cloudPrecipitationThreshold, config.waterPressureResponse, config.latentHeatScale));
             shader.SetVector("_WeatherF", new Vector4(config.surfaceAirHeatExchange, config.temperatureAdvectionRate, config.pressureCompressibility, config.atmosphericCflLimit));
             shader.SetVector("_WeatherG", new Vector4(config.surfaceAirTemperature, config.atmosphericLapseRate, config.terrainRadiativeCooling, config.verticalBuoyancyStrength));
+            shader.SetVector("_WeatherH", new Vector4(config.solarTerrainPenetration, config.terrainSolarHeating * polarOutput, 0f, 0f));
             shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, 0f));
             shader.SetVector("_PressureB", new Vector4(config.gasPressureDiffusivity, config.fluidPressureDiffusivity, config.porousPressureDiffusivity, config.rigidPressureDiffusivity));
             shader.SetVector("_DensityExchange", new Vector4(config.densityExchangeRate, config.densityExchangeEpsilon, 0f, 0f));

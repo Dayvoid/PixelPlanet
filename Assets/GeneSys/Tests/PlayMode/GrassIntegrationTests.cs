@@ -149,7 +149,7 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
             host.Config.humidityBuoyancy = 0f;
-            host.Config.solarIntensity = 0.8f;
+            host.Config.atmosphereSolarHeating = 0.8f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
@@ -395,7 +395,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.solarIntensity = 1.5f;
+            host.Config.atmosphereSolarHeating = 1.5f;
             int x = 10;
             int y = SurfaceY(host);
             yield return PlantOnPlot(host, x, y, 1);
@@ -437,7 +437,7 @@ namespace GeneSys.Tests
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            host.Config.solarIntensity = 0f;
+            host.Config.atmosphereSolarHeating = 0f;
             host.Config.grassPhotosynthesisRate = 0f;
             host.Config.grassNightDrain = 2f;
             host.Config.grassMaintenanceRate = 0f;
@@ -563,7 +563,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.solarIntensity = 1.5f;
+            host.Config.atmosphereSolarHeating = 1.5f;
             host.Config.grassPollenEmitRate = 0.5f;
             host.Config.grassPollenTransportRate = 0.05f;
             int x = 34;
@@ -605,7 +605,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.solarIntensity = 1.5f;
+            host.Config.atmosphereSolarHeating = 1.5f;
             host.Config.grassPollenEmitRate = 0.5f;
             host.Config.grassPollenTransportRate = 0.5f;
             host.Config.grassPollenWindRate = 2f;
@@ -638,7 +638,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.solarIntensity = 1.5f;
+            host.Config.atmosphereSolarHeating = 1.5f;
             host.Config.grassSeedTransportRate = 0.5f;
             host.Config.grassSeedWindRate = 1.5f;
             host.Config.grassSeedSettlingRate = 1.5f;
