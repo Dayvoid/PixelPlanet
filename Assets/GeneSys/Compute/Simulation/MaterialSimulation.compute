@@ -282,6 +282,7 @@ bool IsMovable(uint material)
     // solver drop them a cell per tick would outrun their altitude controller.
     if (IsWaspMaterial(material)) return false;
     if (IsTreeMaterial(material)) return false;
+    if (material == 10u) return true;
     float category = Mat(material).metadata.x;
     return category == 2.0 || category == 3.0 || category == 5.0 || category == 6.0;
 }
@@ -421,10 +422,22 @@ int2 MovementDestination(int2 source)
         return AirbornePrecipDestination(source, below);
     if (IsOpen(ReadMaterial(below))) return below;
 
+    // Solid ice falls straight down when unsupported, but does not slide diagonally like sand/fluid.
+    if (sourceMaterial == 10u) return source;
+
     MaterialGpuData definition = Mat(sourceMaterial);
     if (definition.physical.y >= 0.9) return source;
-    // Standing surface water levels by hydraulic head; diagonal slides would pile hills.
-    if (sourceMaterial == 9u) return source;
+    // Standing surface water levels by hydraulic head in enclosed basins.
+    // However, if the water pixel is laterally unconfined (open air to either side),
+    // allow diagonal sliding so unsupported cliffs and towers can spill and level.
+    if (sourceMaterial == 9u)
+    {
+        int2 leftSide = ClampCell(source + int2(-1, 0), _GridSize);
+        int2 rightSide = ClampCell(source + int2(1, 0), _GridSize);
+        bool laterallyExposed = IsOpen(ReadMaterial(leftSide)) || IsOpen(ReadMaterial(rightSide));
+        if (!laterallyExposed)
+            return source;
+    }
     int direction = ((source.x + _Tick) & 1) == 0 ? -1 : 1;
     int2 diagonal = ClampCell(source + int2(direction, -1), _GridSize);
     if (IsOpen(ReadMaterial(diagonal))) return diagonal;

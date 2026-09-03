@@ -93,10 +93,24 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
     uint surfaceMat = M(int2(x, y));
     if (surfaceMat == 10u)
     {
-        bedY = y;
-        waterTop = y;
-        head = (float)(bedY + 1);
-        return;
+        int probeY = y;
+        [loop]
+        while (probeY >= 0 && M(int2(x, probeY)) == 10u)
+        {
+            probeY--;
+        }
+        if (probeY >= 0 && M(int2(x, probeY)) == 9u)
+        {
+            surfaceMat = 9u;
+            y = probeY;
+        }
+        else
+        {
+            bedY = y;
+            waterTop = y;
+            head = (float)(bedY + 1);
+            return;
+        }
     }
 
     if (surfaceMat == 9u)
