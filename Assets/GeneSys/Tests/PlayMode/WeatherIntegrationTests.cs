@@ -55,6 +55,7 @@ namespace GeneSys.Tests
             host.Config.rimCoolingStrength = 0f;
             host.Config.windStrength = 0.35f;
             host.Config.windDamping = 0.06f;
+            host.Config.windInertiaCoupling = 0f;
             host.Config.coriolisStrength = 0f;
             host.Config.velocityAdvectionRate = 0f;
             host.Config.prevailingWind = 0f;
@@ -2404,6 +2405,109 @@ namespace GeneSys.Tests
                 int downstreamX = (x + 1) % width;
                 Assert.That(flow[y * width + downstreamX].x, Is.GreaterThan(0.05f),
                     "Downstream cell must gain eastward velocity via momentum advection.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator DynamicWindDampingPreservesFastJetsWhileDampingCalmAir()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.windStrength = 0f;
+            host.Config.windDamping = 0.15f;
+            host.Config.windInertiaCoupling = 2.0f;
+            host.Config.coriolisStrength = 0f;
+            host.Config.prevailingWind = 0f;
+            host.Config.velocityAdvectionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int y = AtmosphereY(host);
+            int slowX = width / 4;
+            int fastX = (3 * width) / 4;
+            const float initialSlow = 0.2f;
+            const float initialFast = 2.5f;
+
+            PaintField(host, slowX, y, 13f, initialSlow);
+            PaintField(host, fastX, y, 13f, initialFast);
+            yield return Step(host, 1);
+            yield return Step(host, 20);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                float slowRemaining = flow[y * width + slowX].x;
+                float fastRemaining = flow[y * width + fastX].x;
+                float slowFraction = slowRemaining / initialSlow;
+                float fastFraction = fastRemaining / initialFast;
+
+                Assert.That(fastFraction, Is.GreaterThan(slowFraction),
+                    $"Fast jet must retain a higher fraction of its velocity than slow breeze. Fast: {fastFraction:P1}, Slow: {slowFraction:P1}");
+                Assert.That(1.0f - slowFraction, Is.GreaterThan((1.0f - fastFraction) * 2.0f),
+                    $"Slow breeze must decay at least twice as much as fast jet. Slow lost: {(1f - slowFraction):P1}, Fast lost: {(1f - fastFraction):P1}");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator FastHorizontalWindSuppressesUpdraftUnlessSuperheated()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.surfaceAirTemperature = 20f;
+            host.Config.windStrength = 0f;
+            host.Config.windDamping = 0.05f;
+            host.Config.windInertiaCoupling = 2.0f;
+            host.Config.convectiveBreakthroughTemp = 5.0f;
+            host.Config.coriolisStrength = 0f;
+            host.Config.prevailingWind = 0f;
+            host.Config.velocityAdvectionRate = 0f;
+            host.Config.temperatureAdvectionRate = 0f;
+            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.atmosphereRadiativeCooling = 0f;
+            host.Config.atmosphericBuoyancy = 2.0f;
+            host.Config.verticalBuoyancyStrength = 1.0f;
+            host.Config.atmosphericLapseRate = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int y0 = AtmosphereY(host);
+            int xCalm = width / 6;
+            int xModerate = width / 2;
+            int xSuperheated = (5 * width) / 6;
+
+            // Baseline air is 20 deg
+            // xCalm has mild warmth (+2 deg: below 5 deg breakthrough) and NO horizontal wind: standard buoyancy applies
+            PaintField(host, xCalm, y0, 1f, 2.0f);
+            PaintField(host, xCalm, y0, 13f, 0f);
+
+            // xModerate has mild warmth (+2 deg) and FAST horizontal wind (3.0): horizontal shear suppresses updraft
+            PaintField(host, xModerate, y0, 1f, 2.0f);
+            PaintField(host, xModerate, y0, 13f, 3.0f);
+
+            // xSuperheated has extreme heat (+25 deg: above 5 deg threshold) and FAST horizontal wind: punches through
+            PaintField(host, xSuperheated, y0, 1f, 25.0f);
+            PaintField(host, xSuperheated, y0, 13f, 3.0f);
+
+            yield return Step(host, 1);
+            yield return Step(host, 5);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                float updraftCalm = flow[y0 * width + xCalm].y;
+                float updraftModerate = flow[y0 * width + xModerate].y;
+                float updraftSuperheated = flow[y0 * width + xSuperheated].y;
+
+                Assert.That(updraftModerate, Is.LessThan(updraftCalm),
+                    $"Fast horizontal wind must suppress vertical updraft compared to calm air. Moderate: {updraftModerate:F3}, Calm: {updraftCalm:F3}");
+                Assert.That(updraftSuperheated, Is.GreaterThan(updraftModerate * 2.0f),
+                    $"Superheated cell must punch through shear suppression into strong updraft. Superheated: {updraftSuperheated:F3}, Moderate: {updraftModerate:F3}");
             });
         }
 

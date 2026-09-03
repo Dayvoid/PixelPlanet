@@ -508,8 +508,8 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_WeatherF", new Vector4(config.surfaceAirHeatExchange, config.temperatureAdvectionRate, config.pressureCompressibility, config.atmosphericCflLimit));
             shader.SetVector("_WeatherG", new Vector4(config.surfaceAirTemperature, config.atmosphericLapseRate, config.terrainRadiativeCooling, config.verticalBuoyancyStrength));
             shader.SetVector("_WeatherH", new Vector4(config.solarTerrainPenetration, config.terrainSolarHeating * polarOutput, config.rimCoolingRadius, config.rimCoolingStrength));
-            shader.SetVector("_WeatherI", new Vector4(config.coriolisStrength, config.velocityAdvectionRate, config.prevailingWind, 0f));
-            shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, 0f));
+            shader.SetVector("_WeatherI", new Vector4(config.coriolisStrength, config.velocityAdvectionRate, config.prevailingWind, config.windInertiaCoupling));
+            shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, config.convectiveBreakthroughTemp));
             shader.SetVector("_PressureB", new Vector4(config.gasPressureDiffusivity, config.fluidPressureDiffusivity, config.porousPressureDiffusivity, config.rigidPressureDiffusivity));
             shader.SetVector("_DensityExchange", new Vector4(config.densityExchangeRate, config.densityExchangeEpsilon, 0f, 0f));
             shader.SetVector("_MycologyA", new Vector4(config.mycologyInitialSporeLoad, config.mycologyRareStrainChance, config.mycologyAirTransportRate, config.mycologyWaterTransportRate));

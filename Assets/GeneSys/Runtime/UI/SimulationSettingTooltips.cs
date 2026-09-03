@@ -193,6 +193,10 @@ namespace GeneSys.UI
                 "Forcing that turns pressure and temperature gradients into wind. Stronger wind advects heat, vapor, ash, and spores around the planetoid.",
             [nameof(SimulationConfig.windDamping)] =
                 "How quickly wind dies without forcing. Higher damping calms storms; lower damping lets jets persist and carry weather farther.",
+            [nameof(SimulationConfig.windInertiaCoupling)] =
+                "Reduces wind damping and suppresses upward drift as horizontal wind speed increases. Fast winds preserve momentum and hug the ground, while calm air retains full damping to keep pillowy clouds cohesive.",
+            [nameof(SimulationConfig.convectiveBreakthroughTemp)] =
+                "Thermal excess required for extreme heat sources (such as volcanic vents, fires, or superheated terrain) to punch through fast horizontal wind streams and loft vertical storm towers.",
             [nameof(SimulationConfig.coriolisStrength)] =
                 "Planetary rotation forcing. Deflects vertical updrafts into horizontal winds and vice-versa, breaking diurnal symmetry to generate prevailing trade winds and jet streams. Set to 0 to disable.",
             [nameof(SimulationConfig.velocityAdvectionRate)] =

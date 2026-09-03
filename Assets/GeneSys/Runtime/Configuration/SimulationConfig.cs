@@ -118,7 +118,9 @@ namespace GeneSys.Configuration
         [Range(0, 64)] public int rimCoolingRadius = 8;
         [Range(0f, 20f)] public float rimCoolingStrength = 0f;
         [Range(0f, 4f)] public float windStrength = 2f;
-        [Range(0f, 1f)] public float windDamping = 0.001f;
+        [Range(0f, 1f)] public float windDamping = 0.05f;
+        [Range(0f, 4f)] public float windInertiaCoupling = 1f;
+        [Range(0f, 20f)] public float convectiveBreakthroughTemp = 5f;
         [Range(-4f, 4f)] public float coriolisStrength = 0f;
         [Range(0f, 4f)] public float velocityAdvectionRate = 0f;
         [Range(-4f, 4f)] public float prevailingWind = 0f;
@@ -519,6 +521,9 @@ namespace GeneSys.Configuration
             iceCapRadiusVariation = Mathf.Clamp01(iceCapRadiusVariation);
             iceCapHeightVariation = Mathf.Clamp01(iceCapHeightVariation);
             fieldCapacityFraction = Mathf.Clamp01(fieldCapacityFraction);
+            windDamping = Mathf.Clamp01(windDamping);
+            windInertiaCoupling = Mathf.Max(0f, windInertiaCoupling);
+            convectiveBreakthroughTemp = Mathf.Max(0f, convectiveBreakthroughTemp);
             coriolisStrength = Mathf.Clamp(coriolisStrength, -4f, 4f);
             velocityAdvectionRate = Mathf.Max(0f, velocityAdvectionRate);
             prevailingWind = Mathf.Clamp(prevailingWind, -4f, 4f);

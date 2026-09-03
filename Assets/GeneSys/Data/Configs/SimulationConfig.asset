@@ -105,7 +105,9 @@ MonoBehaviour:
   terrainRadiativeCooling: 0.25
   atmosphereRadiativeCooling: 0.25
   windStrength: 2
-  windDamping: 0.001
+  windDamping: 0.05
+  windInertiaCoupling: 1
+  convectiveBreakthroughTemp: 5
   coriolisStrength: 0
   velocityAdvectionRate: 0
   prevailingWind: 0
