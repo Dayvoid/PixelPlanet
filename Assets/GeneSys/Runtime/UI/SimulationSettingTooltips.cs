@@ -186,9 +186,9 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.atmosphereRadiativeCooling)] =
                 "How fast air above the terrain radius radiates toward space. Stronger cooling steepens night-side temperatures and can collapse vapor into rain or snow.",
             [nameof(SimulationConfig.rimCoolingRadius)] =
-                "How many Y rings inward from the outer atmosphere edge lose heat to space. The outermost ring takes the full sink; each step inward takes a smaller share. Zero disables the rim sink.",
+                "Inward radial extent from the outer atmosphere edge subject to cooling. The outermost ring takes 100% of the cooling strength, diminishing each step inward, with this radius marking the last affected ring and receiving the smallest portion.",
             [nameof(SimulationConfig.rimCoolingStrength)] =
-                "Degrees subtracted from the outermost atmosphere ring each tick. Inner rings in the radius take a linearly smaller share. Cooling stops at Space Temperature so the rim cannot run away.",
+                "Degrees subtracted from the outermost atmosphere ring each tick. Inner rings up to the cooling radius take a linearly smaller share. Cooling stops at Space Temperature so the rim cannot run away. Zero disables the rim sink.",
             [nameof(SimulationConfig.windStrength)] =
                 "Forcing that turns pressure and temperature gradients into wind. Stronger wind advects heat, vapor, ash, and spores around the planetoid.",
             [nameof(SimulationConfig.windDamping)] =

@@ -175,12 +175,13 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
 
     float rimRadius = max(0.0, _WeatherH.z);
     float rimStrength = max(0.0, _WeatherH.w);
-    if (atmosphere && rimRadius > 0.0 && rimStrength > 0.0)
+    if (atmosphere && rimStrength > 0.0)
     {
+        int r = (int)rimRadius;
         int dist = (_GridSize.y - 1) - cell.y;
-        if (dist >= 0 && dist < (int)rimRadius)
+        if (dist >= 0 && dist <= r)
         {
-            float factor = (rimRadius - (float)dist) / rimRadius;
+            float factor = (float)(r - dist + 1) / (float)(r + 1);
             state.x = max(_WeatherA.y, state.x - rimStrength * factor);
         }
     }

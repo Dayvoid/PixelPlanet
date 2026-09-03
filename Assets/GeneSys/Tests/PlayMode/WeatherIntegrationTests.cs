@@ -2270,9 +2270,11 @@ namespace GeneSys.Tests
             int rimY = host.Grid.radialResolution - 1;
             int midY = rimY - 1;
             int belowY = rimY - 2;
+            int beyondY = rimY - 3;
             Paint(host, x, rimY, MaterialIds.Air);
             Paint(host, x, midY, MaterialIds.Air);
             Paint(host, x, belowY, MaterialIds.Air);
+            Paint(host, x, beyondY, MaterialIds.Air);
             yield return Step(host, 1);
 
             yield return ReadFields(host, (_, states, __, ___) =>
@@ -2280,6 +2282,7 @@ namespace GeneSys.Tests
                 PaintField(host, x, rimY, 1f, 20f - states[rimY * width + x].x);
                 PaintField(host, x, midY, 1f, 20f - states[midY * width + x].x);
                 PaintField(host, x, belowY, 1f, 20f - states[belowY * width + x].x);
+                PaintField(host, x, beyondY, 1f, 20f - states[beyondY * width + x].x);
             });
             yield return Step(host, 1);
 
@@ -2290,20 +2293,24 @@ namespace GeneSys.Tests
             float rimAfter = 0f;
             float midAfter = 0f;
             float belowAfter = 0f;
+            float beyondAfter = 0f;
             yield return ReadFields(host, (_, states, __, ___) =>
             {
                 rimAfter = states[rimY * width + x].x;
                 midAfter = states[midY * width + x].x;
                 belowAfter = states[belowY * width + x].x;
+                beyondAfter = states[beyondY * width + x].x;
             });
-            Assert.That(rimAfter, Is.EqualTo(18f).Within(0.15f), "Outermost ring should lose the full rim-cooling strength.");
-            Assert.That(midAfter, Is.EqualTo(19f).Within(0.15f), "One ring inward should lose half the strength at radius 2.");
-            Assert.That(belowAfter, Is.EqualTo(20f).Within(0.15f), "Cells below the rim radius should be unchanged.");
+            Assert.That(rimAfter, Is.EqualTo(18f).Within(0.15f), "Outermost ring should lose the full rim-cooling strength (3/3).");
+            Assert.That(midAfter, Is.EqualTo(18.67f).Within(0.15f), "One ring inward should lose 2/3 of the strength at radius 2.");
+            Assert.That(belowAfter, Is.EqualTo(19.33f).Within(0.15f), "The extent course (radius 2) should lose 1/3 of the strength.");
+            Assert.That(beyondAfter, Is.EqualTo(20f).Within(0.15f), "Cells beyond the rim cooling radius extent should be unchanged.");
 
             yield return ReadFields(host, (_, states, __, ___) =>
             {
                 PaintField(host, x, rimY, 1f, host.Config.spaceTemperature - states[rimY * width + x].x);
                 PaintField(host, x, midY, 1f, host.Config.spaceTemperature - states[midY * width + x].x);
+                PaintField(host, x, belowY, 1f, host.Config.spaceTemperature - states[belowY * width + x].x);
             });
             yield return Step(host, 1);
             yield return Step(host, 1);
@@ -2314,6 +2321,8 @@ namespace GeneSys.Tests
                     "Rim cooling must not drop air below space temperature.");
                 Assert.That(states[midY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
                     "Inward rim rings must also floor at space temperature.");
+                Assert.That(states[belowY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
+                    "Extent rim ring must also floor at space temperature.");
             });
         }
 
