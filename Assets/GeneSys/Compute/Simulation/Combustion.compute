@@ -36,6 +36,7 @@ float4 _CombustionB; // ignitionDecay, seedIntensity, burnRate, heatYield
 float4 _CombustionC; // pressureScale, updraftStrength, smokeYield, sootSettling
 float4 _CombustionD; // pyroFertility, moisturePenalty, steamSuppression, flameDecay
 float4 _CombustionE; // flashVaporization, minFuel, minOxygen, suppressionMoisture
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _MycologyE;   // unused, unused, traitEffectStrength, unused
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
@@ -189,7 +190,7 @@ void Combustion(uint3 id : SV_DispatchThreadID)
         float steam = min(state.z, flashRate * max(0.05, combustion.y) * over * _DeltaTime);
         state.z -= steam;
         aux.x += steam;
-        state.x -= steam * 0.25;
+        state.x -= WaterLatentHeatDelta(steam, _WeatherE.w, 0.8);
         combustion.x = max(0.0, combustion.x - steam * steamSuppression);
         state.y += steam * 0.15;
         flow.y += steam * 0.8;

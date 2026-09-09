@@ -46,16 +46,12 @@ namespace GeneSys.Tests
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.ticksPerSecond = 20f;
             host.Config.dayLengthSeconds = 180f;
-            host.Config.terrainSolarHeating = 0.8f;
-            host.Config.atmosphereSolarHeating = 0.8f;
+            host.Config.solarIntensity = 0.8f;
             host.Config.spaceTemperature = -25f;
             host.Config.terrainRadiativeCooling = 0.2f;
             host.Config.atmosphereRadiativeCooling = 0.2f;
-            host.Config.rimCoolingRadius = 0;
-            host.Config.rimCoolingStrength = 0f;
             host.Config.windStrength = 0.35f;
             host.Config.windDamping = 0.06f;
-            host.Config.windInertiaCoupling = 0f;
             host.Config.coriolisStrength = 0f;
             host.Config.velocityAdvectionRate = 0f;
             host.Config.prevailingWind = 0f;
@@ -66,10 +62,9 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0.85f;
             host.Config.vaporDiffusionRate = 0.05f;
             host.Config.atmosphericBuoyancy = 0.4f;
-            host.Config.humidityBuoyancy = 0.25f;
             host.Config.verticalBuoyancyStrength = 1f;
-            host.Config.saturationCapacityScale = 0.55f;
-            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.vaporCapacityScale = 0.55f;
+            host.Config.cloudRetainMass = 0.05f;
             host.Config.waterPressureResponse = 0.6f;
             host.Config.latentHeatScale = 0.35f;
             host.Config.surfaceAirHeatExchange = 0.45f;
@@ -194,16 +189,12 @@ namespace GeneSys.Tests
             host.Config.runoffRate = 0f;
             host.Config.pondingRate = 0f;
             host.Config.springDischargeRate = 0f;
-            host.Config.geyserDischargeRate = 0f;
             host.Config.dissolutionRate = 0f;
             host.Config.collapseRate = 0f;
             host.Config.erosionRate = 0f;
-            host.Config.terrainSolarHeating = 0f;
-            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.solarIntensity = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
-            host.Config.rimCoolingRadius = 0;
-            host.Config.rimCoolingStrength = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.pressureCompressibility = 0f;
@@ -319,7 +310,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.phaseHysteresis = 0.01f;
             host.Config.thermalRate = 1f;
             host.Config.waterPressureResponse = 0f;
@@ -388,8 +378,7 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 1f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
-            host.Config.saturationCapacityScale = 2f;
+            host.Config.vaporCapacityScale = 2f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -445,9 +434,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 3f;
             host.Config.vaporDiffusionRate = 0.25f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.pressureDiffusionRate = 0f;
-            host.Config.saturationCapacityScale = 2f;
+            host.Config.vaporCapacityScale = 2f;
             host.Config.atmosphericCflLimit = 0.85f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
@@ -548,9 +536,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 3f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.pressureDiffusionRate = 0f;
-            host.Config.saturationCapacityScale = 2f;
+            host.Config.vaporCapacityScale = 2f;
             host.Config.atmosphericCflLimit = 0.85f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
@@ -626,7 +613,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
-            host.Config.humidityBuoyancy = 1f;
             host.Config.verticalBuoyancyStrength = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.pressureCompressibility = 0f;
@@ -672,7 +658,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
-            host.Config.humidityBuoyancy = 1f;
             host.Config.verticalBuoyancyStrength = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.pressureCompressibility = 0f;
@@ -717,7 +702,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.verticalBuoyancyStrength = 0f;
             host.Config.surfaceAirHeatExchange = 2f;
             host.Config.pressureDiffusionRate = 0f;
@@ -767,9 +751,8 @@ namespace GeneSys.Tests
             host.Config.temperatureAdvectionRate = 8f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.atmosphericCflLimit = 0.4f;
-            host.Config.saturationCapacityScale = 2f;
+            host.Config.vaporCapacityScale = 2f;
             host.Config.pressureDiffusionRate = 0f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -820,7 +803,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 3f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.temperatureAdvectionRate = 3f;
             host.Config.atmosphericCflLimit = 0.8f;
             host.Config.pressureDiffusionRate = 0f;
@@ -874,9 +856,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 2.5f;
             host.Config.vaporDiffusionRate = 0.01f;
             host.Config.atmosphericBuoyancy = 3f;
-            host.Config.humidityBuoyancy = 2f;
             host.Config.atmosphericCflLimit = 0.7f;
-            host.Config.saturationCapacityScale = 2f;
+            host.Config.vaporCapacityScale = 2f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.pressureCompressibility = 0f;
             host.Regenerate();
@@ -931,11 +912,10 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 2.5f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
-            host.Config.humidityBuoyancy = 1f;
             host.Config.verticalBuoyancyStrength = 1f;
             host.Config.atmosphericLapseRate = 0f;
             host.Config.atmosphericCflLimit = 0.7f;
-            host.Config.saturationCapacityScale = 2f;
+            host.Config.vaporCapacityScale = 2f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.pressureCompressibility = 0f;
             host.Regenerate();
@@ -1010,7 +990,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 2f;
-            host.Config.humidityBuoyancy = 1f;
             host.Config.verticalBuoyancyStrength = 1f;
             host.Config.atmosphericLapseRate = 12f;
             host.Config.pressureDiffusionRate = 0f;
@@ -1084,7 +1063,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.pressureDiffusionRate = 0.2f;
             host.Config.pressureCompressibility = 0.8f;
             host.Regenerate();
@@ -1142,8 +1120,7 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 3f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
-            host.Config.cloudPrecipitationThreshold = 2f;
+            host.Config.cloudRetainMass = 2f;
             host.Config.atmosphericCflLimit = 0.85f;
             host.Config.pressureDiffusionRate = 0f;
             host.Regenerate();
@@ -1243,9 +1220,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
-            host.Config.saturationCapacityScale = 0.05f;
-            host.Config.cloudPrecipitationThreshold = 1f;
+            host.Config.vaporCapacityScale = 0.05f;
+            host.Config.cloudRetainMass = 1f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1309,8 +1285,7 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
-            host.Config.cloudPrecipitationThreshold = 0.02f;
+            host.Config.cloudRetainMass = 0.02f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1369,9 +1344,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.verticalBuoyancyStrength = 0f;
-            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.cloudRetainMass = 0.05f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 0.45f;
@@ -1439,9 +1413,8 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.verticalBuoyancyStrength = 0f;
-            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.cloudRetainMass = 0.05f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 0f;
@@ -1645,11 +1618,10 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.densityExchangeRate = 0f;
             host.Config.gravityStrength = 0f;
-            host.Config.saturationCapacityScale = 0.05f;
-            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.vaporCapacityScale = 0.05f;
+            host.Config.cloudRetainMass = 0.05f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1782,8 +1754,8 @@ namespace GeneSys.Tests
             host.Config.condensationRate = 0f;
             host.Config.precipitationRate = 1f;
             host.Config.gravityStrength = 0f;
-            host.Config.saturationCapacityScale = 0.05f;
-            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.vaporCapacityScale = 0.05f;
+            host.Config.cloudRetainMass = 0.05f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1833,8 +1805,8 @@ namespace GeneSys.Tests
             host.Config.condensationRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.gravityStrength = 0f;
-            host.Config.saturationCapacityScale = 2f;
-            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.vaporCapacityScale = 2f;
+            host.Config.cloudRetainMass = 0.05f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1904,8 +1876,8 @@ namespace GeneSys.Tests
             host.Config.condensationRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.gravityStrength = 0f;
-            host.Config.saturationCapacityScale = 2f;
-            host.Config.cloudPrecipitationThreshold = 0.05f;
+            host.Config.vaporCapacityScale = 2f;
+            host.Config.cloudRetainMass = 0.05f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -2019,7 +1991,6 @@ namespace GeneSys.Tests
             host.Config.pressureCompressibility = 0.8f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
@@ -2208,8 +2179,8 @@ namespace GeneSys.Tests
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 2f;
             host.Config.precipitationRate = 0f;
-            host.Config.saturationCapacityScale = 0.05f;
-            host.Config.cloudPrecipitationThreshold = 1f;
+            host.Config.vaporCapacityScale = 0.05f;
+            host.Config.cloudRetainMass = 1f;
             host.Config.latentHeatScale = 2f;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
@@ -2242,89 +2213,6 @@ namespace GeneSys.Tests
             });
         }
 
-        [UnityTest]
-        public IEnumerator RimCoolingFallsOffInwardAndFloorsAtSpaceTemperature()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHostAndSnapshot();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            DisableWeatherNoise(host);
-            host.Config.evaporationRate = 0f;
-            host.Config.condensationRate = 0f;
-            host.Config.precipitationRate = 0f;
-            host.Config.windStrength = 0f;
-            host.Config.atmosphericAdvectionRate = 0f;
-            host.Config.vaporDiffusionRate = 0f;
-            host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
-            host.Config.verticalBuoyancyStrength = 0f;
-            host.Config.spaceTemperature = -25f;
-            host.Config.rimCoolingRadius = 0;
-            host.Config.rimCoolingStrength = 0f;
-            host.Config.slowPassInterval = 100000;
-            host.Regenerate();
-            for (int i = 0; i < 5; i++) yield return null;
-
-            int width = host.Grid.angularResolution;
-            int x = width / 2;
-            int rimY = host.Grid.radialResolution - 1;
-            int midY = rimY - 1;
-            int belowY = rimY - 2;
-            int beyondY = rimY - 3;
-            Paint(host, x, rimY, MaterialIds.Air);
-            Paint(host, x, midY, MaterialIds.Air);
-            Paint(host, x, belowY, MaterialIds.Air);
-            Paint(host, x, beyondY, MaterialIds.Air);
-            yield return Step(host, 1);
-
-            yield return ReadFields(host, (_, states, __, ___) =>
-            {
-                PaintField(host, x, rimY, 1f, 20f - states[rimY * width + x].x);
-                PaintField(host, x, midY, 1f, 20f - states[midY * width + x].x);
-                PaintField(host, x, belowY, 1f, 20f - states[belowY * width + x].x);
-                PaintField(host, x, beyondY, 1f, 20f - states[beyondY * width + x].x);
-            });
-            yield return Step(host, 1);
-
-            host.Config.rimCoolingRadius = 2;
-            host.Config.rimCoolingStrength = 2f;
-            yield return Step(host, 1);
-
-            float rimAfter = 0f;
-            float midAfter = 0f;
-            float belowAfter = 0f;
-            float beyondAfter = 0f;
-            yield return ReadFields(host, (_, states, __, ___) =>
-            {
-                rimAfter = states[rimY * width + x].x;
-                midAfter = states[midY * width + x].x;
-                belowAfter = states[belowY * width + x].x;
-                beyondAfter = states[beyondY * width + x].x;
-            });
-            Assert.That(rimAfter, Is.EqualTo(18f).Within(0.15f), "Outermost ring should lose the full rim-cooling strength (3/3).");
-            Assert.That(midAfter, Is.EqualTo(18.67f).Within(0.15f), "One ring inward should lose 2/3 of the strength at radius 2.");
-            Assert.That(belowAfter, Is.EqualTo(19.33f).Within(0.15f), "The extent course (radius 2) should lose 1/3 of the strength.");
-            Assert.That(beyondAfter, Is.EqualTo(20f).Within(0.15f), "Cells beyond the rim cooling radius extent should be unchanged.");
-
-            yield return ReadFields(host, (_, states, __, ___) =>
-            {
-                PaintField(host, x, rimY, 1f, host.Config.spaceTemperature - states[rimY * width + x].x);
-                PaintField(host, x, midY, 1f, host.Config.spaceTemperature - states[midY * width + x].x);
-                PaintField(host, x, belowY, 1f, host.Config.spaceTemperature - states[belowY * width + x].x);
-            });
-            yield return Step(host, 1);
-            yield return Step(host, 1);
-
-            yield return ReadFields(host, (_, states, __, ___) =>
-            {
-                Assert.That(states[rimY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
-                    "Rim cooling must not drop air below space temperature.");
-                Assert.That(states[midY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
-                    "Inward rim rings must also floor at space temperature.");
-                Assert.That(states[belowY * width + x].x, Is.EqualTo(host.Config.spaceTemperature).Within(0.15f),
-                    "Extent rim ring must also floor at space temperature.");
-            });
-        }
 
         [UnityTest]
         public IEnumerator CoriolisDeflectsVerticalUpdraftIntoHorizontalWind()
@@ -2418,105 +2306,263 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator DynamicWindDampingPreservesFastJetsWhileDampingCalmAir()
+        public IEnumerator HumidAirSuppressesEvaporation()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             DisableWeatherNoise(host);
-            host.Config.windStrength = 0f;
-            host.Config.windDamping = 0.15f;
-            host.Config.windInertiaCoupling = 2.0f;
-            host.Config.coriolisStrength = 0f;
-            host.Config.prevailingWind = 0f;
-            host.Config.velocityAdvectionRate = 0f;
+            host.Config.evaporationRate = 2f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.vaporCapacityScale = 0.05f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
             host.Config.verticalBuoyancyStrength = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.hydrostaticIterations = 1;
+            host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
             int width = host.Grid.angularResolution;
-            int y = AtmosphereY(host);
-            int slowX = width / 4;
-            int fastX = (3 * width) / 4;
-            const float initialSlow = 0.2f;
-            const float initialFast = 2.5f;
-
-            PaintField(host, slowX, y, 13f, initialSlow);
-            PaintField(host, fastX, y, 13f, initialFast);
-            yield return Step(host, 1);
-            yield return Step(host, 20);
-
-            yield return ReadFields(host, (_, __, ___, flow) =>
+            int dryX = 4;
+            int humidX = 12;
+            int surfaceY = SurfaceY(host);
+            int airY = surfaceY + 1;
+            foreach (int x in new[] { dryX, humidX })
             {
-                float slowRemaining = flow[y * width + slowX].x;
-                float fastRemaining = flow[y * width + fastX].x;
-                float slowFraction = slowRemaining / initialSlow;
-                float fastFraction = fastRemaining / initialFast;
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    Paint(host, x + dx, surfaceY - 1, MaterialIds.Rock);
+                    Paint(host, x + dx, surfaceY, MaterialIds.Soil);
+                    Paint(host, x + dx, airY, MaterialIds.Air);
+                    Paint(host, x + dx, airY + 1, MaterialIds.Rock);
+                }
+                PaintField(host, x, surfaceY, 2f, 0.8f);
+                PaintField(host, x, surfaceY, 1f, 35f);
+            }
+            PaintField(host, humidX, airY, 6f, 2f);
+            host.Config.evaporationRate = 0f;
+            yield return Step(host, 1);
+            host.Config.evaporationRate = 2f;
 
-                Assert.That(fastFraction, Is.GreaterThan(slowFraction),
-                    $"Fast jet must retain a higher fraction of its velocity than slow breeze. Fast: {fastFraction:P1}, Slow: {slowFraction:P1}");
-                Assert.That(1.0f - slowFraction, Is.GreaterThan((1.0f - fastFraction) * 2.0f),
-                    $"Slow breeze must decay at least twice as much as fast jet. Slow lost: {(1f - slowFraction):P1}, Fast lost: {(1f - fastFraction):P1}");
+            float dryBefore = 0f, humidBefore = 0f;
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                dryBefore = states[surfaceY * width + dryX].z;
+                humidBefore = states[surfaceY * width + humidX].z;
+            });
+            Assert.That(dryBefore, Is.GreaterThan(0.2f));
+            yield return Step(host, 20);
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                float dryLost = dryBefore - states[surfaceY * width + dryX].z;
+                float humidLost = humidBefore - states[surfaceY * width + humidX].z;
+                Assert.That(dryLost, Is.GreaterThan(humidLost + 0.01f),
+                    $"Dry air should evaporate more than humid air. Dry {dryLost:F3} humid {humidLost:F3}");
             });
         }
 
         [UnityTest]
-        public IEnumerator FastHorizontalWindSuppressesUpdraftUnlessSuperheated()
+        public IEnumerator WindIncreasesEvaporation()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             DisableWeatherNoise(host);
-            host.Config.surfaceAirTemperature = 20f;
+            host.Config.evaporationRate = 1.2f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.vaporCapacityScale = 0.08f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
             host.Config.windStrength = 0f;
-            host.Config.windDamping = 0.05f;
-            host.Config.windInertiaCoupling = 2.0f;
-            host.Config.convectiveBreakthroughTemp = 5.0f;
-            host.Config.coriolisStrength = 0f;
-            host.Config.prevailingWind = 0f;
-            host.Config.velocityAdvectionRate = 0f;
-            host.Config.temperatureAdvectionRate = 0f;
-            host.Config.atmosphereSolarHeating = 0f;
-            host.Config.atmosphereRadiativeCooling = 0f;
-            host.Config.atmosphericBuoyancy = 2.0f;
-            host.Config.verticalBuoyancyStrength = 1.0f;
-            host.Config.atmosphericLapseRate = 0f;
+            host.Config.hydrostaticIterations = 1;
+            host.Config.slowPassInterval = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
             int width = host.Grid.angularResolution;
-            int y0 = AtmosphereY(host);
-            int xCalm = width / 6;
-            int xModerate = width / 2;
-            int xSuperheated = (5 * width) / 6;
-
-            // Baseline air is 20 deg
-            // xCalm has mild warmth (+2 deg: below 5 deg breakthrough) and NO horizontal wind: standard buoyancy applies
-            PaintField(host, xCalm, y0, 1f, 2.0f);
-            PaintField(host, xCalm, y0, 13f, 0f);
-
-            // xModerate has mild warmth (+2 deg) and FAST horizontal wind (3.0): horizontal shear suppresses updraft
-            PaintField(host, xModerate, y0, 1f, 2.0f);
-            PaintField(host, xModerate, y0, 13f, 3.0f);
-
-            // xSuperheated has extreme heat (+25 deg: above 5 deg threshold) and FAST horizontal wind: punches through
-            PaintField(host, xSuperheated, y0, 1f, 25.0f);
-            PaintField(host, xSuperheated, y0, 13f, 3.0f);
-
-            yield return Step(host, 1);
-            yield return Step(host, 5);
-
-            yield return ReadFields(host, (_, __, ___, flow) =>
+            int calmX = 4;
+            int windX = 12;
+            int surfaceY = SurfaceY(host);
+            int airY = surfaceY + 1;
+            foreach (int x in new[] { calmX, windX })
             {
-                float updraftCalm = flow[y0 * width + xCalm].y;
-                float updraftModerate = flow[y0 * width + xModerate].y;
-                float updraftSuperheated = flow[y0 * width + xSuperheated].y;
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    Paint(host, x + dx, surfaceY - 1, MaterialIds.Rock);
+                    Paint(host, x + dx, surfaceY, MaterialIds.Soil);
+                    Paint(host, x + dx, airY, MaterialIds.Air);
+                    Paint(host, x + dx, airY + 1, MaterialIds.Rock);
+                }
+                PaintField(host, x, surfaceY, 2f, 0.8f);
+                PaintField(host, x, surfaceY, 1f, 35f);
+            }
+            host.Config.evaporationRate = 0f;
+            yield return Step(host, 1);
+            PaintField(host, windX, airY, 13f, 4f);
+            yield return Step(host, 1);
+            host.Config.evaporationRate = 0.15f;
 
-                Assert.That(updraftModerate, Is.LessThan(updraftCalm),
-                    $"Fast horizontal wind must suppress vertical updraft compared to calm air. Moderate: {updraftModerate:F3}, Calm: {updraftCalm:F3}");
-                Assert.That(updraftSuperheated, Is.GreaterThan(updraftModerate * 2.0f),
-                    $"Superheated cell must punch through shear suppression into strong updraft. Superheated: {updraftSuperheated:F3}, Moderate: {updraftModerate:F3}");
+            float calmBefore = 0f, windBefore = 0f;
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                calmBefore = states[surfaceY * width + calmX].z;
+                windBefore = states[surfaceY * width + windX].z;
+            });
+            Assert.That(calmBefore, Is.GreaterThan(0.2f));
+            yield return Step(host, 20);
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                float calmLost = calmBefore - states[surfaceY * width + calmX].z;
+                float windLost = windBefore - states[surfaceY * width + windX].z;
+                Assert.That(windLost, Is.GreaterThan(calmLost + 0.005f),
+                    $"Wind should increase evaporation. Wind {windLost:F3} calm {calmLost:F3}");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator RisingAirCoolsAdiabatically()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.temperatureAdvectionRate = 0f;
+            host.Config.atmosphericLapseRate = 20f;
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+            Paint(host, x, y, MaterialIds.Air);
+            PaintField(host, x, y, 1f, 30f);
+            PaintField(host, x, y, 12f, 2f);
+            yield return Step(host, 1);
+            float before = 0f;
+            yield return ReadFields(host, (_, states, __, ___) => before = states[y * width + x].x);
+            yield return Step(host, 8);
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                Assert.That(states[y * width + x].x, Is.LessThan(before - 0.05f),
+                    "Rising air must cool along the lapse.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator ColdSurfaceCollectsDew()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.vaporCapacityScale = 0.01f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.hydrostaticIterations = 1;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = 4;
+            int surfaceY = SurfaceY(host);
+            int airY = surfaceY + 1;
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                Paint(host, x + dx, surfaceY - 1, MaterialIds.Rock);
+                Paint(host, x + dx, surfaceY, MaterialIds.Soil);
+                Paint(host, x + dx, airY, MaterialIds.Air);
+                Paint(host, x + dx, airY + 1, MaterialIds.Rock);
+            }
+            PaintField(host, x, surfaceY, 1f, -8f);
+            PaintField(host, x, airY, 6f, 0.2f);
+            PaintField(host, x, airY, 1f, 20f);
+            yield return Step(host, 1);
+            host.Config.condensationRate = 2f;
+            float filmBefore = 0f;
+            float vaporBefore = 0f;
+            yield return ReadFields(host, (_, states, aux, __) =>
+            {
+                filmBefore = states[surfaceY * width + x].z;
+                vaporBefore = aux[airY * width + x].x;
+            });
+            Assert.That(vaporBefore, Is.GreaterThan(0.05f));
+            yield return Step(host, 20);
+            yield return ReadFields(host, (_, states, aux, __) =>
+            {
+                Assert.That(states[surfaceY * width + x].z, Is.GreaterThan(filmBefore + 0.002f),
+                    "Cold soil should collect dew from humid air.");
+                Assert.That(aux[airY * width + x].x, Is.LessThan(vaporBefore - 0.002f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator CloudShadesSurfaceHeating()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.solarIntensity = 3f;
+            host.Config.atmosphereAbsorption = 0f;
+            host.Config.dayLengthSeconds = 100000f;
+            host.Config.solarPolarOutputMin = 1f;
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.hydrostaticIterations = 1;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int clearX = 1;
+            int cloudX = 3;
+            int surfaceY = SurfaceY(host);
+            int airY = surfaceY + 1;
+            int height = host.Grid.radialResolution;
+            foreach (int x in new[] { clearX, cloudX })
+            {
+                Paint(host, x, surfaceY - 1, MaterialIds.Rock);
+                Paint(host, x, surfaceY, MaterialIds.Soil);
+                for (int y = airY; y < height; y++)
+                {
+                    Paint(host, x, y, MaterialIds.Air);
+                    PaintField(host, x, y, 6f, -100f);
+                }
+                PaintField(host, x, surfaceY, 1f, 10f);
+            }
+            PaintField(host, cloudX, airY + 2, 2f, 2.5f);
+            yield return Step(host, 1);
+            float clearBefore = 0f, cloudBefore = 0f;
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                clearBefore = states[surfaceY * width + clearX].x;
+                cloudBefore = states[surfaceY * width + cloudX].x;
+            });
+            yield return Step(host, 20);
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                float clearGain = states[surfaceY * width + clearX].x - clearBefore;
+                float cloudGain = states[surfaceY * width + cloudX].x - cloudBefore;
+                Assert.That(clearGain, Is.GreaterThan(cloudGain + 0.02f),
+                    $"Clear ground should heat more than cloud-shaded ground. Clear {clearGain:F3} cloud {cloudGain:F3}");
             });
         }
 

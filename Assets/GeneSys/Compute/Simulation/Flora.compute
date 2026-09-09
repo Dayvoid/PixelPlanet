@@ -39,10 +39,11 @@ int _Seed;
 float _DeltaTime;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
-float4 _WeatherA; // atmosphereSolarHeating, ...
+float4 _WeatherA; // solarIntensity, ...
 float4 _WeatherC; // vaporPressureScale, solarAngle01, ...
-float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // ..., atmosphericCflLimit
+float4 _WeatherH; // atmosphereAbsorption, unused, unused, unused
 float4 _FloraA; // airTransport, waterTransport, diffusion, settling
 float4 _FloraB; // sporulation, growth, decay, photosynthesis
 float4 _FloraC; // oxygenYield, exudation, reproductionThreshold, baseMutationRate
@@ -405,11 +406,12 @@ void LightAttenuation(uint3 id : SV_DispatchThreadID)
         MaterialGpuData definition = D(material);
         float category = definition.metadata.x;
         float opacity = 0.0;
-        bool atmosphere = category == 1.0 || material == 1u || material == 11u
+        bool atmosphere = category == 1.0 || material == 1u
             || (material == 0u && Radius01(r, _GridSize.y) >= _AtmosphereStartRadius);
         if (atmosphere)
         {
             opacity += saturate(state.z) * 0.35;
+            opacity += saturate(A(cell).x) * saturate(_WeatherH.x) * 0.35;
             opacity += saturate(combustion.z) * 0.4;
         }
         else if (material == 9u || material == 10u)

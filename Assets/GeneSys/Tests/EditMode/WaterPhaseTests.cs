@@ -14,123 +14,62 @@ namespace GeneSys.Tests
         public void ConfigDefaultsAndValidationReplacePixelThresholds()
         {
             var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.cloudPrecipitationThreshold, Is.EqualTo(0.9f).Within(0.001f));
+            Assert.That(config.cloudRetainMass, Is.EqualTo(0.9f).Within(0.001f));
+            Assert.That(config.vaporCapacityScale, Is.EqualTo(0.01f).Within(0.001f));
             Assert.That(config.waterPressureResponse, Is.EqualTo(0.6f).Within(0.001f));
             Assert.That(config.latentHeatScale, Is.EqualTo(0.35f).Within(0.001f));
+            Assert.That(config.hydrostaticIterations, Is.EqualTo(32));
             Assert.That(typeof(SimulationConfig).GetField("rainPixelFormationThreshold"), Is.Null);
-            Assert.That(typeof(SimulationConfig).GetField("surfaceWaterPixelThreshold"), Is.Null);
+            Assert.That(typeof(SimulationConfig).GetField("geyserDischargeRate"), Is.Null);
+            Assert.That(typeof(SimulationConfig).GetField("humidityBuoyancy"), Is.Null);
 
             config.waterPressureResponse = -2f;
             config.latentHeatScale = -1f;
-            config.cloudPrecipitationThreshold = 0f;
+            config.cloudRetainMass = 0f;
+            config.vaporCapacityScale = 0f;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
             Assert.That(config.waterPressureResponse, Is.GreaterThanOrEqualTo(0f));
             Assert.That(config.latentHeatScale, Is.GreaterThanOrEqualTo(0f));
-            Assert.That(config.cloudPrecipitationThreshold, Is.GreaterThanOrEqualTo(0.01f));
+            Assert.That(config.cloudRetainMass, Is.GreaterThanOrEqualTo(0.01f));
+            Assert.That(config.vaporCapacityScale, Is.GreaterThanOrEqualTo(0.001f));
             Object.DestroyImmediate(config);
         }
 
         [Test]
-        public void WeatherEPackingAndTooltipsMatchNewControls()
+        public void WeatherUniformsAndTooltipsMatchRealignment()
         {
             string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
-            Assert.That(scheduler, Does.Contain("config.waterPressureResponse"));
-            Assert.That(scheduler, Does.Contain("config.latentHeatScale"));
+            Assert.That(scheduler, Does.Contain("config.vaporCapacityScale"));
+            Assert.That(scheduler, Does.Contain("config.cloudRetainMass"));
+            Assert.That(scheduler, Does.Contain("config.solarIntensity"));
+            Assert.That(scheduler, Does.Contain("config.atmosphereAbsorption"));
             Assert.That(scheduler, Does.Contain("FindKernel(\"Precipitation\")"));
-            Assert.That(scheduler, Does.Not.Contain("WaterMaterialization"));
-            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.waterPressureResponse), out string pressure), Is.True);
-            Assert.That(pressure.Length, Is.GreaterThan(40));
-            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.latentHeatScale), out string latent), Is.True);
-            Assert.That(latent.Length, Is.GreaterThan(40));
-        }
-
-        [Test]
-        public void SplitSolarHeatingPackingAndTooltipsMatchNewControls()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.terrainSolarHeating, Is.EqualTo(0.8f).Within(0.001f));
-            Assert.That(config.atmosphereSolarHeating, Is.EqualTo(0.8f).Within(0.001f));
-            Object.DestroyImmediate(config);
-
-            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
-            Assert.That(scheduler, Does.Contain("config.terrainSolarHeating"));
-            Assert.That(scheduler, Does.Contain("config.atmosphereSolarHeating"));
-            Assert.That(scheduler, Does.Contain("_WeatherH"));
-            Assert.That(scheduler, Does.Contain("_WeatherA"));
-            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
-            Assert.That(weather, Does.Contain("_WeatherH.y"));
-            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.terrainSolarHeating), out string terrain), Is.True);
-            Assert.That(terrain.Length, Is.GreaterThan(40));
-            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.atmosphereSolarHeating), out string atmosphere), Is.True);
-            Assert.That(atmosphere.Length, Is.GreaterThan(40));
-        }
-
-        [Test]
-        public void SolarTerrainPenetrationPackingAndTooltipsMatchNewControl()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.solarTerrainPenetration, Is.EqualTo(1f).Within(0.001f));
-            config.solarTerrainPenetration = -0.5f;
-            typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
-            Assert.That(config.solarTerrainPenetration, Is.EqualTo(0f).Within(0.001f));
-            Object.DestroyImmediate(config);
-
-            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
-            Assert.That(scheduler, Does.Contain("config.solarTerrainPenetration"));
-            Assert.That(scheduler, Does.Contain("_WeatherH"));
-            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
-            Assert.That(weather, Does.Contain("_WeatherH.x"));
-            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.solarTerrainPenetration), out string tooltip), Is.True);
-            Assert.That(tooltip.Length, Is.GreaterThan(40));
-        }
-
-        [Test]
-        public void RimCoolingPackingAndTooltipsMatchNewControls()
-        {
-            var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.rimCoolingRadius, Is.EqualTo(8));
-            Assert.That(config.rimCoolingStrength, Is.EqualTo(0f).Within(0.001f));
-            config.rimCoolingRadius = -4;
-            config.rimCoolingStrength = -2f;
-            typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
-            Assert.That(config.rimCoolingRadius, Is.EqualTo(0));
-            Assert.That(config.rimCoolingStrength, Is.EqualTo(0f).Within(0.001f));
-            Object.DestroyImmediate(config);
-
-            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
-            Assert.That(scheduler, Does.Contain("config.rimCoolingRadius"));
-            Assert.That(scheduler, Does.Contain("config.rimCoolingStrength"));
-            Assert.That(scheduler, Does.Contain("_WeatherH"));
-            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
-            Assert.That(weather, Does.Contain("_WeatherH.z"));
-            Assert.That(weather, Does.Contain("_WeatherH.w"));
-            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.rimCoolingRadius), out string radius), Is.True);
-            Assert.That(radius.Length, Is.GreaterThan(40));
-            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.rimCoolingStrength), out string strength), Is.True);
-            Assert.That(strength.Length, Is.GreaterThan(40));
+            Assert.That(scheduler, Does.Contain("LightAttenuation"));
+            Assert.That(scheduler, Does.Not.Contain("GeothermalDischarge"));
+            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.vaporCapacityScale), out string capacity), Is.True);
+            Assert.That(capacity.Length, Is.GreaterThan(40));
+            Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.solarIntensity), out string solar), Is.True);
+            Assert.That(solar.Length, Is.GreaterThan(40));
         }
 
         [Test]
         public void SharedHelpersAndKernelsAreWired()
         {
             string structs = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SimulationStructs.hlsl");
-            Assert.That(structs, Does.Contain("WaterVaporCapacity"));
-            Assert.That(structs, Does.Contain("WaterBoilTemperature"));
-            Assert.That(structs, Does.Contain("PrecipitationMass"));
-            Assert.That(structs, Does.Contain("PrecipitationEmitMass"));
-            Assert.That(structs, Does.Contain("PRECIP_MIN_DROP"));
+            Assert.That(structs, Does.Contain("VaporSaturation"));
+            Assert.That(structs, Does.Contain("DewPoint"));
+            Assert.That(structs, Does.Contain("VirtualTemperature"));
+            Assert.That(structs, Does.Contain("GroundwaterBoilMass"));
             Assert.That(structs, Does.Contain("WaterLatentHeatDelta"));
-            string surface = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SurfaceWater.hlsl");
-            Assert.That(surface, Does.Contain("PartitionSurfaceVolume"));
-            Assert.That(surface, Does.Contain("KeepLandedRainPixel"));
-            ComputeShader weather = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Weather.compute");
-            Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute"), Does.Contain("CloudPrecipReceiver"));
-            Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute"), Does.Contain("AirbornePrecipDestination"));
-            Assert.That(weather.FindKernel("Precipitation"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(weather.FindKernel("WaterCycle"), Is.GreaterThanOrEqualTo(0));
+            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(weather, Does.Contain("DewTransfer"));
+            Assert.That(weather, Does.Contain("EvaporationDeficit"));
+            ComputeShader weatherShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(weatherShader.FindKernel("Precipitation"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(weatherShader.FindKernel("WaterCycle"), Is.GreaterThanOrEqualTo(0));
             ComputeShader hydrology = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
-            Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute"), Does.Not.Contain("WaterMaterialization"));
-            Assert.That(hydrology.FindKernel("ApplyHydrostaticColumns"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(hydrology.FindKernel("Groundwater"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute"), Does.Not.Contain("GeothermalDischarge"));
         }
     }
 }

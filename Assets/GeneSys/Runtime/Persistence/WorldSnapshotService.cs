@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using GeneSys.Configuration;
+using GeneSys.Materials;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
 using UnityEngine;
@@ -28,6 +30,7 @@ namespace GeneSys.Persistence
         private const int Version10 = 10;
         private const int Version11 = 11;
         private const int Version12 = 12;
+        private const int Version13 = 13;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
@@ -96,12 +99,12 @@ namespace GeneSys.Persistence
         }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
-            Save(host, path, Version12, completed);
+            Save(host, path, Version13, completed);
 
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9));
+            int writeVersion = version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9)));
             bool includeGrass = writeVersion >= Version10;
             bool includeWasp = writeVersion >= Version11;
             bool includeTree = writeVersion >= Version12;
@@ -232,6 +235,8 @@ namespace GeneSys.Persistence
                         WriteWaspConfig(writer, config);
                     if (includeTree)
                         WriteTreeConfig(writer, config);
+                    if (writeVersion >= Version13)
+                        WriteJsonConfig(writer, config);
                     int payloadCount = includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9));
                     for (int i = 0; i < payloadCount; i++)
                     {
@@ -250,7 +255,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version < Version1 || version > Version12) return false;
+            if (version < Version1 || version > Version13) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -260,7 +265,12 @@ namespace GeneSys.Persistence
 
             host.Config.seed = seed;
             if (version >= Version2)
-                ReadConfig(reader, host.Config);
+            {
+                if (version >= Version13)
+                    ReadConfig(reader, host.Config);
+                else
+                    ReadConfigLegacy(reader, host.Config);
+            }
             if (version >= Version4)
                 ReadEcologyConfig(reader, host.Config);
             if (version >= Version7)
@@ -273,6 +283,8 @@ namespace GeneSys.Persistence
                 ReadWaspConfig(reader, host.Config);
             if (version >= Version12)
                 ReadTreeConfig(reader, host.Config);
+            if (version >= Version13)
+                ReadJsonConfig(reader, host.Config);
 
             RenderTexture[] coreTargets =
             {
@@ -284,6 +296,8 @@ namespace GeneSys.Persistence
                 int length = reader.ReadInt32();
                 byte[] payload = reader.ReadBytes(length);
                 if (payload.Length != length) return false;
+                if (target == host.Resources.MaterialRead)
+                    MigrateLegacyVaporPixels(payload);
                 Texture2D staging = CreateStagingTexture(width, height, target.graphicsFormat);
                 staging.LoadRawTextureData(payload);
                 staging.Apply(false, false);
@@ -563,11 +577,7 @@ namespace GeneSys.Persistence
             writer.Write(config.groundwaterDepth);
             writer.Write(config.runoffRate);
             writer.Write(config.pondingRate);
-            writer.Write(config.springHeadThreshold);
             writer.Write(config.springDischargeRate);
-            writer.Write(config.geyserHeatThreshold);
-            writer.Write(config.geyserDischargeRate);
-            writer.Write(config.geyserCooldownSeconds);
             writer.Write(config.hydrothermalStrength);
             writer.Write(config.ventChemicalRate);
         }
@@ -586,13 +596,61 @@ namespace GeneSys.Persistence
             config.groundwaterDepth = reader.ReadSingle();
             config.runoffRate = reader.ReadSingle();
             config.pondingRate = reader.ReadSingle();
-            config.springHeadThreshold = reader.ReadSingle();
             config.springDischargeRate = reader.ReadSingle();
-            config.geyserHeatThreshold = reader.ReadSingle();
-            config.geyserDischargeRate = reader.ReadSingle();
-            config.geyserCooldownSeconds = reader.ReadSingle();
             config.hydrothermalStrength = reader.ReadSingle();
             config.ventChemicalRate = reader.ReadSingle();
+        }
+
+        private static void ReadConfigLegacy(BinaryReader reader, SimulationConfig config)
+        {
+            config.targetOceanCoverage = reader.ReadSingle();
+            config.minOceanBasins = reader.ReadInt32();
+            config.maxOceanBasins = reader.ReadInt32();
+            config.seaLevelRadius = reader.ReadSingle();
+            config.basinDepth = reader.ReadSingle();
+            config.terrainRelief = reader.ReadSingle();
+            config.coastRoughness = reader.ReadSingle();
+            config.initialGroundwaterSaturation = reader.ReadSingle();
+            config.initialAtmosphericHumidity = reader.ReadSingle();
+            config.groundwaterDepth = reader.ReadSingle();
+            config.runoffRate = reader.ReadSingle();
+            config.pondingRate = reader.ReadSingle();
+            reader.ReadSingle();
+            config.springDischargeRate = reader.ReadSingle();
+            reader.ReadSingle();
+            reader.ReadSingle();
+            reader.ReadSingle();
+            config.hydrothermalStrength = reader.ReadSingle();
+            config.ventChemicalRate = reader.ReadSingle();
+        }
+
+        private static void WriteJsonConfig(BinaryWriter writer, SimulationConfig config)
+        {
+            byte[] json = Encoding.UTF8.GetBytes(JsonUtility.ToJson(config, false));
+            writer.Write(json.Length);
+            writer.Write(json);
+        }
+
+        private static void ReadJsonConfig(BinaryReader reader, SimulationConfig config)
+        {
+            int length = reader.ReadInt32();
+            byte[] json = reader.ReadBytes(length);
+            if (json.Length != length || config == null)
+                return;
+            JsonUtility.FromJsonOverwrite(Encoding.UTF8.GetString(json), config);
+        }
+
+        private static void MigrateLegacyVaporPixels(byte[] payload)
+        {
+            if (payload == null)
+                return;
+            byte[] air = BitConverter.GetBytes(MaterialIds.Air);
+            for (int i = 0; i + 3 < payload.Length; i += 4)
+            {
+                if (BitConverter.ToUInt32(payload, i) != MaterialIds.Vapor)
+                    continue;
+                Buffer.BlockCopy(air, 0, payload, i, 4);
+            }
         }
 
         private static void WriteEcologyConfig(BinaryWriter writer, SimulationConfig config)

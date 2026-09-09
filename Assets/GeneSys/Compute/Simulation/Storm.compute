@@ -27,6 +27,7 @@ int _BrushCount;
 float _DeltaTime;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // unused, unused, unused, atmosphericCflLimit
 float4 _StormA; // separation, leak, diffusion, advection
 float4 _StormB; // rimingMin, rimingMax, breakdownThreshold, breakdownAcc
@@ -419,7 +420,7 @@ void StampTerminus(int2 cell, float intensity)
         float steam = min(state.z, max(0.0, _StormE.x) * intensity);
         state.z -= steam;
         aux.x += steam;
-        state.x -= steam * 0.25;
+        state.x -= WaterLatentHeatDelta(steam, _WeatherE.w, 0.8);
     }
 
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));

@@ -99,14 +99,12 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0f;
             host.Config.windDamping = 1f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.pressureCompressibility = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
-            host.Config.terrainSolarHeating = 0f;
-            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.solarIntensity = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.evaporationRate = 0f;
@@ -118,7 +116,6 @@ namespace GeneSys.Tests
             host.Config.runoffRate = 0f;
             host.Config.pondingRate = 0f;
             host.Config.springDischargeRate = 0f;
-            host.Config.geyserDischargeRate = 0f;
             host.Config.dissolutionRate = 0f;
             host.Config.collapseRate = 0f;
             host.Config.erosionRate = 0f;

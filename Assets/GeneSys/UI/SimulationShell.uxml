@@ -77,7 +77,7 @@
                     <ui:VisualElement name="probe-energy-fill" class="probe-energy-fill" picking-mode="Ignore" />
                 </ui:VisualElement>
                 <ui:VisualElement name="probe-tools-row" class="probe-tools-row" picking-mode="Ignore">
-                    <ui:Button name="probe-action-vapor" class="probe-tool-button probe-tool-vapor" tooltip="Hold to seed vapor" />
+                    <ui:Button name="probe-action-vapor" class="probe-tool-button probe-tool-vapor" tooltip="Hold to seed humidity" />
                     <ui:Button name="probe-action-water" class="probe-tool-button probe-tool-water" tooltip="Hold to add water" />
                     <ui:Button name="probe-action-soil" class="probe-tool-button probe-tool-soil" tooltip="Hold to drop soil" />
                     <ui:Button name="probe-action-cool" class="probe-tool-button probe-tool-cool" tooltip="Hold to cool" />

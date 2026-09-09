@@ -34,7 +34,7 @@ MonoBehaviour:
   electricalExpansion: 0
   solidPhaseId: 10
   liquidPhaseId: 9
-  gasPhaseId: 11
+  gasPhaseId: 1
   toxicity: 0
   caloricContent: 0
   bioModifiable: 0

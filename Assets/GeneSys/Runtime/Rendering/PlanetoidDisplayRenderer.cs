@@ -169,6 +169,8 @@ namespace GeneSys.Rendering
             float lightingStrength = config != null ? config.dayNightLightingStrength : 0f;
             displayMaterial.SetFloat("_SolarAngle01", solarAngle);
             displayMaterial.SetFloat("_DayNightLightingStrength", lightingStrength);
+            if (config != null)
+                displayMaterial.SetFloat("_VaporCapacityScale", config.vaporCapacityScale);
         }
 
         private void RefreshTextures()

@@ -73,7 +73,7 @@ namespace GeneSys.Materials
         public const uint Sediment = 8;
         public const uint Water = 9;
         public const uint Ice = 10;
-        public const uint Vapor = 11;
+        public const uint Vapor = 11; // legacy snapshot pixels; migrate to Air
         public const uint Ash = 12;
         public const uint Metal = 13;
         public const uint Algae = 128;

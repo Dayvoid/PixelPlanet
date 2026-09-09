@@ -94,33 +94,24 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float stressDecayRate = 0.02f;
         [Range(0.01f, 1f)] public float dryMoistureThreshold = 0.08f;
         [Range(0f, 2f)] public float moistureCohesionStrength = 0.85f;
-        [Range(0f, 1f)] public float capillaryEvaporationFraction = 0.5f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
-        [Range(1, 64)] public int hydrostaticIterations = 16;
+        [Range(1, 64)] public int hydrostaticIterations = 32;
         [Range(0f, 4f)] public float pondingRate = 0.85f;
-        [Range(0f, 1f)] public float springHeadThreshold = 0.9f;
         [Range(0f, 4f)] public float springDischargeRate = 0.9f;
-        [Range(0f, 500f)] public float geyserHeatThreshold = 320f;
-        [Range(0f, 4f)] public float geyserDischargeRate = 0.5f;
-        [Range(0f, 8f)] public float geyserCooldownSeconds = 2.5f;
 
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
-        [Range(0f, 4f)] public float terrainSolarHeating = 0.8f;
+        [FormerlySerializedAs("atmosphereSolarHeating")]
         [FormerlySerializedAs("solarIntensity")]
-        [Range(0f, 4f)] public float atmosphereSolarHeating = 0.8f;
+        [Range(0f, 4f)] public float solarIntensity = 0.8f;
+        [Range(0f, 1f)] public float atmosphereAbsorption = 0.35f;
         [Range(0.05f, 1f)] public float solarPolarOutputMin = 0.66f;
-        [Range(0f, 1f)] public float solarTerrainPenetration = 1f;
         [Range(-100f, 100f)] public float spaceTemperature = 0f;
         [FormerlySerializedAs("radiativeCooling")]
         [Range(0f, 4f)] public float terrainRadiativeCooling = 0.25f;
         [Range(0f, 4f)] public float atmosphereRadiativeCooling = 0.25f;
-        [Range(0, 64)] public int rimCoolingRadius = 8;
-        [Range(0f, 20f)] public float rimCoolingStrength = 0f;
         [Range(0f, 4f)] public float windStrength = 2f;
         [Range(0f, 1f)] public float windDamping = 0.05f;
-        [Range(0f, 4f)] public float windInertiaCoupling = 1f;
-        [Range(0f, 20f)] public float convectiveBreakthroughTemp = 5f;
         [Range(-4f, 4f)] public float coriolisStrength = 0f;
         [Range(0f, 4f)] public float velocityAdvectionRate = 0f;
         [Range(-4f, 4f)] public float prevailingWind = 0f;
@@ -139,10 +130,11 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float atmosphericAdvectionRate = 0.8f;
         [Range(0f, 2f)] public float vaporDiffusionRate = 0.33f;
         [Range(0f, 4f)] public float atmosphericBuoyancy = 0.9f;
-        [Range(0f, 4f)] public float humidityBuoyancy = 0.8f;
         [Range(0f, 4f)] public float verticalBuoyancyStrength = 1f;
-        [Range(0.01f, 2f)] public float saturationCapacityScale = 0.01f;
-        [Range(0.01f, 1f)] public float cloudPrecipitationThreshold = 0.9f;
+        [FormerlySerializedAs("saturationCapacityScale")]
+        [Range(0.001f, 2f)] public float vaporCapacityScale = 0.01f;
+        [FormerlySerializedAs("cloudPrecipitationThreshold")]
+        [Range(0.01f, 1f)] public float cloudRetainMass = 0.9f;
         [Range(0f, 4f)] public float waterPressureResponse = 0.6f;
         [Range(0f, 4f)] public float latentHeatScale = 0.35f;
         [Range(0f, 4f)] public float surfaceAirHeatExchange = 1f;
@@ -508,7 +500,7 @@ namespace GeneSys.Configuration
             transportPassInterval = Mathf.Clamp(transportPassInterval, 1, 8);
             dayLengthSeconds = Mathf.Max(1f, dayLengthSeconds);
             solarPolarOutputMin = Mathf.Clamp(solarPolarOutputMin, 0.05f, 1f);
-            solarTerrainPenetration = Mathf.Clamp01(solarTerrainPenetration);
+            atmosphereAbsorption = Mathf.Clamp01(atmosphereAbsorption);
             minOceanBasins = Mathf.Clamp(minOceanBasins, 2, 3);
             maxOceanBasins = Mathf.Clamp(maxOceanBasins, minOceanBasins, 3);
             metalVeinCount = Mathf.Clamp(metalVeinCount, 0, 64);
@@ -522,18 +514,15 @@ namespace GeneSys.Configuration
             iceCapHeightVariation = Mathf.Clamp01(iceCapHeightVariation);
             fieldCapacityFraction = Mathf.Clamp01(fieldCapacityFraction);
             windDamping = Mathf.Clamp01(windDamping);
-            windInertiaCoupling = Mathf.Max(0f, windInertiaCoupling);
-            convectiveBreakthroughTemp = Mathf.Max(0f, convectiveBreakthroughTemp);
             coriolisStrength = Mathf.Clamp(coriolisStrength, -4f, 4f);
             velocityAdvectionRate = Mathf.Max(0f, velocityAdvectionRate);
             prevailingWind = Mathf.Clamp(prevailingWind, -4f, 4f);
             atmosphericAdvectionRate = Mathf.Max(0f, atmosphericAdvectionRate);
             vaporDiffusionRate = Mathf.Max(0f, vaporDiffusionRate);
             atmosphericBuoyancy = Mathf.Max(0f, atmosphericBuoyancy);
-            humidityBuoyancy = Mathf.Max(0f, humidityBuoyancy);
             verticalBuoyancyStrength = Mathf.Max(0f, verticalBuoyancyStrength);
-            saturationCapacityScale = Mathf.Max(0.01f, saturationCapacityScale);
-            cloudPrecipitationThreshold = Mathf.Max(0.01f, cloudPrecipitationThreshold);
+            vaporCapacityScale = Mathf.Max(0.001f, vaporCapacityScale);
+            cloudRetainMass = Mathf.Max(0.01f, cloudRetainMass);
             waterPressureResponse = Mathf.Max(0f, waterPressureResponse);
             latentHeatScale = Mathf.Max(0f, latentHeatScale);
             surfaceAirHeatExchange = Mathf.Max(0f, surfaceAirHeatExchange);
@@ -541,8 +530,7 @@ namespace GeneSys.Configuration
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
             atmosphericCflLimit = Mathf.Clamp(atmosphericCflLimit, 0.05f, 1f);
             atmosphericLapseRate = Mathf.Max(0f, atmosphericLapseRate);
-            rimCoolingRadius = Mathf.Clamp(rimCoolingRadius, 0, 64);
-            rimCoolingStrength = Mathf.Max(0f, rimCoolingStrength);
+            hydrostaticIterations = Mathf.Clamp(hydrostaticIterations, 1, 64);
             mycologyInitialSporeLoad = Mathf.Max(0f, mycologyInitialSporeLoad);
             mycologyRareStrainChance = Mathf.Clamp01(mycologyRareStrainChance);
             mycologyAirTransportRate = Mathf.Max(0f, mycologyAirTransportRate);

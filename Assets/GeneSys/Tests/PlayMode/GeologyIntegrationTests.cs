@@ -245,13 +245,11 @@ namespace GeneSys.Tests
             host.Config.stressDecayRate = 0.02f;
             host.Config.dryMoistureThreshold = 0.08f;
             host.Config.moistureCohesionStrength = 0.85f;
-            host.Config.capillaryEvaporationFraction = 0.35f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 0f;
             host.Config.pondingRate = 0f;
             host.Config.springDischargeRate = 0f;
-            host.Config.geyserDischargeRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
@@ -280,13 +278,11 @@ namespace GeneSys.Tests
             host.Config.stressDecayRate = 0.02f;
             host.Config.dryMoistureThreshold = 0.08f;
             host.Config.moistureCohesionStrength = 0.85f;
-            host.Config.capillaryEvaporationFraction = 0.35f;
             host.Config.infiltrationRate = 0.3f;
             host.Config.groundwaterRate = 0.18f;
             host.Config.runoffRate = 0.45f;
             host.Config.pondingRate = 0.25f;
             host.Config.springDischargeRate = 0.35f;
-            host.Config.geyserDischargeRate = 0.5f;
             host.Config.windStrength = 0.35f;
             host.Config.evaporationRate = 0.1f;
             host.Config.condensationRate = 0.12f;
@@ -530,7 +526,6 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.hydrothermalStrength = 0f;
-            host.Config.geyserDischargeRate = 0f;
             host.Config.combustionFlashVaporizationRate = 0f;
             host.Config.materialSubsteps = 1;
             host.Config.seed = 66221;
@@ -1000,7 +995,6 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureStressIsolation(host);
             host.Config.evaporationRate = 2f;
-            host.Config.capillaryEvaporationFraction = 1f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.seed = 11111;
@@ -1172,7 +1166,6 @@ namespace GeneSys.Tests
             host.Config.runoffRate = 1f;
             host.Config.pondingRate = 0.4f;
             host.Config.hydrothermalStrength = 0.8f;
-            host.Config.geyserDischargeRate = 0f;
             host.Config.volcanicCooling = 0f;
             host.Config.magmaEruption = 0f;
             host.Config.densityExchangeRate = 0f;

@@ -325,6 +325,14 @@ namespace GeneSys.UI
             header.text = title + (collapsed ? " ▸" : " ▾");
         }
 
+        private static readonly int[] OverlayModes =
+        {
+            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+        };
+
+        private static int OverlayModeFromChoice(int index) =>
+            index >= 0 && index < OverlayModes.Length ? OverlayModes[index] : 0;
+
         private void SetupDropdowns(VisualElement root)
         {
             var overlay = root.Q<DropdownField>("overlay");
@@ -332,13 +340,13 @@ namespace GeneSys.UI
             {
                 overlay.choices = new List<string>
                 {
-                    "Material", "Temperature", "Pressure", "Moisture", "Charge", "Wind", "Vapor",
-                    "Groundwater", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories", "Composite Water",
-                    "Vertical Velocity", "Pressure Anomaly", "Saturation", "Cloud Only", "Mycology",
+                    "Material", "Temperature", "Pressure", "Composite Water", "Relative Humidity", "Cloud",
+                    "Charge", "Wind", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories",
+                    "Vertical Velocity", "Pressure Anomaly", "Mycology",
                     "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass", "Tree"
                 };
                 overlay.index = 0;
-                overlay.RegisterValueChangedCallback(_ => display.SetOverlay(overlay.index));
+                overlay.RegisterValueChangedCallback(_ => display.SetOverlay(OverlayModeFromChoice(overlay.index)));
             }
             var mode = root.Q<DropdownField>("brush-mode");
             if (mode != null)
@@ -500,7 +508,7 @@ namespace GeneSys.UI
             probeActivityTime = Time.unscaledTime;
 
             probeEnergyFill = root.Q("probe-energy-fill");
-            BindProbeActionButton(root.Q<Button>("probe-action-vapor"), ProbeAction.Vapor);
+            BindProbeActionButton(root.Q<Button>("probe-action-vapor"), ProbeAction.Humidity);
             BindProbeActionButton(root.Q<Button>("probe-action-water"), ProbeAction.Water);
             BindProbeActionButton(root.Q<Button>("probe-action-soil"), ProbeAction.Soil);
             BindProbeActionButton(root.Q<Button>("probe-action-cool"), ProbeAction.Cool);
@@ -1106,17 +1114,17 @@ namespace GeneSys.UI
             AttachNamedSettingTooltip(root, "speed", nameof(SimulationConfig.simulationSpeed));
             AttachNamedSettingTooltip(root, "overlay",
                 "Overlay",
-                "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Wind, Vapor, Groundwater, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, and the others reveal the systems those settings drive.");
+                "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Composite Water, Relative Humidity, Cloud, Wind, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, and the others reveal the systems those settings drive.");
             AttachNamedSettingTooltip(root, "brush-mode",
                 "Brush Mode",
-                "Selects what left-drag paints. Off does nothing; Material paints geology and Detritus; Life uses the Material field as a type picker for organisms and seeds; otherwise heat, water, pressure, vapor, or ignition. Hold right-click to inspect the cell under the cursor.");
+                "Selects what left-drag paints. Off does nothing; Material paints geology and Detritus; Life uses the Material field as a type picker for organisms and seeds; otherwise heat, water, pressure, humidity, or ignition. Hold right-click to inspect the cell under the cursor.");
             AttachNamedSettingTooltip(root, "material",
                 "Material",
                 "Material the brush paints in Material mode (0–13 plus Detritus). In Life mode this field picks the organism or seed type: Algae/Moss spores, Cricket, Cricket Egg, Myco Spores, Grass Seeds, or Tree Sprout. Registry materials still expose editable properties below.");
             AttachNamedSettingTooltip(root, "brush-radius", nameof(SimulationConfig.brushRadius));
             AttachNamedSettingTooltip(root, "brush-strength", nameof(SimulationConfig.brushStrength));
             AttachNamedSettingTooltip(root, "probe-action-vapor",
-                "Seed Vapor",
+                "Seed Humidity",
                 "Hold to inject humidity at the outer atmosphere ring, a couple of degrees ahead of the clockwise probe so vapor trails into its path.");
             AttachNamedSettingTooltip(root, "probe-action-water",
                 "Add Water",

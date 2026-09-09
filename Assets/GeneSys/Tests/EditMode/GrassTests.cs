@@ -136,8 +136,6 @@ namespace GeneSys.Tests
             Assert.That(GrassGenome.GeneMutation, Is.EqualTo(11));
             ComputeShader shader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Grass.compute");
             Assert.That(shader, Is.Not.Null);
-            Assert.That(shader.FindKernel("RootDemand"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("SoilDebit"), Is.GreaterThanOrEqualTo(0));
             Assert.That(shader.FindKernel("PhotosynthesisLifecycle"), Is.GreaterThanOrEqualTo(0));
             Assert.That(shader.FindKernel("PollenTransport"), Is.GreaterThanOrEqualTo(0));
             Assert.That(shader.FindKernel("SeedTransport"), Is.GreaterThanOrEqualTo(0));

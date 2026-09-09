@@ -11,7 +11,7 @@ using UnityEngine.Rendering;
 
 namespace GeneSys.Tools
 {
-    public enum BrushMode { Off, Material, Heat, Water, Pressure, Vapor, Ignite, Life }
+    public enum BrushMode { Off, Material, Heat, Water, Pressure, Humidity, Ignite, Life }
 
     public sealed class SimulationTools : MonoBehaviour
     {
@@ -95,7 +95,7 @@ namespace GeneSys.Tools
                 BrushMode.Heat => new Vector4(1f, strength, 0f, 0f),
                 BrushMode.Water => new Vector4(2f, strength, 0f, 0f),
                 BrushMode.Pressure => new Vector4(3f, strength, 0f, 0f),
-                BrushMode.Vapor => new Vector4(6f, strength, 0f, 0f),
+                BrushMode.Humidity => new Vector4(6f, strength, 0f, 0f),
                 BrushMode.Ignite => new Vector4(9f, strength, 0f, 0f),
                 BrushMode.Life when selectedMaterialId == MaterialIds.Cricket || selectedMaterialId == MaterialIds.CricketEgg => Vector4.zero,
                 BrushMode.Life when selectedMaterialId == BrushSelectionIds.MycoSpores =>

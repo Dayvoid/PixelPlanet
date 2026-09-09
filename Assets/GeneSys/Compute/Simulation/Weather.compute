@@ -24,6 +24,7 @@ Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
+Texture2D<float> _LightRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
@@ -32,26 +33,17 @@ int _Seed;
 float _DeltaTime;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
-float4 _Mechanics;
-float4 _Geology;
-float4 _GeologyB;
-float4 _Hydrology;
-float4 _HydrologyB;
-float4 _HydrologyC;
-float4 _Erosion;
-float4 _WeatherA; // atmosphereSolarHeating, spaceTemperature, atmosphereRadiativeCooling, windStrength
+float4 _WeatherA; // solarIntensity, spaceTemperature, atmosphereRadiativeCooling, windStrength
 float4 _WeatherB;
 float4 _WeatherC;
-float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, humidityBuoyancy
-float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
+float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, unused
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureCompressibility, atmosphericCflLimit
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, verticalBuoyancyStrength
-float4 _WeatherH; // solarTerrainPenetration, terrainSolarHeating, rimCoolingRadius, rimCoolingStrength
-float4 _WeatherI; // coriolisStrength, velocityAdvectionRate, prevailingWind, windInertiaCoupling
-float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, convectiveBreakthroughTemp
-float4 _EruptionA;
-float4 _EruptionB;
-float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, capillaryEvaporationFraction, unused
+float4 _WeatherH; // atmosphereAbsorption, unused, unused, unused
+float4 _WeatherI; // coriolisStrength, velocityAdvectionRate, prevailingWind, unused
+float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
+float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, unused, unused
 float4 _CombustionA; // ambientOxygen, oxygenReplenish, oxygenDiffusion, unused
 float4 _CombustionC; // unused, unused, unused, sootSettling
 
@@ -106,9 +98,11 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
 }
 
-float LocalVaporCapacity(float temperature, float radius, float pressure)
+float LightOf(int2 value) { return _LightRead.Load(int3(C(value), 0)); }
+
+float LocalVaporCapacity(float temperature)
 {
-    return WaterVaporCapacity(temperature, radius, pressure, _AtmosphereStartRadius, _WeatherE.x, _WeatherE.z);
+    return VaporSaturation(temperature, _WeatherE.x);
 }
 
 float4 DonorFaceFlux(float2 flow, float mass, float advectionRate, float4 validFaces, float tangentialWeight)
@@ -151,16 +145,8 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
 
     float theta01 = (cell.x + 0.5) / _GridSize.x;
     float insolation = SolarInsolation(theta01, _WeatherC.y);
-    float exposure = 1.0;
-    if (radius < _AtmosphereStartRadius)
-    {
-        float band = max(1e-5, _AtmosphereStartRadius - _PlayableInnerRadius);
-        float penetration = saturate(_WeatherH.x);
-        float inner = _AtmosphereStartRadius - penetration * band;
-        exposure = penetration <= 0.0 ? 0.0 : smoothstep(inner, _AtmosphereStartRadius, radius);
-    }
-    float solarHeating = radius > _AtmosphereStartRadius ? _WeatherA.x : _WeatherH.y;
-    float heating = insolation * solarHeating * exposure / max(0.05, definition.transport.y);
+    float light = max(0.0, LightOf(cell));
+    float heating = light / max(0.05, definition.transport.y);
     float coolingRate;
     if (radius > _AtmosphereStartRadius)
         coolingRate = _WeatherA.z;
@@ -170,21 +156,11 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
         float eFolding = 0.04 * max(1e-5, _AtmosphereStartRadius - _PlayableInnerRadius);
         coolingRate = _WeatherG.z * exp(-depth / eFolding);
     }
-    float cooling = (state.x - _WeatherA.y) * coolingRate * (1.0 - insolation) * 0.01;
+    float cloudCover = atmosphere ? saturate(state.z) : 0.0;
+    if (!atmosphere && cell.y < _GridSize.y - 1)
+        cloudCover = saturate(S(cell + int2(0, 1)).z);
+    float cooling = (state.x - _WeatherA.y) * coolingRate * (1.0 - insolation) * (1.0 - cloudCover * 0.7) * 0.01;
     state.x += (heating - cooling) * _DeltaTime;
-
-    float rimRadius = max(0.0, _WeatherH.z);
-    float rimStrength = max(0.0, _WeatherH.w);
-    if (atmosphere && rimStrength > 0.0)
-    {
-        int r = (int)rimRadius;
-        int dist = (_GridSize.y - 1) - cell.y;
-        if (dist >= 0 && dist <= r)
-        {
-            float factor = (float)(r - dist + 1) / (float)(r + 1);
-            state.x = max(_WeatherA.y, state.x - rimStrength * factor);
-        }
-    }
 
     float heatCapacity = max(0.001, definition.transport.y);
     if (atmosphere && cell.y > 0)
@@ -297,7 +273,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
         {
             refTemp /= refWeight;
             refVapor /= refWeight;
-            buoyancy += (state.x - refTemp) * _WeatherD.z + (aux.x - refVapor) * _WeatherD.w;
+            buoyancy += (VirtualTemperature(state.x, aux.x) - VirtualTemperature(refTemp, refVapor)) * _WeatherD.z;
         }
 
         // Lapse-adjusted vertical gradient. Superadiabatic contrast (hotter below /
@@ -305,38 +281,28 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
         // of the face so vapor is not trapped by opposing donor velocities.
         float expectedStep = max(0.0, _WeatherG.y) / max(1.0, (1.0 - _AtmosphereStartRadius) * (float)_GridSize.y);
         float vertTemp = 0.0;
-        float vertVapor = 0.0;
         float vertWeight = 0.0;
         if (faces.z > 0.5)
         {
-            vertTemp += (S(cell + int2(0, -1)).x - expectedStep) - state.x;
-            vertVapor += A(cell + int2(0, -1)).x - aux.x;
+            float4 belowState = S(cell + int2(0, -1));
+            float4 belowAux = A(cell + int2(0, -1));
+            vertTemp += (VirtualTemperature(belowState.x, belowAux.x) - expectedStep) - VirtualTemperature(state.x, aux.x);
             vertWeight += 1.0;
         }
         if (faces.w > 0.5)
         {
-            vertTemp += state.x - (S(cell + int2(0, 1)).x + expectedStep);
-            vertVapor += aux.x - A(cell + int2(0, 1)).x;
+            float4 aboveState = S(cell + int2(0, 1));
+            float4 aboveAux = A(cell + int2(0, 1));
+            vertTemp += VirtualTemperature(state.x, aux.x) - (VirtualTemperature(aboveState.x, aboveAux.x) + expectedStep);
             vertWeight += 1.0;
         }
         if (vertWeight > 0.5)
         {
             vertTemp /= vertWeight;
-            vertVapor /= vertWeight;
-            buoyancy += _WeatherG.w * (vertTemp * _WeatherD.z + vertVapor * _WeatherD.w);
+            buoyancy += _WeatherG.w * vertTemp * _WeatherD.z;
         }
 
-        float couplingK = max(0.0, _WeatherI.w);
-        float speedH = abs(flow.x);
-        float inertiaFactor = couplingK > 1e-6 ? (1.0 / (1.0 + couplingK * speedH)) : 1.0;
-
-        float breakThreshold = max(0.5, _PressureA.w);
-        float thermalDrive = max(vertTemp, state.x - refTemp);
-        float thermalExcess = max(0.0, thermalDrive - breakThreshold);
-        float thermalOverride = couplingK > 1e-6 ? saturate(thermalExcess * 0.25) : 0.0;
-
-        float vertCoupling = lerp(inertiaFactor, 1.0, thermalOverride);
-        flow.y += clamp(buoyancy * vertCoupling, -2.0, 2.0) * _DeltaTime;
+        flow.y += clamp(buoyancy, -2.0, 2.0) * _DeltaTime;
 
         float coriolis = _WeatherI.x;
         if (abs(coriolis) > 1e-6)
@@ -357,18 +323,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
         if (cell.y >= _GridSize.y - 1)
             flow.y = min(0.0, flow.y);
 
-        if (couplingK > 1e-6)
-        {
-            float dampX = lerp(_WeatherB.x * 0.01, _WeatherB.x, inertiaFactor);
-            flow.x *= saturate(1.0 - dampX * _DeltaTime);
-
-            float dampY = lerp(_WeatherB.x * (1.0 + speedH * couplingK), _WeatherB.x, thermalOverride);
-            flow.y *= saturate(1.0 - dampY * _DeltaTime);
-        }
-        else
-        {
-            flow *= saturate(1.0 - _WeatherB.x * _DeltaTime);
-        }
+        flow *= saturate(1.0 - _WeatherB.x * _DeltaTime);
     }
     else
     {
@@ -509,6 +464,8 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
         float remain = max(0.0, 1.0 - heatOutFrac);
         float denom = max(1e-5, remain + heatInFrac);
         state.x = (state.x * remain + heatIn) / denom;
+        float lapse = max(0.0, _WeatherG.y) / max(1.0, (1.0 - _AtmosphereStartRadius) * (float)_GridSize.y);
+        state.x -= lapse * flow.y * _DeltaTime;
 
         if (velAdvRate > 1e-6)
         {
@@ -540,6 +497,22 @@ void AtmosphericTransport(uint3 id : SV_DispatchThreadID)
     Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
+float DewTransfer(int2 surface, int2 air)
+{
+    uint surfaceMat = M(surface);
+    uint airMat = M(air);
+    if (!IsExposedSurface(surface, surfaceMat) || !IsAtmosphereCell(air, airMat) || !IsOpenCarrier(airMat))
+        return 0.0;
+    float4 airAux = A(air);
+    float4 surfaceState = S(surface);
+    float dew = DewPoint(airAux.x, _WeatherE.x);
+    if (surfaceState.x >= dew)
+        return 0.0;
+    float available = max(0.0, airAux.x);
+    float drive = max(0.0, dew - surfaceState.x);
+    return min(available, max(0.0, _WeatherB.z) * drive * 0.05 * _DeltaTime);
+}
+
 [numthreads(8, 8, 1)]
 void WaterCycle(uint3 id : SV_DispatchThreadID)
 {
@@ -551,29 +524,42 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float4 aux = A(cell);
     float4 ecology = E(cell);
     float4 combustion = Comb(cell);
-    float radius = Radius01(cell.y, _GridSize.y);
     bool atmosphere = IsAtmosphereCell(cell, material);
     bool exposed = IsExposedSurface(cell, material);
     MaterialGpuData definition = D(material);
     float hysteresis = max(0.001, _WeatherC.z);
     float liquidFrac = WaterLiquidFraction(state.x, hysteresis);
     float frozenFrac = 1.0 - liquidFrac;
-    float evaporativeDrive = saturate((state.x - 5.0) / 80.0);
-    float evaporationBudget = _WeatherB.y * evaporativeDrive * _DeltaTime;
+
+    float airVapor = aux.x;
+    float wind = length(flow);
+    if (!atmosphere && exposed && cell.y < _GridSize.y - 1)
+    {
+        int2 above = cell + int2(0, 1);
+        uint aboveMat = M(above);
+        if (IsAtmosphereCell(above, aboveMat))
+        {
+            airVapor = A(above).x;
+            wind = length(F(above));
+        }
+    }
+    float deficit = EvaporationDeficit(state.x, airVapor, _WeatherE.x);
+    float windMul = 1.0 + wind;
+    float evapRate = max(0.0, _WeatherB.y) * deficit * windMul * _DeltaTime;
 
     if (state.x > -20.0 && !atmosphere)
     {
         float evapScale = material == 9u ? 0.75 : 1.0;
         float phaseScale = liquidFrac + frozenFrac * 0.15;
-        float surfaceEvap = min(max(0.0, state.z), evaporationBudget * evapScale * phaseScale);
+        float surfaceEvap = min(max(0.0, state.z), evapRate * evapScale * phaseScale);
         state.z -= surfaceEvap;
         aux.x += surfaceEvap;
         state.x -= WaterLatentHeatDelta(surfaceEvap, _WeatherE.w, 0.8);
 
-        float remainingBudget = max(0.0, evaporationBudget - surfaceEvap);
-        if (exposed && IsGroundwaterHost(material, definition) && aux.y > 0.0 && remainingBudget > 0.0 && liquidFrac > 0.05)
+        if (exposed && IsGroundwaterHost(material, definition) && aux.y > 0.0 && liquidFrac > 0.05)
         {
-            float capillary = min(aux.y, max(0.0, _MoistureErosion.z) * remainingBudget * liquidFrac);
+            float porosity = saturate(definition.biology.z);
+            float capillary = min(aux.y, evapRate * liquidFrac * porosity);
             aux.y -= capillary;
             aux.x += capillary;
             state.x -= WaterLatentHeatDelta(capillary, _WeatherE.w, 0.6);
@@ -582,7 +568,7 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
 
     if (atmosphere)
     {
-        float capacity = LocalVaporCapacity(state.x, radius, CellEffectivePressure(state, aux));
+        float capacity = LocalVaporCapacity(state.x);
         if (aux.x > capacity)
         {
             float excess = aux.x - capacity;
@@ -591,6 +577,22 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
             state.z += condensation;
             state.x += WaterLatentHeatDelta(condensation, _WeatherE.w, 0.8);
         }
+    }
+
+    if (exposed && cell.y < _GridSize.y - 1)
+    {
+        float incoming = DewTransfer(cell, cell + int2(0, 1));
+        if (incoming > 1e-8)
+        {
+            state.z += incoming;
+            state.x += WaterLatentHeatDelta(incoming, _WeatherE.w, 0.6);
+        }
+    }
+    if (atmosphere && cell.y > 0)
+    {
+        float outgoing = DewTransfer(cell + int2(0, -1), cell);
+        if (outgoing > 1e-8)
+            aux.x = max(0.0, aux.x - outgoing);
     }
 
     if (material == 11u) material = 1u;

@@ -87,27 +87,19 @@ MonoBehaviour:
   stressDecayRate: 0.02
   dryMoistureThreshold: 0.08
   moistureCohesionStrength: 0.85
-  capillaryEvaporationFraction: 0.5
   runoffRate: 0.45
   hydrostaticIterations: 32
   pondingRate: 0.85
-  springHeadThreshold: 0.9
   springDischargeRate: 0.9
-  geyserHeatThreshold: 320
-  geyserDischargeRate: 0.5
-  geyserCooldownSeconds: 2.5
   dayLengthSeconds: 180
-  terrainSolarHeating: 0.8
-  atmosphereSolarHeating: 0.8
+  solarIntensity: 0.8
+  atmosphereAbsorption: 0.35
   solarPolarOutputMin: 0.66
-  solarTerrainPenetration: 1
   spaceTemperature: 0
   terrainRadiativeCooling: 0.25
   atmosphereRadiativeCooling: 0.25
   windStrength: 2
   windDamping: 0.05
-  windInertiaCoupling: 1
-  convectiveBreakthroughTemp: 5
   coriolisStrength: 0
   velocityAdvectionRate: 0
   prevailingWind: 0
@@ -126,10 +118,9 @@ MonoBehaviour:
   atmosphericAdvectionRate: 0.8
   vaporDiffusionRate: 0.33
   atmosphericBuoyancy: 0.9
-  humidityBuoyancy: 0.8
   verticalBuoyancyStrength: 1
-  saturationCapacityScale: 0.01
-  cloudPrecipitationThreshold: 0.9
+  vaporCapacityScale: 0.01
+  cloudRetainMass: 0.9
   waterPressureResponse: 0.6
   latentHeatScale: 0.35
   surfaceAirHeatExchange: 1

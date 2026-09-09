@@ -104,7 +104,6 @@ namespace GeneSys.Tests
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
@@ -287,7 +286,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.grassGrowthTempMin = -50f;
             host.Config.grassGrowthTempMax = 80f;
             host.Config.grassGrowthMoistureMin = 0f;

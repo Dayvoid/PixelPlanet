@@ -288,6 +288,9 @@ void Physiology(uint3 id : SV_DispatchThreadID)
     uint4 genome = GenomeOf(cell);
     float4 phys = PhysOf(cell);
 
+    float4 auxPassthrough = A(cell);
+    _AuxWrite[cell] = SafeFinite4(max(auxPassthrough, 0.0), 0.0);
+
     if (!TreeIsOccupied(topology))
     {
         ClearTreeState(_TreeWrite, cell);
@@ -376,7 +379,7 @@ void Physiology(uint3 id : SV_DispatchThreadID)
     if (role == TREE_ROLE_ROOT)
     {
         float2 receipts = RootReceipts(cell, phys);
-        phys.y = saturate(phys.y + receipts.x * 4.0);
+        phys.y = saturate(phys.y + receipts.x);
         phys.z = saturate(phys.z + receipts.y * 3.0);
         SampleRootMycology(cell, traits);
         if (RootExposedToAir(cell))
@@ -411,7 +414,10 @@ void Physiology(uint3 id : SV_DispatchThreadID)
     float maint = max(0.0, _TreeB.y) * metabolic * _DeltaTime;
     if (light < 0.02) maint += max(0.0, _TreeB.z) * metabolic * _DeltaTime;
     phys.x = max(0.0, phys.x - maint);
-    phys.y = max(0.0, phys.y - 0.12 * _DeltaTime);
+    float transpiration = min(phys.y, 0.12 * _DeltaTime);
+    phys.y = max(0.0, phys.y - transpiration);
+    aux.x += transpiration;
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
 
     if (combustion.y > 0.05)
         phys.w = saturate(phys.w - combustion.y * 1.6 * _DeltaTime);

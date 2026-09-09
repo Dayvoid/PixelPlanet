@@ -162,8 +162,7 @@ namespace GeneSys.Tests
             host.Config.erosionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.windStrength = 0f;
-            host.Config.terrainSolarHeating = 0f;
-            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.solarIntensity = 0f;
             host.Config.magmaEruption = 0f;
             host.Config.materialSubsteps = 1;
             host.Config.slowPassInterval = 1;

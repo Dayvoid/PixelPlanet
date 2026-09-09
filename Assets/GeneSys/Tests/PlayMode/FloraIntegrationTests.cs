@@ -169,9 +169,7 @@ namespace GeneSys.Tests
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
-            host.Config.terrainSolarHeating = 0f;
-            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.solarIntensity = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
@@ -411,7 +409,7 @@ namespace GeneSys.Tests
             StampSurfacePlot(host, x, y);
             host.QueueFloraSeed(new Vector2Int(x, y + 1), 0, 1f);
             host.Config.floraGerminationSporeThreshold = 0.05f;
-            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.solarIntensity = 0f;
             yield return Step(host, 6);
 
             uint darkMaterial = 0;
@@ -421,7 +419,7 @@ namespace GeneSys.Tests
             });
             Assert.That(darkMaterial, Is.Not.EqualTo(MaterialIds.Algae));
 
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             yield return Step(host, 8);
 
             uint litMaterial = 0;
@@ -461,7 +459,7 @@ namespace GeneSys.Tests
             Paint(host, buryX, y, MaterialIds.Air);
             PaintField(host, cloudX, y + 5, 2f, 1.2f);
             PaintField(host, cloudX, y + 6, 2f, 1.2f);
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             yield return Step(host, 2);
 
             float openLight = 0f, cloudLight = 0f, waterLight = 0f, buriedLight = 0f, waterSurface = 0f;
@@ -493,7 +491,7 @@ namespace GeneSys.Tests
             StampSurfacePlot(host, night, y);
             Paint(host, day, y + 1, MaterialIds.Algae);
             Paint(host, night, y + 1, MaterialIds.Algae);
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.floraPhotosynthesisRate = 4f;
             host.Config.floraMaintenanceRate = 0.02f;
             host.Config.floraNightDrain = 0.2f;
@@ -531,7 +529,7 @@ namespace GeneSys.Tests
             Paint(host, toxicX + 1, y + 1, MaterialIds.Air);
             Paint(host, toxicX, y + 2, MaterialIds.Air);
             PaintField(host, toxicX, y + 1, 8f, 40f);
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.floraPhotosynthesisRate = 4f;
             host.Config.floraGrowthRate = 2f;
             host.Config.floraReproductionThreshold = 0.05f;
@@ -604,7 +602,7 @@ namespace GeneSys.Tests
             StampSurfacePlot(host, x, y);
             Paint(host, x, y + 1, MaterialIds.Algae);
             PaintField(host, x, y + 1, 2f, 0.55f);
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.floraGrowthRate = 0.5f;
             yield return Step(host, 2);
 
@@ -764,7 +762,7 @@ namespace GeneSys.Tests
             StampSurfacePlot(host, x, y);
             Paint(host, x, y + 1, MaterialIds.Algae);
             host.QueueOxygen(new Vector2Int(x, y + 1), 0, 0.05f);
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.floraPhotosynthesisRate = 4f;
             host.Config.floraOxygenYield = 4f;
             yield return Step(host, 12);
@@ -976,7 +974,7 @@ namespace GeneSys.Tests
             FreezeWorld(host);
             StampSurfacePlot(host, x, y);
             Paint(host, x, y + 1, MaterialIds.Algae);
-            host.Config.atmosphereSolarHeating = 1.2f;
+            host.Config.solarIntensity = 1.2f;
             host.Config.floraPhotosynthesisRate = 2f;
             yield return Step(host, 8);
             yield return ReadFloraFields(host, (_, _, _, _, life, genomes, _) =>
@@ -991,7 +989,7 @@ namespace GeneSys.Tests
             FreezeWorld(host);
             StampSurfacePlot(host, x, y);
             Paint(host, x, y + 1, MaterialIds.Algae);
-            host.Config.atmosphereSolarHeating = 1.2f;
+            host.Config.solarIntensity = 1.2f;
             host.Config.floraPhotosynthesisRate = 2f;
             yield return Step(host, 8);
             Vector4 secondLife = Vector4.zero;
@@ -1009,7 +1007,7 @@ namespace GeneSys.Tests
             SimulationValidator validator = UnityEngine.Object.FindFirstObjectByType<SimulationValidator>();
             Assert.That(validator, Is.Not.Null);
             validator.ResetBaseline();
-            host.Config.atmosphereSolarHeating = 0.8f;
+            host.Config.solarIntensity = 0.8f;
             host.Config.floraPhotosynthesisRate = 0.35f;
             host.Config.floraGrowthRate = 0.16f;
             for (int i = 0; i < 40; i++)

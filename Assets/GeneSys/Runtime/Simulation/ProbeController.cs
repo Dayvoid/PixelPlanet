@@ -9,7 +9,7 @@ namespace GeneSys.Simulation
     public enum ProbeAction
     {
         None,
-        Vapor,
+        Humidity,
         Water,
         Soil,
         Cool,
@@ -217,7 +217,7 @@ namespace GeneSys.Simulation
             Vector2Int cell = AimCell(host.Grid);
             switch (action)
             {
-                case ProbeAction.Vapor:
+                case ProbeAction.Humidity:
                     host.QueueFieldDeposit(cell, radius, 6, config.probeVaporRate);
                     break;
                 case ProbeAction.Water:

@@ -22,6 +22,9 @@ namespace GeneSys.Validation
         public float MeanTemperature;
         public float MeanPressure;
         public float MeanMoisture;
+        public float MeanRelativeHumidity;
+        public float CloudCover;
+        public double TranspirationMass;
         public float MeanWindSpeed;
         public float MaxAtmosphericTemperature;
         public int MaxAtmosphericTemperatureX;
@@ -287,6 +290,10 @@ namespace GeneSys.Validation
             double temperatureSum = 0d;
             double pressureSum = 0d;
             double moistureSum = 0d;
+            double relativeHumiditySum = 0d;
+            int humiditySampleCount = 0;
+            int cloudCells = 0;
+            int atmosphereCells = 0;
             double windSpeedSum = 0d;
             double oxygenSum = 0d;
             int sampleCount = 0;
@@ -322,8 +329,12 @@ namespace GeneSys.Validation
                     metrics.SurfaceWaterMass += Math.Max(0d, state.z);
                     metrics.GroundwaterMass += Math.Max(0d, auxValue.y);
                     metrics.VaporMass += Math.Max(0d, auxValue.x);
-                    if (material == MaterialIds.Air || material == MaterialIds.Vapor)
+                    if (material == MaterialIds.Air)
                     {
+                        atmosphereCells++;
+                        if (state.z > 0.05f) cloudCells++;
+                        relativeHumiditySum += RelativeHumidity(auxValue.x, state.x, 0.01f);
+                        humiditySampleCount++;
                         if (state.x > metrics.MaxAtmosphericTemperature)
                         {
                             metrics.MaxAtmosphericTemperature = state.x;
@@ -352,7 +363,7 @@ namespace GeneSys.Validation
                         || material == MaterialIds.Leaf || material == MaterialIds.Wood)
                         metrics.OrganismCount++;
 
-                    if (flow != null && (material == MaterialIds.Air || material == MaterialIds.Vapor))
+                    if (flow != null && material == MaterialIds.Air)
                     {
                         Vector2 cellFlow = flow[index];
                         windSpeedSum += Math.Sqrt(cellFlow.x * cellFlow.x + cellFlow.y * cellFlow.y);
@@ -394,7 +405,19 @@ namespace GeneSys.Validation
                 metrics.MeanWindSpeed = (float)(windSpeedSum / windSampleCount);
             if (oxygenSampleCount > 0)
                 metrics.MeanOxygen = (float)(oxygenSum / oxygenSampleCount);
+            if (humiditySampleCount > 0)
+                metrics.MeanRelativeHumidity = (float)(relativeHumiditySum / humiditySampleCount);
+            if (atmosphereCells > 0)
+                metrics.CloudCover = cloudCells / (float)atmosphereCells;
             return metrics;
+        }
+
+        public static float RelativeHumidity(float vapor, float temperature, float scale)
+        {
+            float t = Mathf.Clamp(temperature, -40f, 80f);
+            float es = Mathf.Exp(17.27f * t / Mathf.Max(1e-3f, 237.7f + t));
+            float saturation = Mathf.Max(1e-4f, Mathf.Max(0.001f, scale) * es);
+            return Mathf.Clamp01(Mathf.Max(0f, vapor) / saturation);
         }
 
         public static void MeasureFaunaAsync(SimulationHost host, Action<FaunaMetrics> completed)
@@ -653,7 +676,7 @@ namespace GeneSys.Validation
                     Vector4 state = states[index];
                     Vector4 auxValue = aux[index];
                     Vector2 cellFlow = flow[index];
-                    bool atmosphere = material == MaterialIds.Air || material == MaterialIds.Vapor;
+                    bool atmosphere = material == MaterialIds.Air;
 
                     if (atmosphere)
                     {

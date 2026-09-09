@@ -68,18 +68,18 @@
 // Grass visit (transient RGBA32F Tex2DArray depth 2): wasp -> grass handoff consumed one
 //   tick later. Slice 0 = nectar drawn per slot in xyz; slice 1 = deposited donor genome.
 // Atmosphere representation:
-//   Air (ID 1) is the permanent atmospheric carrier. Vapor (ID 11) is a phase descriptor only;
-//   runtime boiling / legacy cells normalize to Air while keeping vapor mass in aux.x.
-//   Clouds are atmospheric state.z. Precipitation converts cloud-base condensate into
-//   Water/Ice pixels or surface film from temperature, pressure, and updraft; it is not
-//   a configurable pixel-mass threshold.
+//   Air (ID 1) is the permanent atmospheric carrier. Legacy Vapor (ID 11) pixels
+//   migrate to Air while keeping vapor mass in aux.x. Clouds are atmospheric state.z.
+//   Precipitation converts cloud-base condensate into Water/Ice pixels or surface film
+//   from temperature, pressure, and updraft.
 // Moisture-aware soil erosion:
 //   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
 //   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.
 //   Sediment does not auto-revert to soil; ash fertilization remains the pedogenesis path.
 // Groundwater hosts (Soil/Sediment/porous Rock/Ash/Metal):
 //   Film soak and Water-pixel contact drain state.z into aux.y up to porosity capacity.
-//   Excess above field capacity percolates radially inward; lateral flow is host-only.
+//   Excess above field capacity percolates radially inward, then weeps from exposed hosts.
+//   Hosts hotter than the pressure-adjusted boil point convert aux.y to aux.x.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 // Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
 // each writes only its own cell. So both sides must derive the transferred mass from the same
@@ -880,12 +880,51 @@ float WaterBoilTemperature(float pressure, float equilibrium, float pressureResp
     return WATER_BOIL_TEMP + shift;
 }
 
+#define WATER_MAGNUS_A 17.27
+#define WATER_MAGNUS_B 237.7
+#define WATER_VIRTUAL_HUMIDITY 0.61
+
+float VaporSaturation(float temperature, float scale)
+{
+    float t = clamp(temperature, -40.0, 80.0);
+    float es = exp(WATER_MAGNUS_A * t / max(1e-3, WATER_MAGNUS_B + t));
+    return max(1e-4, max(0.001, scale) * es);
+}
+
 float WaterVaporCapacity(float temperature, float radius, float pressure, float atmosphereStartRadius, float saturationScale, float pressureResponse)
 {
-    float altitudeCooling = saturate((radius - atmosphereStartRadius) / max(0.01, 1.0 - atmosphereStartRadius));
-    float thermal = saturate((temperature + 20.0) / 60.0);
-    float pressureBoost = 1.0 + saturate(pressure) * (0.15 + 0.35 * saturate(pressureResponse));
-    return max(0.01, max(0.01, saturationScale) * thermal * (1.0 - altitudeCooling * 0.65) * pressureBoost);
+    return VaporSaturation(temperature, saturationScale);
+}
+
+float RelativeHumidity(float vapor, float temperature, float scale)
+{
+    return saturate(max(0.0, vapor) / max(1e-5, VaporSaturation(temperature, scale)));
+}
+
+float DewPoint(float vapor, float scale)
+{
+    float q = max(1e-5, max(0.0, vapor) / max(1e-5, max(0.001, scale)));
+    float ln = log(q);
+    return (WATER_MAGNUS_B * ln) / max(1e-3, WATER_MAGNUS_A - ln);
+}
+
+float EvaporationDeficit(float surfaceTemp, float airVapor, float scale)
+{
+    return max(0.0, VaporSaturation(surfaceTemp, scale) - max(0.0, airVapor));
+}
+
+float VirtualTemperature(float temperature, float vapor)
+{
+    return temperature * (1.0 + WATER_VIRTUAL_HUMIDITY * saturate(max(0.0, vapor)));
+}
+
+float GroundwaterBoilMass(float groundwater, float temperature, float boilPoint, float dt)
+{
+    float excess = max(0.0, temperature - boilPoint);
+    if (excess <= 1e-4 || groundwater <= 1e-8)
+        return 0.0;
+    float rate = min(0.12, excess * 0.015) * max(0.0, dt);
+    return min(max(0.0, groundwater), rate);
 }
 
 float WaterFrozenFraction(float temperature, float hysteresis)

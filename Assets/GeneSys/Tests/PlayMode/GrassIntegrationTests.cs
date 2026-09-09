@@ -148,8 +148,7 @@ namespace GeneSys.Tests
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.humidityBuoyancy = 0f;
-            host.Config.atmosphereSolarHeating = 0.8f;
+            host.Config.solarIntensity = 0.8f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
@@ -351,6 +350,77 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator GrassPatchConservesTrackedWaterIncludingHydration()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.grassWaterUptakeRate = 0.8f;
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.springDischargeRate = 0f;
+            int x = 19;
+            int y = SurfaceY(host);
+            host.Config.hydrostaticIterations = 1;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.slowPassInterval = 100000;
+            StampSurfacePlot(host, x, y);
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                for (int dy = -3; dy <= 3; dy++)
+                {
+                    if (Mathf.Abs(dx) == 3 || Mathf.Abs(dy) == 3)
+                        Paint(host, x + dx, y + dy, MaterialIds.Rock);
+                    PaintField(host, x + dx, y + dy, 2f, -100f);
+                    PaintField(host, x + dx, y + dy, 5f, -100f);
+                    PaintField(host, x + dx, y + dy, 6f, -100f);
+                }
+            }
+            PaintField(host, x, y, 5f, 0.35f);
+            PaintField(host, x - 1, y - 1, 5f, 0.35f);
+            PaintField(host, x, y - 1, 5f, 0.35f);
+            PaintField(host, x + 1, y - 1, 5f, 0.35f);
+            yield return Step(host, 2);
+            host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x), y), 0);
+            yield return Step(host, 1);
+
+            double before = 0d;
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                for (int dy = -2; dy <= 2; dy++)
+                {
+                    yield return ReadGrassCell(host, x + dx, y + dy, (_, state, aux, lives, _, _, __) =>
+                    {
+                        before += state.z + aux.x + aux.y;
+                        for (int i = 0; i < lives.Length; i++)
+                            before += Mathf.Max(0f, lives[i].z);
+                    });
+                }
+            }
+            yield return Step(host, 12);
+            double after = 0d;
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                for (int dy = -2; dy <= 2; dy++)
+                {
+                    yield return ReadGrassCell(host, x + dx, y + dy, (_, state, aux, lives, _, _, __) =>
+                    {
+                        after += state.z + aux.x + aux.y;
+                        for (int i = 0; i < lives.Length; i++)
+                            after += Mathf.Max(0f, lives[i].z);
+                    });
+                }
+            }
+            Assert.That(after, Is.EqualTo(before).Within(0.08d),
+                "Soil water plus grass hydration plus local vapor must stay on the ledger.");
+        }
+
+        [UnityTest]
         public IEnumerator EnergyGateBlocksFloweringUntilThreshold()
         {
             SceneManager.LoadScene("Terrarium");
@@ -395,7 +465,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             int x = 10;
             int y = SurfaceY(host);
             yield return PlantOnPlot(host, x, y, 1);
@@ -437,7 +507,7 @@ namespace GeneSys.Tests
             yield return WaitForHostAndSnapshot();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             yield return PrepareIsolatedWorld(host);
-            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.solarIntensity = 0f;
             host.Config.grassPhotosynthesisRate = 0f;
             host.Config.grassNightDrain = 2f;
             host.Config.grassMaintenanceRate = 0f;
@@ -563,7 +633,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.grassPollenEmitRate = 0.5f;
             host.Config.grassPollenTransportRate = 0.05f;
             int x = 34;
@@ -605,7 +675,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.grassPollenEmitRate = 0.5f;
             host.Config.grassPollenTransportRate = 0.5f;
             host.Config.grassPollenWindRate = 2f;
@@ -638,7 +708,7 @@ namespace GeneSys.Tests
             host.Config.grassPhotosynthesisRate = 2f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassMaintenanceRate = 0.01f;
-            host.Config.atmosphereSolarHeating = 1.5f;
+            host.Config.solarIntensity = 1.5f;
             host.Config.grassSeedTransportRate = 0.5f;
             host.Config.grassSeedWindRate = 1.5f;
             host.Config.grassSeedSettlingRate = 1.5f;

@@ -325,8 +325,7 @@ namespace GeneSys.Tests
             host.Config.gravityStrength = 0f;
             host.Config.thermalRate = 0f;
             host.Config.electricalRate = 0f;
-            host.Config.terrainSolarHeating = 0f;
-            host.Config.atmosphereSolarHeating = 0f;
+            host.Config.solarIntensity = 0f;
             host.Config.terrainRadiativeCooling = 0f;
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.windStrength = 0f;
@@ -336,7 +335,6 @@ namespace GeneSys.Tests
             host.Config.runoffRate = 0f;
             host.Config.pondingRate = 0f;
             host.Config.springDischargeRate = 0f;
-            host.Config.geyserDischargeRate = 0f;
             host.Config.dissolutionRate = 0f;
             host.Config.collapseRate = 0f;
             host.Config.erosionRate = 0f;
@@ -1451,7 +1449,7 @@ namespace GeneSys.Tests
             // shed separated drops instead of converting every cell in one dispatch, which
             // used to drop a solid bar that re-piled into a one-wide tower on the shelf.
             host.Config.precipitationRate = 1f;
-            host.Config.cloudPrecipitationThreshold = 0.2f;
+            host.Config.cloudRetainMass = 0.2f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.seed = 33006;
@@ -1584,7 +1582,6 @@ namespace GeneSys.Tests
             host.Config.vaporDiffusionRate = 0f;
             host.Config.hydrothermalStrength = 0f;
             host.Config.combustionFlashVaporizationRate = 0f;
-            host.Config.humidityBuoyancy = 0f;
             host.Config.atmosphericBuoyancy = 0f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1771,6 +1768,88 @@ namespace GeneSys.Tests
                         Paint(host, xx, y, MaterialIds.Air);
                 }
             }
+        }
+
+        [UnityTest]
+        public IEnumerator SaturatedExposedSoilWeeps()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.fieldCapacityFraction = 0.5f;
+            host.Config.springDischargeRate = 4f;
+            host.Config.seed = 33331;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            int width = host.Grid.angularResolution;
+            PaintSoakColumn(host, x, y);
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 5f, -100f);
+            PaintField(host, x, y, 5f, 0.55f);
+            yield return Step(host, 1);
+            float surfaceBefore = 0f;
+            float groundBefore = 0f;
+            yield return ReadGpuFields(host, (_, states, aux) =>
+            {
+                surfaceBefore = states[y * width + x].z;
+                groundBefore = aux[y * width + x].y;
+            });
+            yield return Step(host, 16);
+            yield return ReadGpuFields(host, (_, states, aux) =>
+            {
+                Assert.That(states[y * width + x].z, Is.GreaterThan(surfaceBefore + 0.02f),
+                    "Saturated exposed soil should weep excess groundwater.");
+                Assert.That(aux[y * width + x].y, Is.LessThan(groundBefore - 0.02f));
+                Assert.That(states[y * width + x].z + aux[y * width + x].y,
+                    Is.EqualTo(surfaceBefore + groundBefore).Within(0.04f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator HotAquiferBoilsWithoutInventingMass()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.thermalRate = 0.4f;
+            host.Config.springDischargeRate = 0f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.seed = 33332;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = host.Grid.angularResolution / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            int width = host.Grid.angularResolution;
+            PaintSoakColumn(host, x, y);
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 5f, -100f);
+            PaintField(host, x, y, 5f, 0.4f);
+            PaintField(host, x, y, 1f, 160f);
+            yield return Step(host, 1);
+            double massBefore = 0d;
+            float vaporBefore = 0f;
+            yield return ReadGpuFields(host, (_, states, aux) =>
+            {
+                vaporBefore = aux[y * width + x].x;
+                massBefore = states[y * width + x].z + aux[y * width + x].x + aux[y * width + x].y;
+            });
+            yield return Step(host, 12);
+            yield return ReadGpuFields(host, (_, states, aux) =>
+            {
+                double massAfter = states[y * width + x].z + aux[y * width + x].x + aux[y * width + x].y;
+                Assert.That(aux[y * width + x].x, Is.GreaterThan(vaporBefore + 0.01f),
+                    "Hot groundwater should boil into vapor.");
+                Assert.That(massAfter, Is.EqualTo(massBefore).Within(0.04d));
+            });
         }
 
         private static float MaxValleySurfaceTemperature(uint[] mats, Vector4[] states, int width, int x, int bedY, int top)

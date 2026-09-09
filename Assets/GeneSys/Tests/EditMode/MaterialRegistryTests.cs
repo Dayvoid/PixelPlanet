@@ -17,7 +17,7 @@ namespace GeneSys.Tests
             water.displayName = "Water";
             water.solidPhaseId = (int)MaterialIds.Ice;
             water.liquidPhaseId = (int)MaterialIds.Water;
-            water.gasPhaseId = (int)MaterialIds.Vapor;
+            water.gasPhaseId = (int)MaterialIds.Air;
             registry.materials = new System.Collections.Generic.List<MaterialDefinition> { water };
 
             Assert.That(registry.Validate(out string error), Is.True, error);

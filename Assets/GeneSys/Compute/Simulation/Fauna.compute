@@ -623,6 +623,8 @@ void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
             LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_CONSUMED);
         else
             LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, 0u, 0u, ORGANISM_CAUSE_CONSUMED);
+        float taken = min(max(0.0, state.z), saturate(state.z + life.y * 0.25));
+        state.z = max(0.0, state.z - taken);
         material = 1u;
         life = float4(0.0, 0.0, 0.0, life.w * 0.15);
         genome = uint4(0u, 0u, 0u, PackFloraMeta(FLORA_STAGE_DEAD, 0u, 0u, 0u));
@@ -768,7 +770,7 @@ void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
         float meal = IsLeafMaterial(M(algae))
             ? max(0.08, D(M(algae)).biology.y)
             : saturate(L(algae).y) * max(0.05, D(M(algae)).biology.y);
-        float moisture = saturate(S(algae).z + L(algae).y * 0.25);
+        float moisture = min(max(0.0, S(algae).z), saturate(S(algae).z + L(algae).y * 0.25));
         vitals.x = saturate(min(CalorieCap(genome), vitals.x + meal) - max(0.0, _FaunaD.x));
         vitals.y = saturate(vitals.y + moisture);
     }

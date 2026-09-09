@@ -39,12 +39,13 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _Mechanics;
 float4 _Geology;
+float4 _GeologyB;
 float4 _Hydrology;
 float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
-float4 _WeatherE; // saturationCapacityScale, cloudPrecipitationThreshold, waterPressureResponse, latentHeatScale
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _EruptionA;
 float4 _EruptionB;
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
@@ -238,6 +239,21 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
+
+    if (IsGroundwaterHost(material, definition) && aux.y > 0.0 && _Mechanics.y > 1e-8)
+    {
+        float hostBoil = WaterBoilTemperature(EffectivePressure(state.y, aux.x, _WeatherC.x), equilibrium, _WeatherE.z);
+        float boiled = GroundwaterBoilMass(aux.y, state.x, hostBoil + hysteresis, _DeltaTime);
+        if (boiled > 1e-8)
+        {
+            aux.y -= boiled;
+            aux.x += boiled;
+            state.x -= WaterLatentHeatDelta(boiled, _WeatherE.w, 0.8);
+            state.y += boiled * 0.5;
+            aux.z += boiled * max(0.0, _GeologyB.x) * max(0.0, _GeologyB.y);
+        }
+    }
+
     // Isolation and frozen-thermal ticks keep existing phase; boiling still runs when heat is enabled.
     if (_Mechanics.y <= 1e-8)
     {

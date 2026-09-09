@@ -24,7 +24,8 @@ float4 _WorldGenParams;
 float4 _WorldWaterA;
 float4 _WorldWaterB;
 float4 _WorldWaterC; // initialAtmosphericHumidity, groundwaterDepth, frozenOceans, unused
-float4 _WeatherA; // atmosphereSolarHeating, spaceTemperature, atmosphereRadiativeCooling, windStrength
+float4 _WeatherA; // solarIntensity, spaceTemperature, atmosphereRadiativeCooling, windStrength
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, unused
 float4 _MycologyA; // initialSporeLoad, rareStrainChance, unused, unused
 float4 _WorldGenV2A; // metalVeinCount, metalVeinMinSize, metalVeinMaxSize, metalVeinProtrusionChance
@@ -254,7 +255,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
 
     float vapor = 0.0;
     if (material == 1u && radius >= _AtmosphereStartRadius * 0.95)
-        vapor = _WorldWaterC.x * lerp(0.4, 1.0, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
+        vapor = saturate(_WorldWaterC.x) * VaporSaturation(temperature, _WeatherE.x) * lerp(0.85, 1.15, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
 
     MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
     uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
@@ -380,7 +381,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
 
     float vapor = 0.0;
     if (material == 1u && radius >= _AtmosphereStartRadius * 0.95)
-        vapor = _WorldWaterC.x * lerp(0.4, 1.0, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
+        vapor = saturate(_WorldWaterC.x) * VaporSaturation(temperature, _WeatherE.x) * lerp(0.85, 1.15, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
 
     MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
     uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);

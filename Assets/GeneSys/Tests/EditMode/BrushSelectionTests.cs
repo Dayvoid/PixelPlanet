@@ -28,7 +28,8 @@ namespace GeneSys.Tests
             Assert.That(ids.Contains(BrushSelectionIds.TreeSprouts), Is.False);
             Assert.That(ids.Contains(MaterialIds.Leaf), Is.False);
             Assert.That(ids.Contains(MaterialIds.Wood), Is.False);
-            Assert.That(ids.Count, Is.EqualTo(15));
+            Assert.That(ids.Contains(MaterialIds.Vapor), Is.False);
+            Assert.That(ids.Count, Is.EqualTo(14));
         }
 
         [Test]

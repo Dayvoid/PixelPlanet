@@ -150,53 +150,33 @@ namespace GeneSys.UI
                 "Moisture level below which soil loses cohesion. Drier thresholds make arid crust dusty and erodible; wetter thresholds keep banks stable until they dry further.",
             [nameof(SimulationConfig.moistureCohesionStrength)] =
                 "How much pore water binds soil. Stronger capillary cohesion resists erosion when damp, then fails suddenly if the ground dries past the threshold.",
-            [nameof(SimulationConfig.capillaryEvaporationFraction)] =
-                "Share of near-surface groundwater that can evaporate into air. Higher values couple aquifers to the weather cycle and dry soils from below.",
             [nameof(SimulationConfig.runoffRate)] =
                 "How fast atmosphere-connected surface water levels under hydraulic head. Higher runoff equalizes lakes and spills over sills; lower runoff leaves film and pools in place to soak in.",
             [nameof(SimulationConfig.hydrostaticIterations)] =
                 "How many times surface water re-levels against its neighbours each tick. One pass moves water a single column, so low counts leave ocean slopes and rain mounds standing; higher counts settle wide basins quickly at a small solver cost.",
             [nameof(SimulationConfig.pondingRate)] =
                 "How strongly shallow surface film resists hydrostatic flow. Higher ponding keeps rain in local puddles instead of sheeting across dry ground; standing water columns still level by head.",
-            [nameof(SimulationConfig.springHeadThreshold)] =
-                "Groundwater saturation needed before a spring discharges. Lower thresholds weep widely; higher ones concentrate flow into fewer, stronger springs.",
             [nameof(SimulationConfig.springDischargeRate)] =
-                "How quickly saturated aquifers vent to the surface. Stronger springs feed streams, wet soil, and can flood low terrain.",
-            [nameof(SimulationConfig.geyserHeatThreshold)] =
-                "Temperature required for geyser discharge. Lower thresholds make hydrothermal ground erupt more often; higher ones reserve geysers for magma-heated sites.",
-            [nameof(SimulationConfig.geyserDischargeRate)] =
-                "Water and vapor expelled per geyser event. Stronger geysers loft humidity, nutrients, and heat into weather and nearby ecology.",
-            [nameof(SimulationConfig.geyserCooldownSeconds)] =
-                "Simulated time before a geyser can fire again. Longer cooldowns space events; shorter cooldowns sustain steaming hydrothermal fields.",
+                "How quickly saturated aquifers above field capacity weep to the surface. Stronger seeps feed streams, wet soil, and can flood low terrain.",
 
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",
-            [nameof(SimulationConfig.terrainSolarHeating)] =
-                "Peak day heating in the crust, falling linearly to zero at the terminators. Depth is gated by Solar Terrain Penetration so the interior can stay independent of day and night.",
-            [nameof(SimulationConfig.atmosphereSolarHeating)] =
-                "Peak day heating in air above the terrain radius, falling linearly to zero at the terminators. Higher values drive evaporation, buoyancy, and wind; this scale also lights flora and grass.",
+            [nameof(SimulationConfig.solarIntensity)] =
+                "Peak day heating and photosynthetically active light, falling to zero at the terminators. Cloud, vapor, soot, and canopy in the light field shade both weather and plants.",
+            [nameof(SimulationConfig.atmosphereAbsorption)] =
+                "How much airborne vapor adds to light attenuation on the way down. Higher values make humid columns shade and heat themselves; zero leaves only cloud, soot, and solid opacity.",
             [nameof(SimulationConfig.solarPolarOutputMin)] =
                 "Solar heat and light as a fraction of peak when the sun is over an ice-cap pole. Output eases from 1 at the equator down to this value at both poles, approximating a more distant apoapsis. 1 keeps constant output.",
-            [nameof(SimulationConfig.solarTerrainPenetration)] =
-                "How deeply solar heating reaches into the crust. 1 ramps from the inner playable radius to the atmosphere, warming the full playable mantle; lower values confine day heat to a thinner surface band so the interior stays independent of day and night.",
             [nameof(SimulationConfig.spaceTemperature)] =
                 "Temperature the upper atmosphere radiates toward. Colder space strengthens night cooling, lapse, and polar ice; warmer space keeps vapor aloft.",
             [nameof(SimulationConfig.terrainRadiativeCooling)] =
                 "How fast the crust radiates heat. Strongest at the outermost terrain cells and falls off exponentially inward, so the mantle stays insulated.",
             [nameof(SimulationConfig.atmosphereRadiativeCooling)] =
-                "How fast air above the terrain radius radiates toward space. Stronger cooling steepens night-side temperatures and can collapse vapor into rain or snow.",
-            [nameof(SimulationConfig.rimCoolingRadius)] =
-                "Inward radial extent from the outer atmosphere edge subject to cooling. The outermost ring takes 100% of the cooling strength, diminishing each step inward, with this radius marking the last affected ring and receiving the smallest portion.",
-            [nameof(SimulationConfig.rimCoolingStrength)] =
-                "Degrees subtracted from the outermost atmosphere ring each tick. Inner rings up to the cooling radius take a linearly smaller share. Cooling stops at Space Temperature so the rim cannot run away. Zero disables the rim sink.",
+                "How fast air above the terrain radius radiates toward space. Stronger cooling steepens night-side temperatures and can collapse vapor into rain or snow. Local cloud cover reduces this loss.",
             [nameof(SimulationConfig.windStrength)] =
                 "Forcing that turns pressure and temperature gradients into wind. Stronger wind advects heat, vapor, ash, and spores around the planetoid.",
             [nameof(SimulationConfig.windDamping)] =
                 "How quickly wind dies without forcing. Higher damping calms storms; lower damping lets jets persist and carry weather farther.",
-            [nameof(SimulationConfig.windInertiaCoupling)] =
-                "Reduces wind damping and suppresses upward drift as horizontal wind speed increases. Fast winds preserve momentum and hug the ground, while calm air retains full damping to keep pillowy clouds cohesive.",
-            [nameof(SimulationConfig.convectiveBreakthroughTemp)] =
-                "Thermal excess required for extreme heat sources (such as volcanic vents, fires, or superheated terrain) to punch through fast horizontal wind streams and loft vertical storm towers.",
             [nameof(SimulationConfig.coriolisStrength)] =
                 "Planetary rotation forcing. Deflects vertical updrafts into horizontal winds and vice-versa, breaking diurnal symmetry to generate prevailing trade winds and jet streams. Set to 0 to disable.",
             [nameof(SimulationConfig.velocityAdvectionRate)] =
@@ -204,7 +184,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.prevailingWind)] =
                 "Direct background zonal wind bias across the atmosphere. Pushes air eastward (positive) or westward (negative) to establish a global prevailing drift. Set to 0 to disable.",
             [nameof(SimulationConfig.evaporationRate)] =
-                "How fast surface water and moist ground become vapor. Higher rates dry soils, load clouds, and couple hydrology to weather.",
+                "How fast a saturation deficit becomes vapor. Evaporation stops when the air is saturated and increases with wind over wet surfaces.",
             [nameof(SimulationConfig.condensationRate)] =
                 "How fast saturated air becomes cloud condensate. Higher rates build visible clouds sooner and feed precipitation.",
             [nameof(SimulationConfig.precipitationRate)] =
@@ -232,17 +212,15 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.vaporDiffusionRate)] =
                 "Slow mixing of humidity even without wind. Higher diffusion blurs dry and wet air masses; lower keeps sharp humidity fronts.",
             [nameof(SimulationConfig.atmosphericBuoyancy)] =
-                "How much warm air rises. Stronger buoyancy builds updrafts, storms, ash lofting, and vertical mixing of spores.",
-            [nameof(SimulationConfig.humidityBuoyancy)] =
-                "Extra lift from moist air. Higher values make humid parcels rise into clouds; lower values treat dry and wet air more equally.",
+                "How much virtual-temperature contrast (heat plus humidity) becomes lift. Stronger buoyancy builds updrafts, storms, ash lofting, and vertical mixing of spores.",
             [nameof(SimulationConfig.verticalBuoyancyStrength)] =
                 "How strongly a parcel compares itself to the air above and below, after subtracting the expected lapse-rate cooling. Higher values loft uniformly hot or humid surface layers; zero keeps only same-altitude contrast.",
-            [nameof(SimulationConfig.saturationCapacityScale)] =
-                "How much vapor air can hold before condensing. Higher capacity delays clouds in warm air; lower capacity rains out easily and dries the column.",
-            [nameof(SimulationConfig.cloudPrecipitationThreshold)] =
+            [nameof(SimulationConfig.vaporCapacityScale)] =
+                "Scales the Magnus saturation curve. Higher capacity delays clouds in warm air; lower capacity rains out easily and dries the column.",
+            [nameof(SimulationConfig.cloudRetainMass)] =
                 "Cloud condensate retained before autoconversion. Higher values keep thicker clouds; lower values let rain and snow form from thinner decks.",
             [nameof(SimulationConfig.waterPressureResponse)] =
-                "How strongly local pressure shifts boiling point, saturation, and precipitation efficiency. Higher response makes lows rain out and highs hold vapor; zero ignores pressure.",
+                "How strongly local pressure shifts boiling point and precipitation efficiency. Higher response makes highs hold vapor aloft; zero ignores pressure.",
             [nameof(SimulationConfig.latentHeatScale)] =
                 "Heat exchanged when water evaporates, condenses, freezes, melts, or boils. Higher values couple storms and thaw to temperature; zero disables latent feedback.",
             [nameof(SimulationConfig.surfaceAirHeatExchange)] =

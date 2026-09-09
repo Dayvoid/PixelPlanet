@@ -56,12 +56,15 @@ in order to achieve a 'living world' we can't start with uniform concentric laye
 
 #### SOLAR/WEATHER
 
-- orbital 'solar' body drive day/night temperature differential
-- differing materials warm/cool at different rates creating wind/weather systems
-- water cycle: surface materials soak/diffuse moisture to/from underground reserves - water vapor evaporates(allowing for tunable expansion/steam pressure) and collects at atmospheric boundary, shifted by wind/air pressure - temperature, pressure, and updraft convert cloud condensate into rain or snow pixels, and hydrostatic volume partitions standing water from surface film
-- canonical water mass contract: `state.z` surface liquid/ice (or cloud condensate on Air), `aux.x` vapor, `aux.y` groundwater; material IDs never create mass implicitly
-- worldgen seeds 2-3 separated ocean basins targeting ~50% angular coastline coverage, aquifers, and initial atmospheric humidity
-- runtime hydrology adds rain deposition, hydraulic-head surface leveling (three 64-wide column passes per tick: profile, face flux, apply), aquifer springs, geysers, and hydrothermal ocean vents coupled to geology
+- orbital solar body drives day/night temperature; `LightField` is rebuilt every tick so cloud, vapor, soot, water, and canopy shade both heating and photosynthesis
+- materials warm and cool at different rates; virtual-temperature buoyancy plus adiabatic lapse turn those contrasts into wind, orographic rain, and rain shadows
+- one saturation curve governs evaporation (deficit-driven, wind-enhanced), condensation, dew/frost, and relative-humidity display; pressure shifts boiling point only
+- water cycle: surface film and Water pixels soak into porous hosts; excess above field capacity percolates, then weeps; hosts above boil point flash groundwater to vapor (emergent geysers/fumaroles)
+- plants return hydration decay as vapor; fauna debit algae water when feeding
+- canonical water mass contract: `state.z` surface liquid/ice (or cloud condensate on Air), `aux.x` vapor, `aux.y` groundwater; material IDs never create mass implicitly. Vapor pixels are retired.
+- worldgen seeds 2-3 separated ocean basins targeting ~50% angular coastline coverage, aquifers, and initial relative humidity
+- runtime hydrology adds rain deposition and hydraulic-head surface leveling (column profile, face flux × hydrostaticIterations, apply)
+- see `Assets/WaterPlan.MD` for the full rule set and config map
 
 #### COMBUSTION
 - fire requires temperature, oxygen, and fuel (mycology biomass on soil/sediment plus flora `life.y` on Algae/Moss)

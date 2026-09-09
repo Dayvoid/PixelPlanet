@@ -151,7 +151,7 @@ namespace GeneSys.Simulation.Gpu
             SetCommon(worldGeneration, kernel, 0f);
             worldGeneration.SetInt("_Seed", config.seed);
             worldGeneration.SetVector("_LayerRatios", new Vector4(config.coreRatio, config.mantleRatio, config.crustRatio, config.soilRatio));
-            worldGeneration.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, config.groundwaterDepth, config.faultCount));
+            worldGeneration.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, 0f, config.faultCount));
             worldGeneration.SetVector("_WorldWaterA", new Vector4(config.targetOceanCoverage, config.minOceanBasins, config.maxOceanBasins, config.seaLevelRadius));
             worldGeneration.SetVector("_WorldWaterB", new Vector4(config.basinDepth, config.terrainRelief, config.coastRoughness, config.initialGroundwaterSaturation));
             worldGeneration.SetVector("_WorldWaterC", new Vector4(config.initialAtmosphericHumidity, config.groundwaterDepth, config.frozenOceans ? 1f : 0f, 0f));
@@ -325,7 +325,9 @@ namespace GeneSys.Simulation.Gpu
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
 
-            // Atmospheric loop: forcing → continuity → pressure diffusion → dynamics → transport → water cycle → precipitation.
+            // Atmospheric loop: light → forcing → continuity → pressure diffusion → dynamics → transport → water cycle → precipitation.
+            if (flora != null)
+                DispatchLight(flora, flora.FindKernel("LightAttenuation"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericForcing"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericContinuity"), deltaTime);
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PressureDiffusion"), deltaTime);
@@ -338,9 +340,8 @@ namespace GeneSys.Simulation.Gpu
             if (storm != null)
                 DispatchStorm(deltaTime);
 
-            // Soak this tick's rain/ponding, then springs/geysers see the updated water table.
+            // Soak this tick's rain/ponding, then saturation seeps see the updated water table.
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
-            DispatchPass(hydrology, hydrology.FindKernel("GeothermalDischarge"), deltaTime);
             DispatchHydrostaticLeveling(deltaTime);
 
             // Erosion sees the current tick's moisture, exposure, and flow after weather/runoff.
@@ -365,7 +366,6 @@ namespace GeneSys.Simulation.Gpu
                 if (Due(config.transportPassInterval))
                 {
                     float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
-                    DispatchLight(flora, flora.FindKernel("LightAttenuation"), transportDt);
                     DispatchPass(flora, flora.FindKernel("SporeTransport"), transportDt);
                     DispatchPass(flora, flora.FindKernel("Photosynthesis"), transportDt);
                 }
@@ -494,22 +494,22 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_EruptionA", new Vector4(config.magmaEruption, config.eruptionPressureStrength, config.eruptionFlowStrength, config.eruptionBurdenDepth));
             shader.SetVector("_EruptionB", new Vector4(config.eruptionBlastThreshold, config.ashUpdraftStrength, config.ashSettlingStrength, config.ashFertilityStrength));
             shader.SetVector("_Hydrology", new Vector4(config.infiltrationRate, config.groundwaterRate, config.dissolutionRate, config.collapseRate));
-            shader.SetVector("_HydrologyB", new Vector4(config.springHeadThreshold, config.springDischargeRate, config.geyserHeatThreshold, config.geyserDischargeRate));
-            shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, config.fieldCapacityFraction, config.geyserCooldownSeconds));
-            shader.SetVector("_Erosion", new Vector4(config.erosionRate, 0f, config.baseSoilCohesion, config.stressDecayRate));
-            shader.SetVector("_MoistureErosion", new Vector4(config.dryMoistureThreshold, config.moistureCohesionStrength, config.capillaryEvaporationFraction, 0f));
+            shader.SetVector("_HydrologyB", new Vector4(config.springDischargeRate, 0f, 0f, 0f));
+            shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, config.fieldCapacityFraction, 0f));
+            shader.SetVector("_Erosion", new Vector4(config.erosionRate, config.dryMoistureThreshold, config.baseSoilCohesion, config.stressDecayRate));
+            shader.SetVector("_MoistureErosion", new Vector4(config.dryMoistureThreshold, config.moistureCohesionStrength, 0f, 0f));
             float polarOutput = PolarPoleGeometry.SolarPolarOutput(
                 SolarAngle01, PolarPoleGeometry.PoleAngle01(config.seed), config.solarPolarOutputMin);
-            shader.SetVector("_WeatherA", new Vector4(config.atmosphereSolarHeating * polarOutput, config.spaceTemperature, config.atmosphereRadiativeCooling, config.windStrength));
+            shader.SetVector("_WeatherA", new Vector4(config.solarIntensity * polarOutput, config.spaceTemperature, config.atmosphereRadiativeCooling, config.windStrength));
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));
             shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, config.magmaViscosity));
-            shader.SetVector("_WeatherD", new Vector4(config.atmosphericAdvectionRate, config.vaporDiffusionRate, config.atmosphericBuoyancy, config.humidityBuoyancy));
-            shader.SetVector("_WeatherE", new Vector4(config.saturationCapacityScale, config.cloudPrecipitationThreshold, config.waterPressureResponse, config.latentHeatScale));
+            shader.SetVector("_WeatherD", new Vector4(config.atmosphericAdvectionRate, config.vaporDiffusionRate, config.atmosphericBuoyancy, 0f));
+            shader.SetVector("_WeatherE", new Vector4(config.vaporCapacityScale, config.cloudRetainMass, config.waterPressureResponse, config.latentHeatScale));
             shader.SetVector("_WeatherF", new Vector4(config.surfaceAirHeatExchange, config.temperatureAdvectionRate, config.pressureCompressibility, config.atmosphericCflLimit));
             shader.SetVector("_WeatherG", new Vector4(config.surfaceAirTemperature, config.atmosphericLapseRate, config.terrainRadiativeCooling, config.verticalBuoyancyStrength));
-            shader.SetVector("_WeatherH", new Vector4(config.solarTerrainPenetration, config.terrainSolarHeating * polarOutput, config.rimCoolingRadius, config.rimCoolingStrength));
-            shader.SetVector("_WeatherI", new Vector4(config.coriolisStrength, config.velocityAdvectionRate, config.prevailingWind, config.windInertiaCoupling));
-            shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, config.convectiveBreakthroughTemp));
+            shader.SetVector("_WeatherH", new Vector4(config.atmosphereAbsorption, 0f, 0f, 0f));
+            shader.SetVector("_WeatherI", new Vector4(config.coriolisStrength, config.velocityAdvectionRate, config.prevailingWind, 0f));
+            shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, 0f));
             shader.SetVector("_PressureB", new Vector4(config.gasPressureDiffusivity, config.fluidPressureDiffusivity, config.porousPressureDiffusivity, config.rigidPressureDiffusivity));
             shader.SetVector("_DensityExchange", new Vector4(config.densityExchangeRate, config.densityExchangeEpsilon, 0f, 0f));
             shader.SetVector("_MycologyA", new Vector4(config.mycologyInitialSporeLoad, config.mycologyRareStrainChance, config.mycologyAirTransportRate, config.mycologyWaterTransportRate));
@@ -771,40 +771,20 @@ namespace GeneSys.Simulation.Gpu
             if (Due(config.transportPassInterval) && !paintedThisTick)
             {
                 float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
-                int demand = grass.FindKernel("RootDemand");
-                int debit = grass.FindKernel("SoilDebit");
                 int life = grass.FindKernel("PhotosynthesisLifecycle");
                 int pollen = grass.FindKernel("PollenTransport");
                 int seeds = grass.FindKernel("SeedTransport");
-                if (demand < 0 || debit < 0 || life < 0 || pollen < 0 || seeds < 0)
+                if (life < 0 || pollen < 0 || seeds < 0)
                 {
                     UnityEngine.Debug.LogError("GeneSys: missing grass compute kernel. Skipping grass transport.");
                 }
                 else
                 {
-                    if (plantResources == null)
-                    {
-                        SetCommon(grass, demand, transportDt);
-                        BindGrassWorldReads(demand);
-                        grass.SetTexture(demand, "_GrassRead", resources.GrassRead);
-                        grass.SetTexture(demand, "_GrassRootFlux", resources.GrassRootFlux);
-                        Dispatch(grass, demand);
-
-                        SetCommon(grass, debit, transportDt);
-                        grass.SetTexture(debit, "_StateRead", resources.StateRead);
-                        grass.SetTexture(debit, "_AuxRead", resources.AuxRead);
-                        grass.SetTexture(debit, "_StateWrite", resources.StateWrite);
-                        grass.SetTexture(debit, "_AuxWrite", resources.AuxWrite);
-                        grass.SetTexture(debit, "_GrassRootFlux", resources.GrassRootFlux);
-                        Dispatch(grass, debit);
-                        Graphics.CopyTexture(resources.StateWrite, resources.StateRead);
-                        Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
-                    }
-
                 SetCommon(grass, life, transportDt);
                 grass.SetBuffer(life, "_MaterialDefinitions", materialBuffer);
                 BindGrassWorldReads(life);
                 grass.SetTexture(life, "_LightRead", resources.LightField);
+                grass.SetTexture(life, "_AuxWrite", resources.AuxWrite);
                 grass.SetTexture(life, "_GrassRead", resources.GrassRead);
                 grass.SetTexture(life, "_GrassWrite", resources.GrassWrite);
                 grass.SetTexture(life, "_PropaguleRead", resources.PropaguleRead);
@@ -813,6 +793,7 @@ namespace GeneSys.Simulation.Gpu
                 grass.SetTexture(life, "_GrassVisit", resources.GrassVisit);
                 BindOrganismHistory(grass, life);
                 Dispatch(grass, life);
+                Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
                 resources.SwapGrass();
                 resources.SwapPropagule();
 
@@ -977,12 +958,14 @@ namespace GeneSys.Simulation.Gpu
                 SetCommon(tree, physiology, deltaTime);
                 tree.SetBuffer(physiology, "_MaterialDefinitions", materialBuffer);
                 BindTreeWorldReads(physiology);
+                tree.SetTexture(physiology, "_AuxWrite", resources.AuxWrite);
                 tree.SetTexture(physiology, "_LightRead", resources.LightField);
                 tree.SetTexture(physiology, "_GrassRootFlux", resources.GrassRootFlux);
                 tree.SetTexture(physiology, "_TreeRead", resources.TreeRead);
                 tree.SetTexture(physiology, "_TreeWrite", resources.TreeWrite);
                 BindOrganismHistory(tree, physiology);
                 Dispatch(tree, physiology);
+                Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
                 resources.SwapTree();
 
                 SetCommon(tree, clear, deltaTime);
