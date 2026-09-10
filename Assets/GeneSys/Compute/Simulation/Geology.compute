@@ -156,13 +156,20 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     if (magma)
     {
         state.x -= _Geology.w * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
+        // Surface/extruded lava crusts once it has given up a latent-equivalent of heat.
+        // Paying latent every tick while still magma would be an infinite heater; requiring
+        // T + latent < 780 means the cell actually cooled through the freeze budget.
         if (state.x < 780.0)
         {
             float freezeCp = EffectiveCellHeatCapacity(D(material), state, aux, D(9u).transport.y, false);
-            state.x = min(780.0, state.x + MaterialPhaseLatentDelta(D(material).motion.y, _WeatherE.w, freezeCp));
-            material = 5u;
-            state.y *= 0.5;
-            flow *= 0.25;
+            float latent = MaterialPhaseLatentDelta(D(material).motion.y, _WeatherE.w, freezeCp);
+            if (state.x + latent < 780.0)
+            {
+                state.x = min(780.0, state.x + latent);
+                material = 5u;
+                state.y *= 0.5;
+                flow *= 0.25;
+            }
         }
     }
 

@@ -259,6 +259,9 @@ namespace GeneSys.Tests
             host.Config.pressureRate = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.vaporPressureScale = 0f;
+            host.Config.densityExchangeRate = 0f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.coreTemperature = 1500f;
         }
 
         private static void RestoreStressIsolation(SimulationHost host)
@@ -292,6 +295,11 @@ namespace GeneSys.Tests
             host.Config.pressureRate = 0.4f;
             host.Config.pressureDiffusionRate = 0.5f;
             host.Config.vaporPressureScale = 0.25f;
+            host.Config.densityExchangeRate = 4f;
+            host.Config.coreHeatRate = 0.15f;
+            host.Config.coreTemperature = 1500f;
+            host.Config.phaseHysteresis = 0.02f;
+            host.Config.latentHeatScale = 0.35f;
         }
 
         private static void PaintSupportedColumn(SimulationHost host, int x, int y, uint surfaceMaterial)
@@ -1163,24 +1171,32 @@ namespace GeneSys.Tests
             ConfigureStressIsolation(host);
             host.Config.phaseHysteresis = 1f;
             host.Config.latentHeatScale = 0.35f;
-            host.Config.thermalRate = 0.02f;
+            host.Config.thermalRate = 0f;
             host.Config.coreHeatRate = 0f;
+            host.Config.coreTemperature = 1500f;
             host.Config.seed = 4242;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
             int x = 20;
-            int y = Mathf.Clamp(host.Grid.radialResolution / 2, 4, host.Grid.radialResolution - 4);
-            for (int dx = -1; dx <= 1; dx++)
-                for (int dy = -1; dy <= 1; dy++)
+            int y = Mathf.Clamp(
+                Mathf.RoundToInt(host.Grid.atmosphereStartRadius * host.Grid.radialResolution) - 8,
+                8,
+                host.Grid.radialResolution - 8);
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dy = -2; dy <= 2; dy++)
                     Paint(host, x + dx, y + dy, MaterialIds.Granite);
             yield return Step(host, 1);
 
             float before = -1f;
             yield return ReadMaterialsAndState(host, (materials, states) =>
             {
-                before = states[y * host.Grid.angularResolution + x].x;
+                int i = y * host.Grid.angularResolution + x;
+                Assert.That(materials[i], Is.EqualTo(MaterialIds.Granite), "setup must leave a solid granite sample");
+                before = states[i].x;
+                Assert.That(before, Is.LessThan(890f), "sample must start below granite melt");
             });
+            host.Config.thermalRate = 0.02f;
             PaintHeat(host, x, y, 930f - before);
             yield return Step(host, 1);
 
@@ -1195,6 +1211,64 @@ namespace GeneSys.Tests
             Assert.That(material, Is.EqualTo(MaterialIds.Magma));
             Assert.That(after, Is.LessThan(930f - 5f));
             Assert.That(after, Is.GreaterThanOrEqualTo(900f));
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator MoltenInteriorDoesNotPayLatentEveryTick()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.phaseHysteresis = 1f;
+            host.Config.latentHeatScale = 0.35f;
+            host.Config.thermalRate = 0.02f;
+            host.Config.volcanicCooling = 0f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.gravityStrength = 0f;
+            host.Config.seed = 4242;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = 22;
+            int y = Mathf.Clamp(host.Grid.radialResolution / 2, 8, host.Grid.radialResolution - 8);
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dy = -2; dy <= 2; dy++)
+                    Paint(host, x + dx, y + dy, MaterialIds.Magma);
+            yield return Step(host, 1);
+            PaintHeat(host, x, y, 1100f);
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dy = -2; dy <= 2; dy++)
+                    if (!(dx == 0 && dy == 0))
+                        PaintHeat(host, x + dx, y + dy, 1100f);
+            yield return Step(host, 1);
+
+            float before = -1f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                int i = y * host.Grid.angularResolution + x;
+                Assert.That(materials[i], Is.EqualTo(MaterialIds.Magma));
+                before = states[i].x;
+            });
+
+            yield return Step(host, 20);
+
+            uint material = 0;
+            float after = -1f;
+            int coreStillCore = 0;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                int i = y * host.Grid.angularResolution + x;
+                material = materials[i];
+                after = states[i].x;
+                for (int n = 0; n < materials.Length; n++)
+                    if (materials[n] == MaterialIds.Core) coreStillCore++;
+            });
+            Assert.That(material, Is.EqualTo(MaterialIds.Magma));
+            Assert.That(after, Is.GreaterThan(before - 80f), "already-molten magma must not pay latent every tick");
+            Assert.That(coreStillCore, Is.GreaterThan(0), "PhaseChange must not transmute Core into mantle/magma");
 
             RestoreStressIsolation(host);
         }

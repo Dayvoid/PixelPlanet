@@ -24,6 +24,9 @@ namespace GeneSys.Tests
             Assert.That(thermal, Does.Contain("MoistureAdjustedConductivity"));
             Assert.That(thermal, Does.Contain("FaceGeometryWeight"));
             Assert.That(thermal, Does.Contain("MaterialPhaseLatentDelta"));
+            Assert.That(thermal, Does.Contain("material != liquidId"));
+            Assert.That(thermal, Does.Contain("material != solidId"));
+            Assert.That(thermal, Does.Contain("material == 2u"));
 
             string combustion = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Combustion.compute");
             Assert.That(combustion, Does.Contain("EffectiveCellHeatCapacity"));
