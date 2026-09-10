@@ -73,6 +73,26 @@ namespace GeneSys.UI
                 "Chance a metal vein breaches into an outer layer. Surface-reaching ore changes local density sorting, heat, and the materials available to tools and ecology.",
             [nameof(SimulationConfig.metalVeinProtrusionDistance)] =
                 "How far a protruding vein may punch outward. Longer protrusions can reach soil or seafloor, exposing metal to water, charge, and weathering.",
+            [nameof(SimulationConfig.limestoneDepositCount)] =
+                "Number of limestone bodies placed in the granite crust before metal veins. More deposits create porous, insulating patches that steer interior heat and groundwater.",
+            [nameof(SimulationConfig.limestoneDepositMinSize)] =
+                "Minimum radius of limestone bodies. Smaller pockets scatter karst and heat bottlenecks; larger minimums make more continuous carbonate belts.",
+            [nameof(SimulationConfig.limestoneDepositMaxSize)] =
+                "Maximum radius of limestone bodies. Larger deposits insulate the crust, hold more groundwater, and karst faster than granite.",
+            [nameof(SimulationConfig.limestoneDepositProtrusionChance)] =
+                "Chance a limestone body breaches the granite band. Surface-reaching carbonate changes weathering, aquifers, and local heat flux.",
+            [nameof(SimulationConfig.limestoneDepositProtrusionDistance)] =
+                "How far a protruding limestone body may punch into mantle or soil. Longer protrusions expose porous rock to magma heat or surface water.",
+            [nameof(SimulationConfig.clayDepositCount)] =
+                "Number of clay lenses placed in the soil band before metal veins. Clay holds water and conducts heat, so more lenses create patchy surface climates.",
+            [nameof(SimulationConfig.clayDepositMinSize)] =
+                "Minimum radius of clay lenses. Smaller pockets add local thermal and moisture contrast without replacing whole soil provinces.",
+            [nameof(SimulationConfig.clayDepositMaxSize)] =
+                "Maximum radius of clay lenses. Larger beds store more groundwater and leak interior heat into the air more readily than ordinary soil.",
+            [nameof(SimulationConfig.clayDepositProtrusionChance)] =
+                "Chance a clay lens punches out of the soil band. Surface clay changes runoff, evaporation, and the heat handed to weather.",
+            [nameof(SimulationConfig.clayDepositProtrusionDistance)] =
+                "How far a protruding clay lens may reach into granite or air. Longer protrusions couple aquifers to the surface energy budget.",
             [nameof(SimulationConfig.iceCapRadius)] =
                 "Angular size of polar ice caps in V2 worldgen. Larger caps lock surface water as ice, cool nearby air, and shrink ice-free habitat for mycology.",
             [nameof(SimulationConfig.iceCapHeight)] =
@@ -86,6 +106,10 @@ namespace GeneSys.UI
                 "Downward force on loose grains, liquids, magma, and ash. Stronger gravity speeds settling and density sorting; weaker gravity lets ash, vapor, and eruptions loft farther.",
             [nameof(SimulationConfig.thermalRate)] =
                 "How quickly heat conducts between neighboring cells. Higher values even out temperatures, melt and freeze faster, and couple solar weather to geology more tightly.",
+            [nameof(SimulationConfig.thermalMoistureBoost)] =
+                "How strongly groundwater and surface film raise a cell's effective conductivity. Wet porous ground and clay leak heat faster; dry pores insulate.",
+            [nameof(SimulationConfig.thermalPressureEffect)] =
+                "How strongly air pressure scales atmospheric conductivity. Thin highs insulate; dense lows transfer more heat between surface and sky.",
             [nameof(SimulationConfig.electricalRate)] =
                 "How quickly charge spreads through conductive materials. Affects electrical expansion, mycology electrical stress, and any future bioelectric sensing.",
             [nameof(SimulationConfig.phaseHysteresis)] =
@@ -129,6 +153,10 @@ namespace GeneSys.UI
                 "Ticks between core thermal pulses. 0 disables pulses. More frequent reactions inject heat and pressure into mantle convection and volcanism.",
             [nameof(SimulationConfig.coreReactionMagnitude)] =
                 "Size of each core heat/pressure pulse. Larger pulses can trigger widespread volcanism, hydrothermal spikes, and atmospheric heating.",
+            [nameof(SimulationConfig.coreTemperature)] =
+                "Held interior temperature of Core cells and the worldgen geothermal gradient source. Heat filters outward through crust materials into surface weather.",
+            [nameof(SimulationConfig.coreHeatRate)] =
+                "How quickly Core cells relax toward Core Temperature. Higher rates keep a steadier geothermal source; 0 leaves only the episodic pulse.",
 
             [nameof(SimulationConfig.infiltrationRate)] =
                 "How fast surface water soaks into absorbent, porous ground. Higher infiltration fills aquifers and wets soil for mycology; lower leaves more runoff and ponds.",
@@ -735,6 +763,8 @@ namespace GeneSys.UI
                 "How quickly a spent cell returns from negative cooldown to a neutral breakdown state. Lower rates space repeated strikes in the same pocket.",
             [nameof(SimulationConfig.stormStrikeHeat)] =
                 "Temperature added along a lightning channel, falling off toward side branches. Hits at the terminus can ignite dry mycology fuel on the next combustion pass.",
+            [nameof(SimulationConfig.stormStrikeAirHeatFraction)] =
+                "Share of strike heat applied to air cells versus solids after heat-capacity scaling. Lower values keep lightning hot at the ground while the channel warms the sky more gently.",
             [nameof(SimulationConfig.stormThunderPressure)] =
                 "Pressure pulse written along the channel. Continuity and pressure diffusion turn this into a thunder shock that couples back into wind.",
             [nameof(SimulationConfig.stormChargeDeposit)] =
@@ -912,6 +942,8 @@ namespace GeneSys.UI
                 "Pressure added as the cell heats. Couples temperature to fractures, vents, and wind via the pressure system.",
             [nameof(MaterialDefinition.electricalExpansion)] =
                 "Pressure added as charge builds. Links electrical conductivity to mechanical stress and expansion.",
+            [nameof(MaterialDefinition.latentHeat)] =
+                "Energy absorbed when this material melts and released when it freezes. High values hold rock and magma near their phase thresholds instead of snapping instantly.",
             [nameof(MaterialDefinition.solidPhaseId)] =
                 "Material id to become when freezing or cooling below melt. Completes geology and ice phase loops.",
             [nameof(MaterialDefinition.liquidPhaseId)] =

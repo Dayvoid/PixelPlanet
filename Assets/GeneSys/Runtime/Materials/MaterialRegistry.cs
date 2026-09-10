@@ -67,6 +67,7 @@ namespace GeneSys.Materials
         public const uint Core = 2;
         public const uint Mantle = 3;
         public const uint Rock = 4;
+        public const uint Granite = 4;
         public const uint Basalt = 5;
         public const uint Magma = 6;
         public const uint Soil = 7;
@@ -76,6 +77,8 @@ namespace GeneSys.Materials
         public const uint Vapor = 11; // legacy snapshot pixels; migrate to Air
         public const uint Ash = 12;
         public const uint Metal = 13;
+        public const uint Limestone = 14;
+        public const uint Clay = 15;
         public const uint Algae = 128;
         public const uint Cricket = 129;
         public const uint CricketEgg = 130;

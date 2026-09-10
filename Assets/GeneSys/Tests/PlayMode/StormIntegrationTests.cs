@@ -188,6 +188,7 @@ namespace GeneSys.Tests
             host.Config.stormFlashDiffusion = 0f;
             host.Config.stormFlashVaporization = 0f;
             host.Config.stormMinimumHeight = 0;
+            host.Config.coreHeatRate = 0f;
         }
 
         private IEnumerator PrepareIsolatedWorld(SimulationHost host)
@@ -204,6 +205,47 @@ namespace GeneSys.Tests
             Paint(host, x, y, surfaceMaterial);
             for (int dy = 1; dy <= 6; dy++)
                 Paint(host, x, y + dy, MaterialIds.Air);
+        }
+
+        private static void StampSupportedSurface(SimulationHost host, int x, int y, uint surfaceMaterial)
+        {
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                int px = x + dx;
+                Paint(host, px, y - 2, MaterialIds.Rock);
+                Paint(host, px, y - 1, MaterialIds.Rock);
+                Paint(host, px, y, surfaceMaterial);
+                for (int dy = 1; dy <= 6; dy++)
+                    Paint(host, px, y + dy, MaterialIds.Air);
+            }
+        }
+
+        private static void SealNearbySurface(SimulationHost host, int x, int y, int range)
+        {
+            for (int dx = -range; dx <= range; dx++)
+            {
+                if (Mathf.Abs(dx) <= 2) continue;
+                int px = x + dx;
+                Paint(host, px, y - 1, MaterialIds.Rock);
+                Paint(host, px, y, MaterialIds.Rock);
+                Paint(host, px, y + 1, MaterialIds.Air);
+            }
+        }
+
+        private static void MaxPlatform(SimulationHost host, int x, int y, Vector4[] states, Vector4[] combustion, Vector4[] storm,
+            out float maxLuminance, out float maxTemp, out float maxIgnition)
+        {
+            maxLuminance = 0f;
+            maxTemp = float.MinValue;
+            maxIgnition = 0f;
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                int i = Index(host, x + dx, y);
+                maxLuminance = Mathf.Max(maxLuminance, storm[i].y);
+                maxTemp = Mathf.Max(maxTemp, states[i].x);
+                if (combustion != null)
+                    maxIgnition = Mathf.Max(maxIgnition, combustion[i].w);
+            }
         }
 
         [UnityTest]
@@ -226,13 +268,16 @@ namespace GeneSys.Tests
             yield return Step(host, 1);
 
             int airY = y + 2;
-            PaintField(host, cold, airY, 1f, -10f);
-            PaintField(host, cold, airY, 2f, 0.6f);
-            PaintField(host, cold, airY, 12f, 4f);
-            PaintField(host, warm, airY, 1f, 28f);
-            PaintField(host, warm, airY, 2f, -10f);
-            PaintField(host, warm, airY, 12f, 4f);
-            yield return Step(host, 8);
+            for (int i = 0; i < 8; i++)
+            {
+                PaintField(host, cold, airY, 1f, -10f);
+                PaintField(host, cold, airY, 2f, 0.6f);
+                PaintField(host, cold, airY, 12f, 4f);
+                PaintField(host, warm, airY, 1f, 28f);
+                PaintField(host, warm, airY, 2f, -10f);
+                PaintField(host, warm, airY, 12f, 4f);
+                yield return Step(host, 1);
+            }
 
             yield return ReadFields(host, (_, __, ___, ____, _____, storm) =>
             {
@@ -379,23 +424,31 @@ namespace GeneSys.Tests
             host.Config.stormTargetRange = 12;
             host.Config.stormMaxChannelLength = 64;
             host.Config.stormTortuosity = 0f;
+            host.Config.stormStrikeAirHeatFraction = 0.3f;
+            host.Config.stormMinimumHeight = 0;
             host.Config.combustionIgnitionAccumulationRate = 8f;
             host.Config.combustionMinFuel = 0.02f;
             host.Config.combustionMoistureIgnitionPenalty = 0f;
 
             int x = 30;
             int y = SurfaceY(host);
-            StampSurfaceColumn(host, x, y, MaterialIds.Soil);
+            StampSupportedSurface(host, x, y, MaterialIds.Soil);
+            SealNearbySurface(host, x, y, 12);
+            Paint(host, x, y, MaterialIds.Metal);
             yield return Step(host, 1);
 
-            host.QueueSporeSeed(new Vector2Int(x, y), 0, 0.2f, 0.9f, MycologyTraits.Basic);
-            host.QueueOxygen(new Vector2Int(x, y), 0, 1f);
-            PaintField(host, x, y, 2f, -10f);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                host.QueueSporeSeed(new Vector2Int(x + dx, y), 0, 0.2f, 0.9f, MycologyTraits.Basic);
+                host.QueueOxygen(new Vector2Int(x + dx, y), 0, 1f);
+                PaintField(host, x + dx, y, 2f, -10f);
+            }
             yield return Step(host, 1);
 
             float tempBefore = 0f;
-            yield return ReadFields(host, (_, states, __, ___, ____, _____) =>
+            yield return ReadFields(host, (materials, states, __, ___, ____, _____) =>
             {
+                Assert.That(materials[Index(host, x, y)], Is.EqualTo(MaterialIds.Metal));
                 tempBefore = states[Index(host, x, y)].x;
             });
 
@@ -405,11 +458,71 @@ namespace GeneSys.Tests
             PaintField(host, x, originY, 13f, 1f);
             yield return Step(host, 1);
 
-            yield return ReadFields(host, (_, states, __, combustion, ___, ____) =>
+            yield return ReadFields(host, (materials, states, __, combustion, ___, storm) =>
             {
-                int i = Index(host, x, y);
-                Assert.That(states[i].x, Is.GreaterThan(tempBefore + 5f));
-                Assert.That(combustion[i].w, Is.GreaterThan(0.4f));
+                MaxPlatform(host, x, y, states, combustion, storm, out float lit, out float maxTemp, out float ignition);
+                Assert.That(materials[Index(host, x, y)], Is.EqualTo(MaterialIds.Metal));
+                Assert.That(lit, Is.GreaterThan(0.15f), "strike should terminate on the metal pad");
+                Assert.That(maxTemp, Is.GreaterThan(tempBefore + 5f));
+                Assert.That(ignition, Is.GreaterThan(0.4f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator StrikeHeatsAirLessThanSolidTerminus()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.stormBreakdownThreshold = 0.05f;
+            host.Config.stormBreakdownAccumulationRate = 8f;
+            host.Config.stormMaxStrikesPerTick = 4;
+            host.Config.stormStrikeHeat = 160f;
+            host.Config.stormStrikeAirHeatFraction = 0f;
+            host.Config.stormIgnitionImpulse = 0f;
+            host.Config.stormFlashVaporization = 0f;
+            host.Config.stormTargetRange = 12;
+            host.Config.stormMaxChannelLength = 64;
+            host.Config.stormTortuosity = 0f;
+            host.Config.thermalRate = 0f;
+            host.Config.terrainRadiativeCooling = 0f;
+            host.Config.atmosphereRadiativeCooling = 0f;
+            host.Config.surfaceAirHeatExchange = 0f;
+
+            int x = 34;
+            int y = SurfaceY(host);
+            StampSupportedSurface(host, x, y, MaterialIds.Rock);
+            SealNearbySurface(host, x, y, 12);
+            Paint(host, x, y, MaterialIds.Metal);
+            yield return Step(host, 1);
+
+            float solidBefore = 0f;
+            float airBefore = 0f;
+            yield return ReadFields(host, (materials, states, __, ___, ____, _____) =>
+            {
+                Assert.That(materials[Index(host, x, y)], Is.EqualTo(MaterialIds.Metal));
+                Assert.That(materials[Index(host, x, y + 3)], Is.EqualTo(MaterialIds.Air));
+                solidBefore = states[Index(host, x, y)].x;
+                airBefore = states[Index(host, x, y + 3)].x;
+            });
+
+            int originY = y + 5;
+            PaintField(host, x, originY, 11f, 2.3f);
+            PaintField(host, x, originY - 1, 11f, -0.3f);
+            PaintField(host, x, originY, 13f, 1f);
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (materials, states, __, combustion, ____, storm) =>
+            {
+                MaxPlatform(host, x, y, states, combustion, storm, out float lit, out float maxTemp, out _);
+                float solidDelta = maxTemp - solidBefore;
+                float airDelta = states[Index(host, x, y + 3)].x - airBefore;
+                Assert.That(materials[Index(host, x, y)], Is.EqualTo(MaterialIds.Metal));
+                Assert.That(storm[Index(host, x, originY)].y, Is.GreaterThan(0.15f), "strike should light the air channel");
+                Assert.That(lit, Is.GreaterThan(0.15f), "strike should terminate on the metal pad");
+                Assert.That(solidDelta, Is.GreaterThan(8f));
+                Assert.That(airDelta, Is.LessThan(solidDelta * 0.35f));
             });
         }
 
@@ -466,37 +579,41 @@ namespace GeneSys.Tests
             host.Config.stormBreakdownThreshold = 0.05f;
             host.Config.stormBreakdownAccumulationRate = 8f;
             host.Config.stormMaxStrikesPerTick = 4;
-            host.Config.stormFlashVaporization = 0.4f;
-            host.Config.stormTargetRange = 8;
+            host.Config.stormFlashVaporization = 1f;
+            host.Config.stormStrikeHeat = 160f;
+            host.Config.stormTargetRange = 12;
             host.Config.stormMaxChannelLength = 64;
             host.Config.stormTortuosity = 0f;
+            host.Config.stormMinimumHeight = 0;
 
-            int x = 50;
+            int x = 34;
             int y = SurfaceY(host);
-            StampSurfaceColumn(host, x, y, MaterialIds.Soil);
-            yield return Step(host, 1);
-            PaintField(host, x, y, 2f, 0.45f);
+            StampSupportedSurface(host, x, y, MaterialIds.Rock);
+            SealNearbySurface(host, x, y, 12);
+            Paint(host, x, y, MaterialIds.Metal);
             yield return Step(host, 1);
 
-            float waterBefore = 0f;
-            yield return ReadFields(host, (_, states, aux, __, ___, ____) =>
+            yield return ReadFields(host, (materials, _, __, ___, ____, _____) =>
             {
-                int i = Index(host, x, y);
-                waterBefore = Mathf.Max(0f, states[i].z) + Mathf.Max(0f, aux[i].x) + Mathf.Max(0f, aux[i].y);
+                Assert.That(materials[Index(host, x, y)], Is.EqualTo(MaterialIds.Metal));
             });
 
-            PaintField(host, x, y + 5, 11f, 2.2f);
-            PaintField(host, x, y + 4, 11f, -0.2f);
+            PaintField(host, x, y, 2f, 0.8f);
+            PaintField(host, x, y + 5, 11f, 2.3f);
+            PaintField(host, x, y + 4, 11f, -0.3f);
             PaintField(host, x, y + 5, 13f, 1f);
             yield return Step(host, 1);
 
-            yield return ReadFields(host, (_, states, aux, __, ___, ____) =>
+            yield return ReadFields(host, (_, states, aux, __, ___, storm) =>
             {
+                MaxPlatform(host, x, y, states, null, storm, out float lit, out float unusedTemp, out float unusedIgnition);
                 int i = Index(host, x, y);
-                float waterAfter = Mathf.Max(0f, states[i].z) + Mathf.Max(0f, aux[i].x) + Mathf.Max(0f, aux[i].y);
-                Assert.That(aux[i].x, Is.GreaterThan(0.05f));
-                Assert.That(states[i].z, Is.LessThan(waterBefore));
-                Assert.That(waterAfter, Is.EqualTo(waterBefore).Within(0.08f));
+                float film = Mathf.Max(0f, states[i].z);
+                float vapor = Mathf.Max(0f, aux[i].x);
+                Assert.That(lit, Is.GreaterThan(0.15f), "strike should terminate on the wet metal pad");
+                Assert.That(vapor, Is.GreaterThan(0.05f));
+                Assert.That(film, Is.LessThan(0.8f));
+                Assert.That(film + vapor + Mathf.Max(0f, aux[i].y), Is.GreaterThan(0.4f));
             });
         }
 

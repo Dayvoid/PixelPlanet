@@ -265,12 +265,13 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
 
     // Continuous linear recovery for sediment-source solids. Sustained loading must
     // exceed stressDecayRate (_Erosion.w) on average to accumulate toward conversion.
-    if (material == 4u || material == 5u || material == 7u)
+    if (IsHardCrustMaterial(material) || material == 7u || material == 15u)
         aux.w = max(0.0, aux.w - max(0.0, _Erosion.w) * _DeltaTime);
 
-    if ((material == 4u || material == 5u) && aux.y > 0.55 && definition.metadata.z > 0.5)
+    if ((IsHardCrustMaterial(material)) && aux.y > 0.55 && definition.metadata.z > 0.5)
     {
-        float carve = _Hydrology.z * aux.y * (1.0 - cohesion) * _DeltaTime;
+        float karst = material == 14u ? 1.6 : 1.0;
+        float carve = _Hydrology.z * aux.y * (1.0 - cohesion) * karst * _DeltaTime;
         aux.w += carve;
         if (aux.w > 1.25)
         {
@@ -281,9 +282,9 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    // Ordinary wind/runoff erosion: exposed soil only. Moisture raises cohesion and
+    // Ordinary wind/runoff erosion: exposed soil/clay only. Moisture raises cohesion and
     // suppresses stress gain; dryness alone never converts without sustained flow.
-    if (material == 7u && exposed)
+    if ((material == 7u || material == 15u) && exposed)
     {
         float erodibility = 1.0 - moistureProtection;
         if (flowEnergy > cohesion + 0.25 && erodibility > 0.05)
@@ -297,7 +298,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             }
         }
     }
-    else if (material == 4u && flowEnergy > cohesion + 0.25)
+    else if ((material == 4u || material == 14u) && flowEnergy > cohesion + 0.25)
     {
         float erode = _Erosion.x * flowEnergy * _DeltaTime;
         aux.w += erode;
@@ -309,7 +310,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     }
 
     uint below = M(cell + int2(0, -1));
-    if ((material == 4u || material == 7u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
+    if ((material == 4u || material == 7u || material == 14u || material == 15u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
         material = 8u;
 
     Write(cell, material, state, flow, aux, ecology, combustion);
@@ -571,7 +572,7 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             if (canFilm)
                 state.z = expectedFilm;
             flow.x += net * 2.0;
-            if ((material == 7u || material == 8u) && state.z > 0.05 && D(material).biology.z > 0.2)
+            if ((material == 7u || material == 8u || material == 15u) && state.z > 0.05 && D(material).biology.z > 0.2)
                 flow *= saturate(1.0 - max(0.0, _HydrologyC.y) * 0.25 * _DeltaTime);
         }
         else if (rewrite && y > bedY && IsRewritableCarrier(material))

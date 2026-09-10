@@ -35,7 +35,7 @@ float4 _StormC; // channelDecay, flashDecay, flashDiffusion, cooldown
 float4 _StormD; // strikeHeat, thunderPressure, chargeDeposit, ignitionImpulse
 float4 _StormE; // flashVaporization, channelChargeDrain, targetRange, maxChannelLength
 float4 _StormF; // strikeBranchChance, sheetBranchChance, maxStrikesPerTick, tortuosity
-float4 _StormG; // minimumHeight, unused, unused, unused
+float4 _StormG; // minimumHeight, strikeAirHeatFraction, unused, unused
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -387,7 +387,12 @@ void StampChannel(int2 cell, float intensity, uint kind)
     _StormWrite[cell] = SanitizeStorm(storm);
 
     float4 state = _StateWrite[cell];
-    state.x += max(0.0, _StormD.x) * intensity * (kind == STORM_KIND_SHEET ? 0.25 : 1.0);
+    uint material = M(cell);
+    MaterialGpuData definition = D(material);
+    float cp = max(0.001, definition.transport.y);
+    float airScale = IsAtmosphereCell(cell, material) ? saturate(_StormG.y) : 1.0;
+    float heat = max(0.0, _StormD.x) * intensity * (kind == STORM_KIND_SHEET ? 0.25 : 1.0) * airScale / cp;
+    state.x += clamp(heat, 0.0, 1e6);
     state.y += max(0.0, _StormD.y) * intensity;
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
 

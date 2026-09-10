@@ -155,7 +155,8 @@ void Combustion(uint3 id : SV_DispatchThreadID)
             burn = max(burn, faunaShare);
         }
         combustion.x = max(0.0, combustion.x - burn * oxygenDemand);
-        state.x += burn * calories * heatYield * 60.0;
+        float cpEff = EffectiveCellHeatCapacity(definition, state, aux, Mat(9u).transport.y, IsAtmosphereMaterial(material, definition));
+        state.x += burn * calories * heatYield * 60.0 / cpEff;
         state.y += burn * pressureScale;
         flow.y += burn * updraft;
         combustion.z += burn * max(0.0, definition.combustion.w) * smokeScale;

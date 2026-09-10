@@ -32,6 +32,7 @@ MonoBehaviour:
   boilingTemperature: 2200
   thermalExpansion: 0.08
   electricalExpansion: 0.02
+  latentHeat: 70
   solidPhaseId: 5
   liquidPhaseId: 6
   gasPhaseId: 11

@@ -50,12 +50,24 @@ MonoBehaviour:
   metalVeinMaxSize: 0.01
   metalVeinProtrusionChance: 0
   metalVeinProtrusionDistance: 0.02
+  limestoneDepositCount: 20
+  limestoneDepositMinSize: 0.01
+  limestoneDepositMaxSize: 0.05
+  limestoneDepositProtrusionChance: 0
+  limestoneDepositProtrusionDistance: 0.01
+  clayDepositCount: 20
+  clayDepositMinSize: 0.01
+  clayDepositMaxSize: 0.045
+  clayDepositProtrusionChance: 0
+  clayDepositProtrusionDistance: 0.01
   iceCapRadius: 0.001
   iceCapHeight: 0.003
   iceCapRadiusVariation: 0.25
   iceCapHeightVariation: 0.3
   gravityStrength: 1
   thermalRate: 0.35
+  thermalMoistureBoost: 1
+  thermalPressureEffect: 0.6
   electricalRate: 0.3
   phaseHysteresis: 0.02
   densityExchangeRate: 4
@@ -77,6 +89,8 @@ MonoBehaviour:
   ashFertilityStrength: 1
   coreReactionFrequency: 2000
   coreReactionMagnitude: 8
+  coreTemperature: 1500
+  coreHeatRate: 0.15
   infiltrationRate: 0.5
   groundwaterRate: 0.35
   fieldCapacityFraction: 0.7
@@ -350,7 +364,7 @@ MonoBehaviour:
   combustionIgnitionDecayRate: 1.2
   combustionSeedIntensity: 0.25
   combustionBurnRate: 0.2
-  combustionHeatYield: 2.8
+  combustionHeatYield: 3.8
   combustionPressureScale: 2.5
   combustionUpdraftStrength: 6
   combustionSmokeYield: 0.55
@@ -376,6 +390,7 @@ MonoBehaviour:
   stormFlashDiffusion: 0.45
   stormCooldownRate: 0.4
   stormStrikeHeat: 90
+  stormStrikeAirHeatFraction: 0.3
   stormThunderPressure: 0.55
   stormChargeDeposit: 0.85
   stormIgnitionImpulse: 1

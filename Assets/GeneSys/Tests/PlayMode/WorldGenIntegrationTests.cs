@@ -67,6 +67,8 @@ namespace GeneSys.Tests
             yield return ReadMaterials(host, result => materials = result);
 
             Assert.That(CountMaterial(materials, MaterialIds.Metal), Is.GreaterThan(0), "V2 worldgen should seed metal veins.");
+            Assert.That(CountMaterial(materials, MaterialIds.Limestone), Is.GreaterThan(0), "V2 worldgen should seed limestone deposits.");
+            Assert.That(CountMaterial(materials, MaterialIds.Clay), Is.GreaterThan(0), "V2 worldgen should seed clay lenses.");
             Assert.That(CountMaterial(materials, MaterialIds.Ice), Is.GreaterThan(0), "V2 worldgen should seed polar ice caps.");
             Assert.That(CountMaterial(materials, MaterialIds.Water), Is.GreaterThan(0), "V2 worldgen should still fill oceans.");
 
@@ -134,6 +136,8 @@ namespace GeneSys.Tests
             yield return ReadMaterials(host, result => materials = result);
 
             Assert.That(CountMaterial(materials, MaterialIds.Metal), Is.EqualTo(0));
+            Assert.That(CountMaterial(materials, MaterialIds.Limestone), Is.EqualTo(0));
+            Assert.That(CountMaterial(materials, MaterialIds.Clay), Is.EqualTo(0));
             Assert.That(CountMaterial(materials, MaterialIds.Ice), Is.EqualTo(0));
             Assert.That(CountMaterial(materials, MaterialIds.Water), Is.GreaterThan(0));
         }

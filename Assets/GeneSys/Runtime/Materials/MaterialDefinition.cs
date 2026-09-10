@@ -34,6 +34,7 @@ namespace GeneSys.Materials
         public float boilingTemperature = 2000f;
         public float thermalExpansion;
         public float electricalExpansion;
+        [Min(0f)] public float latentHeat;
         [Min(0)] public int solidPhaseId;
         [Min(0)] public int liquidPhaseId;
         [Min(0)] public int gasPhaseId;
@@ -60,7 +61,7 @@ namespace GeneSys.Materials
                 phase = new Vector4(meltingTemperature, boilingTemperature, thermalExpansion, electricalExpansion),
                 biology = new Vector4(toxicity, caloricContent, porosity, buoyancyBias),
                 metadata = new Vector4((float)category, phaseIds, bioModifiable ? 1f : 0f, stableId),
-                motion = new Vector4(densityDisplaceable ? 1f : 0f, 0f, 0f, 0f),
+                motion = new Vector4(densityDisplaceable ? 1f : 0f, latentHeat, 0f, 0f),
                 combustion = new Vector4(ignitionTemperature, flashPoint, oxygenDemand, smokeYield)
             };
         }

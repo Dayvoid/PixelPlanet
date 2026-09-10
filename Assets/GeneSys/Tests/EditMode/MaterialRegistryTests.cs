@@ -121,6 +121,38 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void GraniteLimestoneAndClayHaveExpectedIdentityAndThermalContrast()
+        {
+            MaterialDefinition granite = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/004_Granite.asset");
+            MaterialDefinition limestone = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/014_Limestone.asset");
+            MaterialDefinition clay = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/015_Clay.asset");
+            Assert.That(granite, Is.Not.Null);
+            Assert.That(limestone, Is.Not.Null);
+            Assert.That(clay, Is.Not.Null);
+            Assert.That(granite.stableId, Is.EqualTo((int)MaterialIds.Granite));
+            Assert.That(MaterialIds.Granite, Is.EqualTo(MaterialIds.Rock));
+            Assert.That(granite.displayName, Is.EqualTo("Granite"));
+            Assert.That(limestone.stableId, Is.EqualTo((int)MaterialIds.Limestone));
+            Assert.That(clay.stableId, Is.EqualTo((int)MaterialIds.Clay));
+            Assert.That(limestone.thermalConductivity, Is.LessThan(granite.thermalConductivity));
+            Assert.That(limestone.porosity, Is.GreaterThan(granite.porosity));
+            Assert.That(clay.absorbency, Is.GreaterThan(0.8f));
+            Assert.That(clay.thermalConductivity, Is.GreaterThan(0.2f));
+            Assert.That(granite.latentHeat, Is.GreaterThan(0f));
+            Assert.That(limestone.latentHeat, Is.GreaterThan(0f));
+            Assert.That(clay.latentHeat, Is.GreaterThan(0f));
+
+            MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
+            Assert.That(registry.Get((int)MaterialIds.Granite), Is.Not.Null);
+            Assert.That(registry.Get((int)MaterialIds.Limestone), Is.Not.Null);
+            Assert.That(registry.Get((int)MaterialIds.Clay), Is.Not.Null);
+            MaterialGpuData[] gpu = registry.BuildGpuData();
+            Assert.That(gpu[(int)MaterialIds.Granite].motion.y, Is.EqualTo(granite.latentHeat).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Limestone].transport.x, Is.EqualTo(limestone.thermalConductivity).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Clay].transport.w, Is.EqualTo(clay.absorbency).Within(0.01f));
+        }
+
+        [Test]
         public void CombustionMaterialPackingIsConfigured()
         {
             MaterialDefinition soil = AssetDatabase.LoadAssetAtPath<MaterialDefinition>("Assets/GeneSys/Data/Materials/007_Soil.asset");

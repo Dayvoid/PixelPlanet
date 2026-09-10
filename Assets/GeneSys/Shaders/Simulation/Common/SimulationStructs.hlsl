@@ -7,7 +7,7 @@
 //   aux.y    = subsurface groundwater mass
 //   aux.z    = nutrient / fertility
 //   aux.w    = shared fault / erosion stress
-//              Rock, Basalt, and Soil recover linearly via stressDecayRate (_Erosion.w)
+//              Granite, Basalt, Limestone, Soil, and Clay recover linearly via stressDecayRate (_Erosion.w)
 //              in ErosionAndCollapse; Mantle/Magma keep tectonic fault semantics without decay.
 // Ecology (dedicated RGBA32F field, not packed into aux):
 //   ecology.x = viable spore load on air/water carriers and colonized substrate
@@ -124,7 +124,7 @@ struct MaterialGpuData
     float4 phase;      // melt point, boil point, thermal expansion, electric expansion
     float4 biology;    // toxicity, calories, porosity, buoyancy bias
     float4 metadata;   // category, packed phase IDs, bio-modifiable, stable ID
-    float4 motion;     // densityDisplaceable, reserved, reserved, reserved
+    float4 motion;     // densityDisplaceable, latentHeat, reserved, reserved
     float4 combustion; // ignitionTemperature, flashPoint, oxygenDemand, smokeYield
 };
 
@@ -611,6 +611,7 @@ bool IsFaunaSupport(uint material)
 {
     return material == 4u || material == 5u || material == 7u || material == 8u
         || material == 9u || material == 10u || material == 12u || material == 13u
+        || material == 14u || material == 15u
         || material == 131u || material == FLORA_ALGAE_ID || material == TREE_WOOD_ID || IsFaunaMaterial(material)
         || IsWaspEggMaterial(material);
 }
@@ -848,8 +849,58 @@ float EffectivePressure(float pressure, float vapor, float vaporPressureScale)
     return max(0.0, pressure) + max(0.0, vapor) * max(0.0, vaporPressureScale);
 }
 
+bool IsHardCrustMaterial(uint material)
+{
+    return material == 4u || material == 5u || material == 14u;
+}
+
+bool IsSoftCrustMaterial(uint material)
+{
+    return material == 7u || material == 8u || material == 15u;
+}
+
+bool IsAtmosphereMaterial(uint material, MaterialGpuData definition)
+{
+    return material == 0u || material == 1u || material == 11u || definition.metadata.x == 1.0;
+}
+
+float EffectiveCellHeatCapacity(MaterialGpuData definition, float4 state, float4 aux, float waterHeatCapacity, bool atmosphere)
+{
+    float waterCp = max(0.001, waterHeatCapacity);
+    float wet = max(0.0, aux.y) * waterCp * 0.75;
+    float film = atmosphere ? 0.0 : max(0.0, state.z) * waterCp;
+    float vapor = atmosphere ? max(0.0, aux.x) * waterCp * 0.25 : 0.0;
+    return max(0.001, definition.transport.y + wet + film + vapor);
+}
+
+float MoistureAdjustedConductivity(MaterialGpuData definition, float groundwater, float surfaceFilm, float waterConductivity, float moistureBoost)
+{
+    float kDry = max(0.0, definition.transport.x);
+    float porosity = saturate(definition.biology.z);
+    float capacity = max(1e-5, GroundwaterCapacity(definition));
+    float sat = saturate(max(0.0, groundwater) / capacity);
+    sat = max(sat, saturate(surfaceFilm));
+    float wetK = max(kDry, max(0.0, waterConductivity));
+    return lerp(kDry * (1.0 - 0.5 * porosity), wetK, saturate(sat * max(0.0, moistureBoost)));
+}
+
+float FaceGeometryWeight(int2 cell, int2 offset, int radialSize)
+{
+    if (offset.x != 0)
+        return TangentialEdgeWeight(cell.y, radialSize);
+    int faceY = max(cell.y, cell.y + offset.y);
+    return max(0.5 / max(1.0, (float)radialSize), (float)faceY / max(1.0, (float)radialSize));
+}
+
+float MaterialPhaseLatentDelta(float latentHeat, float latentScale, float heatCapacity)
+{
+    return max(0.0, latentHeat) * max(0.0, latentScale) / max(0.001, heatCapacity);
+}
+
 float FaceHeatEnergy(float selfTemp, float selfHeatCapacity, float neighborTemp, float neighborHeatCapacity, float edgeConductance, float thermalRate, float dt)
 {
+    if (thermalRate <= 1e-8 || dt <= 1e-8)
+        return 0.0;
     float selfCp = max(0.001, selfHeatCapacity);
     float neighborCp = max(0.001, neighborHeatCapacity);
     float Q = (neighborTemp - selfTemp) * max(0.0, edgeConductance) * max(0.0, thermalRate) * max(0.0, dt) * 0.25;
@@ -871,6 +922,14 @@ float PressureEquilibriumAt(int radiusIndex, int radialSize, float gradient, flo
 float WaterPressureNorm(float pressure, float equilibrium)
 {
     return saturate(pressure / max(0.05, equilibrium + 0.25));
+}
+
+float PressureAdjustedConductivity(float conductivity, uint material, MaterialGpuData definition, float pressure, float equilibrium, float pressureEffect)
+{
+    if (!IsAtmosphereMaterial(material, definition))
+        return conductivity;
+    float norm = WaterPressureNorm(pressure, equilibrium);
+    return conductivity * lerp(1.0, max(0.15, norm * 1.5), saturate(pressureEffect));
 }
 
 float WaterBoilTemperature(float pressure, float equilibrium, float pressureResponse)

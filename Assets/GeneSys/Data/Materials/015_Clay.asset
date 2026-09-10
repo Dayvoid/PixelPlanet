@@ -10,35 +10,35 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
-  m_Name: 003_Mantle
+  m_Name: 015_Clay
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
-  stableId: 3
-  displayName: Mantle
-  category: 4
-  displayColor: {r: 0.72, g: 0.08, b: 0.02, a: 1}
+  stableId: 15
+  displayName: Clay
+  category: 3
+  displayColor: {r: 0.62, g: 0.32, b: 0.18, a: 1}
   shadeVariation: 0.18
-  density: 4.5
-  rigidity: 0.8
-  angleOfRepose: 60
-  grainSize: 3
+  density: 1.8
+  rigidity: 0.22
+  angleOfRepose: 28
+  grainSize: 0.45
   buoyancyBias: 0
-  densityDisplaceable: 0
-  thermalConductivity: 0.5
-  heatCapacity: 1.8
-  electricalConductivity: 0.3
-  absorbency: 0.02
-  porosity: 0.05
-  meltingTemperature: 850
-  boilingTemperature: 2600
-  thermalExpansion: 0.03
-  electricalExpansion: 0.01
-  latentHeat: 90
-  solidPhaseId: 3
+  densityDisplaceable: 1
+  thermalConductivity: 0.35
+  heatCapacity: 1.35
+  electricalConductivity: 0.06
+  absorbency: 0.9
+  porosity: 0.45
+  meltingTemperature: 950
+  boilingTemperature: 1800
+  thermalExpansion: 0.018
+  electricalExpansion: 0
+  latentHeat: 40
+  solidPhaseId: 15
   liquidPhaseId: 6
   gasPhaseId: 11
   toxicity: 0
   caloricContent: 0
-  bioModifiable: 0
+  bioModifiable: 1
   ignitionTemperature: 10000
   flashPoint: 10000
   oxygenDemand: 0

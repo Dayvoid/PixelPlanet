@@ -10,35 +10,35 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
-  m_Name: 003_Mantle
+  m_Name: 014_Limestone
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
-  stableId: 3
-  displayName: Mantle
+  stableId: 14
+  displayName: Limestone
   category: 4
-  displayColor: {r: 0.72, g: 0.08, b: 0.02, a: 1}
+  displayColor: {r: 0.78, g: 0.72, b: 0.58, a: 1}
   shadeVariation: 0.18
-  density: 4.5
-  rigidity: 0.8
-  angleOfRepose: 60
-  grainSize: 3
+  density: 2.5
+  rigidity: 0.75
+  angleOfRepose: 40
+  grainSize: 1.8
   buoyancyBias: 0
-  densityDisplaceable: 0
-  thermalConductivity: 0.5
-  heatCapacity: 1.8
-  electricalConductivity: 0.3
-  absorbency: 0.02
-  porosity: 0.05
-  meltingTemperature: 850
-  boilingTemperature: 2600
-  thermalExpansion: 0.03
-  electricalExpansion: 0.01
-  latentHeat: 90
-  solidPhaseId: 3
+  densityDisplaceable: 1
+  thermalConductivity: 0.1
+  heatCapacity: 1.7
+  electricalConductivity: 0.04
+  absorbency: 0.35
+  porosity: 0.4
+  meltingTemperature: 825
+  boilingTemperature: 2200
+  thermalExpansion: 0.012
+  electricalExpansion: 0.003
+  latentHeat: 60
+  solidPhaseId: 14
   liquidPhaseId: 6
   gasPhaseId: 11
   toxicity: 0
   caloricContent: 0
-  bioModifiable: 0
+  bioModifiable: 1
   ignitionTemperature: 10000
   flashPoint: 10000
   oxygenDemand: 0

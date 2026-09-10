@@ -51,6 +51,7 @@ float4 _EruptionB;
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _PressureB; // gas, fluid, porous, rigid diffusivities
 float4 _DensityExchange; // rate, epsilon, unused, unused
+float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
 float4 _MycologyA; // initialSporeLoad, rareStrainChance, airTransport, waterTransport
 float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMoisture
 
@@ -182,8 +183,13 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
     CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
     MaterialGpuData definition = Mat(material);
 
-    float wetCapacity = max(0.0, aux.y) * max(0.001, Mat(9u).transport.y) * 0.75;
-    float heatCapacity = max(0.001, definition.transport.y + wetCapacity);
+    float waterCp = max(0.001, Mat(9u).transport.y);
+    float waterK = max(0.0, Mat(9u).transport.x);
+    bool atmosphere = IsAtmosphereMaterial(material, definition);
+    float heatCapacity = EffectiveCellHeatCapacity(definition, state, aux, waterCp, atmosphere);
+    float selfK = MoistureAdjustedConductivity(definition, aux.y, atmosphere ? 0.0 : state.z, waterK, _ThermalA.x);
+    selfK = PressureAdjustedConductivity(selfK, material, definition, state.y,
+        PressureEquilibriumAt(cell.y, _GridSize.y, _PressureA.y, _PressureA.z), _ThermalA.y);
     float energy = 0.0;
     int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
     [unroll]
@@ -201,9 +207,12 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
         float4 neighborState = ReadState(neighbor);
         float4 neighborAux = ReadAux(neighbor);
         MaterialGpuData neighborDef = Mat(neighborMaterial);
-        float neighborWet = max(0.0, neighborAux.y) * max(0.001, Mat(9u).transport.y) * 0.75;
-        float neighborCapacity = max(0.001, neighborDef.transport.y + neighborWet);
-        float edgeConductance = HarmonicMean(max(0.0, definition.transport.x), max(0.0, neighborDef.transport.x));
+        bool neighborAtmosphere = IsAtmosphereMaterial(neighborMaterial, neighborDef);
+        float neighborCapacity = EffectiveCellHeatCapacity(neighborDef, neighborState, neighborAux, waterCp, neighborAtmosphere);
+        float neighborK = MoistureAdjustedConductivity(neighborDef, neighborAux.y, neighborAtmosphere ? 0.0 : neighborState.z, waterK, _ThermalA.x);
+        neighborK = PressureAdjustedConductivity(neighborK, neighborMaterial, neighborDef, neighborState.y,
+            PressureEquilibriumAt(neighbor.y, _GridSize.y, _PressureA.y, _PressureA.z), _ThermalA.y);
+        float edgeConductance = HarmonicMean(selfK, neighborK) * FaceGeometryWeight(cell, offset, _GridSize.y);
         energy += FaceHeatEnergy(state.x, heatCapacity, neighborState.x, neighborCapacity, edgeConductance, _Mechanics.y, _DeltaTime);
     }
 
@@ -265,6 +274,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
+    float heatCapacity = EffectiveCellHeatCapacity(definition, state, aux, Mat(9u).transport.y, IsAtmosphereMaterial(material, definition));
     if (gasId > 0u && state.x > boilPoint + hysteresis)
     {
         // Boiling vacates the cell to Air and moves only existing liquid/ice mass into aux.x.
@@ -280,6 +290,8 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         material = liquidId;
         if (liquidId == 9u)
             state.x = max(WATER_MELT_TEMP + hysteresis, state.x - WaterLatentHeatDelta(melted, _WeatherE.w, 0.4));
+        else
+            state.x = max(definition.phase.x + hysteresis, state.x - MaterialPhaseLatentDelta(definition.motion.y, _WeatherE.w, heatCapacity));
     }
     else if (solidId > 0u && state.x < definition.phase.x - hysteresis)
     {
@@ -287,6 +299,8 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         material = solidId;
         if (solidId == 10u)
             state.x = min(WATER_MELT_TEMP - hysteresis, state.x + WaterLatentHeatDelta(frozen, _WeatherE.w, 0.4));
+        else
+            state.x = min(definition.phase.x - hysteresis, state.x + MaterialPhaseLatentDelta(definition.motion.y, _WeatherE.w, heatCapacity));
     }
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

@@ -39,6 +39,8 @@ float4 _Erosion;
 float4 _WeatherA;
 float4 _WeatherB;
 float4 _WeatherC;
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
+float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
 float4 _EruptionA;
 float4 _EruptionB;
 
@@ -55,7 +57,7 @@ uint4 ReadGenome(int2 cell) { return SampleGenome(_LifeGenomeRead, Cell(cell)); 
 
 bool IsGranularBurden(uint material)
 {
-    return material == 7u || material == 8u;
+    return IsSoftCrustMaterial(material);
 }
 
 bool IsOpenCell(uint material)
@@ -118,8 +120,8 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
 
     bool mantle = material == 3u;
     bool magma = material == 6u;
-    bool hardCrust = material == 4u || material == 5u;
-    bool softCrust = material == 7u || material == 8u;
+    bool hardCrust = IsHardCrustMaterial(material);
+    bool softCrust = IsSoftCrustMaterial(material);
     bool crust = hardCrust || softCrust;
     float fault = saturate(aux.w);
     float eruption = saturate(_EruptionA.x);
@@ -156,6 +158,8 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
         state.x -= _Geology.w * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
         if (state.x < 780.0)
         {
+            float freezeCp = EffectiveCellHeatCapacity(D(material), state, aux, D(9u).transport.y, false);
+            state.x = min(780.0, state.x + MaterialPhaseLatentDelta(D(material).motion.y, _WeatherE.w, freezeCp));
             material = 5u;
             state.y *= 0.5;
             flow *= 0.25;
@@ -428,10 +432,18 @@ void CoreReaction(uint3 id : SV_DispatchThreadID)
     float4 life = ReadLife(cell);
     uint4 genome = ReadGenome(cell);
 
-    int freq = max(0, (int)_GeologyB.z);
-    float magnitude = max(0.0, _GeologyB.w);
-    if (freq > 0 && magnitude > 0.0 && (_Tick % freq) == 0 && material == 2u)
-        state.x += magnitude;
+    if (material == 2u)
+    {
+        float target = _ThermalA.z > 0.0 ? _ThermalA.z : 1500.0;
+        float rate = max(0.0, _ThermalA.w);
+        if (rate > 0.0)
+            state.x += (target - state.x) * saturate(rate * _DeltaTime);
+
+        int freq = max(0, (int)_GeologyB.z);
+        float magnitude = max(0.0, _GeologyB.w);
+        if (freq > 0 && magnitude > 0.0 && (_Tick % freq) == 0)
+            state.x += magnitude;
+    }
 
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

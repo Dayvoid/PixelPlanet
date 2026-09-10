@@ -31,9 +31,15 @@ float4 _MycologyA; // initialSporeLoad, rareStrainChance, unused, unused
 float4 _WorldGenV2A; // metalVeinCount, metalVeinMinSize, metalVeinMaxSize, metalVeinProtrusionChance
 float4 _WorldGenV2B; // metalVeinProtrusionDistance, iceCapRadius, iceCapHeight, iceCapRadiusVariation
 float4 _WorldGenV2C; // iceCapHeightVariation, unused, unused, unused
+float4 _WorldGenV3A; // limestoneCount, limestoneMinSize, limestoneMaxSize, limestoneProtrusionChance
+float4 _WorldGenV3B; // limestoneProtrusionDistance, clayCount, clayMinSize, clayMaxSize
+float4 _WorldGenV3C; // clayProtrusionChance, clayProtrusionDistance, unused, unused
+float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
 
 static const uint METAL_ID = 13u;
 static const uint ICE_ID = 10u;
+static const uint LIMESTONE_ID = 14u;
+static const uint CLAY_ID = 15u;
 
 bool FrozenOceansEnabled()
 {
@@ -106,49 +112,59 @@ float OceanMask(uint theta)
     return saturate(mask);
 }
 
-float SampleMetalVein(uint2 cell, float angular, float radius, float mantleEdge, float crustEdge, float terrainSurface)
+float SampleDeposit(float angular, float radius, float bandInner, float bandOuter, int count, float minSize, float maxSize, float protrusionChance, float protrusionDistance, uint saltBase)
 {
-    int veinCount = max(0, (int)_WorldGenV2A.x);
-    if (veinCount <= 0) return 0.0;
+    if (count <= 0) return 0.0;
 
-    float minSize = max(0.001, _WorldGenV2A.y);
-    float maxSize = max(minSize, _WorldGenV2A.z);
-    float protrusionChance = saturate(_WorldGenV2A.w);
-    float protrusionDistance = max(0.0, _WorldGenV2B.x);
-    float rockMid = (mantleEdge + crustEdge) * 0.5;
+    float sizeMin = max(0.001, minSize);
+    float sizeMax = max(sizeMin, maxSize);
+    float chance = saturate(protrusionChance);
+    float expandMax = max(0.0, protrusionDistance);
+    float mid = (bandInner + bandOuter) * 0.5;
+    float bandSpan = max(1e-4, bandOuter - bandInner);
 
     [loop]
     for (int i = 0; i < 64; i++)
     {
-        if (i >= veinCount) break;
+        if (i >= count) break;
 
-        uint seedSalt = (uint)_Seed + (uint)i * 7919u + 4409u;
-        float veinAngular = Hash01(seedSalt);
-        float veinRadius = lerp(mantleEdge + (crustEdge - mantleEdge) * 0.15, crustEdge - (crustEdge - mantleEdge) * 0.1,
-            Hash01(seedSalt + 17u));
-        float sizeTheta = lerp(minSize, maxSize, Hash01(seedSalt + 31u));
-        float sizeRadius = lerp(minSize, maxSize, Hash01(seedSalt + 47u));
-        bool protrudes = Hash01(seedSalt + 61u) < protrusionChance;
-        float expand = protrudes ? protrusionDistance : 0.0;
+        uint seedSalt = (uint)_Seed + (uint)i * 7919u + saltBase;
+        float depositAngular = Hash01(seedSalt);
+        float depositRadius = lerp(bandInner + bandSpan * 0.15, bandOuter - bandSpan * 0.1, Hash01(seedSalt + 17u));
+        float sizeTheta = lerp(sizeMin, sizeMax, Hash01(seedSalt + 31u));
+        float sizeRadius = lerp(sizeMin, sizeMax, Hash01(seedSalt + 47u));
+        bool protrudes = Hash01(seedSalt + 61u) < chance;
+        float expand = protrudes ? expandMax : 0.0;
 
-        float dTheta = AngularDistance01(angular, veinAngular) / max(1e-4, sizeTheta + expand);
-        float dRadius = (radius - veinRadius) / max(1e-4, sizeRadius + expand);
+        float dTheta = AngularDistance01(angular, depositAngular) / max(1e-4, sizeTheta + expand);
+        float dRadius = (radius - depositRadius) / max(1e-4, sizeRadius + expand);
         float dist2 = dTheta * dTheta + dRadius * dRadius;
         if (dist2 > 1.0) continue;
 
         float falloff = saturate(1.0 - dist2);
-        if (radius >= mantleEdge - expand && radius <= crustEdge + expand)
+        if (radius >= bandInner - expand && radius <= bandOuter + expand)
             return max(falloff, 0.35);
 
         if (protrudes)
         {
-            float band = abs(radius - rockMid);
-            if (band <= (crustEdge - mantleEdge) * 0.5 + expand + protrusionDistance)
+            float band = abs(radius - mid);
+            if (band <= bandSpan * 0.5 + expand + expandMax)
                 return max(falloff * 0.85, 0.25);
         }
     }
 
     return 0.0;
+}
+
+float SampleMetalVein(uint2 cell, float angular, float radius, float mantleEdge, float crustEdge, float terrainSurface)
+{
+    return SampleDeposit(angular, radius, mantleEdge, crustEdge,
+        max(0, (int)_WorldGenV2A.x), _WorldGenV2A.y, _WorldGenV2A.z, _WorldGenV2A.w, _WorldGenV2B.x, 4409u);
+}
+
+float WorldgenCoreTemperature()
+{
+    return _ThermalA.z > 0.0 ? _ThermalA.z : 1500.0;
 }
 
 float IceCapHumpStrength(uint theta, float radius, float terrainSurface, float poleAngle)
@@ -223,7 +239,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, terrainSurface + 0.02);
     fault = max(fault, ocean * 0.15 * step(crustEdge, radius));
 
-    float temperature = lerp(1500.0, 15.0, saturate(radius));
+    float temperature = lerp(WorldgenCoreTemperature(), 15.0, saturate(radius));
     if (material == 9u) temperature = lerp(4.0, 18.0, saturate((seaLevel - radius) / max(0.01, seaLevel - terrainSurface)));
     else if (IsOceanFillIce(material, ocean, radius, seaLevel)) temperature = OceanIceTemperature(radius, seaLevel, terrainSurface);
     else if (material == 1u)
@@ -245,7 +261,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
 
     float groundwaterDepth = saturate(_WorldWaterC.y);
     float groundwater = 0.0;
-    if ((material == 4u || material == 7u) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
+    if ((material == 4u || material == 7u || material == LIMESTONE_ID || material == CLAY_ID) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
     {
         float base = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed);
         groundwater = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
@@ -320,13 +336,25 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, terrainSurface + 0.02);
     fault = max(fault, ocean * 0.15 * step(crustEdge, radius));
 
-    // Stage 2: metal veins replace rock (and optionally protrude into adjacent layers).
+    // Stage 1.5: limestone bodies in the granite band (before metal).
+    float limestone = SampleDeposit(angular, radius, mantleEdge, crustEdge,
+        max(0, (int)_WorldGenV3A.x), _WorldGenV3A.y, _WorldGenV3A.z, _WorldGenV3A.w, _WorldGenV3B.x, 8807u);
+    if (limestone > 0.0 && material == 4u)
+        material = LIMESTONE_ID;
+
+    // Stage 1.6: clay lenses in the soil band (before metal).
+    float clay = SampleDeposit(angular, radius, crustEdge, terrainSurface,
+        max(0, (int)_WorldGenV3B.y), _WorldGenV3B.z, _WorldGenV3B.w, _WorldGenV3C.x, _WorldGenV3C.y, 12011u);
+    if (clay > 0.0 && material == 7u)
+        material = CLAY_ID;
+
+    // Stage 2: metal veins replace rock/limestone (and optionally protrude into adjacent layers).
     float metalVein = SampleMetalVein(id.xy, angular, radius, mantleEdge, crustEdge, terrainSurface);
     if (metalVein > 0.0)
     {
-        bool replaceable = material == 4u
+        bool replaceable = material == 4u || material == LIMESTONE_ID
             || (material == 3u && radius >= mantleEdge - _WorldGenV2B.x)
-            || (material == 7u && radius <= crustEdge + _WorldGenV2B.x + _LayerRatios.w)
+            || ((material == 7u || material == CLAY_ID) && radius <= crustEdge + _WorldGenV2B.x + _LayerRatios.w)
             || (material == 2u && radius >= coreEdge - _WorldGenV2B.x * 0.5);
         if (replaceable) material = METAL_ID;
     }
@@ -347,7 +375,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
         // Keep thin ocean-floor soil from stage 1.
     }
 
-    float temperature = lerp(1500.0, 15.0, saturate(radius));
+    float temperature = lerp(WorldgenCoreTemperature(), 15.0, saturate(radius));
     if (material == 9u) temperature = lerp(4.0, 18.0, saturate((seaLevel - radius) / max(0.01, seaLevel - terrainSurface)));
     else if (IsOceanFillIce(material, ocean, radius, seaLevel)) temperature = OceanIceTemperature(radius, seaLevel, terrainSurface);
     else if (material == ICE_ID) temperature = lerp(-18.0, -2.0, saturate((radius - terrainSurface) / max(0.001, _WorldGenV2B.z)));
@@ -364,14 +392,14 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     float surfaceWater = 0.0;
     if (material == 9u || IsOceanFillIce(material, ocean, radius, seaLevel))
         surfaceWater = CanonicalStandingWaterMass(id.y, seaLevel);
-    else if (material == 7u && radius > terrainSurface - 0.008)
+    else if ((material == 7u || material == CLAY_ID) && radius > terrainSurface - 0.008)
         surfaceWater = ocean * 0.05;
     else if (material == ICE_ID)
         surfaceWater = lerp(0.15, 0.85, iceStrength);
 
     float groundwaterDepth = saturate(_WorldWaterC.y);
     float groundwater = 0.0;
-    if ((material == 4u || material == METAL_ID || material == 7u) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
+    if ((material == 4u || material == METAL_ID || material == 7u || material == LIMESTONE_ID || material == CLAY_ID) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
     {
         float base = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed);
         groundwater = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;

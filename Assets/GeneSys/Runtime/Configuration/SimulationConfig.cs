@@ -51,6 +51,16 @@ namespace GeneSys.Configuration
         [Range(0.01f, 0.15f)] public float metalVeinMaxSize = 0.01f;
         [Range(0f, 1f)] public float metalVeinProtrusionChance = 0f;
         [Range(0f, 0.08f)] public float metalVeinProtrusionDistance = 0.02f;
+        [Range(0, 64)] public int limestoneDepositCount = 20;
+        [Range(0.001f, 0.15f)] public float limestoneDepositMinSize = 0.01f;
+        [Range(0.01f, 0.2f)] public float limestoneDepositMaxSize = 0.05f;
+        [Range(0f, 1f)] public float limestoneDepositProtrusionChance = 0f;
+        [Range(0f, 0.08f)] public float limestoneDepositProtrusionDistance = 0.01f;
+        [Range(0, 64)] public int clayDepositCount = 20;
+        [Range(0.001f, 0.15f)] public float clayDepositMinSize = 0.01f;
+        [Range(0.01f, 0.2f)] public float clayDepositMaxSize = 0.045f;
+        [Range(0f, 1f)] public float clayDepositProtrusionChance = 0f;
+        [Range(0f, 0.08f)] public float clayDepositProtrusionDistance = 0.01f;
         [Range(0.001f, 0.25f)] public float iceCapRadius = 0.001f;
         [Range(0.001f, 0.06f)] public float iceCapHeight = 0.003f;
         [Range(0f, 0.5f)] public float iceCapRadiusVariation = 0.25f;
@@ -59,6 +69,8 @@ namespace GeneSys.Configuration
         [Header("Material mechanics")]
         [Range(0f, 5f)] public float gravityStrength = 1f;
         [Range(0f, 4f)] public float thermalRate = 0.35f;
+        [Range(0f, 4f)] public float thermalMoistureBoost = 1f;
+        [Range(0f, 4f)] public float thermalPressureEffect = 0.6f;
         [Range(0f, 4f)] public float electricalRate = 0.3f;
         [Range(0f, 1f)] public float phaseHysteresis = 0.02f;
         [Range(0f, 64f)] public float densityExchangeRate = 4f;
@@ -82,6 +94,8 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float ashFertilityStrength = 1f;
         [Range(0, 10000)] public int coreReactionFrequency = 2000;
         [Range(0f, 500f)] public float coreReactionMagnitude = 8f;
+        [Range(200f, 3000f)] public float coreTemperature = 1500f;
+        [Range(0f, 8f)] public float coreHeatRate = 0.15f;
 
         [Header("Hydrology and erosion")]
         [Range(0f, 4f)] public float infiltrationRate = 0.5f;
@@ -380,7 +394,7 @@ namespace GeneSys.Configuration
         [Range(0f, 8f)] public float combustionIgnitionDecayRate = 1.2f;
         [Range(0f, 1f)] public float combustionSeedIntensity = 0.25f;
         [Range(0f, 4f)] public float combustionBurnRate = 0.2f;
-        [Range(0f, 8f)] public float combustionHeatYield = 2.8f;
+        [Range(0f, 8f)] public float combustionHeatYield = 3.8f;
         [Range(0f, 8f)] public float combustionPressureScale = 2.5f;
         [Range(0f, 12f)] public float combustionUpdraftStrength = 6f;
         [Range(0f, 4f)] public float combustionSmokeYield = 0.55f;
@@ -408,6 +422,7 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float stormFlashDiffusion = 0.45f;
         [Range(0f, 4f)] public float stormCooldownRate = 0.4f;
         [Range(0f, 400f)] public float stormStrikeHeat = 90f;
+        [Range(0f, 1f)] public float stormStrikeAirHeatFraction = 0.3f;
         [Range(0f, 8f)] public float stormThunderPressure = 0.55f;
         [Range(0f, 8f)] public float stormChargeDeposit = 0.85f;
         [Range(0f, 4f)] public float stormIgnitionImpulse = 1f;
@@ -508,6 +523,16 @@ namespace GeneSys.Configuration
             metalVeinMaxSize = Mathf.Max(metalVeinMinSize, metalVeinMaxSize);
             metalVeinProtrusionChance = Mathf.Clamp01(metalVeinProtrusionChance);
             metalVeinProtrusionDistance = Mathf.Max(0f, metalVeinProtrusionDistance);
+            limestoneDepositCount = Mathf.Clamp(limestoneDepositCount, 0, 64);
+            limestoneDepositMinSize = Mathf.Clamp(limestoneDepositMinSize, 0.001f, limestoneDepositMaxSize);
+            limestoneDepositMaxSize = Mathf.Max(limestoneDepositMinSize, limestoneDepositMaxSize);
+            limestoneDepositProtrusionChance = Mathf.Clamp01(limestoneDepositProtrusionChance);
+            limestoneDepositProtrusionDistance = Mathf.Max(0f, limestoneDepositProtrusionDistance);
+            clayDepositCount = Mathf.Clamp(clayDepositCount, 0, 64);
+            clayDepositMinSize = Mathf.Clamp(clayDepositMinSize, 0.001f, clayDepositMaxSize);
+            clayDepositMaxSize = Mathf.Max(clayDepositMinSize, clayDepositMaxSize);
+            clayDepositProtrusionChance = Mathf.Clamp01(clayDepositProtrusionChance);
+            clayDepositProtrusionDistance = Mathf.Max(0f, clayDepositProtrusionDistance);
             iceCapRadius = Mathf.Clamp(iceCapRadius, 0.001f, 0.35f);
             iceCapHeight = Mathf.Clamp(iceCapHeight, 0.001f, 0.1f);
             iceCapRadiusVariation = Mathf.Clamp01(iceCapRadiusVariation);
@@ -525,6 +550,8 @@ namespace GeneSys.Configuration
             cloudRetainMass = Mathf.Max(0.01f, cloudRetainMass);
             waterPressureResponse = Mathf.Max(0f, waterPressureResponse);
             latentHeatScale = Mathf.Max(0f, latentHeatScale);
+            thermalMoistureBoost = Mathf.Max(0f, thermalMoistureBoost);
+            thermalPressureEffect = Mathf.Max(0f, thermalPressureEffect);
             surfaceAirHeatExchange = Mathf.Max(0f, surfaceAirHeatExchange);
             temperatureAdvectionRate = Mathf.Max(0f, temperatureAdvectionRate);
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
@@ -865,6 +892,7 @@ namespace GeneSys.Configuration
             stormFlashDiffusion = Mathf.Max(0f, stormFlashDiffusion);
             stormCooldownRate = Mathf.Max(0f, stormCooldownRate);
             stormStrikeHeat = Mathf.Max(0f, stormStrikeHeat);
+            stormStrikeAirHeatFraction = Mathf.Clamp01(stormStrikeAirHeatFraction);
             stormThunderPressure = Mathf.Max(0f, stormThunderPressure);
             stormChargeDeposit = Mathf.Max(0f, stormChargeDeposit);
             stormIgnitionImpulse = Mathf.Max(0f, stormIgnitionImpulse);
@@ -901,6 +929,8 @@ namespace GeneSys.Configuration
             uiFadeDelay = Mathf.Max(0f, uiFadeDelay);
             coreReactionFrequency = Mathf.Max(0, coreReactionFrequency);
             coreReactionMagnitude = Mathf.Max(0f, coreReactionMagnitude);
+            coreTemperature = Mathf.Clamp(coreTemperature, 200f, 3000f);
+            coreHeatRate = Mathf.Max(0f, coreHeatRate);
             probeOrbitRadius = Mathf.Clamp(probeOrbitRadius, 0.8f, 2f);
             probeSpriteScale = Mathf.Clamp(probeSpriteScale, 0.01f, 1f);
             probeSpriteRotationOffset = Mathf.Clamp(probeSpriteRotationOffset, -180f, 180f);

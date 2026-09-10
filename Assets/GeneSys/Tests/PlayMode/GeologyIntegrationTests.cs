@@ -1074,6 +1074,7 @@ namespace GeneSys.Tests
             ConfigureStressIsolation(host);
             host.Config.coreReactionFrequency = 1;
             host.Config.coreReactionMagnitude = 50f;
+            host.Config.coreHeatRate = 0f;
             host.Config.seed = 13131;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1104,6 +1105,96 @@ namespace GeneSys.Tests
                 after = states[coreIndex].x;
             });
             Assert.That(after, Is.EqualTo(before + 50f).Within(0.1f));
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator CoreReactionHoldsCoreTowardConfiguredTemperature()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.coreReactionFrequency = 0;
+            host.Config.coreReactionMagnitude = 0f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.coreTemperature = 1500f;
+            host.Config.thermalRate = 0f;
+            host.Config.seed = 13131;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+            host.Config.coreHeatRate = 4f;
+            host.Config.coreTemperature = 1800f;
+
+            int coreIndex = -1;
+            float before = -1f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    if (materials[i] != MaterialIds.Core) continue;
+                    coreIndex = i;
+                    before = states[i].x;
+                    break;
+                }
+            });
+            Assert.That(coreIndex, Is.GreaterThanOrEqualTo(0), "Worldgen should place at least one Core cell.");
+
+            yield return Step(host, 1);
+
+            float after = -1f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                after = states[coreIndex].x;
+            });
+            Assert.That(after, Is.GreaterThan(before + 5f));
+            Assert.That(after, Is.LessThanOrEqualTo(1800f + 0.1f));
+
+            RestoreStressIsolation(host);
+        }
+
+        [UnityTest]
+        public IEnumerator GraniteMeltConsumesLatentHeat()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureStressIsolation(host);
+            host.Config.phaseHysteresis = 1f;
+            host.Config.latentHeatScale = 0.35f;
+            host.Config.thermalRate = 0.02f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.seed = 4242;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int x = 20;
+            int y = Mathf.Clamp(host.Grid.radialResolution / 2, 4, host.Grid.radialResolution - 4);
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -1; dy <= 1; dy++)
+                    Paint(host, x + dx, y + dy, MaterialIds.Granite);
+            yield return Step(host, 1);
+
+            float before = -1f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                before = states[y * host.Grid.angularResolution + x].x;
+            });
+            PaintHeat(host, x, y, 930f - before);
+            yield return Step(host, 1);
+
+            uint material = 0;
+            float after = -1f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                int i = y * host.Grid.angularResolution + x;
+                material = materials[i];
+                after = states[i].x;
+            });
+            Assert.That(material, Is.EqualTo(MaterialIds.Magma));
+            Assert.That(after, Is.LessThan(930f - 5f));
+            Assert.That(after, Is.GreaterThanOrEqualTo(900f));
 
             RestoreStressIsolation(host);
         }

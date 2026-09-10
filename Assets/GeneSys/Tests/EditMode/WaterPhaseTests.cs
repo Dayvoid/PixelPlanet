@@ -61,6 +61,8 @@ namespace GeneSys.Tests
             Assert.That(structs, Does.Contain("VirtualTemperature"));
             Assert.That(structs, Does.Contain("GroundwaterBoilMass"));
             Assert.That(structs, Does.Contain("WaterLatentHeatDelta"));
+            Assert.That(structs, Does.Contain("MaterialPhaseLatentDelta"));
+            Assert.That(structs, Does.Contain("EffectiveCellHeatCapacity"));
             string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
             Assert.That(weather, Does.Contain("DewTransfer"));
             Assert.That(weather, Does.Contain("EvaporationDeficit"));

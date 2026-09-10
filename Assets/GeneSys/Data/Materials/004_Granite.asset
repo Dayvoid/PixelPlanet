@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 41e375673e180fa43879b5204535c98f, type: 3}
-  m_Name: 004_Rock
+  m_Name: 004_Granite
   m_EditorClassIdentifier: GeneSys.Runtime::GeneSys.Materials.MaterialDefinition
   stableId: 4
-  displayName: Rock
+  displayName: Granite
   category: 4
   displayColor: {r: 0.24, g: 0.25, b: 0.28, a: 1}
   shadeVariation: 0.18
@@ -32,6 +32,7 @@ MonoBehaviour:
   boilingTemperature: 2400
   thermalExpansion: 0.01
   electricalExpansion: 0.005
+  latentHeat: 80
   solidPhaseId: 4
   liquidPhaseId: 6
   gasPhaseId: 11

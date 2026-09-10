@@ -160,6 +160,9 @@ namespace GeneSys.Simulation.Gpu
                 worldGeneration.SetVector("_WorldGenV2A", new Vector4(config.metalVeinCount, config.metalVeinMinSize, config.metalVeinMaxSize, config.metalVeinProtrusionChance));
                 worldGeneration.SetVector("_WorldGenV2B", new Vector4(config.metalVeinProtrusionDistance, config.iceCapRadius, config.iceCapHeight, config.iceCapRadiusVariation));
                 worldGeneration.SetVector("_WorldGenV2C", new Vector4(config.iceCapHeightVariation, 0f, 0f, 0f));
+                worldGeneration.SetVector("_WorldGenV3A", new Vector4(config.limestoneDepositCount, config.limestoneDepositMinSize, config.limestoneDepositMaxSize, config.limestoneDepositProtrusionChance));
+                worldGeneration.SetVector("_WorldGenV3B", new Vector4(config.limestoneDepositProtrusionDistance, config.clayDepositCount, config.clayDepositMinSize, config.clayDepositMaxSize));
+                worldGeneration.SetVector("_WorldGenV3C", new Vector4(config.clayDepositProtrusionChance, config.clayDepositProtrusionDistance, 0f, 0f));
             }
             worldGeneration.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindWorldgenOutputs(worldGeneration, kernel);
@@ -317,9 +320,8 @@ namespace GeneSys.Simulation.Gpu
             if (Due(config.slowPassInterval))
                 DispatchPass(geology, geology.FindKernel("Volcanism"), CadenceDt(deltaTime, config.slowPassInterval));
 
-            if (config.coreReactionFrequency > 0
-                && config.coreReactionMagnitude > 0f
-                && tick % config.coreReactionFrequency == 0)
+            if (config.coreHeatRate > 0f
+                || (config.coreReactionFrequency > 0 && config.coreReactionMagnitude > 0f))
                 DispatchPass(geology, geology.FindKernel("CoreReaction"), deltaTime);
 
             if (combustion != null)
@@ -489,6 +491,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetFloat("_PlayableInnerRadius", resources.Grid.playableInnerRadius);
             shader.SetFloat("_AtmosphereStartRadius", resources.Grid.atmosphereStartRadius);
             shader.SetVector("_Mechanics", new Vector4(config.gravityStrength, config.thermalRate, config.electricalRate, config.pressureRate));
+            shader.SetVector("_ThermalA", new Vector4(config.thermalMoistureBoost, config.thermalPressureEffect, config.coreTemperature, config.coreHeatRate));
             shader.SetVector("_Geology", new Vector4(config.mantlePressure, config.fractureRate, config.extrusionRate, config.volcanicCooling));
             shader.SetVector("_GeologyB", new Vector4(config.hydrothermalStrength, config.ventChemicalRate, config.coreReactionFrequency, config.coreReactionMagnitude));
             shader.SetVector("_EruptionA", new Vector4(config.magmaEruption, config.eruptionPressureStrength, config.eruptionFlowStrength, config.eruptionBurdenDepth));
@@ -582,7 +585,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_StormD", new Vector4(config.stormStrikeHeat, config.stormThunderPressure, config.stormChargeDeposit, config.stormIgnitionImpulse));
             shader.SetVector("_StormE", new Vector4(config.stormFlashVaporization, config.stormChannelChargeDrain, config.stormTargetRange, config.stormMaxChannelLength));
             shader.SetVector("_StormF", new Vector4(config.stormStrikeBranchChance, config.stormSheetBranchChance, config.stormMaxStrikesPerTick, config.stormTortuosity));
-            shader.SetVector("_StormG", new Vector4(config.stormMinimumHeight, 0f, 0f, 0f));
+            shader.SetVector("_StormG", new Vector4(config.stormMinimumHeight, config.stormStrikeAirHeatFraction, 0f, 0f));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)
