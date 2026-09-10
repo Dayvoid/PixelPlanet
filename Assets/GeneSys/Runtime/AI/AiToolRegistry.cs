@@ -13,6 +13,7 @@ namespace GeneSys.AI
         public JObject Parameters;
         public ActStepMask AllowedSteps;
         public bool RequiresDeity;
+        public bool RequiresVision;
         public AiToolHandler Handler;
     }
 
@@ -23,6 +24,8 @@ namespace GeneSys.AI
         public Tools.SimulationTools Tools;
         public AiScratchpad Scratchpad;
         public AiActionLog ActionLog;
+        public Rendering.PlanetoidDisplayRenderer Display;
+        public Action<byte[], int, int> OnVisionFrame;
         public Func<System.Collections.IEnumerator, UnityEngine.Coroutine> StartRoutine;
         public Action RequestNextStep;
         public GameMode Mode;
@@ -57,13 +60,13 @@ namespace GeneSys.AI
             return null;
         }
 
-        public JArray BuildOpenAiTools(ActStep step, GameMode mode)
+        public JArray BuildOpenAiTools(ActStep step, GameMode mode, bool visionCapable = false)
         {
             var array = new JArray();
             for (int i = 0; i < tools.Count; i++)
             {
                 AiTool tool = tools[i];
-                if (!IsAvailable(tool, step, mode)) continue;
+                if (!IsAvailable(tool, step, mode, visionCapable)) continue;
                 array.Add(new JObject
                 {
                     ["type"] = "function",
@@ -79,11 +82,12 @@ namespace GeneSys.AI
             return array;
         }
 
-        public static bool IsAvailable(AiTool tool, ActStep step, GameMode mode)
+        public static bool IsAvailable(AiTool tool, ActStep step, GameMode mode, bool visionCapable = false)
         {
             if (tool == null) return false;
             if (mode == GameMode.Sandbox) return false;
             if (tool.RequiresDeity && mode != GameMode.AiSandbox) return false;
+            if (tool.RequiresVision && !visionCapable) return false;
             return (tool.AllowedSteps & Mask(step)) != 0;
         }
 

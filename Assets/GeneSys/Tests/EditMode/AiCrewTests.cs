@@ -39,6 +39,7 @@ namespace GeneSys.Tests
                 maxToolCallsPerStep = 8
             };
             source.Mode = GameMode.AiSandbox;
+            source.visionCapable = true;
             Assert.That(service.Save(source, out string saveError), Is.True, saveError);
 
             AiCrewSettings loaded = service.LoadOrDefault();
@@ -50,6 +51,7 @@ namespace GeneSys.Tests
             Assert.That(loaded.Mode, Is.EqualTo(GameMode.AiSandbox));
             Assert.That(loaded.DeityToolsAllowed, Is.True);
             Assert.That(loaded.AgentLoopAllowed, Is.True);
+            Assert.That(loaded.visionCapable, Is.True);
         }
 
         [Test]
@@ -118,6 +120,29 @@ namespace GeneSys.Tests
             AiBuiltinTools.RegisterAll(registry);
             var tools = registry.BuildOpenAiTools(ActStep.Assess, GameMode.Sandbox);
             Assert.That(tools.Count, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void VisionToolIsGatedBySettingAndStep()
+        {
+            var registry = new AiToolRegistry();
+            AiBuiltinTools.RegisterAll(registry);
+            var assessOff = ToolNames(registry.BuildOpenAiTools(ActStep.Assess, GameMode.AiSandbox));
+            var assessOn = ToolNames(registry.BuildOpenAiTools(ActStep.Assess, GameMode.AiSandbox, true));
+            var thinkOn = ToolNames(registry.BuildOpenAiTools(ActStep.Think, GameMode.AiSandbox, true));
+            var convertOn = ToolNames(registry.BuildOpenAiTools(ActStep.Convert, GameMode.AiSandbox, true));
+            Assert.That(assessOff, Does.Not.Contain("capture_probe_view"));
+            Assert.That(assessOn, Does.Contain("capture_probe_view"));
+            Assert.That(thinkOn, Does.Contain("capture_probe_view"));
+            Assert.That(convertOn, Does.Not.Contain("capture_probe_view"));
+        }
+
+        private static List<string> ToolNames(Newtonsoft.Json.Linq.JArray tools)
+        {
+            var names = new List<string>();
+            foreach (var token in tools)
+                names.Add(token["function"]?["name"]?.ToString());
+            return names;
         }
     }
 
@@ -196,6 +221,24 @@ namespace GeneSys.Tests
             Assert.That(body, Does.Contain("\"model\":\"gemma-4\""));
             Assert.That(body, Does.Contain("probe_steer"));
             Assert.That(body, Does.Contain("tool_choice"));
+        }
+
+        [Test]
+        public void BuildChatRequestEmbedsJpegAsImageUrl()
+        {
+            var messages = new List<LlmMessage>
+            {
+                new()
+                {
+                    Role = "user",
+                    Content = "look",
+                    ImageJpegBase64 = "QQ=="
+                }
+            };
+            string body = LlmClient.BuildChatRequest("gemma-4", messages, null);
+            Assert.That(body, Does.Contain("\"type\":\"image_url\""));
+            Assert.That(body, Does.Contain("data:image/jpeg;base64,QQ=="));
+            Assert.That(body, Does.Contain("\"type\":\"text\""));
         }
     }
 

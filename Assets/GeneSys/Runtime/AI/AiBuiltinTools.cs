@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Text;
 using GeneSys.Materials;
+using GeneSys.Rendering;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Topology;
 using GeneSys.Tools;
@@ -201,6 +202,34 @@ namespace GeneSys.AI
                     }
 
                     done?.Invoke(builder.ToString());
+                }
+            });
+            registry.Add(new AiTool
+            {
+                Name = "capture_probe_view",
+                Description = "Capture a JPEG screenshot of a hidden probe-follow camera at 50% zoom. The image is attached to the next model request. Use when visual context would help Assess or Think.",
+                Parameters = AiToolRegistry.EmptyObjectSchema(),
+                AllowedSteps = ActStepMask.Assess | ActStepMask.Think,
+                RequiresVision = true,
+                Handler = (_, done) =>
+                {
+                    PlanetoidDisplayRenderer display = registry.Context?.Display;
+                    if (display == null)
+                    {
+                        done?.Invoke("Display renderer is unavailable.");
+                        return;
+                    }
+
+                    const int width = 768;
+                    const int height = 512;
+                    if (!display.TryCaptureProbeFollowVision(width, height, out byte[] jpeg, out string error))
+                    {
+                        done?.Invoke(error ?? "Vision capture failed.");
+                        return;
+                    }
+
+                    registry.Context.OnVisionFrame?.Invoke(jpeg, width, height);
+                    done?.Invoke($"Captured probe-follow vision frame ({jpeg.Length} bytes JPEG, {width}x{height}, 50% zoom). The image is attached for the next model request.");
                 }
             });
         }

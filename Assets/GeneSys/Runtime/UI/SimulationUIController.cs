@@ -173,6 +173,7 @@ namespace GeneSys.UI
         private DropdownField aiGameModeField;
         private FloatField aiLoopDelayField;
         private IntegerField aiMaxToolsField;
+        private Toggle aiVisionCapableField;
         private Label aiStatusLabel;
         private bool suppressingAiSettings;
 
@@ -1632,6 +1633,8 @@ namespace GeneSys.UI
                 ai = FindFirstObjectByType<AiAgentOrchestrator>();
 
             probeChat = root.Q("probe-chat");
+            if (probeChat != null)
+                probeChat.style.translate = new Translate(Length.Percent(-50), Length.Percent(-50));
             probeChatLog = root.Q<ScrollView>("probe-chat-log");
             probeChatInput = root.Q<TextField>("probe-chat-input");
             probeChatSend = root.Q<Button>("probe-chat-send");
@@ -1649,6 +1652,7 @@ namespace GeneSys.UI
             aiGameModeField = root.Q<DropdownField>("ai-game-mode");
             aiLoopDelayField = root.Q<FloatField>("ai-loop-delay");
             aiMaxToolsField = root.Q<IntegerField>("ai-max-tools");
+            aiVisionCapableField = root.Q<Toggle>("ai-vision-capable");
             aiStatusLabel = root.Q<Label>("ai-status");
             root.Q<Button>("ai-fetch-models")?.RegisterCallback<ClickEvent>(_ =>
             {
@@ -1665,6 +1669,7 @@ namespace GeneSys.UI
             aiModelField?.RegisterValueChangedCallback(_ => CommitAiSettings());
             aiLoopDelayField?.RegisterValueChangedCallback(_ => CommitAiSettings());
             aiMaxToolsField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+            aiVisionCapableField?.RegisterValueChangedCallback(_ => CommitAiSettings());
 
             if (ai != null)
             {
@@ -1705,6 +1710,7 @@ namespace GeneSys.UI
             aiPortField?.SetValueWithoutNotify(settings.port);
             aiLoopDelayField?.SetValueWithoutNotify(settings.agentLoopDelaySeconds);
             aiMaxToolsField?.SetValueWithoutNotify(settings.maxToolCallsPerStep);
+            aiVisionCapableField?.SetValueWithoutNotify(settings.visionCapable);
             if (aiGameModeField != null)
                 aiGameModeField.SetValueWithoutNotify(settings.Mode.ToString());
             RefreshAiModelDropdown();
@@ -1745,6 +1751,7 @@ namespace GeneSys.UI
             if (aiModelField != null) settings.model = aiModelField.value ?? string.Empty;
             if (aiLoopDelayField != null) settings.agentLoopDelaySeconds = aiLoopDelayField.value;
             if (aiMaxToolsField != null) settings.maxToolCallsPerStep = aiMaxToolsField.value;
+            if (aiVisionCapableField != null) settings.visionCapable = aiVisionCapableField.value;
             if (aiGameModeField != null && Enum.TryParse(aiGameModeField.value, out GameMode mode))
                 settings.Mode = mode;
             ai.ApplySettings(settings);

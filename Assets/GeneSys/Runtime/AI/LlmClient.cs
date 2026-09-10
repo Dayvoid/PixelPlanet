@@ -61,9 +61,7 @@ namespace GeneSys.AI
             var body = new JObject
             {
                 ["model"] = string.IsNullOrWhiteSpace(model) ? "local" : model,
-                ["messages"] = messages == null
-                    ? new JArray()
-                    : JArray.FromObject(messages, JsonSerializer.Create(SerializerSettings())),
+                ["messages"] = SerializeMessages(messages),
                 ["temperature"] = 0.4
             };
             if (tools != null && tools.Count > 0)
@@ -220,6 +218,45 @@ namespace GeneSys.AI
             catch (JsonException)
             {
             }
+        }
+
+        public static JArray SerializeMessages(IReadOnlyList<LlmMessage> messages)
+        {
+            var array = new JArray();
+            if (messages == null) return array;
+            JsonSerializer serializer = JsonSerializer.Create(SerializerSettings());
+            for (int i = 0; i < messages.Count; i++)
+                array.Add(SerializeMessage(messages[i], serializer));
+            return array;
+        }
+
+        private static JToken SerializeMessage(LlmMessage message, JsonSerializer serializer)
+        {
+            if (message == null) return new JObject();
+            if (string.IsNullOrEmpty(message.ImageJpegBase64))
+                return JObject.FromObject(message, serializer);
+
+            var content = new JArray
+            {
+                new JObject
+                {
+                    ["type"] = "text",
+                    ["text"] = message.Content ?? string.Empty
+                },
+                new JObject
+                {
+                    ["type"] = "image_url",
+                    ["image_url"] = new JObject
+                    {
+                        ["url"] = "data:image/jpeg;base64," + message.ImageJpegBase64
+                    }
+                }
+            };
+            return new JObject
+            {
+                ["role"] = string.IsNullOrWhiteSpace(message.Role) ? "user" : message.Role,
+                ["content"] = content
+            };
         }
 
         private static JsonSerializerSettings SerializerSettings() => new()

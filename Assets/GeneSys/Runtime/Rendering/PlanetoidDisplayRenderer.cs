@@ -40,6 +40,12 @@ namespace GeneSys.Rendering
         private float savedGlobeOrthoSize = 5.5f;
         private Quaternion savedGlobeDisplayRotation = Quaternion.identity;
         private bool hasGlobeCameraState;
+        private Camera visionCamera;
+        private RenderTexture visionTarget;
+
+        public const float MinOrthographicSize = 0.75f;
+        public const float MaxOrthographicSize = 20f;
+        public static float VisionFollowOrthographicSize => Mathf.Lerp(MinOrthographicSize, MaxOrthographicSize, 0.5f);
 
         public int OverlayMode { get; private set; }
         public Camera TargetCamera => targetCamera;
@@ -143,7 +149,7 @@ namespace GeneSys.Rendering
                 SaveGlobeCameraState();
                 cameraViewMode = CameraViewMode.ProbeFollow;
                 if (targetCamera != null && config != null)
-                    targetCamera.orthographicSize = Mathf.Clamp(config.probeFollowZoom, 0.75f, 20f);
+                    targetCamera.orthographicSize = Mathf.Clamp(config.probeFollowZoom, MinOrthographicSize, MaxOrthographicSize);
                 ApplyProbeFollow();
             }
             else
@@ -224,7 +230,7 @@ namespace GeneSys.Rendering
             {
                 float scroll = Mouse.current.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.01f)
-                    targetCamera.orthographicSize = Mathf.Clamp(targetCamera.orthographicSize * (1f - scroll * zoomSpeed), 0.75f, 20f);
+                    targetCamera.orthographicSize = Mathf.Clamp(targetCamera.orthographicSize * (1f - scroll * zoomSpeed), MinOrthographicSize, MaxOrthographicSize);
             }
 
             if (!follow && Keyboard.current != null)
@@ -271,6 +277,140 @@ namespace GeneSys.Rendering
             transform.rotation = savedGlobeDisplayRotation;
         }
 
+        public bool TryCaptureProbeFollowVision(int width, int height, out byte[] jpeg, out string error)
+        {
+            jpeg = null;
+            error = null;
+            width = Mathf.Clamp(width, 64, 1920);
+            height = Mathf.Clamp(height, 64, 1080);
+            EnsureVisionCamera(width, height);
+            if (visionCamera == null)
+            {
+                error = "Vision camera is unavailable.";
+                return false;
+            }
+
+            PoseVisionCamera(VisionFollowOrthographicSize);
+            RenderTexture previous = RenderTexture.active;
+            Texture2D frame = null;
+            try
+            {
+                visionCamera.targetTexture = visionTarget;
+                visionCamera.enabled = true;
+                visionCamera.Render();
+                visionCamera.enabled = false;
+                RenderTexture.active = visionTarget;
+                frame = new Texture2D(width, height, TextureFormat.RGB24, false)
+                {
+                    name = "GeneSys AI Vision Frame",
+                    filterMode = FilterMode.Bilinear
+                };
+                frame.ReadPixels(new Rect(0f, 0f, width, height), 0, 0);
+                frame.Apply(false, false);
+                jpeg = frame.EncodeToJPG(78);
+            }
+            catch (Exception exception)
+            {
+                error = exception.Message;
+                jpeg = null;
+                return false;
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                if (visionCamera != null)
+                {
+                    visionCamera.targetTexture = null;
+                    visionCamera.enabled = false;
+                }
+                if (frame != null) Destroy(frame);
+            }
+
+            if (jpeg == null || jpeg.Length == 0)
+            {
+                error = "Vision capture produced no image.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private void EnsureVisionCamera(int width, int height)
+        {
+            if (visionTarget != null && (visionTarget.width != width || visionTarget.height != height))
+            {
+                visionTarget.Release();
+                Destroy(visionTarget);
+                visionTarget = null;
+            }
+
+            if (visionTarget == null)
+            {
+                visionTarget = new RenderTexture(width, height, 16, RenderTextureFormat.ARGB32)
+                {
+                    name = "GeneSys AI Vision Target",
+                    antiAliasing = 1,
+                    filterMode = FilterMode.Bilinear
+                };
+                visionTarget.Create();
+            }
+
+            if (visionCamera != null) return;
+            var cameraObject = new GameObject("AI Vision Camera")
+            {
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            visionCamera = cameraObject.AddComponent<Camera>();
+            visionCamera.enabled = false;
+            visionCamera.orthographic = true;
+            visionCamera.allowHDR = false;
+            visionCamera.allowMSAA = false;
+            visionCamera.depth = -100;
+            if (targetCamera != null)
+            {
+                visionCamera.clearFlags = targetCamera.clearFlags;
+                visionCamera.backgroundColor = targetCamera.backgroundColor;
+                visionCamera.cullingMask = targetCamera.cullingMask;
+                visionCamera.nearClipPlane = targetCamera.nearClipPlane;
+                visionCamera.farClipPlane = targetCamera.farClipPlane;
+                visionCamera.orthographicSize = targetCamera.orthographicSize;
+            }
+            else
+            {
+                visionCamera.clearFlags = CameraClearFlags.SolidColor;
+                visionCamera.backgroundColor = new Color(0.005f, 0.008f, 0.014f, 1f);
+                visionCamera.nearClipPlane = 0.1f;
+                visionCamera.farClipPlane = 100f;
+            }
+        }
+
+        private void PoseVisionCamera(float orthographicSize)
+        {
+            if (visionCamera == null) return;
+            if (FollowProbe == null)
+                FollowProbe = FindFirstObjectByType<ProbeController>();
+            FollowProbe?.SyncPose();
+
+            Vector3 world = FollowProbe != null ? FollowProbe.WorldPosition : Vector3.zero;
+            if (world.sqrMagnitude < 0.0001f && FollowProbe != null)
+                world = transform.TransformPoint(FollowProbe.LocalOrbitPosition);
+
+            Vector3 up = world - transform.position;
+            up.z = 0f;
+            if (up.sqrMagnitude < 0.0001f) up = Vector3.up;
+            up.Normalize();
+
+            Vector3 forward = targetCamera != null ? targetCamera.transform.forward : Vector3.forward;
+            if (Mathf.Abs(Vector3.Dot(forward, up)) > 0.98f)
+                forward = Vector3.forward;
+            visionCamera.orthographicSize = orthographicSize;
+            visionCamera.transform.rotation = Quaternion.LookRotation(forward, up);
+            float topAnchor = orthographicSize * 0.72f;
+            float z = targetCamera != null ? targetCamera.transform.position.z : -10f;
+            Vector3 offset = up * topAnchor;
+            visionCamera.transform.position = new Vector3(world.x - offset.x, world.y - offset.y, z);
+        }
+
         public bool TryScreenToCell(Vector2 screenPosition, out Vector2Int cell)
         {
             cell = default;
@@ -294,10 +434,18 @@ namespace GeneSys.Rendering
             if (palette != null) Destroy(palette);
             if (properties != null) Destroy(properties);
             if (categories != null) Destroy(categories);
+            if (visionCamera != null) Destroy(visionCamera.gameObject);
+            if (visionTarget != null)
+            {
+                visionTarget.Release();
+                Destroy(visionTarget);
+            }
             displayMaterial = null;
             palette = null;
             properties = null;
             categories = null;
+            visionCamera = null;
+            visionTarget = null;
         }
     }
 }

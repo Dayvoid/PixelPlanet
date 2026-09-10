@@ -13,6 +13,7 @@ namespace GeneSys.AI
         public float agentLoopDelaySeconds = 15f;
         public int gameMode = (int)GameMode.AiSandbox;
         public int maxToolCallsPerStep = 12;
+        public bool visionCapable;
 
         public GameMode Mode
         {

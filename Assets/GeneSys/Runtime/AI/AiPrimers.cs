@@ -147,9 +147,9 @@ namespace GeneSys.AI
             "set_world_parameter changes rates for the next sim tick.";
 
         public const string ToolsPrimer =
-            "Assess: sensors, scratchpad, log_note, next_step.\n" +
+            "Assess: sensors, capture_probe_view (if vision enabled), scratchpad, log_note, next_step.\n" +
             "Convert: probe_steer, probe_use_tool, probe_toggle_life_seed, probe_status, plus deity tools in AI sandbox, then next_step.\n" +
-            "Think: scratchpad_read/write, log_note, next_step. End Think with a short player-facing summary of what you did and why.\n" +
+            "Think: sensors, capture_probe_view (if vision enabled), scratchpad_read/write, log_note, next_step. End Think with a short player-facing summary of what you did and why.\n" +
             "Coordinates: theta01 is 0..1 around the circle, radius01 is 0 at the core and 1 at the rim.";
     }
 }

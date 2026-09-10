@@ -210,6 +210,8 @@
                         <ui:DropdownField name="ai-game-mode" label="Game Mode" />
                         <ui:FloatField name="ai-loop-delay" label="Agent Loop Delay (s)" />
                         <ui:IntegerField name="ai-max-tools" label="Max Tool Calls Per Step" />
+                        <ui:Toggle name="ai-vision-capable" label="Vision Capable" />
+                        <ui:Label text="When enabled, Assess/Think can capture a probe-follow screenshot at 50% zoom and send it to the model." class="help" />
                         <ui:Label name="ai-status" text="Not connected." class="help" />
                     </ui:VisualElement>
 

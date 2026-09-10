@@ -40,6 +40,7 @@ namespace GeneSys.AI
         private bool initialized;
         private float loopDelayRemaining;
         private Coroutine running;
+        private byte[] pendingVisionJpeg;
 
         public AiCrewSettings Settings => settings;
         public AiToolRegistry Tools => registry;
@@ -203,7 +204,7 @@ namespace GeneSys.AI
                 {
                     LlmChatResult result = null;
                     yield return client.Chat(settings.BaseUrl, settings.model, BuildMessages(),
-                        registry.BuildOpenAiTools(loop.Step, settings.Mode), chatResult => result = chatResult);
+                        registry.BuildOpenAiTools(loop.Step, settings.Mode, settings.visionCapable), chatResult => result = chatResult);
                     if (result == null || !result.Ok)
                     {
                         string error = result?.Error ?? "LLM request failed.";
@@ -233,6 +234,7 @@ namespace GeneSys.AI
                                 Name = call.Function?.Name,
                                 Content = toolResult ?? string.Empty
                             });
+                            AttachPendingVisionFrame();
                             if (advanceRequested)
                             {
                                 stepDone = true;
@@ -283,7 +285,7 @@ namespace GeneSys.AI
                 yield break;
             }
 
-            if (!AiToolRegistry.IsAvailable(tool, loop.Step, settings.Mode))
+            if (!AiToolRegistry.IsAvailable(tool, loop.Step, settings.Mode, settings.visionCapable))
             {
                 completed?.Invoke($"Tool '{name}' is not available during {loop.Step} in {settings.Mode}.");
                 yield break;
@@ -370,6 +372,11 @@ namespace GeneSys.AI
             builder.AppendLine();
             builder.Append("You are in ACT step ").Append(loop.Step)
                 .Append(". Use only tools listed for this step. Call next_step when ready to proceed.");
+            if (settings != null && settings.visionCapable)
+            {
+                builder.AppendLine();
+                builder.Append("Vision is enabled. During Assess and Think you may call capture_probe_view to attach a probe-follow screenshot at 50% zoom.");
+            }
             return builder.ToString();
         }
 
@@ -387,6 +394,20 @@ namespace GeneSys.AI
             if (overflow > 0) conversation.RemoveRange(0, overflow);
         }
 
+        private void AttachPendingVisionFrame()
+        {
+            if (pendingVisionJpeg == null || pendingVisionJpeg.Length == 0) return;
+            for (int i = 0; i < conversation.Count; i++)
+                conversation[i].ImageJpegBase64 = null;
+            conversation.Add(new LlmMessage
+            {
+                Role = "user",
+                Content = "Vision frame from capture_probe_view (probe-follow, 50% zoom). Use this image with the preceding tool result.",
+                ImageJpegBase64 = Convert.ToBase64String(pendingVisionJpeg)
+            });
+            pendingVisionJpeg = null;
+        }
+
         private void BindToolContext()
         {
             registry.Context = new AiToolContext
@@ -396,6 +417,8 @@ namespace GeneSys.AI
                 Tools = tools,
                 Scratchpad = scratchpad,
                 ActionLog = actionLog,
+                Display = display,
+                OnVisionFrame = (jpeg, _, _) => pendingVisionJpeg = jpeg,
                 StartRoutine = StartCoroutine,
                 RequestNextStep = () => advanceRequested = true,
                 Mode = settings != null ? settings.Mode : GameMode.Sandbox,

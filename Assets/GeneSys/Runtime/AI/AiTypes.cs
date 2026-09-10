@@ -54,6 +54,7 @@ namespace GeneSys.AI
         [JsonProperty("tool_call_id", NullValueHandling = NullValueHandling.Ignore)] public string ToolCallId;
         [JsonProperty("name", NullValueHandling = NullValueHandling.Ignore)] public string Name;
         [JsonProperty("tool_calls", NullValueHandling = NullValueHandling.Ignore)] public List<LlmToolCall> ToolCalls;
+        [JsonIgnore] public string ImageJpegBase64;
     }
 
     [Serializable]
