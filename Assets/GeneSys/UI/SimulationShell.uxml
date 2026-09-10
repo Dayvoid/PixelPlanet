@@ -49,6 +49,13 @@
                     <ui:ScrollView name="history-log" class="history-scroll" />
                 </ui:VisualElement>
             </ui:VisualElement>
+
+            <ui:VisualElement name="ai-history-drawer" class="drawer ai-history-drawer collapsed">
+                <ui:Button name="ai-history-header" text="Crew Log ▸" class="drawer-header" />
+                <ui:VisualElement name="ai-history-body" class="drawer-body collapsed">
+                    <ui:ScrollView name="ai-history-log" class="history-scroll" />
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
 
         <ui:VisualElement name="inspect-bar" class="inspect-bar hidden" picking-mode="Ignore">
@@ -63,6 +70,14 @@
                     <ui:Label name="life-inspect-title" text="Life ▸" class="section-title inspector-title" picking-mode="Ignore" />
                 </ui:VisualElement>
                 <ui:Label name="life-inspection" text="" class="inspection" picking-mode="Ignore" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="probe-chat" class="probe-chat hidden" picking-mode="Position">
+            <ui:ScrollView name="probe-chat-log" class="probe-chat-log" />
+            <ui:VisualElement class="probe-chat-input-row" picking-mode="Position">
+                <ui:TextField name="probe-chat-input" class="probe-chat-input" />
+                <ui:Button name="probe-chat-send" text="Send" class="probe-chat-send" />
             </ui:VisualElement>
         </ui:VisualElement>
 
@@ -87,6 +102,7 @@
             </ui:VisualElement>
             <ui:VisualElement name="probe-camera-card" class="probe-camera-card" picking-mode="Position">
                 <ui:Button name="probe-camera-follow" class="probe-camera-button probe-camera-follow" tooltip="Follow probe" />
+                <ui:Button name="probe-agent-loop" text="▶" class="probe-camera-button probe-agent-loop" tooltip="Play/pause AI agent loop" />
                 <ui:Button name="probe-camera-globe" class="probe-camera-button probe-camera-globe probe-camera-last probe-camera-button--active" tooltip="Globe camera" />
             </ui:VisualElement>
         </ui:VisualElement>
@@ -110,6 +126,7 @@
                         <ui:Button name="tab-combustion" text="Fire" class="tab-button" />
                         <ui:Button name="tab-storm" text="Storm" class="tab-button" />
                         <ui:Button name="tab-probe" text="Probe" class="tab-button" />
+                        <ui:Button name="tab-ai" text="AI Crew" class="tab-button" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-world" class="settings-page">
@@ -179,6 +196,21 @@
                         <ui:Label text="Probe" class="section-title" />
                         <ui:Label text="The probe orbits along the atmosphere glow, opposite the sun. Hold HUD icons to deposit vapor, water, soil, heat, or cool at the outer ring ahead of its path. Toggle life seed to drop mixed dormant organisms. Steer left, stop, or right from the side card; stopping also pauses energy regen. Use the camera card to follow the orbiter or return to the globe view." class="help" />
                         <ui:ScrollView name="settings-probe" class="settings-scroll" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement name="page-ai" class="settings-page hidden">
+                        <ui:Label text="AI Crew" class="section-title" />
+                        <ui:Label text="OpenAI-compatible endpoint. Target LM Studio locally (Gemma) with a loaded model. Fetch models after the server is running, then pick one from the dropdown." class="help" />
+                        <ui:TextField name="ai-host" label="Host / IP" />
+                        <ui:IntegerField name="ai-port" label="Port" />
+                        <ui:VisualElement class="command-row">
+                            <ui:Button name="ai-fetch-models" text="Fetch Models" class="row-last" />
+                        </ui:VisualElement>
+                        <ui:DropdownField name="ai-model" label="Model" />
+                        <ui:DropdownField name="ai-game-mode" label="Game Mode" />
+                        <ui:FloatField name="ai-loop-delay" label="Agent Loop Delay (s)" />
+                        <ui:IntegerField name="ai-max-tools" label="Max Tool Calls Per Step" />
+                        <ui:Label name="ai-status" text="Not connected." class="help" />
                     </ui:VisualElement>
 
                     <ui:VisualElement name="page-performance" class="settings-page hidden">

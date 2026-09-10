@@ -1,4 +1,5 @@
 #pragma kernel ApplyEdits
+#pragma kernel GlobalFieldAdjust
 #pragma kernel ThermalAndPressure
 #pragma kernel PhaseChange
 #pragma kernel LiquidDensityExchange
@@ -34,6 +35,8 @@ int2 _GridSize;
 int _Tick;
 int _Seed;
 int _BrushCount;
+int _GlobalAdjustChannel;
+float _GlobalAdjustAmount;
 float _DeltaTime;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
@@ -171,6 +174,26 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
             genome = RandomFloraGenome((uint2)cell, _Seed, _Tick);
         }
     }
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+}
+
+[numthreads(8, 8, 1)]
+void GlobalFieldAdjust(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+    int mode = _GlobalAdjustChannel;
+    float amount = _GlobalAdjustAmount;
+    if (mode == 1) state.x += amount;
+    else if (mode == 2) state.z = max(0.0, state.z + amount);
+    else if (mode == 3) state.y += amount;
+    else if (mode == 4) aux.z = max(0.0, aux.z + amount);
+    else if (mode == 5) aux.y = max(0.0, aux.y + amount);
+    else if (mode == 6) aux.x = max(0.0, aux.x + amount);
+    else if (mode == 8) state.w += amount;
+    else if (mode == 10) combustion.x = max(0.0, combustion.x + amount);
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 

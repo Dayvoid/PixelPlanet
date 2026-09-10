@@ -29,6 +29,28 @@ namespace GeneSys.Tools
         private float inspectPollTimer;
         private const float InspectPollInterval = 0.4f;
 
+        public void RequestInspection(Vector2Int cell, Action<CellInspection> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources == null)
+            {
+                completed?.Invoke(new CellInspection { cell = cell });
+                return;
+            }
+
+            if (completed != null)
+            {
+                void OneShot(CellInspection inspection)
+                {
+                    Inspected -= OneShot;
+                    completed(inspection);
+                }
+
+                Inspected += OneShot;
+            }
+
+            Inspect(cell);
+        }
+
         private void Update()
         {
             if (host == null || !host.IsReady || Mouse.current == null) return;

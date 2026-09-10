@@ -795,3 +795,94 @@
     border-bottom-width: 0;
     border-left-width: 0;
 }
+
+.ai-history-drawer {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 80px;
+    margin-top: 8px;
+}
+
+.ai-history-drawer.collapsed {
+    flex-grow: 0;
+    min-height: 0;
+}
+
+.unity-button.probe-agent-loop {
+    font-size: 18px;
+    color: rgb(72, 210, 230);
+    -unity-text-align: middle-center;
+}
+
+.unity-button.probe-agent-loop.probe-camera-button--active {
+    color: rgb(120, 240, 180);
+}
+
+.probe-chat {
+    position: absolute;
+    left: 50%;
+    top: 72px;
+    width: 440px;
+    margin-left: -220px;
+    flex-direction: column;
+    background-color: rgba(8, 16, 32, 0.94);
+    border-width: 1px;
+    border-color: rgb(40, 90, 140);
+    border-radius: 16px;
+    padding: 10px;
+}
+
+.probe-chat.hidden {
+    display: none;
+}
+
+.probe-chat-log {
+    flex-grow: 1;
+    min-height: 140px;
+    max-height: 220px;
+    background-color: rgba(4, 10, 22, 0.9);
+    border-width: 1px;
+    border-color: rgb(40, 90, 140);
+    border-radius: 12px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.probe-chat-bubble {
+    white-space: normal;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    border-radius: 12px;
+    max-width: 90%;
+    color: rgb(210, 228, 240);
+}
+
+.probe-chat-bubble--user {
+    align-self: flex-end;
+    background-color: rgb(16, 70, 96);
+}
+
+.probe-chat-bubble--assistant {
+    align-self: flex-start;
+    background-color: rgb(18, 36, 64);
+}
+
+.probe-chat-bubble--error {
+    align-self: flex-start;
+    background-color: rgb(80, 28, 32);
+}
+
+.probe-chat-input-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.probe-chat-input {
+    flex-grow: 1;
+    margin-right: 6px;
+}
+
+.probe-chat-send {
+    flex-shrink: 0;
+    width: 72px;
+}

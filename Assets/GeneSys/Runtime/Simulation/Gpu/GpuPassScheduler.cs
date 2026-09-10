@@ -27,6 +27,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly GraphicsBuffer brushBuffer;
         private const int MaxBrushCommands = 1024;
         private readonly List<BrushCommand> brushCommands = new(MaxBrushCommands);
+        private readonly List<Vector2> globalAdjusts = new(8);
         private readonly List<BrushCommand> grassPaintCommands = new(32);
         private readonly List<BrushCommand> treePaintCommands = new(32);
         private readonly ComputeShader worldGeneration;
@@ -259,6 +260,12 @@ namespace GeneSys.Simulation.Gpu
                 brushCommands.Add(command);
         }
 
+        public void QueueGlobalAdjust(int channel, float amount)
+        {
+            if (globalAdjusts.Count < 32)
+                globalAdjusts.Add(new Vector2(channel, amount));
+        }
+
         private void FlushPendingBrushes()
         {
             if (brushCommands.Count == 0) return;
@@ -303,6 +310,23 @@ namespace GeneSys.Simulation.Gpu
                     DispatchStormInPlace(storm, stormBrush, deltaTime);
                 }
                 brushCommands.Clear();
+            }
+
+            if (globalAdjusts.Count > 0)
+            {
+                int adjustKernel = materialSimulation.FindKernel("GlobalFieldAdjust");
+                if (adjustKernel >= 0)
+                {
+                    for (int i = 0; i < globalAdjusts.Count; i++)
+                    {
+                        materialSimulation.SetInt("_GlobalAdjustChannel", Mathf.RoundToInt(globalAdjusts[i].x));
+                        materialSimulation.SetFloat("_GlobalAdjustAmount", globalAdjusts[i].y);
+                        DispatchPass(materialSimulation, adjustKernel, deltaTime);
+                    }
+                }
+                else
+                    UnityEngine.Debug.LogError("GeneSys: GlobalFieldAdjust kernel missing. Reimport MaterialSimulation.compute.");
+                globalAdjusts.Clear();
             }
 
             for (int i = 0; i < config.materialSubsteps; i++)

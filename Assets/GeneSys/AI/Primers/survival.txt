@@ -1,0 +1,6 @@
+Organism survival is gated by SimulationConfig uniforms, not per-material assets.
+Flora/algae: growth T {floraGrowthTempMin}..{floraGrowthTempMax} C, moisture {floraGrowthMoistureMin}..{floraGrowthMoistureMax}; survival T {floraSurvivalTempMin}..{floraSurvivalTempMax} C, moisture {floraSurvivalMoistureMin}..{floraSurvivalMoistureMax}; min light {floraMinLight}. Outside growth but inside survival => dormant; outside survival => desiccate/die.
+Crickets: survival T {faunaSurvivalTempMin}..{faunaSurvivalTempMax} C; eggs desiccate below moisture {faunaEggDesiccationMoisture} and die above {faunaEggHeatDeath} C; adults also die of starvation/dehydration.
+Wasps: survival T {waspSurvivalTempMin}..{waspSurvivalTempMax} C; eggs desiccate below {waspEggDesiccationMoisture}, heat death {waspEggHeatDeath} C.
+Grass: growth T {grassGrowthTempMin}..{grassGrowthTempMax}, survival T {grassSurvivalTempMin}..{grassSurvivalTempMax}.
+Trees: growth T {treeGrowthTempMin}..{treeGrowthTempMax}, survival T {treeSurvivalTempMin}..{treeSurvivalTempMax}.

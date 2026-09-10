@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using GeneSys.AI;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Rendering;
@@ -162,6 +163,7 @@ namespace GeneSys.Editor
             ProbeController probe = root.AddComponent<ProbeController>();
             SimulationTools tools = root.AddComponent<SimulationTools>();
             SimulationValidator validator = root.AddComponent<SimulationValidator>();
+            root.AddComponent<AiAgentOrchestrator>();
             SetObject(host, "config", config);
             SetObject(host, "materialRegistry", registry);
             SetObject(host, "worldGeneration", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/WorldGen/WorldGeneration.compute"));
@@ -213,6 +215,9 @@ namespace GeneSys.Editor
             SimulationHost host = Object.FindFirstObjectByType<SimulationHost>();
             UIDocument document = Object.FindFirstObjectByType<UIDocument>();
             if (host == null || document == null) return;
+
+            if (host.GetComponent<AiAgentOrchestrator>() == null)
+                host.gameObject.AddComponent<AiAgentOrchestrator>();
 
             SimulationConfig config = AssetDatabase.LoadAssetAtPath<SimulationConfig>(ConfigRoot + "/SimulationConfig.asset");
             MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>(DataRoot + "/MaterialRegistry.asset");

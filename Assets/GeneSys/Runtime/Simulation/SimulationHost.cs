@@ -1,3 +1,4 @@
+using GeneSys.AI;
 using GeneSys.Configuration;
 using GeneSys.Integration;
 using GeneSys.Materials;
@@ -54,6 +55,8 @@ namespace GeneSys.Simulation
         public float SolarAngle01 => scheduler?.SolarAngle01 ?? 0f;
         public double LastTickMilliseconds => scheduler?.LastTickMilliseconds ?? 0d;
         public OrganismHistoryLog OrganismHistory { get; } = new();
+        public ProbeController Probe => probe;
+        public SimulationTools Tools => tools;
         public PolarGridDefinition Grid => Resources?.Grid ?? config.grid;
         public RenderTexture MaterialField => Resources?.MaterialRead;
         public RenderTexture EnvironmentalField => Resources?.StateRead;
@@ -127,6 +130,8 @@ namespace GeneSys.Simulation
             if (probe != null) probe.Initialize(this, display);
             if (display != null) display.FollowProbe = probe;
             if (tools != null) { tools.Radius = config.brushRadius; tools.Strength = config.brushStrength; }
+            AiAgentOrchestrator aiCrew = GetComponent<AiAgentOrchestrator>();
+            if (aiCrew != null) aiCrew.Initialize(this, probe, tools, display);
             if (bindUi && ui != null) ui.Initialize(this, display, tools);
             if (validator != null) validator.Initialize(this);
             Debug.Log($"GENESYS_INITIALIZED preset={config.preset} grid={Grid.angularResolution}x{Grid.radialResolution} targetTicks={config.ticksPerSecond:F1}", this);
@@ -323,6 +328,11 @@ namespace GeneSys.Simulation
                 materialId = MaterialIds.Void,
                 values = new Vector4(13f, flowX, 0f, 0f)
             });
+        }
+
+        public void QueueGlobalAdjust(int channel, float amount)
+        {
+            if (IsReady) scheduler.QueueGlobalAdjust(channel, amount);
         }
 
         private void OnDestroy() => Shutdown();

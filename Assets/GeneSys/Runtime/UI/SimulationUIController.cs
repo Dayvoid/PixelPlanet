@@ -1,6 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using GeneSys.AI;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Persistence;
@@ -153,6 +155,26 @@ namespace GeneSys.UI
         private int lastMaterialBrushIndex = -1;
         private int lastLifeBrushIndex = -1;
         private bool suppressingMaterialCallback;
+        private AiAgentOrchestrator ai;
+        private Button agentLoopButton;
+        private Button aiHistoryHeader;
+        private VisualElement aiHistoryDrawer;
+        private VisualElement aiHistoryBody;
+        private ScrollView aiHistoryLog;
+        private VisualElement probeChat;
+        private ScrollView probeChatLog;
+        private TextField probeChatInput;
+        private Button probeChatSend;
+        private int aiHistoryRenderedVersion = -1;
+        private int chatRenderedCount = -1;
+        private TextField aiHostField;
+        private IntegerField aiPortField;
+        private DropdownField aiModelField;
+        private DropdownField aiGameModeField;
+        private FloatField aiLoopDelayField;
+        private IntegerField aiMaxToolsField;
+        private Label aiStatusLabel;
+        private bool suppressingAiSettings;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer renderer, SimulationTools simulationTools)
         {
@@ -169,14 +191,18 @@ namespace GeneSys.UI
             toolsDrawer = root.Q("tools-drawer");
             statusDrawer = root.Q("status-drawer");
             historyDrawer = root.Q("history-drawer");
+            aiHistoryDrawer = root.Q("ai-history-drawer");
             toolsHeader = root.Q<Button>("tools-header");
             statusHeader = root.Q<Button>("status-header");
             historyHeader = root.Q<Button>("history-header");
+            aiHistoryHeader = root.Q<Button>("ai-history-header");
             toolsBody = root.Q("tools-body");
             settingsBody = root.Q("settings-body");
             statusBody = root.Q("status-body");
             historyBody = root.Q("history-body");
+            aiHistoryBody = root.Q("ai-history-body");
             historyLog = root.Q<ScrollView>("history-log");
+            aiHistoryLog = root.Q<ScrollView>("ai-history-log");
             settingsOverlay = root.Q("settings-overlay");
             inspectBar = root.Q("inspect-bar");
             statusLabel = root.Q<Label>("status");
@@ -231,6 +257,7 @@ namespace GeneSys.UI
             SetupEcologySubTabs(root);
             BuildSettings(root);
             SetupProbeHud(root);
+            SetupAiCrew(root);
             SetupInspectPanels();
             AttachStaticSettingTooltips(root);
             tools.Inspected -= SetInspection;
@@ -238,9 +265,15 @@ namespace GeneSys.UI
             initialized = true;
             metricsRefreshTimer = 0f;
             historyRenderedVersion = -1;
+            aiHistoryRenderedVersion = -1;
+            chatRenderedCount = -1;
             RefreshPlayLabel();
             RefreshWorldMetrics(force: true);
             RefreshHistory(force: true);
+            RefreshAiHistory(force: true);
+            RefreshChat(force: true);
+            RefreshChatVisibility();
+            RefreshAgentLoopButton();
         }
 
         private void SetupDrawers()
@@ -248,6 +281,7 @@ namespace GeneSys.UI
             SetDrawerCollapsed(toolsHeader, toolsBody, toolsDrawer, "Tools", true);
             SetDrawerCollapsed(statusHeader, statusBody, statusDrawer, "Simulation Status", true);
             SetDrawerCollapsed(historyHeader, historyBody, historyDrawer, "History", true);
+            SetDrawerCollapsed(aiHistoryHeader, aiHistoryBody, aiHistoryDrawer, "Crew Log", true);
             toolsHeader?.RegisterCallback<ClickEvent>(_ => ToggleDrawer(toolsHeader, toolsBody, toolsDrawer, "Tools"));
             statusHeader?.RegisterCallback<ClickEvent>(_ =>
             {
@@ -260,6 +294,12 @@ namespace GeneSys.UI
                 ToggleDrawer(historyHeader, historyBody, historyDrawer, "History");
                 if (historyBody != null && !historyBody.ClassListContains("collapsed"))
                     RefreshHistory(force: true);
+            });
+            aiHistoryHeader?.RegisterCallback<ClickEvent>(_ =>
+            {
+                ToggleDrawer(aiHistoryHeader, aiHistoryBody, aiHistoryDrawer, "Crew Log");
+                if (aiHistoryBody != null && !aiHistoryBody.ClassListContains("collapsed"))
+                    RefreshAiHistory(force: true);
             });
         }
 
@@ -442,7 +482,7 @@ namespace GeneSys.UI
 
         private void SetupTabs(VisualElement root)
         {
-            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology", "combustion", "storm", "probe" };
+            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology", "combustion", "storm", "probe", "ai" };
             void Show(string name)
             {
                 HideSettingTooltip();
@@ -530,13 +570,17 @@ namespace GeneSys.UI
 
             followCameraButton = root.Q<Button>("probe-camera-follow");
             globeCameraButton = root.Q<Button>("probe-camera-globe");
+            agentLoopButton = root.Q<Button>("probe-agent-loop");
             followCameraButton?.UnregisterCallback<ClickEvent>(OnFollowCameraClicked);
             globeCameraButton?.UnregisterCallback<ClickEvent>(OnGlobeCameraClicked);
+            agentLoopButton?.UnregisterCallback<ClickEvent>(OnAgentLoopClicked);
             followCameraButton?.RegisterCallback<ClickEvent>(OnFollowCameraClicked);
             globeCameraButton?.RegisterCallback<ClickEvent>(OnGlobeCameraClicked);
+            agentLoopButton?.RegisterCallback<ClickEvent>(OnAgentLoopClicked);
             RefreshLifeSeedButton();
             RefreshSteerButtons();
             RefreshCameraModeButtons();
+            RefreshAgentLoopButton();
             RefreshProbeEnergy();
             ApplyProbeFade(1f);
         }
@@ -566,6 +610,13 @@ namespace GeneSys.UI
         private void OnFollowCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.ProbeFollow);
 
         private void OnGlobeCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.Globe);
+
+        private void OnAgentLoopClicked(ClickEvent _)
+        {
+            if (ai == null || !ai.AiSystemsEnabled || ai.Settings == null || !ai.Settings.AgentLoopAllowed) return;
+            ai.SetAgentLoopEnabled(!ai.AgentLoopEnabled);
+            RefreshAgentLoopButton();
+        }
 
         private void OnLifeSeedClicked(ClickEvent evt)
         {
@@ -658,6 +709,7 @@ namespace GeneSys.UI
             CameraViewMode mode = display != null ? display.ViewMode : CameraViewMode.Globe;
             followCameraButton?.EnableInClassList("probe-camera-button--active", mode == CameraViewMode.ProbeFollow);
             globeCameraButton?.EnableInClassList("probe-camera-button--active", mode == CameraViewMode.Globe);
+            RefreshChatVisibility();
         }
 
         private void SetupPresetDialog(VisualElement root)
@@ -1313,11 +1365,15 @@ namespace GeneSys.UI
 
             if (historyBody != null && !historyBody.ClassListContains("collapsed"))
                 RefreshHistory(force: false);
+            if (aiHistoryBody != null && !aiHistoryBody.ClassListContains("collapsed"))
+                RefreshAiHistory(force: false);
 
             RefreshLifeSeedButton();
             RefreshSteerButtons();
             RefreshProbeEnergy();
             RefreshHudFades();
+            RefreshChatVisibility();
+            RefreshAgentLoopButton();
         }
 
         private void RefreshHudFades()
@@ -1566,6 +1622,225 @@ namespace GeneSys.UI
             if (host.Clock.Speed > SimulationClock.FastForwardSpeed)
                 interval *= host.Clock.Speed;
             return interval;
+        }
+
+        private void SetupAiCrew(VisualElement root)
+        {
+            if (ai == null && host != null)
+                ai = host.GetComponent<AiAgentOrchestrator>();
+            if (ai == null)
+                ai = FindFirstObjectByType<AiAgentOrchestrator>();
+
+            probeChat = root.Q("probe-chat");
+            probeChatLog = root.Q<ScrollView>("probe-chat-log");
+            probeChatInput = root.Q<TextField>("probe-chat-input");
+            probeChatSend = root.Q<Button>("probe-chat-send");
+            probeChatSend?.RegisterCallback<ClickEvent>(_ => SubmitChat());
+            probeChatInput?.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter) return;
+                SubmitChat();
+                evt.StopPropagation();
+            });
+
+            aiHostField = root.Q<TextField>("ai-host");
+            aiPortField = root.Q<IntegerField>("ai-port");
+            aiModelField = root.Q<DropdownField>("ai-model");
+            aiGameModeField = root.Q<DropdownField>("ai-game-mode");
+            aiLoopDelayField = root.Q<FloatField>("ai-loop-delay");
+            aiMaxToolsField = root.Q<IntegerField>("ai-max-tools");
+            aiStatusLabel = root.Q<Label>("ai-status");
+            root.Q<Button>("ai-fetch-models")?.RegisterCallback<ClickEvent>(_ =>
+            {
+                CommitAiSettings();
+                if (ai != null) StartCoroutine(ai.FetchModels());
+            });
+            if (aiGameModeField != null)
+            {
+                aiGameModeField.choices = new List<string>(Enum.GetNames(typeof(GameMode)));
+                aiGameModeField.RegisterValueChangedCallback(_ => CommitAiSettings());
+            }
+            aiHostField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+            aiPortField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+            aiModelField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+            aiLoopDelayField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+            aiMaxToolsField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+
+            if (ai != null)
+            {
+                ai.ChatChanged -= OnAiChatChanged;
+                ai.HistoryChanged -= OnAiHistoryChanged;
+                ai.LoopStateChanged -= OnAiLoopStateChanged;
+                ai.SettingsChanged -= OnAiSettingsChanged;
+                ai.ChatChanged += OnAiChatChanged;
+                ai.HistoryChanged += OnAiHistoryChanged;
+                ai.LoopStateChanged += OnAiLoopStateChanged;
+                ai.SettingsChanged += OnAiSettingsChanged;
+            }
+
+            BindAiSettingsFields();
+            RefreshAgentLoopButton();
+            RefreshChatVisibility();
+        }
+
+        private void OnAiChatChanged() => RefreshChat(force: true);
+
+        private void OnAiHistoryChanged() => RefreshAiHistory(force: true);
+
+        private void OnAiLoopStateChanged() => RefreshAgentLoopButton();
+
+        private void OnAiSettingsChanged()
+        {
+            BindAiSettingsFields();
+            RefreshAgentLoopButton();
+            RefreshChatVisibility();
+        }
+
+        private void BindAiSettingsFields()
+        {
+            if (ai?.Settings == null) return;
+            suppressingAiSettings = true;
+            AiCrewSettings settings = ai.Settings;
+            aiHostField?.SetValueWithoutNotify(settings.host);
+            aiPortField?.SetValueWithoutNotify(settings.port);
+            aiLoopDelayField?.SetValueWithoutNotify(settings.agentLoopDelaySeconds);
+            aiMaxToolsField?.SetValueWithoutNotify(settings.maxToolCallsPerStep);
+            if (aiGameModeField != null)
+                aiGameModeField.SetValueWithoutNotify(settings.Mode.ToString());
+            RefreshAiModelDropdown();
+            if (aiStatusLabel != null)
+                aiStatusLabel.text = ai.ConnectionStatus;
+            suppressingAiSettings = false;
+        }
+
+        private void RefreshAiModelDropdown()
+        {
+            if (aiModelField == null || ai?.Settings == null) return;
+            var choices = new List<string>();
+            IReadOnlyList<LlmModelInfo> models = ai.AvailableModels;
+            if (models != null)
+            {
+                for (int i = 0; i < models.Count; i++)
+                {
+                    if (!string.IsNullOrWhiteSpace(models[i].Id))
+                        choices.Add(models[i].Id);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(ai.Settings.model) && !choices.Contains(ai.Settings.model))
+                choices.Insert(0, ai.Settings.model);
+            aiModelField.choices = choices;
+            if (!string.IsNullOrWhiteSpace(ai.Settings.model))
+                aiModelField.SetValueWithoutNotify(ai.Settings.model);
+            else if (choices.Count > 0)
+                aiModelField.SetValueWithoutNotify(choices[0]);
+        }
+
+        private void CommitAiSettings()
+        {
+            if (suppressingAiSettings || ai == null) return;
+            AiCrewSettings settings = ai.Settings ?? new AiCrewSettings();
+            if (aiHostField != null) settings.host = aiHostField.value;
+            if (aiPortField != null) settings.port = aiPortField.value;
+            if (aiModelField != null) settings.model = aiModelField.value ?? string.Empty;
+            if (aiLoopDelayField != null) settings.agentLoopDelaySeconds = aiLoopDelayField.value;
+            if (aiMaxToolsField != null) settings.maxToolCallsPerStep = aiMaxToolsField.value;
+            if (aiGameModeField != null && Enum.TryParse(aiGameModeField.value, out GameMode mode))
+                settings.Mode = mode;
+            ai.ApplySettings(settings);
+        }
+
+        private void SubmitChat()
+        {
+            if (ai == null || !ai.AiSystemsEnabled) return;
+            string text = probeChatInput != null ? probeChatInput.value : null;
+            if (string.IsNullOrWhiteSpace(text)) return;
+            ai.EnqueueUserPrompt(text);
+            if (probeChatInput != null) probeChatInput.value = string.Empty;
+            RefreshChat(force: true);
+        }
+
+        private void RefreshChatVisibility()
+        {
+            if (probeChat == null) return;
+            bool visible = ai != null && ai.IsChatVisible();
+            probeChat.EnableInClassList("hidden", !visible);
+        }
+
+        private void RefreshAgentLoopButton()
+        {
+            if (agentLoopButton == null) return;
+            bool allowed = ai != null && ai.AiSystemsEnabled && ai.Settings != null && ai.Settings.AgentLoopAllowed;
+            agentLoopButton.style.display = allowed ? DisplayStyle.Flex : DisplayStyle.None;
+            bool running = allowed && ai.AgentLoopEnabled;
+            agentLoopButton.text = running ? "❚❚" : "▶";
+            agentLoopButton.EnableInClassList("probe-camera-button--active", running);
+            if (aiHistoryDrawer != null)
+                aiHistoryDrawer.style.display = ai != null && ai.AiSystemsEnabled ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private void RefreshChat(bool force)
+        {
+            if (probeChatLog == null || ai == null) return;
+            IReadOnlyList<AiChatMessage> messages = ai.ChatMessages;
+            if (!force && chatRenderedCount == messages.Count) return;
+            chatRenderedCount = messages.Count;
+            probeChatLog.Clear();
+            if (messages.Count == 0)
+            {
+                var empty = new Label("Talk to the crew when zoomed in on the probe.");
+                empty.AddToClassList("history-empty");
+                probeChatLog.Add(empty);
+                return;
+            }
+
+            for (int i = 0; i < messages.Count; i++)
+            {
+                AiChatMessage message = messages[i];
+                var bubble = new Label(message.Text);
+                bubble.AddToClassList("probe-chat-bubble");
+                if (message.IsError) bubble.AddToClassList("probe-chat-bubble--error");
+                else if (string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+                    bubble.AddToClassList("probe-chat-bubble--user");
+                else
+                    bubble.AddToClassList("probe-chat-bubble--assistant");
+                probeChatLog.Add(bubble);
+            }
+
+            probeChatLog.schedule.Execute(() =>
+            {
+                probeChatLog.scrollOffset = new Vector2(0f, probeChatLog.contentContainer.layout.height);
+            });
+        }
+
+        private void RefreshAiHistory(bool force)
+        {
+            if (aiHistoryLog == null || ai == null) return;
+            if (!force && (aiHistoryBody == null || aiHistoryBody.ClassListContains("collapsed"))) return;
+            AiHistoryLog log = ai.History;
+            if (!force && aiHistoryRenderedVersion == log.Version) return;
+            aiHistoryRenderedVersion = log.Version;
+            aiHistoryLog.Clear();
+            IReadOnlyList<AiHistoryEntry> entries = log.Entries;
+            if (entries.Count == 0)
+            {
+                var empty = new Label("No crew summaries yet.");
+                empty.AddToClassList("history-empty");
+                aiHistoryLog.Add(empty);
+                return;
+            }
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var line = new Label(entries[i].Format());
+                line.AddToClassList("history-entry");
+                aiHistoryLog.Add(line);
+            }
+
+            aiHistoryLog.schedule.Execute(() =>
+            {
+                aiHistoryLog.scrollOffset = new Vector2(0f, aiHistoryLog.contentContainer.layout.height);
+            });
         }
 
         private void RefreshHistory(bool force)
