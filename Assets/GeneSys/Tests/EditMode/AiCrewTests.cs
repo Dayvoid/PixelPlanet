@@ -111,8 +111,36 @@ namespace GeneSys.Tests
                 storyNames.Add(token["function"]?["name"]?.ToString());
             Assert.That(sandboxNames, Does.Contain("planet_adjust_field"));
             Assert.That(sandboxNames, Does.Contain("probe_steer"));
+            Assert.That(sandboxNames, Does.Not.Contain("send_chat"));
             Assert.That(storyNames, Does.Contain("probe_steer"));
             Assert.That(storyNames, Does.Not.Contain("planet_adjust_field"));
+            Assert.That(storyNames, Does.Not.Contain("send_chat"));
+        }
+
+        [Test]
+        public void UserConvertExposesOnlySendChatAndNextStep()
+        {
+            var registry = new AiToolRegistry();
+            AiBuiltinTools.RegisterAll(registry);
+            var names = ToolNames(registry.BuildOpenAiTools(ActStep.Convert, GameMode.AiSandbox, false, PromptKind.User));
+            Assert.That(names, Is.EquivalentTo(new[] { "next_step", "send_chat" }));
+        }
+
+        [Test]
+        public void UserAssessAndThinkKeepSensorsWithoutSendChat()
+        {
+            var registry = new AiToolRegistry();
+            AiBuiltinTools.RegisterAll(registry);
+            var assess = ToolNames(registry.BuildOpenAiTools(ActStep.Assess, GameMode.AiSandbox, false, PromptKind.User));
+            var think = ToolNames(registry.BuildOpenAiTools(ActStep.Think, GameMode.AiSandbox, false, PromptKind.User));
+            Assert.That(assess, Does.Contain("get_planet_summary"));
+            Assert.That(assess, Does.Contain("next_step"));
+            Assert.That(assess, Does.Not.Contain("send_chat"));
+            Assert.That(assess, Does.Not.Contain("probe_steer"));
+            Assert.That(think, Does.Contain("get_planet_summary"));
+            Assert.That(think, Does.Contain("next_step"));
+            Assert.That(think, Does.Not.Contain("send_chat"));
+            Assert.That(think, Does.Not.Contain("probe_steer"));
         }
 
         [Test]
@@ -179,6 +207,18 @@ namespace GeneSys.Tests
             loop.NextStep();
             Assert.That(loop.IsComplete, Is.True);
             Assert.That(loop.Step, Is.EqualTo(ActStep.Think));
+        }
+    }
+
+    public sealed class OccupiedNoticeTests
+    {
+        [Test]
+        public void OccupiedNoticeShowsOnlyWhenBusyAndVerboseOff()
+        {
+            Assert.That(AiAgentOrchestrator.ShouldShowOccupiedNotice(true, false), Is.True);
+            Assert.That(AiAgentOrchestrator.ShouldShowOccupiedNotice(true, true), Is.False);
+            Assert.That(AiAgentOrchestrator.ShouldShowOccupiedNotice(false, false), Is.False);
+            Assert.That(AiAgentOrchestrator.ShouldShowOccupiedNotice(false, true), Is.False);
         }
     }
 

@@ -77,6 +77,27 @@ namespace GeneSys.AI
                     done?.Invoke("Noted.");
                 }
             });
+            registry.Add(new AiTool
+            {
+                Name = "send_chat",
+                Description = "Send a player-facing reply in the probe chat. Use during Convert of a player-message ACT loop.",
+                Parameters = AiToolRegistry.ObjectSchema(("text", AiToolRegistry.StringProp("Message shown to the player."), true)),
+                AllowedSteps = ActStepMask.Convert,
+                UserChatReply = true,
+                Handler = (args, done) =>
+                {
+                    JObject parsed = AiToolRegistry.ParseArgs(args);
+                    string text = AiToolRegistry.ArgString(parsed, "text");
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        done?.Invoke("send_chat requires non-empty text.");
+                        return;
+                    }
+
+                    registry.Context?.SendChat?.Invoke(text.Trim());
+                    done?.Invoke("Message sent to the player.");
+                }
+            });
         }
 
         private static void RegisterSensors(AiToolRegistry registry)

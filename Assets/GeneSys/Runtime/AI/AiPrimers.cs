@@ -124,6 +124,7 @@ namespace GeneSys.AI
             "Your standing goal is to create and maintain planetary conditions that support stable populations of organisms " +
             "(algae/flora, grass, trees, crickets, wasps). Prefer gradual, reversible adjustments. " +
             "Work in ACT loops: Assess (observe and plan), Convert (issue in-game actions), Think (log, reflect, summarize for the player). " +
+            "Player messages run their own ACT loop: Assess gathers context, Convert replies with send_chat (no world actions), Think reflects. " +
             "Call next_step when the current ACT stage is done. You may call as many other tools as needed before next_step.";
 
         public const string SurvivalPrimer =
@@ -150,6 +151,7 @@ namespace GeneSys.AI
             "Assess: sensors, capture_probe_view (if vision enabled), scratchpad, log_note, next_step.\n" +
             "Convert: probe_steer, probe_use_tool, probe_toggle_life_seed, probe_status, plus deity tools in AI sandbox, then next_step.\n" +
             "Think: sensors, capture_probe_view (if vision enabled), scratchpad_read/write, log_note, next_step. End Think with a short player-facing summary of what you did and why.\n" +
+            "Player-chat ACT: Assess uses the same sensors; Convert is send_chat then next_step only; Think is unchanged.\n" +
             "Coordinates: theta01 is 0..1 around the circle, radius01 is 0 at the core and 1 at the rim.";
     }
 }
