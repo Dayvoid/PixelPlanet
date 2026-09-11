@@ -100,7 +100,23 @@ void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, 
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome, SampleMobile(_LifeGenomeRead, cell));
+}
+
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome, float4 mobile)
+{
+    uint oldMaterial = ReadMaterial(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(D(material).metadata.x, (uint2)cell, material, _Seed);
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome, mobile);
 }
 
 [numthreads(8, 8, 1)]
@@ -234,7 +250,7 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                 state.y = max(0.0, state.y - resistance * 0.35);
                 if (blast)
                     flow.y += overdrive * 0.5 * _DeltaTime;
-                WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+                WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, SampleMobile(_LifeGenomeRead, below));
                 return;
             }
         }
@@ -280,6 +296,10 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                     combustion = aboveCombustion;
                     life = aboveLife;
                     genome = aboveGenome;
+                    float4 ashMobile = SampleMobile(_LifeGenomeRead, above);
+                    ashMobile.w = max(ashMobile.w, 1.0);
+                    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, ashMobile);
+                    return;
                 }
                 else
                 {
@@ -291,9 +311,9 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                     combustion = aboveCombustion;
                     life = aboveLife;
                     genome = aboveGenome;
+                    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, SampleMobile(_LifeGenomeRead, above));
+                    return;
                 }
-                WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
-                return;
             }
         }
     }
@@ -400,7 +420,7 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
         combustion = ReadCombustion(destination);
         life = ReadLife(destination);
         genome = ReadGenome(destination);
-        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, SampleMobile(_LifeGenomeRead, destination));
         return;
     }
 
@@ -417,7 +437,7 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
             combustion = ReadCombustion(source);
             life = ReadLife(source);
             genome = ReadGenome(source);
-            WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+            WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, SampleMobile(_LifeGenomeRead, source));
             return;
         }
     }

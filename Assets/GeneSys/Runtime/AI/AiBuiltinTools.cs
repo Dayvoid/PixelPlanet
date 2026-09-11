@@ -626,7 +626,8 @@ namespace GeneSys.AI
                 $"cell=({inspection.cell.x},{inspection.cell.y}) mat={inspection.materialId} " +
                 $"T={inspection.state.x:0.##} P={inspection.state.y:0.###} water={inspection.state.z:0.###} " +
                 $"vapor={inspection.aux.x:0.###} groundwater={inspection.aux.y:0.###} nutrients={inspection.aux.z:0.###} " +
-                $"light={inspection.light:0.###} biomass={inspection.life.y:0.###}";
+                $"light={inspection.light:0.###} biomass={inspection.life.y:0.###} " +
+                $"loose={inspection.mobileSediment:0.###} struct={inspection.structuralFraction:0.###}";
         }
     }
 }

@@ -186,6 +186,42 @@ namespace GeneSys.UI
                 "How strongly shallow surface film resists hydrostatic flow. Higher ponding keeps rain in local puddles instead of sheeting across dry ground; standing water columns still level by head.",
             [nameof(SimulationConfig.springDischargeRate)] =
                 "How quickly saturated aquifers above field capacity weep to the surface. Stronger seeps feed streams, wet soil, and can flood low terrain.",
+            [nameof(SimulationConfig.maceEnabled)] =
+                "Use affinity-driven Margolus blocks for loose sediment instead of whole-cell sand slides. Off restores the legacy falling-sand path for Soil, Sediment, and Clay.",
+            [nameof(SimulationConfig.macePhasesPerTick)] =
+                "How many even/odd 2x2 block phases run each tick. Two phases match the old one-cell-per-tick fall speed; more phases let piles relax farther in a single step.",
+            [nameof(SimulationConfig.maceGravity)] =
+                "Downward pull in the sediment affinity field. Higher gravity packs piles against bedrock; lower gravity lets fines linger on slopes and in air.",
+            [nameof(SimulationConfig.macePileSupport)] =
+                "How much filled cells beneath a grain raise its affinity. Stronger support stabilizes talus; weaker support lets overhangs slump more readily.",
+            [nameof(SimulationConfig.maceSlopeDrive)] =
+                "Extra downhill affinity when a local drop exceeds the material angle of repose. Higher drive carves scarps; lower drive leaves steeper faces standing.",
+            [nameof(SimulationConfig.maceMobility)] =
+                "Fraction of an unstable grain that may move in one block update. Higher mobility avalanches quickly; lower mobility keeps piles grainy and slow.",
+            [nameof(SimulationConfig.maceYield)] =
+                "Minimum affinity gain required before a block rearranges. Higher yield holds slopes near the repose angle; lower yield lets even gentle piles creep.",
+            [nameof(SimulationConfig.maceOccupyHigh)] =
+                "Loose mass at which an open cell becomes a Sediment host. Higher thresholds keep thin films invisible; lower thresholds crystallize piles sooner.",
+            [nameof(SimulationConfig.maceOccupyLow)] =
+                "Loose mass below which a Sediment host collapses back to Air. Keep this below Occupy High so occupancy does not flicker on the same grain.",
+            [nameof(SimulationConfig.maceStructMin)] =
+                "Structural fraction at which Soil or Clay folds into loose sediment. Higher values preserve turf and clay banks; lower values weather hosts sooner.",
+            [nameof(SimulationConfig.maceMoistureCohesion)] =
+                "How strongly surface film and groundwater raise the yield of wet sand. Damp columns stand steeper; saturated slurry still slumps when this is low.",
+            [nameof(SimulationConfig.maceRootCohesion)] =
+                "How much live grass and tree roots pin loose mass in place. Higher values let turf hold hillsides through rain; lower values ignore biotic anchoring.",
+            [nameof(SimulationConfig.maceErosionShed)] =
+                "Structural mass moved into the loose channel when erosion stress climaxes. Higher shed carves soil into avalanches instead of flipping the cell identity.",
+            [nameof(SimulationConfig.maceShearDrive)] =
+                "How much surface wind and runoff lower affinity on exposed faces. Stronger shear strips benches and feeds bedload; zero leaves only gravity and repose.",
+            [nameof(SimulationConfig.maceAdvection)] =
+                "How strongly local flow steers loose mass inside a 2x2 block. Higher advection carries sediment with runoff; zero keeps motion strictly downhill.",
+            [nameof(SimulationConfig.maceSuspendCap)] =
+                "How much loose sediment a Water cell may carry. Higher capacity lets rivers hold a suspended load; zero keeps Water from mixing with fines.",
+            [nameof(SimulationConfig.maceHardCrustWear)] =
+                "Rate at which stressed granite, basalt, or limestone sheds dust into neighboring open cells. Higher wear opens caves slowly without popping a whole pixel.",
+            [nameof(SimulationConfig.maceSoluteRate)] =
+                "How much dissolved limestone load is distributed into nearby water or pores during karst. Higher rates leave a solute trail; zero keeps only mechanical sediment.",
 
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",

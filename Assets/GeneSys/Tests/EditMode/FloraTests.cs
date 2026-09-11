@@ -94,7 +94,7 @@ namespace GeneSys.Tests
         {
             using var resources = new SimulationResources(PolarGridDefinition.Validation);
             Assert.That(resources.LifeGenomeRead.dimension, Is.EqualTo(UnityEngine.Rendering.TextureDimension.Tex2DArray));
-            Assert.That(resources.LifeGenomeRead.volumeDepth, Is.EqualTo(2));
+            Assert.That(resources.LifeGenomeRead.volumeDepth, Is.EqualTo(SimulationResources.LifeGenomeSliceCount));
             Assert.That(resources.LifeGenomeRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.LifeGenomeWrite.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.LightField.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_SFloat));

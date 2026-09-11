@@ -32,6 +32,7 @@ MonoBehaviour:
   boilingTemperature: 10000
   thermalExpansion: 0
   electricalExpansion: 0
+  latentHeat: 0
   solidPhaseId: 0
   liquidPhaseId: 0
   gasPhaseId: 0

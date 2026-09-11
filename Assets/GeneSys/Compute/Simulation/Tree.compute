@@ -268,7 +268,7 @@ void WriteWorld(int2 cell, uint material, float4 state, float2 flow, float4 aux,
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome, SampleMobile(_LifeGenomeRead, cell));
 }
 
 float4 SeedDetritusAux(float4 aux)

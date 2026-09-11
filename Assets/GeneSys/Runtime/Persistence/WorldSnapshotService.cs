@@ -31,11 +31,13 @@ namespace GeneSys.Persistence
         private const int Version11 = 11;
         private const int Version12 = 12;
         private const int Version13 = 13;
+        private const int Version14 = 14;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
         private const int PayloadCountV11 = 38;
         private const int PayloadCountV12 = 41;
+        private const int PayloadCountV14 = 42;
 
         private readonly string directoryOverride;
         private string resolvedDirectory;
@@ -99,21 +101,23 @@ namespace GeneSys.Persistence
         }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
-            Save(host, path, Version13, completed);
+            Save(host, path, Version14, completed);
 
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9)));
+            int writeVersion = version >= Version14 ? Version14 : (version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9))));
             bool includeGrass = writeVersion >= Version10;
             bool includeWasp = writeVersion >= Version11;
             bool includeTree = writeVersion >= Version12;
-            byte[][] payloads = new byte[PayloadCountV12][];
+            bool includeMobile = writeVersion >= Version14;
+            byte[][] payloads = new byte[PayloadCountV14][];
             int remaining = PayloadCountV9;
             bool failed = false;
             bool grassBatchStarted = !includeGrass;
             bool waspBatchStarted = !includeWasp;
             bool treeBatchStarted = !includeTree;
+            bool mobileBatchStarted = !includeMobile;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -186,6 +190,13 @@ namespace GeneSys.Persistence
                 }
             }
 
+            void RequestMobileBatch()
+            {
+                RenderTexture lifeGenome = host.Resources.LifeGenomeRead;
+                AsyncGPUReadback.Request(lifeGenome, 0, 0, lifeGenome.width, 0, lifeGenome.height, 2, 1,
+                    request => CompletePayload(PayloadCountV12, request));
+            }
+
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
             {
                 if (request.hasError) failed = true;
@@ -213,6 +224,13 @@ namespace GeneSys.Persistence
                     RequestTreeBatch();
                     return;
                 }
+                if (includeMobile && !mobileBatchStarted)
+                {
+                    mobileBatchStarted = true;
+                    remaining = PayloadCountV14 - PayloadCountV12;
+                    RequestMobileBatch();
+                    return;
+                }
                 if (!failed)
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
@@ -237,7 +255,7 @@ namespace GeneSys.Persistence
                         WriteTreeConfig(writer, config);
                     if (writeVersion >= Version13)
                         WriteJsonConfig(writer, config);
-                    int payloadCount = includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9));
+                    int payloadCount = includeMobile ? PayloadCountV14 : (includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9)));
                     for (int i = 0; i < payloadCount; i++)
                     {
                         writer.Write(payloads[i].Length);
@@ -255,7 +273,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version < Version1 || version > Version13) return false;
+            if (version < Version1 || version > Version14) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -498,6 +516,22 @@ namespace GeneSys.Persistence
             else
             {
                 host.Resources.ClearTree();
+            }
+
+            if (version >= Version14)
+            {
+                int length = reader.ReadInt32();
+                byte[] payload = reader.ReadBytes(length);
+                if (payload.Length != length) return false;
+                Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
+                staging.LoadRawTextureData(payload);
+                staging.Apply(false, false);
+                Graphics.CopyTexture(staging, 0, 0, host.Resources.LifeGenomeRead, 2, 0);
+                UnityEngine.Object.Destroy(staging);
+            }
+            else
+            {
+                host.SeedMobileChannel();
             }
 
             host.Resources.CopyReadToWrite();

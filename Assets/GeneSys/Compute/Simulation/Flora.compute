@@ -81,7 +81,7 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome, SampleMobile(_LifeGenomeRead, cell));
 }
 
 void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux, out float4 ecology, out float4 combustion, out float4 life, out uint4 genome)
@@ -825,7 +825,7 @@ void SeedFlora(uint3 id : SV_DispatchThreadID)
     float floraSpores = 0.0;
     if (_FloraH.x > 0.5 && IsSporeCarrier(material))
         floraSpores = max(0.0, _FloraG.w) * lerp(0.35, 1.0, Hash01(id.x * 6151u + id.y * 2707u + (uint)_Seed));
-    WriteLifeGenome(_LifeGenomeWrite, id.xy, float4(floraSpores, 0.0, 0.0, 0.0), uint4(0u, 0u, 0u, 0u));
+    WriteLifeGenome(_LifeGenomeWrite, id.xy, float4(floraSpores, 0.0, 0.0, 0.0), uint4(0u, 0u, 0u, 0u), 0.0);
 }
 
 [numthreads(8, 8, 1)]

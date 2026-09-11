@@ -1,0 +1,467 @@
+#pragma kernel SeedMobile
+#pragma kernel ApplyMobileEdits
+#pragma kernel BuildAffinity
+#pragma kernel MacaBlock
+#pragma kernel Reconcile
+#pragma target 5.1
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+Texture2D<uint> _ShadeRead;
+RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2DArray<float4> _LifeGenomeWrite;
+Texture2DArray<float4> _GrassRead;
+Texture2DArray<float4> _TreeRead;
+RWTexture2D<float4> _AffinityWrite;
+Texture2D<float4> _AffinityRead;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+StructuredBuffer<BrushCommand> _BrushCommands;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+int _BrushCount;
+int _MacePhase;
+float _DeltaTime;
+float4 _MaceA; // enabled, phases, gravity, pileSupport
+float4 _MaceB; // slopeDrive, mobility, yield, occupyHigh
+float4 _MaceC; // occupyLow, structMin, moistureCohesion, rootCohesion
+float4 _MaceD; // erosionShed, shearDrive, advection, suspendCap
+float4 _MaceE; // hardCrustWear, soluteRate, unused, unused
+float4 _MoistureErosion;
+float4 _Erosion;
+float4 _GrassI;
+float4 _TreeH;
+float4 _EruptionB;
+float4 _WeatherC;
+float4 _WeatherE;
+float4 _Hydrology;
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float2 Fv(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
+float4 Ax(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+float4 Eco(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
+float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
+MaterialGpuData Def(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+float4 Mob(int2 value) { return SampleMobile(_LifeGenomeRead, C(value)); }
+
+bool IsOpenHost(uint material)
+{
+    return material == 0u || material == 1u || material == 11u || Def(material).metadata.x == 1.0;
+}
+
+bool IsExposedFace(int2 cell, uint material)
+{
+    if (cell.y >= _GridSize.y - 1) return false;
+    uint above = M(cell + int2(0, 1));
+    return Def(above).metadata.x <= 1.0 && !IsOpenHost(material);
+}
+
+float Occupancy(float4 mobile, uint material)
+{
+    float fill = saturate(mobile.x + mobile.y);
+    if (material == 12u) fill = max(fill, saturate(mobile.w));
+    if (!IsOpenHost(material) && material != 9u) fill = max(fill, 1.0);
+    return fill;
+}
+
+float Support3(int2 cell)
+{
+    float support = 0.0;
+    [unroll]
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        int2 below = cell + int2(dx, -1);
+        if (below.y < 0) { support += 1.0; continue; }
+        int2 n = C(below);
+        support += Occupancy(Mob(n), M(n)) > 0.35 ? 1.0 : 0.0;
+    }
+    return support / 3.0;
+}
+
+float MoistureCohesion(int2 cell)
+{
+    float4 state = S(cell);
+    float4 aux = Ax(cell);
+    float dry = max(0.01, _MoistureErosion.x);
+    return saturate((max(0.0, state.z) + max(0.0, aux.y)) / dry) * max(0.0, _MaceC.z);
+}
+
+float RootCohesion(int2 cell)
+{
+    float roots = (float)CountGrassRootTapsOnCell(_GrassRead, cell, _GridSize) * saturate(_GrassI.y)
+        + (float)CountTreeRootsOnCell(_TreeRead, cell, _GridSize) * saturate(_TreeH.y);
+    return roots * max(0.0, _MaceC.w);
+}
+
+void WriteWorld(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome, float4 mobile)
+{
+    uint oldMaterial = M(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(Def(material).metadata.x, (uint2)cell, material, _Seed);
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome, mobile);
+}
+
+[numthreads(8, 8, 1)]
+void SeedMobile(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    float4 mobile = Mob(cell);
+    float existing = mobile.x + mobile.y + mobile.z + mobile.w;
+    if (existing <= 1e-6)
+        mobile = SeedMobileFromMaterial(M(cell));
+    WriteMobile(_LifeGenomeWrite, cell, mobile);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyMobileEdits(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    float4 mobile = Mob(cell);
+    bool painted = false;
+    for (int i = 0; i < _BrushCount; i++)
+    {
+        BrushCommand command = _BrushCommands[i];
+        int mode = (int)round(command.values.x);
+        if (mode != 0) continue;
+        int dx = abs(cell.x - command.center.x);
+        dx = min(dx, _GridSize.x - dx);
+        int dy = cell.y - command.center.y;
+        if (dx * dx + dy * dy > command.radius * command.radius) continue;
+        mobile = SeedMobileFromMaterial(command.materialId);
+        painted = true;
+    }
+    if (painted)
+        WriteMobile(_LifeGenomeWrite, cell, mobile);
+}
+
+[numthreads(8, 8, 1)]
+void BuildAffinity(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 mobile = Mob(cell);
+    MaterialGpuData definition = Def(material);
+    float y = (float)cell.y;
+    float support = Support3(cell);
+    float moisture = MoistureCohesion(cell);
+    float roots = RootCohesion(cell);
+    float rigidity = saturate(definition.physical.y);
+    float repose = max(0.05, definition.physical.z);
+    float selfFill = Occupancy(mobile, material);
+    float belowFill = cell.y > 0 ? Occupancy(Mob(cell + int2(0, -1)), M(cell + int2(0, -1))) : 1.0;
+    float drop = max(0.0, selfFill - belowFill);
+    float excess = max(0.0, drop - tan(repose));
+    float exposed = IsExposedFace(cell, material) ? 1.0 : 0.0;
+    float shear = exposed * length(Fv(cell)) * max(0.0, _MaceD.y);
+
+    float aSed = -_MaceA.z * y
+        + _MaceA.w * support
+        + _MaceB.x * excess
+        - moisture
+        - roots
+        - shear;
+    float lift = max(0.0, Fv(cell).y) * max(0.0, _EruptionB.y) + max(0.0, S(cell).x - 80.0) * 0.004;
+    float settle = max(0.0, _EruptionB.z) * max(0.05, definition.physical.x);
+    float aAsh = -_MaceA.z * y + (lift - settle) * 8.0 - shear * 0.35;
+
+    float cap = MobileCapacity(material, mobile, _MaceD.w);
+    float mobility = saturate(_MaceB.y) * (1.0 - rigidity) * saturate(1.0 - moisture * 0.65 - roots);
+    _AffinityWrite[cell] = float4(aSed, aAsh, cap, mobility);
+}
+
+void SortFour(inout int idx[4], float key[4], int2 cells[4])
+{
+    [unroll]
+    for (int i = 0; i < 3; i++)
+    {
+        [unroll]
+        for (int j = i + 1; j < 4; j++)
+        {
+            bool swap = key[idx[j]] > key[idx[i]] + 1e-5;
+            if (abs(key[idx[j]] - key[idx[i]]) <= 1e-5)
+            {
+                if (cells[idx[j]].y != cells[idx[i]].y)
+                    swap = cells[idx[j]].y < cells[idx[i]].y;
+                else
+                    swap = Hash01((uint)cells[idx[j]].x * 73856093u + (uint)_Tick * 83492791u + (uint)_Seed)
+                        < Hash01((uint)cells[idx[i]].x * 73856093u + (uint)_Tick * 83492791u + (uint)_Seed);
+            }
+            if (swap)
+            {
+                int tmp = idx[i];
+                idx[i] = idx[j];
+                idx[j] = tmp;
+            }
+        }
+    }
+}
+
+void Redistribute(inout float rho[4], float cap[4], float affinity[4], float mobility[4], float yieldValue[4], float2 flow[4], int2 cells[4])
+{
+    float totalRho = rho[0] + rho[1] + rho[2] + rho[3];
+    float totalCap = cap[0] + cap[1] + cap[2] + cap[3];
+    if (totalRho <= 1e-8 || totalCap <= 1e-8)
+        return;
+
+    int order[4] = { 0, 1, 2, 3 };
+    SortFour(order, affinity, cells);
+
+    float target[4] = { 0.0, 0.0, 0.0, 0.0 };
+    float remaining = totalRho;
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int k = order[i];
+        target[k] = min(cap[k], remaining);
+        remaining -= target[k];
+    }
+    if (remaining > 1e-8)
+    {
+        float orig = max(1e-8, totalRho);
+        [unroll]
+        for (int i = 0; i < 4; i++)
+            target[i] += remaining * (rho[i] / orig);
+    }
+
+    float deltaE = 0.0;
+    float maxYield = 0.0;
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        deltaE += (target[i] - rho[i]) * affinity[i];
+        if (rho[i] > target[i] + 1e-6)
+            maxYield = max(maxYield, yieldValue[i]);
+    }
+
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        [unroll]
+        for (int j = 0; j < 4; j++)
+        {
+            if (i == j) continue;
+            float surplus = max(0.0, rho[i] - target[i]);
+            float deficit = max(0.0, target[j] - rho[j]);
+            if (surplus <= 1e-8 || deficit <= 1e-8) continue;
+            float dx = (float)(cells[j].x - cells[i].x);
+            if (dx > 1.0) dx -= (float)_GridSize.x;
+            if (dx < -1.0) dx += (float)_GridSize.x;
+            float2 dpos = float2(dx, (float)(cells[j].y - cells[i].y));
+            deltaE += max(0.0, _MaceD.z) * min(surplus, deficit) * dot(flow[i], dpos);
+        }
+    }
+
+    if (deltaE <= maxYield)
+        return;
+
+    float outMass[4] = { 0.0, 0.0, 0.0, 0.0 };
+    float totalOut = 0.0;
+    float receivable[4] = { 0.0, 0.0, 0.0, 0.0 };
+    float totalIn = 0.0;
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        outMass[i] = saturate(mobility[i]) * max(0.0, rho[i] - target[i]);
+        totalOut += outMass[i];
+        receivable[i] = min(max(0.0, target[i] - rho[i]), max(0.0, cap[i] - rho[i]));
+        totalIn += receivable[i];
+    }
+    if (totalOut <= 1e-8 || totalIn <= 1e-8)
+        return;
+    float moved = min(totalOut, totalIn);
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        rho[i] -= outMass[i] * (moved / totalOut);
+        rho[i] += receivable[i] * (moved / totalIn);
+        rho[i] = max(0.0, rho[i]);
+    }
+}
+
+[numthreads(8, 8, 1)]
+void MacaBlock(uint3 id : SV_DispatchThreadID)
+{
+    int phase = _MacePhase & 1;
+    int2 origin = int2((int)id.x * 2 + phase, (int)id.y * 2 + phase);
+    if (origin.y < 0 || origin.y + 1 >= _GridSize.y)
+        return;
+
+    int2 cells[4] = {
+        int2(WrapTheta(origin.x, _GridSize.x), origin.y),
+        int2(WrapTheta(origin.x + 1, _GridSize.x), origin.y),
+        int2(WrapTheta(origin.x, _GridSize.x), origin.y + 1),
+        int2(WrapTheta(origin.x + 1, _GridSize.x), origin.y + 1)
+    };
+
+    float4 mobile[4];
+    uint material[4];
+    float4 affinity[4];
+    float2 flow[4];
+    float yieldValue[4];
+    float rhoSed[4];
+    float rhoAsh[4];
+    float capSed[4];
+    float capAsh[4];
+    float aSed[4];
+    float aAsh[4];
+    float mobility[4];
+
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        material[i] = M(cells[i]);
+        mobile[i] = Mob(cells[i]);
+        affinity[i] = _AffinityRead.Load(int3(cells[i], 0));
+        flow[i] = Fv(cells[i]);
+        MaterialGpuData definition = Def(material[i]);
+        float moisture = MoistureCohesion(cells[i]);
+        float roots = RootCohesion(cells[i]);
+        yieldValue[i] = max(0.0, _MaceB.z) * tan(max(0.05, definition.physical.z)) + moisture + roots;
+        rhoSed[i] = mobile[i].x;
+        rhoAsh[i] = mobile[i].w;
+        capSed[i] = affinity[i].z;
+        capAsh[i] = (IsOpenHost(material[i]) || material[i] == 12u || IsSoftCrustMaterial(material[i])) ? 1.0 : 0.0;
+        aSed[i] = affinity[i].x;
+        aAsh[i] = affinity[i].y;
+        mobility[i] = saturate(affinity[i].w);
+    }
+
+    Redistribute(rhoSed, capSed, aSed, mobility, yieldValue, flow, cells);
+    Redistribute(rhoAsh, capAsh, aAsh, mobility, yieldValue, flow, cells);
+
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        mobile[i].x = max(0.0, rhoSed[i]);
+        mobile[i].w = max(0.0, rhoAsh[i]);
+        WriteMobile(_LifeGenomeWrite, cells[i], mobile[i]);
+    }
+}
+
+[numthreads(8, 8, 1)]
+void Reconcile(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = Fv(cell);
+    float4 aux = Ax(cell);
+    float4 ecology = Eco(cell);
+    float4 combustion = Comb(cell);
+    float4 life = SampleLife(_LifeGenomeRead, cell);
+    uint4 genome = SampleGenome(_LifeGenomeRead, cell);
+    float4 mobile = Mob(cell);
+    float occupyHigh = saturate(_MaceB.w);
+    float occupyLow = saturate(_MaceC.x);
+    float structMin = max(0.01, _MaceC.y);
+
+    if ((material == 7u || material == 15u) && IsExposedFace(cell, material))
+    {
+        float excess = max(0.0, 1.0 - Support3(cell) - tan(max(0.05, Def(material).physical.z)));
+        float shed = min(mobile.y, max(0.0, _MaceD.x) * excess * max(_DeltaTime, 0.016));
+        mobile.y -= shed;
+        mobile.x += shed;
+    }
+
+    bool canHoldSolute = IsOpenHost(material) || IsSoftCrustMaterial(material) || material == 9u;
+    if (cell.y > 0)
+    {
+        int2 above = cell + int2(0, 1);
+        float4 aboveMobile = Mob(above);
+        uint aboveMat = M(above);
+        if (canHoldSolute)
+        {
+            float room = max(0.0, MobileCapacity(material, mobile, _MaceD.w) - mobile.x);
+            if (IsHardCrustMaterial(aboveMat))
+            {
+                float wear = min(saturate(Ax(above).w), max(0.0, _MaceE.x) * max(_DeltaTime, 0.016));
+                mobile.x += min(room, wear);
+            }
+            float settle = min(aboveMobile.z, 0.35 * max(_DeltaTime, 0.016));
+            mobile.z += settle;
+        }
+    }
+    if (cell.y < _GridSize.y - 1)
+    {
+        int2 below = cell + int2(0, -1);
+        uint belowMat = M(below);
+        bool belowHolds = IsOpenHost(belowMat) || IsSoftCrustMaterial(belowMat) || belowMat == 9u;
+        if (belowHolds)
+            mobile.z = max(0.0, mobile.z - min(mobile.z, 0.35 * max(_DeltaTime, 0.016)));
+    }
+
+    if ((material == 7u || material == 15u) && mobile.y < structMin)
+    {
+        mobile.x += mobile.y;
+        mobile.y = 0.0;
+    }
+
+    float waterDepositAt = occupyHigh;
+    if (_MaceD.w > 1e-6)
+        waterDepositAt = min(occupyHigh, max(_MaceD.w * 0.98, occupyLow + 0.05));
+    if (material == 9u && mobile.x >= waterDepositAt)
+    {
+        float water = max(0.0, state.z);
+        material = 8u;
+        MaterialGpuData sediment = Def(8u);
+        float room = max(0.0, GroundwaterCapacity(sediment) - aux.y);
+        float toGround = min(water, room);
+        aux.y += toGround;
+        state.z = water - toGround;
+        combustion = SeedCombustion(material, sediment);
+    }
+
+    if (IsOpenHost(material) && mobile.x >= occupyHigh)
+    {
+        material = 8u;
+        combustion = SeedCombustion(material, Def(material));
+    }
+    else if (material == 8u && mobile.x <= occupyLow && mobile.y < structMin)
+    {
+        state.z += aux.y;
+        aux.y = 0.0;
+        material = 1u;
+        combustion = SeedCombustion(material, Def(material));
+    }
+
+    if (IsOpenHost(material) && mobile.w >= occupyHigh)
+    {
+        material = 12u;
+        combustion = SeedCombustion(material, Def(material));
+    }
+    else if (material == 12u && mobile.w <= occupyLow)
+    {
+        material = 1u;
+        combustion = SeedCombustion(material, Def(material));
+    }
+
+    WriteWorld(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+}

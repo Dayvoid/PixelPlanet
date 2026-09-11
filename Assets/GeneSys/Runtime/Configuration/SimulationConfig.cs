@@ -113,6 +113,26 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float pondingRate = 0.85f;
         [Range(0f, 4f)] public float springDischargeRate = 0.9f;
 
+        [Header("Sediment transport (MaCA)")]
+        public bool maceEnabled = true;
+        [Range(1, 4)] public int macePhasesPerTick = 2;
+        [Range(0f, 4f)] public float maceGravity = 1f;
+        [Range(0f, 4f)] public float macePileSupport = 1f;
+        [Range(0f, 4f)] public float maceSlopeDrive = 1f;
+        [Range(0f, 1f)] public float maceMobility = 0.85f;
+        [Range(0f, 2f)] public float maceYield = 0.15f;
+        [Range(0.05f, 1f)] public float maceOccupyHigh = 0.85f;
+        [Range(0f, 0.95f)] public float maceOccupyLow = 0.15f;
+        [Range(0.01f, 1f)] public float maceStructMin = 0.2f;
+        [Range(0f, 4f)] public float maceMoistureCohesion = 0.8f;
+        [Range(0f, 4f)] public float maceRootCohesion = 0.6f;
+        [Range(0f, 1f)] public float maceErosionShed = 0.25f;
+        [Range(0f, 4f)] public float maceShearDrive = 0.4f;
+        [Range(0f, 4f)] public float maceAdvection = 0.35f;
+        [Range(0f, 1f)] public float maceSuspendCap = 0.35f;
+        [Range(0f, 1f)] public float maceHardCrustWear = 0.02f;
+        [Range(0f, 1f)] public float maceSoluteRate = 0.01f;
+
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
         [FormerlySerializedAs("atmosphereSolarHeating")]
@@ -949,6 +969,23 @@ namespace GeneSys.Configuration
             probeLifeSeedMinCount = Mathf.Clamp(probeLifeSeedMinCount, 1, 8);
             probeLifeSeedMaxCount = Mathf.Clamp(probeLifeSeedMaxCount, probeLifeSeedMinCount, 8);
             probeLifeSeedSporeLoad = Mathf.Clamp01(probeLifeSeedSporeLoad);
+            macePhasesPerTick = Mathf.Clamp(macePhasesPerTick, 1, 4);
+            maceGravity = Mathf.Max(0f, maceGravity);
+            macePileSupport = Mathf.Max(0f, macePileSupport);
+            maceSlopeDrive = Mathf.Max(0f, maceSlopeDrive);
+            maceMobility = Mathf.Clamp01(maceMobility);
+            maceYield = Mathf.Max(0f, maceYield);
+            maceOccupyHigh = Mathf.Clamp(maceOccupyHigh, 0.05f, 1f);
+            maceOccupyLow = Mathf.Clamp(maceOccupyLow, 0f, maceOccupyHigh);
+            maceStructMin = Mathf.Clamp(maceStructMin, 0.01f, 1f);
+            maceMoistureCohesion = Mathf.Max(0f, maceMoistureCohesion);
+            maceRootCohesion = Mathf.Max(0f, maceRootCohesion);
+            maceErosionShed = Mathf.Clamp01(maceErosionShed);
+            maceShearDrive = Mathf.Max(0f, maceShearDrive);
+            maceAdvection = Mathf.Max(0f, maceAdvection);
+            maceSuspendCap = Mathf.Clamp01(maceSuspendCap);
+            maceHardCrustWear = Mathf.Clamp01(maceHardCrustWear);
+            maceSoluteRate = Mathf.Clamp01(maceSoluteRate);
         }
     }
 }

@@ -37,6 +37,7 @@ namespace GeneSys.Validation
         public float MeanOxygen;
         public double SootMass;
         public int OrganismCount;
+        public double SoftSolidMass;
     }
 
     public struct AtmosphericCirculationMetrics
@@ -175,6 +176,25 @@ namespace GeneSys.Validation
                         completed?.Invoke(ComputeFloraMetrics(materials, life, genomes));
                     });
                 });
+            });
+        }
+
+        public static void MeasureSoftSolidsAsync(SimulationHost host, Action<double> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources?.LifeGenomeRead == null)
+            {
+                completed?.Invoke(0d);
+                return;
+            }
+
+            Action fail = () => completed?.Invoke(0d);
+            RequestFieldSlice(host.Resources.LifeGenomeRead, 2, fail, request =>
+            {
+                Vector4[] mobile = request.GetData<Vector4>().ToArray();
+                double sum = 0d;
+                for (int i = 0; i < mobile.Length; i++)
+                    sum += Math.Max(0d, mobile[i].x) + Math.Max(0d, mobile[i].y);
+                completed?.Invoke(sum);
             });
         }
 

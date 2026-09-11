@@ -54,6 +54,9 @@ float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMois
 float4 _TreeH; // seedAtWorldgen, cohesionBonus, canopyOpacity, exposureDamage
 float4 _DetritusA; // vaporAbsorb, evaporate, distribute, leach
 float4 _DetritusB; // decomposition, unused
+float4 _MaceA; // enabled, phases, gravity, pileSupport
+float4 _MaceD; // erosionShed, shearDrive, advection, suspendCap
+float4 _MaceE; // hardCrustWear, soluteRate, unused, unused
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -78,7 +81,7 @@ bool IsRewritableCarrier(uint material)
     return material == 0u || material == 1u || material == 9u || material == 10u || material == 11u;
 }
 
-void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 mobile)
 {
     uint oldMaterial = M(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -91,7 +94,12 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
+    WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell), mobile);
+}
+
+void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
+{
+    Write(cell, material, state, flow, aux, ecology, combustion, SampleMobile(_LifeGenomeRead, cell));
 }
 
 [numthreads(8, 8, 1)]
@@ -263,6 +271,8 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         + (float)CountGrassRootTapsOnCell(_GrassRead, cell, _GridSize) * saturate(_GrassI.y) * _Erosion.z
         + (float)CountTreeRootsOnCell(_TreeRead, cell, _GridSize) * saturate(_TreeH.y) * _Erosion.z);
 
+    float4 mobile = SampleMobile(_LifeGenomeRead, cell);
+
     // Continuous linear recovery for sediment-source solids. Sustained loading must
     // exceed stressDecayRate (_Erosion.w) on average to accumulate toward conversion.
     if (IsHardCrustMaterial(material) || material == 7u || material == 15u)
@@ -279,41 +289,61 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             aux.w = 0.0;
             state.z += aux.y * 0.2;
             aux.y *= 0.8;
+            mobile = float4(1.0, 0.0, mobile.z, mobile.w);
         }
     }
 
     // Ordinary wind/runoff erosion: exposed soil/clay only. Moisture raises cohesion and
     // suppresses stress gain; dryness alone never converts without sustained flow.
+    float flowScale = 1.0 + length(flow) * max(0.0, _MaceD.y);
     if ((material == 7u || material == 15u) && exposed)
     {
         float erodibility = 1.0 - moistureProtection;
         if (flowEnergy > cohesion + 0.25 && erodibility > 0.05)
         {
-            float erode = _Erosion.x * flowEnergy * erodibility * _DeltaTime;
+            float erode = _Erosion.x * flowEnergy * erodibility * flowScale * _DeltaTime;
             aux.w += erode;
             if (aux.w > 1.0)
             {
-                material = 8u;
-                aux.w = 0.0;
+                if (_MaceA.x > 0.5)
+                {
+                    float shed = min(mobile.y, max(0.05, _MaceD.x));
+                    mobile.y -= shed;
+                    mobile.x += shed;
+                    aux.w = max(0.0, aux.w - 1.0);
+                }
+                else
+                {
+                    material = 8u;
+                    aux.w = 0.0;
+                    mobile = float4(1.0, 0.0, 0.0, mobile.w);
+                }
             }
         }
     }
     else if ((material == 4u || material == 14u) && flowEnergy > cohesion + 0.25)
     {
-        float erode = _Erosion.x * flowEnergy * _DeltaTime;
+        float erode = _Erosion.x * flowEnergy * flowScale * _DeltaTime;
         aux.w += erode;
         if (aux.w > 1.0)
         {
             material = 8u;
             aux.w = 0.0;
+            mobile = float4(1.0, 0.0, 0.0, mobile.w);
         }
     }
 
+    if (material == 14u && aux.y > 0.55 && _MaceE.y > 1e-6)
+        mobile.z += min(0.25, _MaceE.y * aux.y * _DeltaTime);
+
     uint below = M(cell + int2(0, -1));
     if ((material == 4u || material == 7u || material == 14u || material == 15u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
+    {
         material = 8u;
+        mobile = float4(max(mobile.x + mobile.y, 1.0), 0.0, mobile.z, mobile.w);
+    }
 
-    Write(cell, material, state, flow, aux, ecology, combustion);
+    Write(cell, material, state, flow, aux, ecology, combustion, mobile);
 }
 
 [numthreads(8, 8, 1)]
@@ -329,44 +359,42 @@ void AshFertilization(uint3 id : SV_DispatchThreadID)
     float4 combustion = Comb(cell);
     float fertility = max(0.0, _EruptionB.w);
 
-    if (material == 12u && cell.y > 0)
+    float4 mobile = SampleMobile(_LifeGenomeRead, cell);
+    float4 aboveMobile = cell.y < _GridSize.y - 1 ? SampleMobile(_LifeGenomeRead, cell + int2(0, 1)) : 0.0;
+    uint above = cell.y < _GridSize.y - 1 ? M(cell + int2(0, 1)) : 0u;
+    if ((material == 12u || mobile.w > 0.2) && cell.y > 0)
     {
         uint below = M(cell + int2(0, -1));
         if (below == 8u)
         {
-            // Consume ash resting on sediment into fertile soil at this cell.
             material = 7u;
             aux.z = saturate(aux.z + 0.45 * fertility);
             state.x = min(state.x, 45.0);
             flow *= 0.5;
+            mobile.w = 0.0;
+            mobile.y = max(mobile.y, 1.0);
         }
         else if (below == 7u)
         {
-            // Transfer nutrients into soil below by dissolving ash into air.
             material = 1u;
             state.x = min(state.x, 25.0);
             flow *= 0.25;
             aux.z = 0.0;
+            mobile.w = 0.0;
         }
     }
-    else if (material == 8u)
+    else if (material == 8u && (above == 12u || aboveMobile.w > 0.2))
     {
-        uint above = M(cell + int2(0, 1));
-        if (above == 12u)
-        {
-            material = 7u;
-            aux.z = saturate(aux.z + 0.45 * fertility);
-            flow *= 0.5;
-        }
+        material = 7u;
+        aux.z = saturate(aux.z + 0.45 * fertility);
+        flow *= 0.5;
+        mobile.y = max(mobile.y, 1.0);
+        mobile.x = 0.0;
     }
-    else if (material == 7u)
-    {
-        uint above = M(cell + int2(0, 1));
-        if (above == 12u)
-            aux.z = saturate(aux.z + 0.35 * fertility);
-    }
+    else if (material == 7u && (above == 12u || aboveMobile.w > 0.2))
+        aux.z = saturate(aux.z + 0.35 * fertility);
 
-    Write(cell, material, state, flow, aux, ecology, combustion);
+    Write(cell, material, state, flow, aux, ecology, combustion, mobile);
 }
 
 [numthreads(8, 8, 1)]

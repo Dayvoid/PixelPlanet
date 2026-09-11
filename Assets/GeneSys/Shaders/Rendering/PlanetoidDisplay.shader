@@ -323,6 +323,13 @@ Shader "GeneSys/Planetoid Display"
                             frac(angle / 6.28318530718 * width),
                             frac(simulationRadius * height));
                         color = DrawGrass(color, grassUv, flow, cell, width);
+                        float4 mobile = _LifeGenomeTex.Load(int4(cell, 2, 0));
+                        if ((material == 0u || material == 1u || material == 11u) && mobile.x > 0.05)
+                        {
+                            float pile = saturate(mobile.x);
+                            if (grassUv.y < pile)
+                                color = lerp(color, float3(0.62, 0.52, 0.32), 0.85);
+                        }
                     }
 
                     if (cloud > 0.02)
@@ -525,6 +532,11 @@ Shader "GeneSys/Planetoid Display"
                     }
                     else if (material == 134u || material == 135u)
                         color = float3(0.55, 0.12, 0.12);
+                }
+                else if (_OverlayMode == 27)
+                {
+                    float4 mobile = _LifeGenomeTex.Load(int4(cell, 2, 0));
+                    color = float3(saturate(mobile.x), saturate(mobile.y), saturate(mobile.w));
                 }
 
                 float radialGrid = frac(simulationRadius * height);

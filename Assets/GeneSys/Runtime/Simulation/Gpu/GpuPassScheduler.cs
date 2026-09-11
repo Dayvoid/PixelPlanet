@@ -45,6 +45,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader wasp;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
+        private readonly ComputeShader maceTransport;
         private readonly GraphicsBuffer strikeSeedBuffer;
         private readonly GraphicsBuffer strikeCounterBuffer;
         private readonly uint[] strikeCounterZero = new uint[1];
@@ -67,7 +68,8 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
             ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
             ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm,
-            ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null)
+            ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
+            ComputeShader maceTransport = null)
         {
             this.config = config;
             this.resources = resources;
@@ -86,6 +88,7 @@ namespace GeneSys.Simulation.Gpu
             this.wasp = wasp;
             this.combustion = combustion;
             this.storm = storm;
+            this.maceTransport = maceTransport;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -175,6 +178,8 @@ namespace GeneSys.Simulation.Gpu
                 {
                     SetCommon(flora, seedFlora, 0f);
                     flora.SetTexture(seedFlora, "_MaterialRead", resources.MaterialRead);
+                    // SeedFlora writes LifeGenome in place; slice 2 is sampled only if the kernel still declares the read UAV.
+                    flora.SetTexture(seedFlora, "_LifeGenomeRead", resources.LifeGenomeRead);
                     flora.SetTexture(seedFlora, "_LifeGenomeWrite", resources.LifeGenomeRead);
                     BindOrganismHistory(flora, seedFlora);
                     Dispatch(flora, seedFlora);
@@ -249,6 +254,7 @@ namespace GeneSys.Simulation.Gpu
                     Dispatch(wasp, seedWasp);
                 }
             }
+            SeedMobileFromMaterials();
             resources.CopyReadToWrite();
         }
 
@@ -274,6 +280,7 @@ namespace GeneSys.Simulation.Gpu
             materialSimulation.SetInt("_BrushCount", brushCommands.Count);
             materialSimulation.SetBuffer(brushKernel, "_BrushCommands", brushBuffer);
             DispatchPass(materialSimulation, brushKernel, 0f);
+            ApplyMobileEdits();
             brushCommands.Clear();
         }
 
@@ -302,6 +309,7 @@ namespace GeneSys.Simulation.Gpu
                 materialSimulation.SetInt("_BrushCount", brushCommands.Count);
                 materialSimulation.SetBuffer(brushKernel, "_BrushCommands", brushBuffer);
                 DispatchPass(materialSimulation, brushKernel, deltaTime);
+                ApplyMobileEdits();
                 if (storm != null)
                 {
                     int stormBrush = storm.FindKernel("ApplyStormEdits");
@@ -339,6 +347,8 @@ namespace GeneSys.Simulation.Gpu
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
             }
 
+            DispatchMace(deltaTime);
+
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), deltaTime);
 
             if (Due(config.slowPassInterval))
@@ -358,7 +368,8 @@ namespace GeneSys.Simulation.Gpu
             DispatchPass(weather, weather.FindKernel("AtmosphericContinuity"), deltaTime);
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PressureDiffusion"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericDynamics"), deltaTime);
-            DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
+            if (!config.maceEnabled)
+                DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
             DispatchPass(weather, weather.FindKernel("Precipitation"), deltaTime);
@@ -610,6 +621,11 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_StormE", new Vector4(config.stormFlashVaporization, config.stormChannelChargeDrain, config.stormTargetRange, config.stormMaxChannelLength));
             shader.SetVector("_StormF", new Vector4(config.stormStrikeBranchChance, config.stormSheetBranchChance, config.stormMaxStrikesPerTick, config.stormTortuosity));
             shader.SetVector("_StormG", new Vector4(config.stormMinimumHeight, config.stormStrikeAirHeatFraction, 0f, 0f));
+            shader.SetVector("_MaceA", new Vector4(config.maceEnabled ? 1f : 0f, config.macePhasesPerTick, config.maceGravity, config.macePileSupport));
+            shader.SetVector("_MaceB", new Vector4(config.maceSlopeDrive, config.maceMobility, config.maceYield, config.maceOccupyHigh));
+            shader.SetVector("_MaceC", new Vector4(config.maceOccupyLow, config.maceStructMin, config.maceMoistureCohesion, config.maceRootCohesion));
+            shader.SetVector("_MaceD", new Vector4(config.maceErosionShed, config.maceShearDrive, config.maceAdvection, config.maceSuspendCap));
+            shader.SetVector("_MaceE", new Vector4(config.maceHardCrustWear, config.maceSoluteRate, 0f, 0f));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)
@@ -1301,6 +1317,82 @@ namespace GeneSys.Simulation.Gpu
             fauna.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
             fauna.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
             fauna.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+        }
+
+        public void SeedMobileFromMaterials()
+        {
+            if (maceTransport == null) return;
+            int kernel = maceTransport.FindKernel("SeedMobile");
+            if (kernel < 0) return;
+            SetCommon(maceTransport, kernel, 0f);
+            maceTransport.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            maceTransport.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            maceTransport.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            maceTransport.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeRead);
+            Dispatch(maceTransport, kernel);
+            Graphics.CopyTexture(resources.LifeGenomeRead, resources.LifeGenomeWrite);
+        }
+
+        private void ApplyMobileEdits()
+        {
+            if (maceTransport == null || brushCommands.Count == 0) return;
+            int kernel = maceTransport.FindKernel("ApplyMobileEdits");
+            if (kernel < 0) return;
+            SetCommon(maceTransport, kernel, 0f);
+            maceTransport.SetInt("_BrushCount", brushCommands.Count);
+            maceTransport.SetBuffer(kernel, "_BrushCommands", brushBuffer);
+            maceTransport.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            maceTransport.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            maceTransport.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeRead);
+            Dispatch(maceTransport, kernel);
+            Graphics.CopyTexture(resources.LifeGenomeRead, resources.LifeGenomeWrite);
+        }
+
+        private void DispatchMace(float deltaTime)
+        {
+            if (maceTransport == null || !config.maceEnabled) return;
+            int affinity = maceTransport.FindKernel("BuildAffinity");
+            int block = maceTransport.FindKernel("MacaBlock");
+            int reconcile = maceTransport.FindKernel("Reconcile");
+            if (affinity < 0 || block < 0 || reconcile < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing MaCA compute kernel. Skipping sediment transport.");
+                return;
+            }
+
+            int phases = Mathf.Clamp(config.macePhasesPerTick, 1, 4);
+            for (int i = 0; i < phases; i++)
+            {
+                SetCommon(maceTransport, affinity, deltaTime);
+                maceTransport.SetBuffer(affinity, "_MaterialDefinitions", materialBuffer);
+                BindMaceWorldReads(affinity);
+                maceTransport.SetTexture(affinity, "_AffinityWrite", resources.Affinity);
+                Dispatch(maceTransport, affinity);
+
+                SetCommon(maceTransport, block, deltaTime);
+                maceTransport.SetInt("_MacePhase", (tick * phases + i) & 1);
+                maceTransport.SetBuffer(block, "_MaterialDefinitions", materialBuffer);
+                BindMaceWorldReads(block);
+                maceTransport.SetTexture(block, "_AffinityRead", resources.Affinity);
+                maceTransport.SetTexture(block, "_LifeGenomeWrite", resources.LifeGenomeRead);
+                int groupsX = Mathf.Max(1, Mathf.CeilToInt(resources.Grid.angularResolution / 16f));
+                int groupsY = Mathf.Max(1, Mathf.CeilToInt(resources.Grid.radialResolution / 16f));
+                maceTransport.Dispatch(block, groupsX, groupsY, 1);
+            }
+
+            Graphics.CopyTexture(resources.LifeGenomeRead, resources.LifeGenomeWrite);
+            DispatchPass(maceTransport, reconcile, deltaTime);
+        }
+
+        private void BindMaceWorldReads(int kernel)
+        {
+            maceTransport.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            maceTransport.SetTexture(kernel, "_StateRead", resources.StateRead);
+            maceTransport.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            maceTransport.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            maceTransport.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            maceTransport.SetTexture(kernel, "_GrassRead", resources.GrassRead);
+            maceTransport.SetTexture(kernel, "_TreeRead", resources.TreeRead);
         }
 
         public void Dispose()
