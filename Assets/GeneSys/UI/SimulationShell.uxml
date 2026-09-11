@@ -53,7 +53,7 @@
             <ui:VisualElement name="ai-history-drawer" class="drawer ai-history-drawer collapsed">
                 <ui:Button name="ai-history-header" text="Crew Log ▸" class="drawer-header" />
                 <ui:VisualElement name="ai-history-body" class="drawer-body collapsed">
-                    <ui:ScrollView name="ai-history-log" class="history-scroll" />
+                    <ui:ScrollView name="ai-history-log" class="history-scroll ai-history-scroll" mode="Vertical" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
@@ -212,6 +212,8 @@
                         <ui:IntegerField name="ai-max-tools" label="Max Tool Calls Per Step" />
                         <ui:Toggle name="ai-vision-capable" label="Vision Capable" />
                         <ui:Label text="When enabled, Assess/Think can capture a probe-follow screenshot at 50% zoom and send it to the model." class="help" />
+                        <ui:Toggle name="ai-verbose-crew-logs" label="Verbose Crew Logs" />
+                        <ui:Label text="When enabled, each tool call and its result is appended to the Crew Log alongside Think summaries." class="help" />
                         <ui:Label name="ai-status" text="Not connected." class="help" />
                     </ui:VisualElement>
 

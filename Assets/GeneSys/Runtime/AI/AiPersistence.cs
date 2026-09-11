@@ -84,25 +84,38 @@ namespace GeneSys.AI
     public sealed class AiHistoryLog
     {
         public const int Capacity = 256;
+        public const int SummaryMaxLength = 280;
+        public const int VerboseMaxLength = 800;
         private readonly List<AiHistoryEntry> entries = new(Capacity);
 
         public int Version { get; private set; }
         public IReadOnlyList<AiHistoryEntry> Entries => entries;
 
-        public void Add(long tick, string summary)
+        public void Add(long tick, string summary) => Add(tick, summary, SummaryMaxLength);
+
+        public void Add(long tick, string summary, int maxLength)
         {
             if (string.IsNullOrWhiteSpace(summary)) return;
-            entries.Add(new AiHistoryEntry(tick, Sanitize(summary), DateTime.UtcNow));
+            entries.Add(new AiHistoryEntry(tick, Sanitize(summary, maxLength), DateTime.UtcNow));
             int overflow = entries.Count - Capacity;
             if (overflow > 0) entries.RemoveRange(0, overflow);
             Version++;
         }
 
-        public static string Sanitize(string text)
+        public static string FormatChatter(ActStep step, string content)
+        {
+            string text = string.IsNullOrWhiteSpace(content) ? "(no content)" : content.Trim();
+            return $"[{step}] (Chatter): {text}";
+        }
+
+        public static string Sanitize(string text) => Sanitize(text, SummaryMaxLength);
+
+        public static string Sanitize(string text, int maxLength)
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            int limit = Mathf.Max(4, maxLength);
             string trimmed = text.Trim();
-            if (trimmed.Length > 280) trimmed = trimmed.Substring(0, 277) + "...";
+            if (trimmed.Length > limit) trimmed = trimmed.Substring(0, limit - 3) + "...";
             return trimmed.Replace("\r", " ").Replace("\n", " ");
         }
     }

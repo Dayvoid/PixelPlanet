@@ -2,6 +2,7 @@ using System;
 using GeneSys.Materials;
 using GeneSys.Rendering;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Climate;
 using GeneSys.Simulation.Gpu;
 using GeneSys.UI;
 using Unity.Collections;
@@ -374,8 +375,7 @@ namespace GeneSys.Tools
         {
             if (host.Resources.TreeRead == null)
             {
-                readbackPending = false;
-                Inspected?.Invoke(inspection);
+                ReadMobileMass(host, cell, inspection);
                 return;
             }
 
@@ -413,9 +413,76 @@ namespace GeneSys.Tools
             {
                 remaining--;
                 if (remaining > 0) return;
+                ReadMobileMass(host, cell, inspection);
+            }
+        }
+
+        private void ReadMobileMass(SimulationHost host, Vector2Int cell, CellInspection inspection)
+        {
+            if (host.Resources.MobileMassRead == null)
+            {
+                ReadClimate(host, cell, inspection);
+                return;
+            }
+
+            int remaining = 6;
+            void Complete()
+            {
+                remaining--;
+                if (remaining > 0) return;
+                ReadClimate(host, cell, inspection);
+            }
+
+            void ReadSlice(int slice, Action<float> assign)
+            {
+                AsyncGPUReadback.Request(host.Resources.MobileMassRead, 0, cell.x, 1, cell.y, 1, slice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<float> data = request.GetData<float>();
+                        if (data.Length > 0) assign(data[0]);
+                    }
+                    Complete();
+                });
+            }
+
+            ReadSlice(SimulationResources.MobileSliceCoarse, value => inspection.mobileSediment = value);
+            ReadSlice(SimulationResources.MobileSliceFine, value => inspection.mobileFine = value);
+            ReadSlice(SimulationResources.MobileSliceSolute, value => inspection.mobileSolute = value);
+            ReadSlice(SimulationResources.MobileSliceMagma, value => inspection.mobileMagma = value);
+            ReadSlice(SimulationResources.MobileSliceAsh, value => inspection.mobileAsh = value);
+            ReadSlice(SimulationResources.MobileSliceStructural, value => inspection.mobileStructural = value);
+        }
+
+        private void ReadClimate(SimulationHost host, Vector2Int cell, CellInspection inspection)
+        {
+            int bins = host.Config != null ? ClimateGrid.ClampBinCount(host.Config.climateBinCount) : ClimateGrid.DefaultBins;
+            int width = host.Grid.angularResolution;
+            int bin = ClimateGrid.BinOf(cell.x, width, bins);
+            inspection.climateBin = bin;
+            if (host.Resources.ClimateState == null)
+            {
                 readbackPending = false;
                 Inspected?.Invoke(inspection);
+                return;
             }
+
+            AsyncGPUReadback.Request(host.Resources.ClimateState, request =>
+            {
+                if (!request.hasError)
+                {
+                    NativeArray<Vector4> data = request.GetData<Vector4>();
+                    int index = ClimateGrid.StateIndex(bin, ClimateGrid.StateMemory);
+                    if (index + 2 < data.Length)
+                    {
+                        inspection.climateMemory = data[index];
+                        inspection.climateLand = data[index + 1];
+                        inspection.climateDiag = data[index + 2];
+                    }
+                }
+                readbackPending = false;
+                Inspected?.Invoke(inspection);
+            });
         }
     }
 
@@ -447,5 +514,15 @@ namespace GeneSys.Tools
         public Vector4 treePhysiology;
         public TreeGenome.Packed treeTopology;
         public TreeGenome.Packed treeGenome;
+        public float mobileSediment;
+        public float mobileFine;
+        public float mobileStructural;
+        public float mobileSolute;
+        public float mobileAsh;
+        public float mobileMagma;
+        public int climateBin;
+        public Vector4 climateMemory;
+        public Vector4 climateLand;
+        public Vector4 climateDiag;
     }
 }

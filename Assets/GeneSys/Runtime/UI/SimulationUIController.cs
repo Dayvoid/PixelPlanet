@@ -25,6 +25,7 @@ namespace GeneSys.UI
             { "Material mechanics", "world" },
             { "Geology", "geology" },
             { "Hydrology and erosion", "hydrology" },
+            { "MaCE transport", "hydrology" },
             { "Solar and weather", "weather" },
             { "Ecology - Mycology", "ecology-mycology" },
             { "Ecology - Algae", "ecology-algae" },
@@ -51,7 +52,14 @@ namespace GeneSys.UI
             nameof(SimulationConfig.enableNebula),
             nameof(SimulationConfig.enableAtmosphereGlow),
             nameof(SimulationConfig.enableSolarBody),
-            nameof(SimulationConfig.enableCoreVisual)
+            nameof(SimulationConfig.enableCoreVisual),
+            nameof(SimulationConfig.maceSedimentPilot),
+            nameof(SimulationConfig.maceEntrainment),
+            nameof(SimulationConfig.maceShorelineSorting),
+            nameof(SimulationConfig.maceSolute),
+            nameof(SimulationConfig.maceAsh),
+            nameof(SimulationConfig.maceMagma),
+            nameof(SimulationConfig.maceHardWear)
         };
 
         private static readonly HashSet<string> SkipSettingsFields = new()
@@ -174,6 +182,7 @@ namespace GeneSys.UI
         private FloatField aiLoopDelayField;
         private IntegerField aiMaxToolsField;
         private Toggle aiVisionCapableField;
+        private Toggle aiVerboseCrewLogsField;
         private Label aiStatusLabel;
         private bool suppressingAiSettings;
 
@@ -204,6 +213,13 @@ namespace GeneSys.UI
             aiHistoryBody = root.Q("ai-history-body");
             historyLog = root.Q<ScrollView>("history-log");
             aiHistoryLog = root.Q<ScrollView>("ai-history-log");
+            if (aiHistoryLog != null)
+            {
+                aiHistoryLog.mode = ScrollViewMode.Vertical;
+                aiHistoryLog.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+                aiHistoryLog.contentContainer.style.width = Length.Percent(100);
+                aiHistoryLog.contentContainer.style.maxWidth = Length.Percent(100);
+            }
             settingsOverlay = root.Q("settings-overlay");
             inspectBar = root.Q("inspect-bar");
             statusLabel = root.Q<Label>("status");
@@ -368,7 +384,7 @@ namespace GeneSys.UI
 
         private static readonly int[] OverlayModes =
         {
-            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28
         };
 
         private static int OverlayModeFromChoice(int index) =>
@@ -384,7 +400,8 @@ namespace GeneSys.UI
                     "Material", "Temperature", "Pressure", "Composite Water", "Relative Humidity", "Cloud",
                     "Charge", "Wind", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories",
                     "Vertical Velocity", "Pressure Anomaly", "Mycology",
-                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass", "Tree"
+                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass", "Tree",
+                    "Mobile Sediment", "Climate"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(OverlayModeFromChoice(overlay.index)));
@@ -1512,7 +1529,10 @@ namespace GeneSys.UI
                    $"Vapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\n" +
                    $"Nutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\n" +
                    $"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n" +
-                   $"Light {inspection.light:F3}";
+                   $"Light {inspection.light:F3}\n" +
+                   $"Sediment ρ {inspection.mobileSediment:F3}  fine {inspection.mobileFine:F3}  structural {inspection.mobileStructural:F3}\n" +
+                   $"Climate bin {inspection.climateBin}  T {inspection.climateMemory.x:F2}  albedo {inspection.climateMemory.w:F2}\n" +
+                   $"Wet {inspection.climateMemory.z:F2}  U {inspection.climateLand.x:F2}  bucket {inspection.climateLand.z:F2}";
         }
 
         private string FormatLifeInspection(CellInspection inspection, bool expanded)
@@ -1653,6 +1673,7 @@ namespace GeneSys.UI
             aiLoopDelayField = root.Q<FloatField>("ai-loop-delay");
             aiMaxToolsField = root.Q<IntegerField>("ai-max-tools");
             aiVisionCapableField = root.Q<Toggle>("ai-vision-capable");
+            aiVerboseCrewLogsField = root.Q<Toggle>("ai-verbose-crew-logs");
             aiStatusLabel = root.Q<Label>("ai-status");
             root.Q<Button>("ai-fetch-models")?.RegisterCallback<ClickEvent>(_ =>
             {
@@ -1670,6 +1691,7 @@ namespace GeneSys.UI
             aiLoopDelayField?.RegisterValueChangedCallback(_ => CommitAiSettings());
             aiMaxToolsField?.RegisterValueChangedCallback(_ => CommitAiSettings());
             aiVisionCapableField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+            aiVerboseCrewLogsField?.RegisterValueChangedCallback(_ => CommitAiSettings());
 
             if (ai != null)
             {
@@ -1711,6 +1733,7 @@ namespace GeneSys.UI
             aiLoopDelayField?.SetValueWithoutNotify(settings.agentLoopDelaySeconds);
             aiMaxToolsField?.SetValueWithoutNotify(settings.maxToolCallsPerStep);
             aiVisionCapableField?.SetValueWithoutNotify(settings.visionCapable);
+            aiVerboseCrewLogsField?.SetValueWithoutNotify(settings.verboseCrewLogs);
             if (aiGameModeField != null)
                 aiGameModeField.SetValueWithoutNotify(settings.Mode.ToString());
             RefreshAiModelDropdown();
@@ -1752,6 +1775,7 @@ namespace GeneSys.UI
             if (aiLoopDelayField != null) settings.agentLoopDelaySeconds = aiLoopDelayField.value;
             if (aiMaxToolsField != null) settings.maxToolCallsPerStep = aiMaxToolsField.value;
             if (aiVisionCapableField != null) settings.visionCapable = aiVisionCapableField.value;
+            if (aiVerboseCrewLogsField != null) settings.verboseCrewLogs = aiVerboseCrewLogsField.value;
             if (aiGameModeField != null && Enum.TryParse(aiGameModeField.value, out GameMode mode))
                 settings.Mode = mode;
             ai.ApplySettings(settings);
@@ -1841,6 +1865,7 @@ namespace GeneSys.UI
             {
                 var line = new Label(entries[i].Format());
                 line.AddToClassList("history-entry");
+                line.style.whiteSpace = WhiteSpace.Normal;
                 aiHistoryLog.Add(line);
             }
 

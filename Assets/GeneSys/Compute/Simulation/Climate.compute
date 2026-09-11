@@ -1,0 +1,298 @@
+#pragma kernel ClimateAggregateColumns
+#pragma kernel ClimateStep
+#pragma target 5.0
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+#include "../../Shaders/Simulation/Common/SolarInsolation.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+Texture2D<float4> _AuxRead;
+Texture2DArray<float4> _LifeGenomeRead;
+Texture2DArray<float4> _GrassRead;
+Texture2DArray<float4> _TreeRead;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+RWStructuredBuffer<float4> _ClimateColumns;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _WeatherA;
+float4 _WeatherC;
+float4 _WeatherI;
+float4 _GrassF;
+float4 _TreeH;
+
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
+
+#include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
+
+#define GENESYS_CLIMATE_STATE_RW 1
+#include "../../Shaders/Simulation/Common/Climate.hlsl"
+
+bool IsExposedSurface(int2 cell, uint material)
+{
+    if (cell.y >= _GridSize.y - 1) return false;
+    uint above = M(cell + int2(0, 1));
+    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
+}
+
+bool IsOrganicCover(uint material)
+{
+    return material == 7u || material == 8u || material == 15u || material == 131u
+        || IsFloraMaterial(material) || IsTreeMaterial(material);
+}
+
+float ColumnCanopy(int2 cell, uint material)
+{
+    float canopy = 0.0;
+    float4 grassLife = SampleGrassLife(_GrassRead, cell, 0u);
+    canopy += saturate(grassLife.x) * saturate(_GrassF.w);
+    if (IsTreeMaterial(material))
+    {
+        float tree = TreeCanopyOpacity(material, SampleTreePhysiology(_TreeRead, cell), saturate(_TreeH.z));
+        canopy += max(tree, IsLeafMaterial(material) ? 0.45 : 0.25);
+    }
+    if (IsFloraMaterial(material))
+        canopy += saturate(SampleLife(_LifeGenomeRead, cell).y);
+    return saturate(canopy);
+}
+
+float ClimateSkinT(float4 lower, float4 surface)
+{
+    float surf = surface.x;
+    float air = lower.w > 0.5 ? lower.x : surf;
+    float skin = surface.y > 0.5 ? surf : air;
+    return clamp(skin, -80.0, 80.0);
+}
+
+[numthreads(64, 1, 1)]
+void ClimateAggregateColumns(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    int theta = (int)id.x;
+    float3 shellT = 0.0;
+    float3 shellVapor = 0.0;
+    float3 shellCloud = 0.0;
+    float3 shellCount = 0.0;
+    float organics = 0.0;
+    float ash = 0.0;
+    float landCount = 0.0;
+    float canopy = 0.0;
+    int surfaceY = -1;
+    float surfaceT = 0.0;
+    float frozen = 0.0;
+    float surfaceWater = 0.0;
+    float hysteresis = max(0.001, _WeatherC.z);
+
+    [loop]
+    for (int r = 0; r < 2048; r++)
+    {
+        if (r >= _GridSize.y) break;
+        int2 cell = int2(theta, r);
+        uint material = M(cell);
+        float4 state = S(cell);
+        float4 aux = A(cell);
+        int shell = ClimateShellOf(Radius01(r, _GridSize.y));
+        if (shell <= 0)
+        {
+            shellT.x += state.x;
+            shellVapor.x += max(0.0, aux.x);
+            shellCloud.x += max(0.0, state.z);
+            shellCount.x += 1.0;
+        }
+        else if (shell == 1)
+        {
+            shellT.y += state.x;
+            shellVapor.y += max(0.0, aux.x);
+            shellCloud.y += max(0.0, state.z);
+            shellCount.y += 1.0;
+        }
+        else
+        {
+            shellT.z += state.x;
+            shellVapor.z += max(0.0, aux.x);
+            shellCloud.z += max(0.0, state.z);
+            shellCount.z += 1.0;
+        }
+        canopy += ColumnCanopy(cell, material);
+        if (IsOrganicCover(material))
+        {
+            organics += 1.0;
+            landCount += 1.0;
+        }
+        if (material == 12u)
+        {
+            ash += 1.0;
+            landCount += 1.0;
+        }
+        else if (material == 7u || material == 8u || material == 15u)
+            landCount += 1.0;
+        if (IsExposedSurface(cell, material))
+            surfaceY = r;
+    }
+
+    if (surfaceY >= 0)
+    {
+        int2 surface = int2(theta, surfaceY);
+        uint material = M(surface);
+        float4 state = S(surface);
+        float4 aux = A(surface);
+        surfaceT = state.x;
+        float liquid = WaterLiquidFraction(state.x, hysteresis);
+        frozen = (material == 10u || (material == 9u && liquid < 0.5) || (state.z > 0.02 && liquid < 0.5)) ? 1.0 : 0.0;
+        surfaceWater = max(0.0, state.z) + max(0.0, aux.y);
+        if (surfaceY < _GridSize.y - 1)
+        {
+            int2 above = surface + int2(0, 1);
+            if (IsAtmosphereCell(above, M(above)))
+                surfaceWater += max(0.0, S(above).z);
+        }
+    }
+
+    int base = theta * 5;
+    _ClimateColumns[base + 0] = float4(shellT.x, shellVapor.x, shellCloud.x, shellCount.x);
+    _ClimateColumns[base + 1] = float4(shellT.y, shellVapor.y, shellCloud.y, shellCount.y);
+    _ClimateColumns[base + 2] = float4(shellT.z, shellVapor.z, shellCloud.z, shellCount.z);
+    _ClimateColumns[base + 3] = float4(surfaceT, frozen, saturate(canopy), surfaceWater);
+    _ClimateColumns[base + 4] = float4(organics, ash, (float)surfaceY, landCount);
+}
+
+void ReduceBinRange(int start, int endExclusive, out float4 surface, out float4 land, out float4 lower, out float4 upper)
+{
+    surface = 0.0;
+    land = 0.0;
+    lower = 0.0;
+    upper = 0.0;
+    float surfaceCount = 0.0;
+    [loop]
+    for (int i = 0; i < 512; i++)
+    {
+        int theta = start + i;
+        if (theta >= endExclusive) break;
+        int base = theta * 5;
+        float4 low = _ClimateColumns[base + 1];
+        float4 high = _ClimateColumns[base + 2];
+        float4 surf = _ClimateColumns[base + 3];
+        float4 cover = _ClimateColumns[base + 4];
+        lower += low;
+        upper += high;
+        land += cover;
+        if (cover.z >= 0.0)
+        {
+            surface += surf;
+            surfaceCount += 1.0;
+        }
+    }
+    if (surfaceCount > 0.5)
+        surface /= surfaceCount;
+    if (lower.w > 0.5)
+        lower.xyz /= max(1.0, lower.w);
+    if (upper.w > 0.5)
+        upper.xyz /= max(1.0, upper.w);
+}
+
+float MeanBinInsolation(int start, int endExclusive)
+{
+    float sum = 0.0;
+    float count = 0.0;
+    int width = max(1, _GridSize.x);
+    [loop]
+    for (int i = 0; i < 512; i++)
+    {
+        int theta = start + i;
+        if (theta >= endExclusive) break;
+        float theta01 = (theta + 0.5) / (float)width;
+        sum += SolarInsolation(theta01, _WeatherC.y);
+        count += 1.0;
+    }
+    return count > 0.5 ? sum / count : 0.0;
+}
+
+[numthreads(64, 1, 1)]
+void ClimateStep(uint3 id : SV_DispatchThreadID)
+{
+    int bins = ClimateBinCount();
+    if ((int)id.x >= bins) return;
+    int bin = (int)id.x;
+    int width = max(1, _GridSize.x);
+    int start = (int)((uint)bin * (uint)width / (uint)bins);
+    int endExclusive = (int)((uint)(bin + 1) * (uint)width / (uint)bins);
+    int leftBin = (bin + bins - 1);
+    if (leftBin >= bins) leftBin -= bins;
+    int rightBin = bin + 1;
+    if (rightBin >= bins) rightBin -= bins;
+    int leftStart = (int)((uint)leftBin * (uint)width / (uint)bins);
+    int leftEnd = (int)((uint)(leftBin + 1) * (uint)width / (uint)bins);
+    int rightStart = (int)((uint)rightBin * (uint)width / (uint)bins);
+    int rightEnd = (int)((uint)(rightBin + 1) * (uint)width / (uint)bins);
+
+    float4 surface;
+    float4 land;
+    float4 lower;
+    float4 upper;
+    float4 leftSurface;
+    float4 leftLand;
+    float4 leftLower;
+    float4 leftUpper;
+    float4 rightSurface;
+    float4 rightLand;
+    float4 rightLower;
+    float4 rightUpper;
+    ReduceBinRange(start, endExclusive, surface, land, lower, upper);
+    ReduceBinRange(leftStart, leftEnd, leftSurface, leftLand, leftLower, leftUpper);
+    ReduceBinRange(rightStart, rightEnd, rightSurface, rightLand, rightLower, rightUpper);
+
+    float4 prevMem = ClimateMemoryOf(bin);
+    bool init = _ClimateFlags.y > 0.5 || (abs(prevMem.x) < 1e-5 && abs(prevMem.y) < 1e-5 && abs(prevMem.z) < 1e-5 && abs(prevMem.w) < 1e-5);
+    float Tsurf = ClimateSkinT(lower, surface);
+    float T_slab = init ? Tsurf : prevMem.x;
+    float ice = saturate(init ? surface.y : prevMem.y);
+    float wetness = saturate(init ? saturate(surface.w) : prevMem.z);
+    float biome = saturate(_ClimateD.x);
+    float canopy = saturate(surface.z);
+    float landCount = max(1.0, land.w);
+    float organics = saturate(land.x / landCount);
+    float ashFrac = saturate(land.y / landCount);
+    float waterFrac = saturate(surface.w);
+    float season = ClimateSeasonScale();
+    float insolation = MeanBinInsolation(start, endExclusive) * season;
+    float leftInsol = MeanBinInsolation(leftStart, leftEnd) * season;
+    float rightInsol = MeanBinInsolation(rightStart, rightEnd) * season;
+    float albedo = saturate(_ClimateD.y + _ClimateB.w * ice - _ClimateC.x * canopy * biome + _ClimateD.z * ashFrac * biome);
+    float capacity = max(1.0, _ClimateA.z) * (1.0 + waterFrac);
+    float absorbed = insolation * (1.0 - albedo);
+    float lw = max(0.0, _WeatherA.z);
+    float heatGain = absorbed * max(0.0, _WeatherA.x) * 32.0;
+    T_slab += _DeltaTime / capacity * (heatGain - lw * (T_slab - _WeatherA.y));
+    float leftT = init ? ClimateSkinT(leftLower, leftSurface) : ClimateMemoryOf(leftBin).x;
+    float rightT = init ? ClimateSkinT(rightLower, rightSurface) : ClimateMemoryOf(rightBin).x;
+    T_slab += max(0.0, _ClimateA.w) * (leftT + rightT - 2.0 * T_slab);
+    T_slab += saturate(0.12 * _DeltaTime) * (Tsurf - T_slab);
+
+    float targetIce = saturate(surface.y);
+    if (T_slab < 0.0)
+        targetIce = max(targetIce, saturate(0.35 - T_slab * 0.08));
+    if (T_slab > 4.0 && surface.y < 0.25)
+        targetIce *= saturate(1.0 - (T_slab - 4.0) * 0.15);
+    float memory = saturate(_ClimateC.w);
+    ice = init ? targetIce : lerp(ice, targetIce, memory);
+    albedo = saturate(_ClimateD.y + _ClimateB.w * ice - _ClimateC.x * canopy * biome + _ClimateD.z * ashFrac * biome);
+    float targetWet = saturate(surface.w / max(0.15, 1.0 + organics));
+    wetness = init ? targetWet : lerp(wetness, targetWet, memory);
+    float roughness = 1.0 + max(0.0, _ClimateC.y) * canopy * biome;
+    float bucket = 1.0 + max(0.0, _ClimateC.z) * organics * biome - saturate(_ClimateD.w) * ashFrac * biome;
+    bucket = clamp(bucket, 0.15, 3.0);
+    float u = _WeatherI.z + max(0.0, _ClimateB.z) * ((rightT - leftT) + 3.0 * (rightInsol - leftInsol));
+
+    _ClimateState[bin * 3 + 0] = float4(T_slab, saturate(ice), saturate(wetness), saturate(albedo));
+    _ClimateState[bin * 3 + 1] = float4(u, max(1.0, roughness), bucket, canopy);
+    _ClimateState[bin * 3 + 2] = float4(lower.x, upper.x, lower.y, lower.z);
+}

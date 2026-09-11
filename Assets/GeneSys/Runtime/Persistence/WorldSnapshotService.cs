@@ -31,11 +31,13 @@ namespace GeneSys.Persistence
         private const int Version11 = 11;
         private const int Version12 = 12;
         private const int Version13 = 13;
+        private const int Version14 = 14;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
         private const int PayloadCountV11 = 38;
         private const int PayloadCountV12 = 41;
+        private const int PayloadCountV14 = 47;
 
         private readonly string directoryOverride;
         private string resolvedDirectory;
@@ -99,21 +101,23 @@ namespace GeneSys.Persistence
         }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
-            Save(host, path, Version13, completed);
+            Save(host, path, Version14, completed);
 
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9)));
+            int writeVersion = version >= Version14 ? Version14 : (version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9))));
             bool includeGrass = writeVersion >= Version10;
             bool includeWasp = writeVersion >= Version11;
             bool includeTree = writeVersion >= Version12;
-            byte[][] payloads = new byte[PayloadCountV12][];
+            bool includeMobile = writeVersion >= Version14;
+            byte[][] payloads = new byte[PayloadCountV14][];
             int remaining = PayloadCountV9;
             bool failed = false;
             bool grassBatchStarted = !includeGrass;
             bool waspBatchStarted = !includeWasp;
             bool treeBatchStarted = !includeTree;
+            bool mobileBatchStarted = !includeMobile;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -186,6 +190,18 @@ namespace GeneSys.Persistence
                 }
             }
 
+            void RequestMobileMassBatch()
+            {
+                RenderTexture mobile = host.Resources.MobileMassRead;
+                for (int slice = 0; slice < SimulationResources.MobileMassSliceCount; slice++)
+                {
+                    int index = PayloadCountV12 + slice;
+                    int capture = slice;
+                    AsyncGPUReadback.Request(mobile, 0, 0, mobile.width, 0, mobile.height, capture, 1,
+                        request => CompletePayload(index, request));
+                }
+            }
+
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
             {
                 if (request.hasError) failed = true;
@@ -213,6 +229,13 @@ namespace GeneSys.Persistence
                     RequestTreeBatch();
                     return;
                 }
+                if (includeMobile && !mobileBatchStarted)
+                {
+                    mobileBatchStarted = true;
+                    remaining = PayloadCountV14 - PayloadCountV12;
+                    RequestMobileMassBatch();
+                    return;
+                }
                 if (!failed)
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
@@ -237,7 +260,7 @@ namespace GeneSys.Persistence
                         WriteTreeConfig(writer, config);
                     if (writeVersion >= Version13)
                         WriteJsonConfig(writer, config);
-                    int payloadCount = includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9));
+                    int payloadCount = includeMobile ? PayloadCountV14 : (includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9)));
                     for (int i = 0; i < payloadCount; i++)
                     {
                         writer.Write(payloads[i].Length);
@@ -255,7 +278,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version < Version1 || version > Version13) return false;
+            if (version < Version1 || version > Version14) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -500,9 +523,76 @@ namespace GeneSys.Persistence
                 host.Resources.ClearTree();
             }
 
+            if (version >= Version14)
+            {
+                for (int slice = 0; slice < SimulationResources.MobileMassSliceCount; slice++)
+                {
+                    int length = reader.ReadInt32();
+                    byte[] payload = reader.ReadBytes(length);
+                    if (payload.Length != length) return false;
+                    Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32_SFloat);
+                    staging.LoadRawTextureData(payload);
+                    staging.Apply(false, false);
+                    Graphics.CopyTexture(staging, 0, 0, host.Resources.MobileMassRead, slice, 0);
+                    UnityEngine.Object.Destroy(staging);
+                }
+            }
+            else
+            {
+                host.Resources.ClearMobileMass();
+                MigrateLegacyMobileMass(host.Resources);
+            }
+
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
+            host.RebuildClimate();
             return true;
+        }
+
+        private static void MigrateLegacyMobileMass(SimulationResources resources)
+        {
+            SeedMobileMassFromMaterialsCpu(resources);
+        }
+
+        private static void SeedMobileMassFromMaterialsCpu(SimulationResources resources)
+        {
+            int width = resources.Grid.angularResolution;
+            int height = resources.Grid.radialResolution;
+            var request = AsyncGPUReadback.Request(resources.MaterialRead);
+            request.WaitForCompletion();
+            if (request.hasError) return;
+            uint[] materials = request.GetData<uint>().ToArray();
+            var coarse = new float[width * height];
+            var ash = new float[width * height];
+            var magma = new float[width * height];
+            var structural = new float[width * height];
+            for (int i = 0; i < materials.Length; i++)
+            {
+                uint material = materials[i];
+                if (material == MaterialIds.Sediment) coarse[i] = 1f;
+                else if (material == MaterialIds.Ash) ash[i] = 1f;
+                else if (material == MaterialIds.Magma) magma[i] = 1f;
+                else if (material == MaterialIds.Core || material == MaterialIds.Mantle || material == MaterialIds.Granite
+                    || material == MaterialIds.Basalt || material == MaterialIds.Soil || material == MaterialIds.Metal
+                    || material == MaterialIds.Limestone || material == MaterialIds.Clay || material == MaterialIds.Wood)
+                    structural[i] = 1f;
+            }
+            UploadMobileSlice(resources.MobileMassRead, 0, width, height, coarse);
+            UploadMobileSlice(resources.MobileMassRead, 3, width, height, magma);
+            UploadMobileSlice(resources.MobileMassRead, 4, width, height, ash);
+            UploadMobileSlice(resources.MobileMassRead, 5, width, height, structural);
+        }
+
+        private static void UploadMobileSlice(RenderTexture target, int slice, int width, int height, float[] values)
+        {
+            var staging = new Texture2D(width, height, TextureFormat.RFloat, false, true);
+            var colors = new Color[values.Length];
+            for (int i = 0; i < values.Length; i++)
+                colors[i] = new Color(values[i], 0f, 0f, 0f);
+            staging.SetPixels(colors);
+            staging.Apply(false, false);
+            Graphics.CopyTexture(staging, 0, 0, target, slice, 0);
+            UnityEngine.Object.Destroy(staging);
         }
 
         private static void ClearEcology(SimulationResources resources)

@@ -77,6 +77,27 @@ namespace GeneSys.AI
                     done?.Invoke("Noted.");
                 }
             });
+            registry.Add(new AiTool
+            {
+                Name = "send_chat",
+                Description = "Send a player-facing reply in the probe chat. Use during Convert of a player-message ACT loop.",
+                Parameters = AiToolRegistry.ObjectSchema(("text", AiToolRegistry.StringProp("Message shown to the player."), true)),
+                AllowedSteps = ActStepMask.Convert,
+                UserChatReply = true,
+                Handler = (args, done) =>
+                {
+                    JObject parsed = AiToolRegistry.ParseArgs(args);
+                    string text = AiToolRegistry.ArgString(parsed, "text");
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        done?.Invoke("send_chat requires non-empty text.");
+                        return;
+                    }
+
+                    registry.Context?.SendChat?.Invoke(text.Trim());
+                    done?.Invoke("Message sent to the player.");
+                }
+            });
         }
 
         private static void RegisterSensors(AiToolRegistry registry)
@@ -605,7 +626,8 @@ namespace GeneSys.AI
                 $"cell=({inspection.cell.x},{inspection.cell.y}) mat={inspection.materialId} " +
                 $"T={inspection.state.x:0.##} P={inspection.state.y:0.###} water={inspection.state.z:0.###} " +
                 $"vapor={inspection.aux.x:0.###} groundwater={inspection.aux.y:0.###} nutrients={inspection.aux.z:0.###} " +
-                $"light={inspection.light:0.###} biomass={inspection.life.y:0.###}";
+                $"light={inspection.light:0.###} biomass={inspection.life.y:0.###} " +
+                $"sedimentRho={inspection.mobileSediment:0.###} structural={inspection.mobileStructural:0.###}";
         }
     }
 }

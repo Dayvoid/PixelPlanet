@@ -14,6 +14,7 @@ namespace GeneSys.AI
         public int gameMode = (int)GameMode.AiSandbox;
         public int maxToolCallsPerStep = 12;
         public bool visionCapable;
+        public bool verboseCrewLogs;
 
         public GameMode Mode
         {

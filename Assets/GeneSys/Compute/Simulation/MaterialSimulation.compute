@@ -57,6 +57,7 @@ float4 _DensityExchange; // rate, epsilon, unused, unused
 float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
 float4 _MycologyA; // initialSporeLoad, rareStrainChance, airTransport, waterTransport
 float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMoisture
+float4 _MaceFlags; // sediment, entrainment, shoreline, solute
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -360,6 +361,7 @@ bool ShouldExchangeDensityPair(int2 lowerCell, int2 upperCell)
 {
     uint lowerMat = ReadMaterial(lowerCell);
     uint upperMat = ReadMaterial(upperCell);
+    if (_MaceFlags.x > 0.5 && (IsSoftCrustMaterial(lowerMat) || IsSoftCrustMaterial(upperMat))) return false;
     if (!IsDensityDisplaceable(lowerMat) || !IsDensityDisplaceable(upperMat)) return false;
     if (!IsLiquidCategory(lowerMat) && !IsLiquidCategory(upperMat)) return false;
 
@@ -469,6 +471,7 @@ int2 AirbornePrecipDestination(int2 source, int2 below)
 int2 MovementDestination(int2 source)
 {
     uint sourceMaterial = ReadMaterial(source);
+    if (_MaceFlags.x > 0.5 && IsSoftCrustMaterial(sourceMaterial)) return source;
     if (!IsMovable(sourceMaterial) || source.y <= 0) return source;
     int2 below = ClampCell(source + int2(0, -1), _GridSize);
     if ((sourceMaterial == 9u || sourceMaterial == 10u) && IsAirborneLiquid(source, sourceMaterial))

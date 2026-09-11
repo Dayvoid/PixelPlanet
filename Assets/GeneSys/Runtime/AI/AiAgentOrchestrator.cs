@@ -16,6 +16,8 @@ namespace GeneSys.AI
     {
         public const float FullyZoomedEpsilon = 0.02f;
         public const float MinOrthographicSize = 0.75f;
+        public const string OccupiedNotice =
+            "*the Deity seems occupied but pulses with consideration of your words*";
 
         [SerializeField] private SimulationHost host;
         [SerializeField] private ProbeController probe;
@@ -39,6 +41,7 @@ namespace GeneSys.AI
         private bool advanceRequested;
         private bool initialized;
         private float loopDelayRemaining;
+        private PromptKind currentPromptKind;
         private Coroutine running;
         private byte[] pendingVisionJpeg;
 
@@ -105,11 +108,16 @@ namespace GeneSys.AI
             LoopStateChanged?.Invoke();
         }
 
+        public static bool ShouldShowOccupiedNotice(bool loopBusy, bool verboseCrewLogs) =>
+            loopBusy && !verboseCrewLogs;
+
         public void EnqueueUserPrompt(string text)
         {
             if (!AiSystemsEnabled || string.IsNullOrWhiteSpace(text)) return;
             string trimmed = text.Trim();
             AppendChat("user", trimmed, false);
+            if (ShouldShowOccupiedNotice(busy, settings != null && settings.verboseCrewLogs))
+                AppendChat("assistant", OccupiedNotice, false);
             queue.EnqueueUser(trimmed);
             if (!busy) StartNext();
         }
@@ -166,6 +174,7 @@ namespace GeneSys.AI
             if (!initialized || settings == null || !settings.AiSystemsEnabled) return;
             BindToolContext();
             if (!agentLoopEnabled || busy || !settings.AgentLoopAllowed) return;
+            if (queue.Count > 0) return;
             loopDelayRemaining -= Time.unscaledDeltaTime;
             if (loopDelayRemaining <= 0f)
                 EnqueueAgentTurn();
@@ -188,6 +197,7 @@ namespace GeneSys.AI
         private IEnumerator RunLoop(QueuedPrompt prompt)
         {
             busy = true;
+            currentPromptKind = prompt.Kind;
             LoopStateChanged?.Invoke();
             yield return RefreshPlanetSummary();
             loop.Begin();
@@ -204,7 +214,8 @@ namespace GeneSys.AI
                 {
                     LlmChatResult result = null;
                     yield return client.Chat(settings.BaseUrl, settings.model, BuildMessages(),
-                        registry.BuildOpenAiTools(loop.Step, settings.Mode, settings.visionCapable), chatResult => result = chatResult);
+                        registry.BuildOpenAiTools(loop.Step, settings.Mode, settings.visionCapable, currentPromptKind),
+                        chatResult => result = chatResult);
                     if (result == null || !result.Ok)
                     {
                         string error = result?.Error ?? "LLM request failed.";
@@ -249,14 +260,13 @@ namespace GeneSys.AI
                             ? "(no content)"
                             : result.Content.Trim();
                         conversation.Add(new LlmMessage { Role = "assistant", Content = text });
-                        if (loop.Step == ActStep.Think)
-                        {
+                        if (loop.Step == ActStep.Think ||
+                            (currentPromptKind == PromptKind.User && loop.Step == ActStep.Convert))
                             AppendChat("assistant", text, false);
-                            History.Add(host != null ? host.Clock.TickCount : 0L, text);
-                            HistoryChanged?.Invoke();
-                        }
                         else
                             AppendChat("assistant", $"[{loop.Step}] {text}", false);
+                        History.Add(host != null ? host.Clock.TickCount : 0L, AiHistoryLog.FormatChatter(loop.Step, text));
+                        HistoryChanged?.Invoke();
 
                         stepDone = true;
                         loop.NextStep();
@@ -267,7 +277,8 @@ namespace GeneSys.AI
                     loop.NextStep();
             }
 
-            loopDelayRemaining = Mathf.Max(1f, settings.agentLoopDelaySeconds);
+            if (currentPromptKind == PromptKind.Agent)
+                loopDelayRemaining = Mathf.Max(1f, settings.agentLoopDelaySeconds);
             busy = false;
             running = null;
             LoopStateChanged?.Invoke();
@@ -285,7 +296,7 @@ namespace GeneSys.AI
                 yield break;
             }
 
-            if (!AiToolRegistry.IsAvailable(tool, loop.Step, settings.Mode, settings.visionCapable))
+            if (!AiToolRegistry.IsAvailable(tool, loop.Step, settings.Mode, settings.visionCapable, currentPromptKind))
             {
                 completed?.Invoke($"Tool '{name}' is not available during {loop.Step} in {settings.Mode}.");
                 yield break;
@@ -316,8 +327,14 @@ namespace GeneSys.AI
             }
 
             if (!finished) result = "Tool timed out.";
+            long tick = host != null ? host.Clock.TickCount : 0L;
             if (!string.Equals(name, "log_note", StringComparison.OrdinalIgnoreCase))
-                actionLog?.Record(host != null ? host.Clock.TickCount : 0L, loop.Step, name, args, result);
+                actionLog?.Record(tick, loop.Step, name, args, result);
+            if (settings != null && settings.verboseCrewLogs)
+            {
+                History.Add(tick, $"[{loop.Step}] {name} {args} -> {result}", AiHistoryLog.VerboseMaxLength);
+                HistoryChanged?.Invoke();
+            }
             completed?.Invoke(result ?? string.Empty);
         }
 
@@ -372,6 +389,11 @@ namespace GeneSys.AI
             builder.AppendLine();
             builder.Append("You are in ACT step ").Append(loop.Step)
                 .Append(". Use only tools listed for this step. Call next_step when ready to proceed.");
+            if (currentPromptKind == PromptKind.User)
+            {
+                builder.AppendLine();
+                builder.Append("This loop replies to a player message. During Convert you may only call send_chat (to speak to the player) and next_step. Do not terraform or steer the probe in this Convert step.");
+            }
             if (settings != null && settings.visionCapable)
             {
                 builder.AppendLine();
@@ -383,7 +405,10 @@ namespace GeneSys.AI
         private string BuildTurnContent(QueuedPrompt prompt)
         {
             if (prompt.Kind == PromptKind.User)
-                return "Player message (handle after finishing any in-flight reasoning, then continue the ACT loop):\n" + prompt.Text;
+                return "Player message — this is a player-initiated ACT loop. " +
+                       "Assess: gather any context you need with the listed tools. " +
+                       "Convert: reply to the player only via send_chat, then call next_step. " +
+                       "Think: reflect and log as usual.\n" + prompt.Text;
             return prompt.Text;
         }
 
@@ -421,8 +446,10 @@ namespace GeneSys.AI
                 OnVisionFrame = (jpeg, _, _) => pendingVisionJpeg = jpeg,
                 StartRoutine = StartCoroutine,
                 RequestNextStep = () => advanceRequested = true,
+                SendChat = text => AppendChat("assistant", text, false),
                 Mode = settings != null ? settings.Mode : GameMode.Sandbox,
-                Step = loop.Step
+                Step = loop.Step,
+                PromptKind = currentPromptKind
             };
         }
 

@@ -14,6 +14,7 @@ namespace GeneSys.AI
         public ActStepMask AllowedSteps;
         public bool RequiresDeity;
         public bool RequiresVision;
+        public bool UserChatReply;
         public AiToolHandler Handler;
     }
 
@@ -28,8 +29,10 @@ namespace GeneSys.AI
         public Action<byte[], int, int> OnVisionFrame;
         public Func<System.Collections.IEnumerator, UnityEngine.Coroutine> StartRoutine;
         public Action RequestNextStep;
+        public Action<string> SendChat;
         public GameMode Mode;
         public ActStep Step;
+        public PromptKind PromptKind;
     }
 
     public sealed class AiToolRegistry
@@ -60,13 +63,14 @@ namespace GeneSys.AI
             return null;
         }
 
-        public JArray BuildOpenAiTools(ActStep step, GameMode mode, bool visionCapable = false)
+        public JArray BuildOpenAiTools(ActStep step, GameMode mode, bool visionCapable = false,
+            PromptKind kind = PromptKind.Agent)
         {
             var array = new JArray();
             for (int i = 0; i < tools.Count; i++)
             {
                 AiTool tool = tools[i];
-                if (!IsAvailable(tool, step, mode, visionCapable)) continue;
+                if (!IsAvailable(tool, step, mode, visionCapable, kind)) continue;
                 array.Add(new JObject
                 {
                     ["type"] = "function",
@@ -82,13 +86,24 @@ namespace GeneSys.AI
             return array;
         }
 
-        public static bool IsAvailable(AiTool tool, ActStep step, GameMode mode, bool visionCapable = false)
+        public static bool IsAvailable(AiTool tool, ActStep step, GameMode mode, bool visionCapable = false,
+            PromptKind kind = PromptKind.Agent)
         {
             if (tool == null) return false;
             if (mode == GameMode.Sandbox) return false;
             if (tool.RequiresDeity && mode != GameMode.AiSandbox) return false;
             if (tool.RequiresVision && !visionCapable) return false;
-            return (tool.AllowedSteps & Mask(step)) != 0;
+            if ((tool.AllowedSteps & Mask(step)) == 0) return false;
+            if (kind == PromptKind.User && step == ActStep.Convert)
+                return IsUserConvertTool(tool);
+            return !tool.UserChatReply;
+        }
+
+        public static bool IsUserConvertTool(AiTool tool)
+        {
+            if (tool == null) return false;
+            if (tool.UserChatReply) return true;
+            return string.Equals(tool.Name, "next_step", StringComparison.OrdinalIgnoreCase);
         }
 
         public static ActStepMask Mask(ActStep step) => (ActStepMask)(1 << (int)step);

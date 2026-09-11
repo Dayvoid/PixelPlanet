@@ -43,6 +43,36 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.HydrologyIntegrationTests");
         }
 
+        [MenuItem("Tools/GeneSys/Run MaCE EditMode Tests")]
+        public static void RunMaceEditMode()
+        {
+            GeneSysTestObserver.Run(TestMode.EditMode, "GeneSys.Tests.MaceTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run MaCE Sediment PlayMode Tests")]
+        public static void RunMaceSedimentPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceSedimentIntegrationTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run MaCE Shoreline PlayMode Tests")]
+        public static void RunMaceShorelinePlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceShorelineMixtureTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run MaCE Karst PlayMode Tests")]
+        public static void RunMaceKarstPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceKarstSoluteTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run MaCE Geology PlayMode Tests")]
+        public static void RunMaceGeologyPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceMobileGeologyTests");
+        }
+
         public static void RunPlayModeGroup(string groupName)
         {
             GeneSysTestObserver.Run(TestMode.PlayMode, groupName);
@@ -60,6 +90,7 @@ namespace GeneSys.Editor
         private static readonly string ResultPath = Path.GetFullPath(Path.Combine(Application.dataPath, "../Library/GeneSysTestResults.log"));
         private static TestRunnerApi api;
         private static Callback callback;
+        private static bool running;
 
         static GeneSysTestObserver()
         {
@@ -77,6 +108,12 @@ namespace GeneSys.Editor
         public static void Run(TestMode mode, string groupName = null, string[] testNames = null)
         {
             EnsureRegistered();
+            if (running || EditorApplication.isPlaying)
+            {
+                Debug.LogWarning("GeneSys tests are already running. Wait for the current run to finish.");
+                return;
+            }
+            running = true;
             File.AppendAllText(ResultPath, $"START {mode} {groupName} {System.DateTime.UtcNow:O}\n");
             var filter = new Filter { testMode = mode };
             if (!string.IsNullOrEmpty(groupName))
@@ -98,6 +135,7 @@ namespace GeneSys.Editor
 
             public void RunFinished(ITestResultAdaptor result)
             {
+                running = false;
                 File.AppendAllText(ResultPath,
                     $"FINISH status={result.TestStatus} pass={result.PassCount} fail={result.FailCount} skip={result.SkipCount} duration={result.Duration:F3}\n");
                 Debug.Log($"GENESYS_TESTS_FINISHED status={result.TestStatus} pass={result.PassCount} fail={result.FailCount}");
