@@ -316,8 +316,14 @@ namespace GeneSys.AI
             }
 
             if (!finished) result = "Tool timed out.";
+            long tick = host != null ? host.Clock.TickCount : 0L;
             if (!string.Equals(name, "log_note", StringComparison.OrdinalIgnoreCase))
-                actionLog?.Record(host != null ? host.Clock.TickCount : 0L, loop.Step, name, args, result);
+                actionLog?.Record(tick, loop.Step, name, args, result);
+            if (settings != null && settings.verboseCrewLogs)
+            {
+                History.Add(tick, $"[{loop.Step}] {name} {args} -> {result}", AiHistoryLog.VerboseMaxLength);
+                HistoryChanged?.Invoke();
+            }
             completed?.Invoke(result ?? string.Empty);
         }
 

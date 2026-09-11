@@ -1,8 +1,8 @@
 {
     "CustomInstructionsGUID": "",
     "CheckpointEnabled": true,
-    "GitInstanceTypeValue": 0,
-    "CustomGitPath": "",
+    "GitInstanceTypeValue": 2,
+    "CustomGitPath": "C:/Program Files/Git/cmd/git.exe",
     "CheckpointRetentionWeeks": 2,
     "PlanExecutionPromptDismissed": false,
     "CheckpointDiscoveryBannerDismissed": false,

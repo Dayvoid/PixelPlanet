@@ -810,6 +810,18 @@
     min-height: 0;
 }
 
+.ai-history-scroll .unity-scroll-view__content-container {
+    width: 100%;
+    max-width: 100%;
+}
+
+.ai-history-scroll .history-entry {
+    white-space: normal;
+    flex-shrink: 0;
+    width: 100%;
+    max-width: 100%;
+}
+
 .unity-button.probe-agent-loop {
     font-size: 18px;
     color: rgb(72, 210, 230);

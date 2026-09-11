@@ -174,6 +174,7 @@ namespace GeneSys.UI
         private FloatField aiLoopDelayField;
         private IntegerField aiMaxToolsField;
         private Toggle aiVisionCapableField;
+        private Toggle aiVerboseCrewLogsField;
         private Label aiStatusLabel;
         private bool suppressingAiSettings;
 
@@ -204,6 +205,13 @@ namespace GeneSys.UI
             aiHistoryBody = root.Q("ai-history-body");
             historyLog = root.Q<ScrollView>("history-log");
             aiHistoryLog = root.Q<ScrollView>("ai-history-log");
+            if (aiHistoryLog != null)
+            {
+                aiHistoryLog.mode = ScrollViewMode.Vertical;
+                aiHistoryLog.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+                aiHistoryLog.contentContainer.style.width = Length.Percent(100);
+                aiHistoryLog.contentContainer.style.maxWidth = Length.Percent(100);
+            }
             settingsOverlay = root.Q("settings-overlay");
             inspectBar = root.Q("inspect-bar");
             statusLabel = root.Q<Label>("status");
@@ -1653,6 +1661,7 @@ namespace GeneSys.UI
             aiLoopDelayField = root.Q<FloatField>("ai-loop-delay");
             aiMaxToolsField = root.Q<IntegerField>("ai-max-tools");
             aiVisionCapableField = root.Q<Toggle>("ai-vision-capable");
+            aiVerboseCrewLogsField = root.Q<Toggle>("ai-verbose-crew-logs");
             aiStatusLabel = root.Q<Label>("ai-status");
             root.Q<Button>("ai-fetch-models")?.RegisterCallback<ClickEvent>(_ =>
             {
@@ -1670,6 +1679,7 @@ namespace GeneSys.UI
             aiLoopDelayField?.RegisterValueChangedCallback(_ => CommitAiSettings());
             aiMaxToolsField?.RegisterValueChangedCallback(_ => CommitAiSettings());
             aiVisionCapableField?.RegisterValueChangedCallback(_ => CommitAiSettings());
+            aiVerboseCrewLogsField?.RegisterValueChangedCallback(_ => CommitAiSettings());
 
             if (ai != null)
             {
@@ -1711,6 +1721,7 @@ namespace GeneSys.UI
             aiLoopDelayField?.SetValueWithoutNotify(settings.agentLoopDelaySeconds);
             aiMaxToolsField?.SetValueWithoutNotify(settings.maxToolCallsPerStep);
             aiVisionCapableField?.SetValueWithoutNotify(settings.visionCapable);
+            aiVerboseCrewLogsField?.SetValueWithoutNotify(settings.verboseCrewLogs);
             if (aiGameModeField != null)
                 aiGameModeField.SetValueWithoutNotify(settings.Mode.ToString());
             RefreshAiModelDropdown();
@@ -1752,6 +1763,7 @@ namespace GeneSys.UI
             if (aiLoopDelayField != null) settings.agentLoopDelaySeconds = aiLoopDelayField.value;
             if (aiMaxToolsField != null) settings.maxToolCallsPerStep = aiMaxToolsField.value;
             if (aiVisionCapableField != null) settings.visionCapable = aiVisionCapableField.value;
+            if (aiVerboseCrewLogsField != null) settings.verboseCrewLogs = aiVerboseCrewLogsField.value;
             if (aiGameModeField != null && Enum.TryParse(aiGameModeField.value, out GameMode mode))
                 settings.Mode = mode;
             ai.ApplySettings(settings);
@@ -1841,6 +1853,7 @@ namespace GeneSys.UI
             {
                 var line = new Label(entries[i].Format());
                 line.AddToClassList("history-entry");
+                line.style.whiteSpace = WhiteSpace.Normal;
                 aiHistoryLog.Add(line);
             }
 

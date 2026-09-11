@@ -40,6 +40,7 @@ namespace GeneSys.Tests
             };
             source.Mode = GameMode.AiSandbox;
             source.visionCapable = true;
+            source.verboseCrewLogs = true;
             Assert.That(service.Save(source, out string saveError), Is.True, saveError);
 
             AiCrewSettings loaded = service.LoadOrDefault();
@@ -52,6 +53,7 @@ namespace GeneSys.Tests
             Assert.That(loaded.DeityToolsAllowed, Is.True);
             Assert.That(loaded.AgentLoopAllowed, Is.True);
             Assert.That(loaded.visionCapable, Is.True);
+            Assert.That(loaded.verboseCrewLogs, Is.True);
         }
 
         [Test]
@@ -260,7 +262,16 @@ namespace GeneSys.Tests
         {
             string summary = AiHistoryLog.Sanitize("line one\nline two " + new string('x', 300));
             Assert.That(summary, Does.Not.Contain("\n"));
-            Assert.That(summary.Length, Is.LessThanOrEqualTo(280));
+            Assert.That(summary.Length, Is.LessThanOrEqualTo(AiHistoryLog.SummaryMaxLength));
+        }
+
+        [Test]
+        public void HistorySanitizeVerboseAllowsLongerOneLine()
+        {
+            string verbose = AiHistoryLog.Sanitize("line one\nline two " + new string('x', 900), AiHistoryLog.VerboseMaxLength);
+            Assert.That(verbose, Does.Not.Contain("\n"));
+            Assert.That(verbose.Length, Is.GreaterThan(AiHistoryLog.SummaryMaxLength));
+            Assert.That(verbose.Length, Is.LessThanOrEqualTo(AiHistoryLog.VerboseMaxLength));
         }
     }
 
