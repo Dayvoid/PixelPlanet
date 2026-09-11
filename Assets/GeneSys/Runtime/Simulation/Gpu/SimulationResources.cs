@@ -12,7 +12,6 @@ namespace GeneSys.Simulation.Gpu
         public const int WaspClaimCount = 5;
         public const int GrassVisitSliceCount = 2;
         public const int TreeSliceCount = 3;
-        public const int LifeGenomeSliceCount = 3;
 
         public RenderTexture MaterialRead { get; private set; }
         public RenderTexture MaterialWrite { get; private set; }
@@ -56,7 +55,6 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture TreeRead { get; private set; }
         public RenderTexture TreeWrite { get; private set; }
         public RenderTexture TreeGrowthClaims { get; private set; }
-        public RenderTexture Affinity { get; private set; }
         public RenderTexture PlantRootFlux => GrassRootFlux;
         public ComputeBuffer WaterColumn { get; private set; }
         public ComputeBuffer WaterFaceFlux { get; private set; }
@@ -87,9 +85,8 @@ namespace GeneSys.Simulation.Gpu
             CombustionWrite = CreateTexture("GeneSys Combustion B", GraphicsFormat.R32G32B32A32_SFloat);
             StormRead = CreateTexture("GeneSys Storm A", GraphicsFormat.R32G32B32A32_SFloat);
             StormWrite = CreateTexture("GeneSys Storm B", GraphicsFormat.R32G32B32A32_SFloat);
-            LifeGenomeRead = CreateTextureArray("GeneSys LifeGenome A", GraphicsFormat.R32G32B32A32_SFloat, LifeGenomeSliceCount);
-            LifeGenomeWrite = CreateTextureArray("GeneSys LifeGenome B", GraphicsFormat.R32G32B32A32_SFloat, LifeGenomeSliceCount);
-            Affinity = CreateTexture("GeneSys Affinity", GraphicsFormat.R32G32B32A32_SFloat);
+            LifeGenomeRead = CreateTextureArray("GeneSys LifeGenome A", GraphicsFormat.R32G32B32A32_SFloat, 2);
+            LifeGenomeWrite = CreateTextureArray("GeneSys LifeGenome B", GraphicsFormat.R32G32B32A32_SFloat, 2);
             LightField = CreateTexture("GeneSys Light", GraphicsFormat.R32_SFloat);
             FaunaRead = CreateTextureArray("GeneSys Fauna A", GraphicsFormat.R32G32B32A32_SFloat, 4);
             FaunaWrite = CreateTextureArray("GeneSys Fauna B", GraphicsFormat.R32G32B32A32_SFloat, 4);
@@ -116,24 +113,7 @@ namespace GeneSys.Simulation.Gpu
             ClearGrass();
             ClearWasp();
             ClearTree();
-            ClearMobile();
             ClearWaterColumns();
-        }
-
-        public void ClearMobile()
-        {
-            ClearRenderTargetSlice(LifeGenomeRead, 2);
-            ClearRenderTargetSlice(LifeGenomeWrite, 2);
-            ClearRenderTarget(Affinity);
-        }
-
-        private static void ClearRenderTargetSlice(RenderTexture texture, int slice)
-        {
-            if (texture == null) return;
-            RenderTexture previous = RenderTexture.active;
-            Graphics.SetRenderTarget(texture, 0, CubemapFace.Unknown, slice);
-            GL.Clear(false, true, Color.clear);
-            RenderTexture.active = previous;
         }
 
         public void ClearWaterColumns()
@@ -332,7 +312,6 @@ namespace GeneSys.Simulation.Gpu
             Release(CombustionRead); Release(CombustionWrite);
             Release(StormRead); Release(StormWrite);
             Release(LifeGenomeRead); Release(LifeGenomeWrite);
-            Release(Affinity);
             Release(LightField);
             Release(FaunaRead); Release(FaunaWrite);
             Release(AcousticRead); Release(AcousticWrite); Release(AcousticPrev);
@@ -355,7 +334,6 @@ namespace GeneSys.Simulation.Gpu
             CombustionRead = CombustionWrite = null;
             StormRead = StormWrite = null;
             LifeGenomeRead = LifeGenomeWrite = null;
-            Affinity = null;
             LightField = null;
             FaunaRead = FaunaWrite = null;
             AcousticRead = AcousticWrite = AcousticPrev = null;

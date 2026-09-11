@@ -32,7 +32,6 @@ MonoBehaviour:
   boilingTemperature: 180
   thermalExpansion: 0.02
   electricalExpansion: 0
-  latentHeat: 0
   solidPhaseId: 134
   liquidPhaseId: 134
   gasPhaseId: 11

@@ -90,7 +90,7 @@ void WriteWorld(int2 cell, uint material, float4 state, float2 flow, float4 aux,
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome, SampleMobile(_LifeGenomeRead, cell));
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
 }
 
 float CellHash(int2 cell, uint salt)

@@ -768,42 +768,23 @@ namespace GeneSys.Tests
 
             bool converted = false;
             float stressAfterConvert = -1f;
-            bool shedIntoChannel = false;
-            for (int i = 0; i < 120 && !converted && !shedIntoChannel; i++)
+            for (int i = 0; i < 60 && !converted; i++)
             {
                 DriveWindErosion(host, x, y);
                 yield return Step(host, 1);
                 yield return ReadMaterialsAndAux(host, (mats, aux) =>
                 {
                     int index = y * host.Grid.angularResolution + x;
-                    if (mats[index] == MaterialIds.Sediment || mats[index] == MaterialIds.Air)
+                    if (mats[index] == MaterialIds.Sediment)
                     {
                         converted = true;
                         stressAfterConvert = aux[index].w;
                     }
                 });
-                if (!converted)
-                {
-                    bool mobileReady = false;
-                    AsyncGPUReadback.Request(host.Resources.LifeGenomeRead, 0, 0, host.Grid.angularResolution, 0, host.Grid.radialResolution, 2, 1, request =>
-                    {
-                        if (!request.hasError)
-                        {
-                            var mobile = request.GetData<Vector4>();
-                            int index = y * host.Grid.angularResolution + x;
-                            if (index < mobile.Length && mobile[index].x > 0.2f && mobile[index].y < 0.75f)
-                                shedIntoChannel = true;
-                        }
-                        mobileReady = true;
-                    });
-                    for (int wait = 0; wait < 120 && !mobileReady; wait++)
-                        yield return null;
-                }
             }
 
-            Assert.That(converted || shedIntoChannel, Is.True, "Expected dry exposed soil to shed into the sediment channel or become Sediment/Air.");
-            if (converted)
-                Assert.That(stressAfterConvert, Is.LessThan(1.05f));
+            Assert.That(converted, Is.True, "Expected dry exposed soil to convert under sustained wind-driven erosion.");
+            Assert.That(stressAfterConvert, Is.EqualTo(0f).Within(0.001f));
 
             RestoreStressIsolation(host);
         }

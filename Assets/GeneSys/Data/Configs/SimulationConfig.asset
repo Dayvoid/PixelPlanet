@@ -105,24 +105,6 @@ MonoBehaviour:
   hydrostaticIterations: 32
   pondingRate: 0.85
   springDischargeRate: 0.9
-  maceEnabled: 1
-  macePhasesPerTick: 2
-  maceGravity: 1
-  macePileSupport: 1
-  maceSlopeDrive: 1
-  maceMobility: 0.85
-  maceYield: 0.15
-  maceOccupyHigh: 0.85
-  maceOccupyLow: 0.15
-  maceStructMin: 0.2
-  maceMoistureCohesion: 0.8
-  maceRootCohesion: 0.6
-  maceErosionShed: 0.25
-  maceShearDrive: 0.4
-  maceAdvection: 0.35
-  maceSuspendCap: 0.35
-  maceHardCrustWear: 0.02
-  maceSoluteRate: 0.01
   dayLengthSeconds: 180
   solarIntensity: 0.8
   atmosphereAbsorption: 0.35
@@ -442,7 +424,6 @@ MonoBehaviour:
   coreCirculationSpeed: 1
   coreHeatGlow: 1
   coreVisualScale: 1
-  uiFadeDelay: 8
   brushRadius: 5
   brushStrength: 1
   validationIntervalTicks: 1000

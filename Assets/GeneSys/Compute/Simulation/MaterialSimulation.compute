@@ -57,7 +57,6 @@ float4 _DensityExchange; // rate, epsilon, unused, unused
 float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
 float4 _MycologyA; // initialSporeLoad, rareStrainChance, airTransport, waterTransport
 float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMoisture
-float4 _MaceA; // enabled, phases, gravity, pileSupport
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -76,7 +75,7 @@ float HarmonicMean(float a, float b);
 
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 
-void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux, out float4 ecology, out float4 combustion, out float4 life, out uint4 genome, out float4 mobile)
+void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux, out float4 ecology, out float4 combustion, out float4 life, out uint4 genome)
 {
     material = ReadMaterial(cell);
     state = ReadState(cell);
@@ -86,10 +85,9 @@ void CopyCell(int2 cell, out uint material, out float4 state, out float2 flow, o
     combustion = ReadCombustion(cell);
     life = ReadLife(cell);
     genome = ReadGenome(cell);
-    mobile = SampleMobile(_LifeGenomeRead, cell);
 }
 
-void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome, float4 mobile)
+void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome)
 {
     uint oldMaterial = ReadMaterial(cell);
     uint shade = _ShadeRead.Load(int3(cell, 0));
@@ -102,7 +100,7 @@ void WriteCell(int2 cell, uint material, float4 state, float2 flow, float4 aux, 
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome, mobile);
+    WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -110,8 +108,8 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 
     for (int i = 0; i < _BrushCount; i++)
     {
@@ -176,7 +174,7 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
             genome = RandomFloraGenome((uint2)cell, _Seed, _Tick);
         }
     }
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -184,8 +182,8 @@ void GlobalFieldAdjust(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
     int mode = _GlobalAdjustChannel;
     float amount = _GlobalAdjustAmount;
     if (mode == 1) state.x += amount;
@@ -196,7 +194,7 @@ void GlobalFieldAdjust(uint3 id : SV_DispatchThreadID)
     else if (mode == 6) aux.x = max(0.0, aux.x + amount);
     else if (mode == 8) state.w += amount;
     else if (mode == 10) combustion.x = max(0.0, combustion.x + amount);
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -204,8 +202,8 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
     MaterialGpuData definition = Mat(material);
 
     float waterCp = max(0.001, Mat(9u).transport.y);
@@ -245,7 +243,7 @@ void ThermalAndPressure(uint3 id : SV_DispatchThreadID)
     state.x += deltaTemperature;
     float expansion = deltaTemperature * definition.phase.z;
     state.y = max(0.0, state.y + expansion - state.y * _Mechanics.w * 0.01 * _DeltaTime);
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -253,8 +251,8 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
     MaterialGpuData definition = Mat(material);
     uint packed = (uint)round(definition.metadata.y);
     uint solidId = packed & 1023u;
@@ -270,7 +268,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     if (material == 11u)
     {
         material = 1u;
-        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
 
@@ -291,12 +289,12 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     // Isolation and frozen-thermal ticks keep existing phase; boiling still runs when heat is enabled.
     if (_Mechanics.y <= 1e-8)
     {
-        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
     if (definition.metadata.x == 1.0 || material == 2u)
     {
-        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
     float heatCapacity = EffectiveCellHeatCapacity(definition, state, aux, Mat(9u).transport.y, IsAtmosphereMaterial(material, definition));
@@ -327,7 +325,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         else
             state.x = min(definition.phase.x - hysteresis, state.x + MaterialPhaseLatentDelta(definition.motion.y, _WeatherE.w, heatCapacity));
     }
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 bool IsMovable(uint material)
@@ -337,7 +335,6 @@ bool IsMovable(uint material)
     // solver drop them a cell per tick would outrun their altitude controller.
     if (IsWaspMaterial(material)) return false;
     if (IsTreeMaterial(material)) return false;
-    if (_MaceA.x > 0.5 && material == 8u) return false;
     if (material == 10u) return true;
     float category = Mat(material).metadata.x;
     return category == 2.0 || category == 3.0 || category == 5.0 || category == 6.0;
@@ -383,15 +380,15 @@ void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 
     // Alternating disjoint radial pairs so both threads agree on the same swap.
     int parity = _Tick & 1;
     int lowerY = ((cell.y & 1) == parity) ? cell.y : cell.y - 1;
     if (lowerY < 0 || lowerY + 1 >= _GridSize.y)
     {
-        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
 
@@ -409,7 +406,6 @@ void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
             combustion = ReadCombustion(upperCell);
             life = ReadLife(upperCell);
             genome = ReadGenome(upperCell);
-            mobile = SampleMobile(_LifeGenomeRead, upperCell);
         }
         else
         {
@@ -421,11 +417,10 @@ void LiquidDensityExchange(uint3 id : SV_DispatchThreadID)
             combustion = ReadCombustion(lowerCell);
             life = ReadLife(lowerCell);
             genome = ReadGenome(lowerCell);
-            mobile = SampleMobile(_LifeGenomeRead, lowerCell);
         }
     }
 
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 int2 AirbornePrecipDestination(int2 source, int2 below)
@@ -482,7 +477,6 @@ int2 MovementDestination(int2 source)
 
     // Solid ice falls straight down when unsupported, but does not slide diagonally like sand/fluid.
     if (sourceMaterial == 10u) return source;
-    if (_MaceA.x > 0.5 && IsSoftCrustMaterial(sourceMaterial)) return source;
 
     MaterialGpuData definition = Mat(sourceMaterial);
     if (definition.physical.y >= 0.9) return source;
@@ -527,8 +521,8 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 
     int2 destination = MovementDestination(cell);
     if (IsMovable(material) && !all(destination == cell) && MoveWins(cell, destination))
@@ -541,7 +535,6 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
         combustion = ReadCombustion(destination);
         life = ReadLife(destination);
         genome = ReadGenome(destination);
-        mobile = SampleMobile(_LifeGenomeRead, destination);
     }
     else if (IsOpen(material) && cell.y < _GridSize.y - 1)
     {
@@ -556,11 +549,10 @@ void MaterialMotion(uint3 id : SV_DispatchThreadID)
             combustion = ReadCombustion(source);
             life = ReadLife(source);
             genome = ReadGenome(source);
-            mobile = SampleMobile(_LifeGenomeRead, source);
             flow.y -= _Mechanics.x * _DeltaTime;
         }
     }
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 [numthreads(8, 8, 1)]
@@ -568,8 +560,8 @@ void Electrical(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
     MaterialGpuData definition = Mat(material);
     float neighborCharge = ReadState(cell + int2(-1, 0)).w + ReadState(cell + int2(1, 0)).w
         + ReadState(cell + int2(0, -1)).w + ReadState(cell + int2(0, 1)).w;
@@ -577,7 +569,7 @@ void Electrical(uint3 id : SV_DispatchThreadID)
     float oldCharge = state.w;
     state.w += (neighborCharge - state.w) * definition.transport.z * _Mechanics.z * _DeltaTime;
     state.y += abs(state.w - oldCharge) * definition.phase.w;
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
 float PressureEquilibrium(int radiusIndex)
@@ -616,13 +608,13 @@ void PressureDiffusion(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome; float4 mobile;
-    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    uint material; float4 state; float2 flow; float4 aux; float4 ecology; float4 combustion; float4 life; uint4 genome;
+    CopyCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 
     float rate = max(0.0, _PressureA.x);
     if (rate <= 1e-8)
     {
-        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+        WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
         return;
     }
 
@@ -661,5 +653,5 @@ void PressureDiffusion(uint3 id : SV_DispatchThreadID)
     }
 
     state.y = max(0.0, state.y + delta);
-    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome, mobile);
+    WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

@@ -33,7 +33,6 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader wasp;
         [SerializeField] private ComputeShader combustion;
         [SerializeField] private ComputeShader storm;
-        [SerializeField] private ComputeShader maceTransport;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -114,12 +113,10 @@ namespace GeneSys.Simulation
 #if UNITY_EDITOR
             if (hydrostatic == null)
                 hydrostatic = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrostatic.compute");
-            if (maceTransport == null)
-                maceTransport = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/MaceTransport.compute");
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree, maceTransport);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
@@ -179,11 +176,6 @@ namespace GeneSys.Simulation
         public void FillShadesFromMaterials()
         {
             if (IsReady) scheduler.FillShadesFromMaterials();
-        }
-
-        public void SeedMobileChannel()
-        {
-            if (IsReady) scheduler.SeedMobileFromMaterials();
         }
 
         public void ApplyPreset(SimulationPreset preset)

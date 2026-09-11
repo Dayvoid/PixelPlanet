@@ -196,17 +196,6 @@ namespace GeneSys.Tools
                                                         if (data.Length > 0)
                                                             inspection.genome = FloraGenome.Sanitize(FloraGenome.FromFloatBits(data[0]));
                                                     }
-                                                    AsyncGPUReadback.Request(host.Resources.LifeGenomeRead, 0, cell.x, 1, cell.y, 1, 2, 1, mobileRequest =>
-                                                    {
-                                                        if (!mobileRequest.hasError)
-                                                        {
-                                                            NativeArray<Vector4> data = mobileRequest.GetData<Vector4>();
-                                                            if (data.Length > 0)
-                                                            {
-                                                                inspection.mobileSediment = data[0].x;
-                                                                inspection.structuralFraction = data[0].y;
-                                                            }
-                                                        }
                                                     AsyncGPUReadback.Request(host.Resources.LightField, 0, cell.x, 1, cell.y, 1, 0, 1, lightRequest =>
                                                     {
                                                         if (!lightRequest.hasError)
@@ -240,7 +229,6 @@ namespace GeneSys.Tools
                                                                 });
                                                             });
                                                         });
-                                                    });
                                                     });
                                                 });
                                             });
@@ -452,8 +440,6 @@ namespace GeneSys.Tools
         public Vector2 acoustic;
         public float light;
         public Vector2 flow;
-        public float mobileSediment;
-        public float structuralFraction;
         public Vector4[] grassLife;
         public Vector4[] grassTiming;
         public GrassGenome.Packed[] grassGenomes;

@@ -68,8 +68,6 @@ namespace GeneSys.Simulation.Topology
         public void Validate()
         {
             angularResolution = Mathf.Max(32, angularResolution);
-            if ((angularResolution & 1) != 0)
-                angularResolution += 1;
             radialResolution = Mathf.Max(16, radialResolution);
             playableInnerRadius = Mathf.Clamp(playableInnerRadius, 0.01f, 0.95f);
             atmosphereStartRadius = Mathf.Clamp(atmosphereStartRadius, playableInnerRadius + 0.01f, 1f);

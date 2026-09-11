@@ -80,15 +80,6 @@
 //   Film soak and Water-pixel contact drain state.z into aux.y up to porosity capacity.
 //   Excess above field capacity percolates radially inward, then weeps from exposed hosts.
 //   Hosts hotter than the pressure-adjusted boil point convert aux.y to aux.x.
-// Mobile sediment (LifeGenome slice 2; follows cells through WriteCell):
-//   mobile.x = rho_loose   conserved loose granular mass, 0..1 cell
-//   mobile.y = rho_struct  structural fraction of Soil/Clay (Sediment starts 0)
-//   mobile.z = rho_solute  optional dissolved load (karst); not part of soft-solid sum
-//   mobile.w = rho_ash     optional airborne/settling ash mass
-// Soft hosts (7/8/15) and open carriers (0/1) accept loose mass up to 1 - rho_struct.
-// Water (9) may hold a configured suspend cap. Every other host is source-only.
-// Tracked soft solids = sum(mobile.x + mobile.y). Host identity is a hysteresis
-// consequence of those masses, not an independent teleport.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 // Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
 // each writes only its own cell. So both sides must derive the transferred mass from the same
@@ -497,7 +488,6 @@ float4 SanitizeLife(float4 life)
 // so WriteCell stays at the DX11 8-UAV cap. Genome bits ride float channels for AsyncGPUReadback.
 #define FLORA_LIFE_SLICE 0
 #define FLORA_GENOME_SLICE 1
-#define MOBILE_SLICE 2
 
 float4 SampleLife(Texture2DArray<float4> tex, int2 cell)
 {
@@ -509,52 +499,10 @@ uint4 SampleGenome(Texture2DArray<float4> tex, int2 cell)
     return asuint(tex.Load(int4(cell, FLORA_GENOME_SLICE, 0)));
 }
 
-float4 SanitizeMobile(float4 mobile)
-{
-    return max(SafeFinite4(mobile, 0.0), 0.0);
-}
-
-float4 SampleMobile(Texture2DArray<float4> tex, int2 cell)
-{
-    return SanitizeMobile(tex.Load(int4(cell, MOBILE_SLICE, 0)));
-}
-
-void WriteMobile(RWTexture2DArray<float4> tex, int2 cell, float4 mobile)
-{
-    tex[uint3((uint2)cell, MOBILE_SLICE)] = SanitizeMobile(mobile);
-}
-
-bool IsMobileCarrier(uint material)
-{
-    return material == 0u || material == 1u || material == 11u
-        || material == 7u || material == 8u || material == 15u
-        || material == 9u || material == 12u;
-}
-
-float MobileCapacity(uint material, float4 mobile, float suspendCap)
-{
-    if (material == 9u)
-        return max(0.0, suspendCap);
-    if (material == 12u)
-        return 1.0;
-    if (material == 0u || material == 1u || material == 11u || material == 7u || material == 8u || material == 15u)
-        return max(0.0, 1.0 - saturate(mobile.y));
-    return 0.0;
-}
-
-float4 SeedMobileFromMaterial(uint material)
-{
-    if (material == 8u) return float4(1.0, 0.0, 0.0, 0.0);
-    if (material == 7u || material == 15u) return float4(0.0, 1.0, 0.0, 0.0);
-    if (material == 12u) return float4(0.0, 0.0, 0.0, 1.0);
-    return 0.0;
-}
-
-void WriteLifeGenome(RWTexture2DArray<float4> tex, int2 cell, float4 life, uint4 genome, float4 mobile)
+void WriteLifeGenome(RWTexture2DArray<float4> tex, int2 cell, float4 life, uint4 genome)
 {
     tex[uint3((uint2)cell, FLORA_LIFE_SLICE)] = SanitizeLife(life);
     tex[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(SanitizeGenome(genome));
-    WriteMobile(tex, cell, mobile);
 }
 
 float FloraExpressFactor(uint gene, float range)

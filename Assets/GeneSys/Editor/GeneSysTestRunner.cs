@@ -43,12 +43,6 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.HydrologyIntegrationTests");
         }
 
-        [MenuItem("Tools/GeneSys/Run MaCA PlayMode Tests")]
-        public static void RunMacaPlayMode()
-        {
-            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MacaIntegrationTests");
-        }
-
         public static void RunPlayModeGroup(string groupName)
         {
             GeneSysTestObserver.Run(TestMode.PlayMode, groupName);

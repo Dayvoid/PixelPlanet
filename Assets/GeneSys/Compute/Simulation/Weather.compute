@@ -95,7 +95,7 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     _ShadeWrite[cell] = shade;
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell), SampleMobile(_LifeGenomeRead, cell));
+    WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
 }
 
 float LightOf(int2 value) { return _LightRead.Load(int3(C(value), 0)); }
