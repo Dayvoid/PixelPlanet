@@ -113,6 +113,41 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float pondingRate = 0.85f;
         [Range(0f, 4f)] public float springDischargeRate = 0.9f;
 
+        [Header("MaCE transport")]
+        public bool maceSedimentPilot = false;
+        public bool maceEntrainment = false;
+        public bool maceShorelineSorting = false;
+        public bool maceSolute = false;
+        public bool maceAsh = false;
+        public bool maceMagma = false;
+        public bool maceHardWear = false;
+        [Range(0f, 8f)] public float maceBeta = 2.5f;
+        [Range(0f, 8f)] public float maceFineBeta = 1.4f;
+        [Range(0f, 4f)] public float maceGravityGain = 1f;
+        [Range(0f, 4f)] public float maceSupportGain = 0.6f;
+        [Range(0f, 4f)] public float maceReposeGain = 1.2f;
+        [Range(0f, 1f)] public float maceSedimentFillThreshold = 0.35f;
+        [Range(0f, 1f)] public float maceSedimentClearThreshold = 0.08f;
+        [Range(0.00001f, 0.1f)] public float maceMinMass = 0.0001f;
+        [Range(0f, 8f)] public float maceLambda = 2f;
+        [Range(0f, 4f)] public float maceEntrainmentScale = 1f;
+        [Range(0f, 4f)] public float maceRunoffGain = 0.6f;
+        [Range(0f, 4f)] public float maceBedloadGain = 0.5f;
+        [Range(0f, 1f)] public float maceExtractRate = 0.25f;
+        [Range(0f, 1f)] public float maceStructuralDeplete = 0.05f;
+        [Range(0f, 0.01f)] public float maceHardCrustAlpha = 0.0002f;
+        [Range(0f, 2f)] public float maceWearThreshold = 1.25f;
+        [Range(0f, 4f)] public float maceSoluteBeta = 2f;
+        [Range(0f, 4f)] public float maceSoluteDepositRate = 0.15f;
+        [Range(0f, 8f)] public float maceAshBeta = 1.8f;
+        [Range(0f, 4f)] public float maceAshLift = 1f;
+        [Range(0f, 4f)] public float maceAshSettle = 1f;
+        [Range(0f, 8f)] public float maceMagmaBeta = 2.2f;
+        [Range(0f, 4f)] public float maceMagmaEruptionGain = 1f;
+        [Range(0f, 1f)] public float maceAshFillThreshold = 0.25f;
+        [Range(0f, 1f)] public float maceMagmaFillThreshold = 0.35f;
+        [Range(0f, 2f)] public float maceBioerosionScale = 1f;
+
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
         [FormerlySerializedAs("atmosphereSolarHeating")]
@@ -949,6 +984,32 @@ namespace GeneSys.Configuration
             probeLifeSeedMinCount = Mathf.Clamp(probeLifeSeedMinCount, 1, 8);
             probeLifeSeedMaxCount = Mathf.Clamp(probeLifeSeedMaxCount, probeLifeSeedMinCount, 8);
             probeLifeSeedSporeLoad = Mathf.Clamp01(probeLifeSeedSporeLoad);
+            maceBeta = Mathf.Max(0f, maceBeta);
+            maceFineBeta = Mathf.Max(0f, maceFineBeta);
+            maceGravityGain = Mathf.Max(0f, maceGravityGain);
+            maceSupportGain = Mathf.Max(0f, maceSupportGain);
+            maceReposeGain = Mathf.Max(0f, maceReposeGain);
+            maceSedimentFillThreshold = Mathf.Clamp01(maceSedimentFillThreshold);
+            maceSedimentClearThreshold = Mathf.Clamp(maceSedimentClearThreshold, 0f, maceSedimentFillThreshold);
+            maceMinMass = Mathf.Clamp(maceMinMass, 0.00001f, 0.1f);
+            maceLambda = Mathf.Max(0f, maceLambda);
+            maceEntrainmentScale = Mathf.Max(0f, maceEntrainmentScale);
+            maceRunoffGain = Mathf.Max(0f, maceRunoffGain);
+            maceBedloadGain = Mathf.Max(0f, maceBedloadGain);
+            maceExtractRate = Mathf.Clamp01(maceExtractRate);
+            maceStructuralDeplete = Mathf.Clamp01(maceStructuralDeplete);
+            maceHardCrustAlpha = Mathf.Clamp(maceHardCrustAlpha, 0f, 0.01f);
+            maceWearThreshold = Mathf.Max(0f, maceWearThreshold);
+            maceSoluteBeta = Mathf.Max(0f, maceSoluteBeta);
+            maceSoluteDepositRate = Mathf.Max(0f, maceSoluteDepositRate);
+            maceAshBeta = Mathf.Max(0f, maceAshBeta);
+            maceAshLift = Mathf.Max(0f, maceAshLift);
+            maceAshSettle = Mathf.Max(0f, maceAshSettle);
+            maceMagmaBeta = Mathf.Max(0f, maceMagmaBeta);
+            maceMagmaEruptionGain = Mathf.Max(0f, maceMagmaEruptionGain);
+            maceAshFillThreshold = Mathf.Clamp01(maceAshFillThreshold);
+            maceMagmaFillThreshold = Mathf.Clamp01(maceMagmaFillThreshold);
+            maceBioerosionScale = Mathf.Max(0f, maceBioerosionScale);
         }
     }
 }

@@ -12,6 +12,13 @@ namespace GeneSys.Simulation.Gpu
         public const int WaspClaimCount = 5;
         public const int GrassVisitSliceCount = 2;
         public const int TreeSliceCount = 3;
+        public const int MobileMassSliceCount = 6;
+        public const int MobileSliceCoarse = 0;
+        public const int MobileSliceFine = 1;
+        public const int MobileSliceSolute = 2;
+        public const int MobileSliceMagma = 3;
+        public const int MobileSliceAsh = 4;
+        public const int MobileSliceStructural = 5;
 
         public RenderTexture MaterialRead { get; private set; }
         public RenderTexture MaterialWrite { get; private set; }
@@ -56,8 +63,15 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture TreeWrite { get; private set; }
         public RenderTexture TreeGrowthClaims { get; private set; }
         public RenderTexture PlantRootFlux => GrassRootFlux;
+        public RenderTexture MobileMassRead { get; private set; }
+        public RenderTexture MobileMassWrite { get; private set; }
+        public RenderTexture MaceAffinity { get; private set; }
+        public RenderTexture MaceNormalizer { get; private set; }
+        public RenderTexture MaceTransferRead { get; private set; }
+        public RenderTexture MaceTransferWrite { get; private set; }
         public ComputeBuffer WaterColumn { get; private set; }
         public ComputeBuffer WaterFaceFlux { get; private set; }
+        public ComputeBuffer SedimentColumn { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -109,11 +123,19 @@ namespace GeneSys.Simulation.Gpu
             TreeGrowthClaims = CreateTexture("GeneSys Tree Growth Claims", GraphicsFormat.R32_UInt);
             WaterColumn = CreateColumnBuffer();
             WaterFaceFlux = CreateColumnBuffer();
+            SedimentColumn = CreateColumnBuffer();
+            MobileMassRead = CreateTextureArray("GeneSys Mobile Mass A", GraphicsFormat.R32_SFloat, MobileMassSliceCount);
+            MobileMassWrite = CreateTextureArray("GeneSys Mobile Mass B", GraphicsFormat.R32_SFloat, MobileMassSliceCount);
+            MaceAffinity = CreateTexture("GeneSys MaCE Affinity", GraphicsFormat.R32_SFloat);
+            MaceNormalizer = CreateTexture("GeneSys MaCE Normalizer", GraphicsFormat.R32G32_SFloat);
+            MaceTransferRead = CreateTexture("GeneSys MaCE Transfer A", GraphicsFormat.R32G32B32A32_SFloat);
+            MaceTransferWrite = CreateTexture("GeneSys MaCE Transfer B", GraphicsFormat.R32G32B32A32_SFloat);
             ClearFaunaAndAcoustic();
             ClearGrass();
             ClearWasp();
             ClearTree();
             ClearWaterColumns();
+            ClearMobileMass();
         }
 
         public void ClearWaterColumns()
@@ -122,6 +144,17 @@ namespace GeneSys.Simulation.Gpu
             var zeros = new Vector4[count];
             WaterColumn?.SetData(zeros);
             WaterFaceFlux?.SetData(zeros);
+            SedimentColumn?.SetData(zeros);
+        }
+
+        public void ClearMobileMass()
+        {
+            ClearRenderTarget(MobileMassRead);
+            ClearRenderTarget(MobileMassWrite);
+            ClearRenderTarget(MaceAffinity);
+            ClearRenderTarget(MaceNormalizer);
+            ClearRenderTarget(MaceTransferRead);
+            ClearRenderTarget(MaceTransferWrite);
         }
 
         public void ClearGrass()
@@ -241,7 +274,18 @@ namespace GeneSys.Simulation.Gpu
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
             (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
             // Storm, Light, Fauna, Acoustic, Claims, Grass, Propagule, Wasp, grass visit, root flux,
-            // and hydrostatic column scratch are excluded: other kernels do not copy them through WriteCell.
+            // hydrostatic column scratch, and MaCE mobile/scratch are excluded: other kernels do not
+            // copy them through WriteCell.
+        }
+
+        public void SwapMobileMass()
+        {
+            (MobileMassRead, MobileMassWrite) = (MobileMassWrite, MobileMassRead);
+        }
+
+        public void SwapMaceTransfer()
+        {
+            (MaceTransferRead, MaceTransferWrite) = (MaceTransferWrite, MaceTransferRead);
         }
 
         public void SwapStorm()
@@ -299,6 +343,8 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(PropaguleRead, PropaguleWrite);
             Graphics.CopyTexture(WaspRead, WaspWrite);
             Graphics.CopyTexture(TreeRead, TreeWrite);
+            Graphics.CopyTexture(MobileMassRead, MobileMassWrite);
+            Graphics.CopyTexture(MaceTransferRead, MaceTransferWrite);
         }
 
         public void Dispose()
@@ -325,8 +371,13 @@ namespace GeneSys.Simulation.Gpu
             Release(GrassVisit);
             Release(TreeRead); Release(TreeWrite);
             Release(TreeGrowthClaims);
+            Release(MobileMassRead); Release(MobileMassWrite);
+            Release(MaceAffinity);
+            Release(MaceNormalizer);
+            Release(MaceTransferRead); Release(MaceTransferWrite);
             WaterColumn?.Release();
             WaterFaceFlux?.Release();
+            SedimentColumn?.Release();
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -347,8 +398,13 @@ namespace GeneSys.Simulation.Gpu
             GrassVisit = null;
             TreeRead = TreeWrite = null;
             TreeGrowthClaims = null;
+            MobileMassRead = MobileMassWrite = null;
+            MaceAffinity = null;
+            MaceNormalizer = null;
+            MaceTransferRead = MaceTransferWrite = null;
             WaterColumn = null;
             WaterFaceFlux = null;
+            SedimentColumn = null;
         }
 
         private static void Release(RenderTexture texture)

@@ -1,0 +1,652 @@
+#pragma kernel SeedFromMaterials
+#pragma kernel ApplyMobileEdits
+#pragma kernel SyncLegacyIds
+#pragma kernel BuildSedimentColumns
+#pragma kernel BuildAffinity
+#pragma kernel BuildNormalizer
+#pragma kernel RedistributeChannel
+#pragma kernel OverflowProject
+#pragma kernel ExtractStructural
+#pragma kernel CrossChannelMobile
+#pragma kernel AcknowledgeTransfers
+#pragma kernel ReconcileIds
+#pragma target 5.1
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+RWTexture2D<uint> _MaterialWrite;
+Texture2D<float4> _StateRead;
+RWTexture2D<float4> _StateWrite;
+Texture2D<float2> _FlowRead;
+RWTexture2D<float2> _FlowWrite;
+Texture2D<float4> _AuxRead;
+RWTexture2D<float4> _AuxWrite;
+Texture2D<uint> _ShadeRead;
+RWTexture2D<uint> _ShadeWrite;
+Texture2D<float4> _EcologyRead;
+RWTexture2D<float4> _EcologyWrite;
+Texture2D<float4> _CombustionRead;
+RWTexture2D<float4> _CombustionWrite;
+Texture2DArray<float4> _LifeGenomeRead;
+RWTexture2DArray<float4> _LifeGenomeWrite;
+Texture2DArray<float4> _GrassRead;
+Texture2DArray<float4> _TreeRead;
+Texture2DArray<float> _MobileMassRead;
+RWTexture2DArray<float> _MobileMassWrite;
+Texture2D<float> _MaceAffinityRead;
+RWTexture2D<float> _MaceAffinityWrite;
+Texture2D<float2> _MaceNormalizerRead;
+RWTexture2D<float2> _MaceNormalizerWrite;
+Texture2D<float4> _MaceTransferRead;
+RWTexture2D<float4> _MaceTransferWrite;
+RWStructuredBuffer<float4> _SedimentColumns;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+StructuredBuffer<BrushCommand> _BrushCommands;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+int _BrushCount;
+int _MaceChannel;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+float4 _Mechanics;
+float4 _MaceFlags;
+float4 _MaceExtra;
+float4 _MaceA;
+float4 _MaceB;
+float4 _MaceC;
+float4 _MaceD;
+float4 _MaceE;
+float4 _MaceF;
+float4 _MaceG;
+float4 _MaceH;
+float4 _Erosion;
+float4 _Hydrology;
+float4 _MoistureErosion;
+float4 _EruptionA;
+float4 _EruptionB;
+float4 _WeatherC;
+float4 _WeatherE;
+float4 _GrassI;
+float4 _TreeH;
+float4 _Geology;
+
+MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
+int2 C(int2 value) { return ClampCell(value, _GridSize); }
+uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
+float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
+float2 F(int2 value) { return _FlowRead.Load(int3(C(value), 0)); }
+float4 A(int2 value) { return _AuxRead.Load(int3(C(value), 0)); }
+MaterialGpuData D(uint material) { return Mat(material); }
+
+#include "../../Shaders/Simulation/Common/MaceCommon.hlsl"
+
+bool FlagSediment() { return MaceFlag(_MaceFlags, MACE_FLAG_SEDIMENT); }
+bool FlagEntrain() { return MaceFlag(_MaceFlags, MACE_FLAG_ENTRAIN); }
+bool FlagShore() { return MaceFlag(_MaceFlags, MACE_FLAG_SHORE); }
+bool FlagSolute() { return MaceFlag(_MaceFlags, MACE_FLAG_SOLUTE); }
+bool FlagAsh() { return _MaceExtra.x > 0.5; }
+bool FlagMagma() { return _MaceExtra.y > 0.5; }
+bool FlagWear() { return _MaceExtra.z > 0.5; }
+
+bool IsOpenCarrierLocal(uint material)
+{
+    return material == 0u || material == 1u || material == 11u || Mat(material).metadata.x == 1.0;
+}
+
+float ChannelBeta(int slice)
+{
+    if (slice == MACE_SLICE_FINE) return max(0.0, _MaceD.y);
+    if (slice == MACE_SLICE_SOLUTE) return max(0.0, _MaceD.z);
+    if (slice == MACE_SLICE_ASH) return max(0.0, _MaceD.w);
+    if (slice == MACE_SLICE_MAGMA) return max(0.0, _MaceE.x);
+    return max(0.0, _MaceA.x);
+}
+
+bool ChannelEligibleDest(int2 cell, uint material, int slice)
+{
+    float structural = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_STRUCTURAL);
+    MaterialGpuData definition = Mat(material);
+    if (slice == MACE_SLICE_COARSE || slice == MACE_SLICE_FINE)
+        return IsSedimentEligibleDest(material, structural);
+    if (slice == MACE_SLICE_SOLUTE)
+        return IsSoluteEligible(material, definition, max(0.0, A(cell).y));
+    if (slice == MACE_SLICE_ASH)
+        return IsAshEligibleDest(material);
+    if (slice == MACE_SLICE_MAGMA)
+        return IsMagmaEligibleDest(material);
+    return false;
+}
+
+bool ChannelEligibleSource(int2 cell, uint material, int slice, float rho)
+{
+    if (rho <= max(1e-8, _MaceB.x)) return false;
+    if (slice == MACE_SLICE_COARSE || slice == MACE_SLICE_FINE)
+        return IsSedimentEligibleSource(material, rho);
+    // Existing solute/ash/magma load must be able to stay put on a blocked or dry host.
+    return true;
+}
+
+void SeedCell(int2 cell, uint material)
+{
+    float coarse = 0.0;
+    float fine = 0.0;
+    float solute = 0.0;
+    float magma = 0.0;
+    float ash = 0.0;
+    float structural = 0.0;
+    if (material == 8u) coarse = 1.0;
+    else if (material == 12u) ash = 1.0;
+    else if (material == 6u) magma = 1.0;
+    else if (IsStructuralHostId(material)) structural = 1.0;
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_COARSE, coarse);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_FINE, fine);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_SOLUTE, solute);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_MAGMA, magma);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_ASH, ash);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_STRUCTURAL, structural);
+}
+
+void CopyMobileThrough(int2 cell)
+{
+    [unroll]
+    for (int slice = 0; slice < MACE_SLICE_COUNT; slice++)
+        WriteMobileSlice(_MobileMassWrite, cell, slice, SampleMobileSlice(_MobileMassRead, cell, slice));
+}
+
+void WriteCore(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
+{
+    uint oldMaterial = M(cell);
+    uint shade = _ShadeRead.Load(int3(cell, 0));
+    if (material != oldMaterial)
+        shade = PickMaterialShade(Mat(material).metadata.x, (uint2)cell, material, _Seed);
+    _MaterialWrite[cell] = material;
+    _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
+    _FlowWrite[cell] = clamp(flow, -20.0, 20.0);
+    _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
+    _ShadeWrite[cell] = shade;
+    _EcologyWrite[cell] = SanitizeEcology(ecology);
+    _CombustionWrite[cell] = SanitizeCombustion(combustion);
+    WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
+}
+
+float RootCohesion(int2 cell)
+{
+    return (float)CountGrassRootTapsOnCell(_GrassRead, cell, _GridSize) * saturate(_GrassI.y)
+        + (float)CountTreeRootsOnCell(_TreeRead, cell, _GridSize) * saturate(_TreeH.y);
+}
+
+float SedimentMobility(int2 cell, uint material, float rho)
+{
+    if (!IsSedimentEligibleSource(material, rho)) return 0.0;
+    float support = MaceSupportBelow(_MobileMassRead, cell);
+    float slope = max(MaceLateralSlope(_MobileMassRead, cell, -1), MaceLateralSlope(_MobileMassRead, cell, 1));
+    float tanRepose = MaceTanRepose(material == 8u ? 8u : (material == 15u ? 15u : 7u));
+    float oversteep = max(0.0, slope - tanRepose);
+    if (support > 0.85 && oversteep <= 1e-4) return 0.0;
+    float lambda = max(0.0, _MaceB.w) * _DeltaTime * (1.0 + oversteep * max(0.0, _MaceA.w));
+    if (FlagEntrain())
+    {
+        float exposed = cell.y < _GridSize.y - 1 && IsAtmosphereMaterial(M(cell + int2(0, 1)), Mat(M(cell + int2(0, 1)))) ? 1.0 : 0.0;
+        lambda += max(0.0, _MaceG.x) * length(F(cell)) * exposed * _DeltaTime;
+        lambda *= max(0.15, 1.0 - saturate(RootCohesion(cell)));
+    }
+    return saturate(lambda);
+}
+
+float ChannelMobility(int2 cell, uint material, int slice, float rho)
+{
+    float lambda = 0.0;
+    if (slice == MACE_SLICE_COARSE || slice == MACE_SLICE_FINE)
+        lambda = SedimentMobility(cell, material, rho);
+    else if (slice == MACE_SLICE_SOLUTE)
+        lambda = saturate(max(0.0, _MaceB.w) * _DeltaTime * (0.25 + saturate(A(cell).y)));
+    else if (slice == MACE_SLICE_ASH)
+        lambda = saturate(max(0.0, _MaceB.w) * _DeltaTime * (0.35 + abs(F(cell).y) + abs(F(cell).x)));
+    else if (slice == MACE_SLICE_MAGMA)
+        lambda = saturate(max(0.0, _MaceB.w) * _DeltaTime * (0.4 + max(0.0, S(cell).y)));
+    return lambda;
+}
+
+float BuildChannelAffinity(int2 cell, uint material, int slice)
+{
+    float radius = Radius01(cell.y, _GridSize.y);
+    float affinity = -max(0.0, _MaceA.y) * _Mechanics.x * radius;
+    affinity += max(0.0, _MaceA.z) * MaceSupportBelow(_MobileMassRead, cell);
+    if (slice == MACE_SLICE_COARSE || slice == MACE_SLICE_FINE)
+    {
+        float slope = max(MaceLateralSlope(_MobileMassRead, cell, -1), MaceLateralSlope(_MobileMassRead, cell, 1));
+        float tanRepose = MaceTanRepose(material == 8u ? 8u : (material == 15u ? 15u : 7u));
+        affinity -= max(0.0, _MaceA.w) * max(0.0, slope - tanRepose);
+        if (slice == MACE_SLICE_FINE)
+            affinity += 0.15;
+        if (FlagEntrain() || FlagShore())
+        {
+            float exposed = cell.y < _GridSize.y - 1 && IsOpenCarrierLocal(M(cell + int2(0, 1))) ? 1.0 : 0.0;
+            affinity += max(0.0, _MaceG.x) * length(F(cell)) * exposed;
+            affinity += max(0.0, _MaceG.z) * max(0.0, F(cell).x);
+            float wet = saturate(max(0.0, S(cell).z) + max(0.0, A(cell).y));
+            affinity += max(0.0, _MaceG.w) * wet * length(F(cell));
+            if (FlagShore() && slice == MACE_SLICE_FINE)
+                affinity += 0.35 * length(F(cell)) + 0.2 * wet;
+            if (FlagShore() && slice == MACE_SLICE_COARSE)
+                affinity -= 0.12 * wet;
+        }
+    }
+    else if (slice == MACE_SLICE_SOLUTE)
+    {
+        affinity += 1.4 * saturate(A(cell).y);
+        if (cell.y > 0)
+            affinity += 0.6 * (A(cell).y - A(int2(cell.x, cell.y - 1)).y);
+    }
+    else if (slice == MACE_SLICE_ASH)
+    {
+        affinity += max(0.0, _MaceE.y) * max(0.0, F(cell).y);
+        affinity += 0.45 * F(cell).x;
+        affinity += 0.004 * max(0.0, S(cell).x - 25.0);
+        affinity -= max(0.0, _MaceE.z) * 0.35;
+    }
+    else if (slice == MACE_SLICE_MAGMA)
+    {
+        float pressureAbove = cell.y + 1 < _GridSize.y ? S(cell + int2(0, 1)).y : 0.0;
+        affinity += max(0.0, _MaceE.w) * max(0.0, S(cell).y - pressureAbove);
+        affinity += max(0.0, _EruptionA.z) * max(0.0, F(cell).y) * 0.15;
+        affinity -= max(0.0, _WeatherC.w) * 0.35;
+    }
+    return affinity;
+}
+
+[numthreads(8, 8, 1)]
+void SeedFromMaterials(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    SeedCell(id.xy, M(id.xy));
+}
+
+[numthreads(8, 8, 1)]
+void ApplyMobileEdits(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    bool painted = false;
+    uint paintId = M(cell);
+    for (int i = 0; i < _BrushCount; i++)
+    {
+        BrushCommand command = _BrushCommands[i];
+        int mode = (int)round(command.values.x);
+        if (mode != 0) continue;
+        int dx = abs(cell.x - command.center.x);
+        dx = min(dx, _GridSize.x - dx);
+        int dy = cell.y - command.center.y;
+        if (dx * dx + dy * dy > command.radius * command.radius) continue;
+        painted = true;
+        paintId = command.materialId;
+    }
+    if (painted)
+        SeedCell(cell, paintId);
+    else
+        CopyMobileThrough(cell);
+}
+
+[numthreads(8, 8, 1)]
+void SyncLegacyIds(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    CopyMobileThrough(cell);
+    float epsilon = max(1e-8, _MaceB.x);
+    if (material == 8u && !FlagSediment() && MobileSedimentFillFrom(_MobileMassRead, cell) < epsilon)
+        WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_COARSE, 1.0);
+    if (material == 12u && !FlagAsh() && SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_ASH) < epsilon)
+        WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_ASH, 1.0);
+    if (material == 6u && !FlagMagma() && SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_MAGMA) < epsilon)
+        WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_MAGMA, 1.0);
+}
+
+[numthreads(64, 1, 1)]
+void BuildSedimentColumns(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x) return;
+    int x = (int)id.x;
+    float surfaceY = -1.0;
+    float fill = 0.0;
+    for (int y = _GridSize.y - 1; y >= 0; y--)
+    {
+        int2 cell = int2(x, y);
+        float sediment = MobileSedimentFillFrom(_MobileMassRead, cell);
+        uint material = M(cell);
+        if (sediment > max(1e-8, _MaceB.x) || material == 8u)
+        {
+            if (surfaceY < 0.0) surfaceY = (float)y;
+            fill += sediment;
+        }
+        else if (surfaceY >= 0.0 && IsStructuralHostId(material))
+            break;
+    }
+    _SedimentColumns[x] = float4(surfaceY, fill, 0.0, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void BuildAffinity(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float rho = SampleMobileSlice(_MobileMassRead, cell, _MaceChannel);
+    bool neighborMass = false;
+    [unroll]
+    for (int i = 0; i < 9; i++)
+    {
+        if (!MaceRadialValid(cell, MaceMoore[i])) continue;
+        if (SampleMobileSlice(_MobileMassRead, MaceNeighbor(cell, MaceMoore[i]), _MaceChannel) > max(1e-8, _MaceB.x))
+            neighborMass = true;
+    }
+    float affinity = -100.0;
+    if (ChannelEligibleDest(cell, material, _MaceChannel) || rho > max(1e-8, _MaceB.x) || neighborMass)
+        affinity = BuildChannelAffinity(cell, material, _MaceChannel);
+    _MaceAffinityWrite[cell] = SafeFinite(affinity, -100.0);
+}
+
+[numthreads(8, 8, 1)]
+void BuildNormalizer(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float rho = SampleMobileSlice(_MobileMassRead, cell, _MaceChannel);
+    if (!ChannelEligibleSource(cell, material, _MaceChannel, rho))
+    {
+        _MaceNormalizerWrite[cell] = float2(-100.0, 0.0);
+        return;
+    }
+    float maxA = -1e20;
+    [unroll]
+    for (int i = 0; i < 9; i++)
+    {
+        if (!MaceRadialValid(cell, MaceMoore[i])) continue;
+        int2 n = MaceNeighbor(cell, MaceMoore[i]);
+        if (!ChannelEligibleDest(n, M(n), _MaceChannel)) continue;
+        maxA = max(maxA, _MaceAffinityRead.Load(int3(n, 0)));
+    }
+    float sumExp = 0.0;
+    float beta = ChannelBeta(_MaceChannel);
+    [unroll]
+    for (int j = 0; j < 9; j++)
+    {
+        if (!MaceRadialValid(cell, MaceMoore[j])) continue;
+        int2 n = MaceNeighbor(cell, MaceMoore[j]);
+        if (!ChannelEligibleDest(n, M(n), _MaceChannel)) continue;
+        sumExp += MaceLogSumExpWeight(_MaceAffinityRead.Load(int3(n, 0)), maxA, beta);
+    }
+    _MaceNormalizerWrite[cell] = float2(maxA, max(sumExp, 0.0));
+}
+
+[numthreads(8, 8, 1)]
+void RedistributeChannel(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    CopyMobileThrough(cell);
+    int slice = _MaceChannel;
+    uint material = M(cell);
+    float rhoNew = 0.0;
+    float beta = ChannelBeta(slice);
+    [unroll]
+    for (int i = 0; i < 9; i++)
+    {
+        if (!MaceRadialValid(cell, MaceMoore[i])) continue;
+        int2 source = MaceNeighbor(cell, MaceMoore[i]);
+        float rhoS = SampleMobileSlice(_MobileMassRead, source, slice);
+        uint sourceMat = M(source);
+        if (!ChannelEligibleSource(source, sourceMat, slice, rhoS)) continue;
+        float lambda = ChannelMobility(source, sourceMat, slice, rhoS);
+        float2 norm = _MaceNormalizerRead.Load(int3(source, 0));
+        if (all(source == cell))
+            rhoNew += (1.0 - lambda) * rhoS;
+        if (ChannelEligibleDest(cell, material, slice) && norm.y > 1e-12)
+        {
+            float weight = MaceLogSumExpWeight(_MaceAffinityRead.Load(int3(cell, 0)), norm.x, beta) / norm.y;
+            rhoNew += lambda * weight * rhoS;
+        }
+        else if (all(source == cell) && norm.y <= 1e-12)
+            rhoNew += lambda * rhoS;
+    }
+    WriteMobileSlice(_MobileMassWrite, cell, slice, rhoNew);
+}
+
+[numthreads(8, 8, 1)]
+void OverflowProject(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    CopyMobileThrough(cell);
+    int slice = _MaceChannel;
+    float rho = SampleMobileSlice(_MobileMassRead, cell, slice);
+    float capacity = MobileChannelCapacity(_MobileMassRead, cell, slice);
+    float kept = min(rho, capacity);
+    float incoming = 0.0;
+    [loop]
+    for (int i = 0; i < 9; i++)
+    {
+        if (!MaceRadialValid(cell, MaceMoore[i])) continue;
+        int2 source = MaceNeighbor(cell, MaceMoore[i]);
+        float rhoS = SampleMobileSlice(_MobileMassRead, source, slice);
+        float capS = MobileChannelCapacity(_MobileMassRead, source, slice);
+        float excessS = max(0.0, rhoS - capS);
+        if (excessS <= 1e-8) continue;
+        float spareTotal = 0.0;
+        [loop]
+        for (int j = 0; j < 9; j++)
+        {
+            if (!MaceRadialValid(source, MaceMoore[j])) continue;
+            int2 n = MaceNeighbor(source, MaceMoore[j]);
+            if (!ChannelEligibleDest(n, M(n), slice)) continue;
+            spareTotal += max(0.0, MobileChannelCapacity(_MobileMassRead, n, slice) - min(SampleMobileSlice(_MobileMassRead, n, slice), MobileChannelCapacity(_MobileMassRead, n, slice)));
+        }
+        if (spareTotal <= 1e-8)
+        {
+            if (all(source == cell))
+                kept = rho;
+            continue;
+        }
+        float spareD = max(0.0, capacity - min(rho, capacity));
+        if (ChannelEligibleDest(cell, M(cell), slice))
+            incoming += excessS * spareD / spareTotal;
+    }
+    WriteMobileSlice(_MobileMassWrite, cell, slice, kept + incoming);
+}
+
+[numthreads(8, 8, 1)]
+void ExtractStructural(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    CopyMobileThrough(cell);
+    uint material = M(cell);
+    float4 aux = A(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    MaterialGpuData definition = Mat(material);
+    float structural = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_STRUCTURAL);
+    float requested = 0.0;
+    float moisture = max(0.0, state.z) + max(0.0, aux.y);
+    float moistureProtection = saturate(moisture / max(0.01, _MoistureErosion.x));
+    float cohesion = saturate(_Erosion.z + definition.physical.y + moistureProtection * max(0.0, _MoistureErosion.y) + RootCohesion(cell) * _Erosion.z);
+    bool exposed = cell.y < _GridSize.y - 1 && IsOpenCarrierLocal(M(cell + int2(0, 1)));
+
+    if (FlagEntrain() && (material == 7u || material == 15u) && exposed && aux.w > 1.0)
+    {
+        float erodibility = 1.0 - moistureProtection;
+        requested += min(structural, max(0.0, _MaceC.z) * aux.w * max(0.0, _Erosion.x) * erodibility * _DeltaTime);
+    }
+    if (FlagSolute() && IsHardCrustMaterial(material) && aux.y > 0.55 && definition.metadata.z > 0.5)
+    {
+        float karst = material == 14u ? 1.6 : 1.0;
+        float rockResist = saturate(definition.physical.y);
+        requested += min(structural, max(0.0, _Hydrology.z) * aux.y * max(0.15, 1.0 - rockResist) * karst * _DeltaTime);
+    }
+    if (FlagWear() && IsHardCrustMaterial(material) && aux.w > max(0.0, _MaceF.y))
+    {
+        float bio = 1.0 + saturate(definition.metadata.z) * max(0.0, _MaceH.w);
+        requested += min(structural, max(0.0, _MaceC.w) * (aux.w - _MaceF.y) * (1.0 - cohesion) * bio * _DeltaTime);
+    }
+    float accepted = min(structural, max(0.0, requested));
+    if (accepted <= max(1e-8, _MaceB.x))
+    {
+        _MaceTransferWrite[cell] = 0;
+        return;
+    }
+
+    float grain = saturate(definition.physical.w);
+    float fineShare = material == 15u ? 0.85 : (material == 7u ? lerp(0.15, 0.45, grain) : (FlagSolute() && IsHardCrustMaterial(material) && aux.y > 0.55 ? 0.0 : 0.25));
+    float soluteShare = (FlagSolute() && IsHardCrustMaterial(material) && aux.y > 0.55) ? 1.0 : 0.0;
+    float remaining = accepted;
+    float toSolute = min(remaining, accepted * soluteShare);
+    remaining -= toSolute;
+    float toFine = min(remaining, remaining * fineShare);
+    remaining -= toFine;
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_STRUCTURAL, structural - accepted);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_SOLUTE, SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_SOLUTE) + toSolute);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_FINE, SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_FINE) + toFine);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_COARSE, SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_COARSE) + remaining);
+    _MaceTransferWrite[cell] = float4(accepted, 0.0, 0.0, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void CrossChannelMobile(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    CopyMobileThrough(cell);
+    uint material = M(cell);
+    float4 state = S(cell);
+    float4 aux = A(cell);
+    float latent = 0.0;
+    float nutrient = 0.0;
+    float magma = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_MAGMA);
+    float structural = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_STRUCTURAL);
+    float ash = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_ASH);
+    float solute = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_SOLUTE);
+    float fine = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_FINE);
+
+    if (FlagMagma())
+    {
+        MaterialGpuData magmaDef = Mat(6u);
+        float freezeCp = EffectiveCellHeatCapacity(magmaDef, state, aux, Mat(9u).transport.y, false);
+        float latentNeed = MaterialPhaseLatentDelta(magmaDef.motion.y, _WeatherE.w, freezeCp);
+        if (magma > max(1e-8, _MaceB.x) && state.x + latentNeed < 780.0)
+        {
+            structural += magma;
+            magma = 0.0;
+            latent = latentNeed;
+        }
+        else if ((material == 3u || material == 5u) && structural > max(1e-8, _MaceB.x) && state.x > magmaDef.phase.x)
+        {
+            float melt = min(structural, saturate((state.x - magmaDef.phase.x) * 0.02) * _DeltaTime);
+            structural -= melt;
+            magma += melt;
+            latent = -MaterialPhaseLatentDelta(magmaDef.motion.y, _WeatherE.w, freezeCp) * saturate(melt);
+        }
+    }
+
+    if (FlagAsh())
+    {
+        uint below = cell.y > 0 ? M(cell + int2(0, -1)) : 0u;
+        if (ash > max(0.0, _MaceF.w) && (material == 8u || material == 7u || below == 8u || below == 7u))
+        {
+            float convert = min(ash, max(0.05, _EruptionB.w) * 0.15 * _DeltaTime);
+            ash -= convert;
+            structural += convert;
+            nutrient = convert * 0.45 * max(0.0, _EruptionB.w);
+        }
+    }
+
+    if (FlagSolute())
+    {
+        float dry = saturate(1.0 - max(0.0, aux.y) - max(0.0, state.z));
+        if (solute > max(1e-8, _MaceB.x) && dry > 0.65)
+        {
+            float deposit = min(solute, max(0.0, _MaceH.z) * dry * _DeltaTime);
+            solute -= deposit;
+            fine += deposit;
+        }
+    }
+
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_MAGMA, magma);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_STRUCTURAL, structural);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_ASH, ash);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_SOLUTE, solute);
+    WriteMobileSlice(_MobileMassWrite, cell, MACE_SLICE_FINE, fine);
+    _MaceTransferWrite[cell] = float4(_MaceTransferRead.Load(int3(cell, 0)).x, latent, nutrient, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void AcknowledgeTransfers(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = _EcologyRead.Load(int3(cell, 0));
+    float4 combustion = _CombustionRead.Load(int3(cell, 0));
+    float4 transfer = _MaceTransferRead.Load(int3(cell, 0));
+    if (transfer.x > max(1e-8, _MaceB.x))
+        aux.w = 0.0;
+    state.x += transfer.y;
+    aux.z = saturate(aux.z + max(0.0, transfer.z));
+    float structural = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_STRUCTURAL);
+    if (structural < max(0.0, _MaceF.z) && IsStructuralHostId(material))
+    {
+        float sediment = MobileSedimentFillFrom(_MobileMassRead, cell);
+        float ash = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_ASH);
+        float magma = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_MAGMA);
+        if (magma > max(0.0, _MaceB.z)) material = 6u;
+        else if (ash > max(0.0, _MaceF.w)) material = 12u;
+        else if (sediment > max(0.0, _MaceB.y)) material = 8u;
+        else material = IsMaceAtmosphereClass(1u, cell.y) ? 1u : 0u;
+    }
+    WriteCore(cell, material, state, flow, aux, ecology, combustion);
+}
+
+[numthreads(8, 8, 1)]
+void ReconcileIds(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = _EcologyRead.Load(int3(cell, 0));
+    float4 combustion = _CombustionRead.Load(int3(cell, 0));
+    float sediment = MobileSedimentFillFrom(_MobileMassRead, cell);
+    float ash = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_ASH);
+    float magma = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_MAGMA);
+    float structural = SampleMobileSlice(_MobileMassRead, cell, MACE_SLICE_STRUCTURAL);
+    float fillT = max(0.0, _MaceB.y);
+    float clearT = max(0.0, _MaceB.z);
+    float ashFill = max(0.05, _MaceF.w);
+    float magmaFill = max(0.05, _MaceC.y);
+
+    if (FlagMagma() && magma >= magmaFill && (IsLooseSedimentCarrier(material) || material == 6u))
+        material = 6u;
+    else if (FlagAsh() && ash >= ashFill && (IsLooseSedimentCarrier(material) || material == 12u))
+        material = 12u;
+    else if (FlagSediment() && sediment >= fillT && IsLooseSedimentCarrier(material))
+        material = 8u;
+
+    if (FlagMagma() && material == 6u && magma < clearT && structural < max(0.0, _MaceF.z))
+        material = sediment >= fillT ? 8u : (IsMaceAtmosphereClass(1u, cell.y) ? 1u : 0u);
+    if (FlagAsh() && material == 12u && ash < clearT)
+        material = sediment >= fillT ? 8u : (IsMaceAtmosphereClass(1u, cell.y) ? 1u : 0u);
+    if (FlagSediment() && material == 8u && sediment < clearT && structural < max(0.0, _MaceF.z) && magma < clearT && ash < clearT)
+        material = IsMaceAtmosphereClass(1u, cell.y) ? 1u : 0u;
+
+    WriteCore(cell, material, state, flow, aux, ecology, combustion);
+}

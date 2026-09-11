@@ -56,6 +56,7 @@ Shader "GeneSys/Planetoid Display"
             Texture2DArray<float4> _TreeTex;
             Texture2D<float2> _AcousticTex;
             Texture2D<float> _LightTex;
+            Texture2DArray<float> _MobileMassTex;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
             Texture2D<float4> _Categories;
@@ -331,6 +332,9 @@ Shader "GeneSys/Planetoid Display"
                         color = lerp(color, float3(0.85, 0.90, 0.95), saturate((relativeHumidity - 0.75) * 2.2) * 0.45);
                     if (!atmosphereCarrier && state.z > 0.02 && state.z < 0.55 && material != 9u && material != 10u)
                         color = lerp(color, float3(0.70, 0.86, 0.96), saturate(state.z * 2.0) * 0.28);
+                    float mobileSediment = max(0.0, _MobileMassTex.Load(int4(cell, 0, 0))) + max(0.0, _MobileMassTex.Load(int4(cell, 1, 0)));
+                    if (mobileSediment > 0.05 && (material == 1u || material == 0u || material == 7u || material == 15u))
+                        color = lerp(color, float3(0.62, 0.52, 0.28), saturate(mobileSediment) * 0.65);
 
                     float soot = saturate(combustion.z);
                     if (soot > 0.02)
@@ -525,6 +529,13 @@ Shader "GeneSys/Planetoid Display"
                     }
                     else if (material == 134u || material == 135u)
                         color = float3(0.55, 0.12, 0.12);
+                }
+                else if (_OverlayMode == 27)
+                {
+                    float coarse = saturate(_MobileMassTex.Load(int4(cell, 0, 0)));
+                    float fine = saturate(_MobileMassTex.Load(int4(cell, 1, 0)));
+                    float structural = saturate(_MobileMassTex.Load(int4(cell, 5, 0)));
+                    color = float3(coarse, fine, structural);
                 }
 
                 float radialGrid = frac(simulationRadius * height);
