@@ -102,6 +102,12 @@ namespace GeneSys.AI
             Version++;
         }
 
+        public static string FormatChatter(ActStep step, string content)
+        {
+            string text = string.IsNullOrWhiteSpace(content) ? "(no content)" : content.Trim();
+            return $"[{step}] (Chatter): {text}";
+        }
+
         public static string Sanitize(string text) => Sanitize(text, SummaryMaxLength);
 
         public static string Sanitize(string text, int maxLength)

@@ -250,13 +250,11 @@ namespace GeneSys.AI
                             : result.Content.Trim();
                         conversation.Add(new LlmMessage { Role = "assistant", Content = text });
                         if (loop.Step == ActStep.Think)
-                        {
                             AppendChat("assistant", text, false);
-                            History.Add(host != null ? host.Clock.TickCount : 0L, text);
-                            HistoryChanged?.Invoke();
-                        }
                         else
                             AppendChat("assistant", $"[{loop.Step}] {text}", false);
+                        History.Add(host != null ? host.Clock.TickCount : 0L, AiHistoryLog.FormatChatter(loop.Step, text));
+                        HistoryChanged?.Invoke();
 
                         stepDone = true;
                         loop.NextStep();

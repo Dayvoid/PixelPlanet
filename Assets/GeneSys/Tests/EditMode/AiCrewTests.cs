@@ -273,6 +273,14 @@ namespace GeneSys.Tests
             Assert.That(verbose.Length, Is.GreaterThan(AiHistoryLog.SummaryMaxLength));
             Assert.That(verbose.Length, Is.LessThanOrEqualTo(AiHistoryLog.VerboseMaxLength));
         }
+
+        [Test]
+        public void FormatChatterUsesStepAndContent()
+        {
+            Assert.That(
+                AiHistoryLog.FormatChatter(ActStep.Assess, "I can't help but just chat sometimes"),
+                Is.EqualTo("[Assess] (Chatter): I can't help but just chat sometimes"));
+        }
     }
 
     public sealed class AiPrimerTests
