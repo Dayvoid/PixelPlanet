@@ -2,7 +2,7 @@
 
 Bolster GeneSys weather by adding a slow, low-resolution **climate** layer that sets regimes, while the existing mass-conserving **pixel weather** stack remains the only place tracked water moves.
 
-**Status:** design — not implemented.
+**Status:** implemented — C0–C3 (diagnostics, prevailing/insolation, ice albedo, vegetation land-surface). Coarse state rebuilds from fine on load; no snapshot version bump.
 **Related:** `Assets/OUTLINE.MD`, `Assets/WaterPlan.MD`, `Assets/MaCEPlan.MD`, `Assets/GrassPlan.MD`.
 **Inspiration:** EMIC / PlaSim-style energy + land-surface feedbacks (e.g. SimBA albedo, roughness, soil bucket); not a full GCM port.
 
@@ -217,15 +217,16 @@ Fine order stays as in `WaterPlan.MD` (forcing → continuity → dynamics → t
 
 ## 10. Implementation surfaces (expected)
 
-| Area | Likely touch |
+| Area | Touch |
 | --- | --- |
-| Resources | `SimulationResources.cs` — coarse buffers |
-| Schedule | `GpuPassScheduler.cs` — aggregate / step / inject on cadence |
-| Inject glue | Uniforms or small bias textures read by `Weather.compute` / hydrology |
-| Solar | `SolarInsolation.hlsl` / forcing path |
-| Config / UI | `SimulationConfig`, overlays, inspect |
-| Snapshots | Optional; v1 may rebuild coarse from fine on load |
-| Tests | Injector does not change total water; forced prevailing asymmetry; C0 determinism |
+| Pass | `Climate.compute` — `ClimateAggregateColumns` + `ClimateStep` |
+| Helpers | `Climate.hlsl` — identity-safe injectors for Weather / Flora / Hydrology |
+| Resources | `SimulationResources` — `ClimateColumns`, `ClimateState` |
+| Schedule | `GpuPassScheduler.DispatchClimate` before `LightAttenuation` on `climateCouplePeriod` |
+| Inject | Season scale in `LightAttenuation`; surface absorb in `AtmosphericForcing`; per-bin wind + roughness in `AtmosphericDynamics`; bucket scale in `Groundwater` |
+| Config / UI | `SimulationConfig` Climate header, overlay 28, inspect readout |
+| Snapshots | Rebuild from fine on load (`RebuildClimate`) |
+| Tests | `ClimateTests` + `ClimateIntegrationTests` |
 
 Prefer a **dedicated climate pass** over stuffing coarse state into the mega `WriteCell` path.
 
@@ -263,6 +264,8 @@ Feature flags: `climateLayerEnable`, `climateCouplePeriod`, `climatePrevailingIn
 | 2026-09-11 | No second water ledger; `WaterPlan.MD` remains mass authority |
 | 2026-09-11 | Start with diagnostics + prevailing/insolation before biome feedbacks |
 | 2026-09-11 | Orthogonal to MaCE sediment pilot; can proceed in parallel |
+| 2026-09-11 | Implemented C0–C3 with dedicated climate pass; rebuild coarse from fine on load |
+| 2026-09-11 | T_slab energy uses lower-air skin (frozen surface when iced), neighbor slabs, and insolation-aware thermal wind; Leaf/Wood count as canopy even without tree physiology |
 
 ---
 
