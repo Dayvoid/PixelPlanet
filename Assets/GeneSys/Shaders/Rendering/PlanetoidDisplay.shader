@@ -57,6 +57,8 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float2> _AcousticTex;
             Texture2D<float> _LightTex;
             Texture2DArray<float> _MobileMassTex;
+            StructuredBuffer<float4> _ClimateState;
+            int _ClimateBins;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
             Texture2D<float4> _Categories;
@@ -536,6 +538,22 @@ Shader "GeneSys/Planetoid Display"
                     float fine = saturate(_MobileMassTex.Load(int4(cell, 1, 0)));
                     float structural = saturate(_MobileMassTex.Load(int4(cell, 5, 0)));
                     color = float3(coarse, fine, structural);
+                }
+                else if (_OverlayMode == 28)
+                {
+                    int bins = max(8, _ClimateBins);
+                    int bin = (int)((uint)cell.x * (uint)bins / max(1u, width));
+                    float4 mem = _ClimateState[bin * 3];
+                    float4 land = _ClimateState[bin * 3 + 1];
+                    float wet = saturate(mem.z);
+                    float albedo = saturate(mem.w);
+                    float tAnom = saturate((mem.x + 10.0) / 50.0);
+                    if (atmosphereCarrier)
+                        color = lerp(float3(0.12, 0.22, 0.72), float3(0.92, 0.28, 0.12), tAnom);
+                    else
+                        color = lerp(float3(0.42, 0.28, 0.12), float3(0.18, 0.42, 0.78), wet);
+                    color = lerp(color, float3(0.92, 0.94, 0.98), albedo * 0.35);
+                    color = lerp(color, color * float3(0.75, 1.05, 0.7), saturate(land.w) * 0.25);
                 }
 
                 float radialGrid = frac(simulationRadius * height);

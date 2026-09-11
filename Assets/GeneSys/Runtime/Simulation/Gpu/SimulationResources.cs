@@ -1,4 +1,5 @@
 using System;
+using GeneSys.Simulation.Climate;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -72,6 +73,8 @@ namespace GeneSys.Simulation.Gpu
         public ComputeBuffer WaterColumn { get; private set; }
         public ComputeBuffer WaterFaceFlux { get; private set; }
         public ComputeBuffer SedimentColumn { get; private set; }
+        public ComputeBuffer ClimateColumns { get; private set; }
+        public ComputeBuffer ClimateState { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -124,6 +127,8 @@ namespace GeneSys.Simulation.Gpu
             WaterColumn = CreateColumnBuffer();
             WaterFaceFlux = CreateColumnBuffer();
             SedimentColumn = CreateColumnBuffer();
+            ClimateColumns = CreateStructuredBuffer(ClimateGrid.ColumnBufferCount(Grid.angularResolution));
+            ClimateState = CreateStructuredBuffer(ClimateGrid.StateBufferCount());
             MobileMassRead = CreateTextureArray("GeneSys Mobile Mass A", GraphicsFormat.R32_SFloat, MobileMassSliceCount);
             MobileMassWrite = CreateTextureArray("GeneSys Mobile Mass B", GraphicsFormat.R32_SFloat, MobileMassSliceCount);
             MaceAffinity = CreateTexture("GeneSys MaCE Affinity", GraphicsFormat.R32_SFloat);
@@ -135,6 +140,7 @@ namespace GeneSys.Simulation.Gpu
             ClearWasp();
             ClearTree();
             ClearWaterColumns();
+            ClearClimate();
             ClearMobileMass();
         }
 
@@ -145,6 +151,14 @@ namespace GeneSys.Simulation.Gpu
             WaterColumn?.SetData(zeros);
             WaterFaceFlux?.SetData(zeros);
             SedimentColumn?.SetData(zeros);
+        }
+
+        public void ClearClimate()
+        {
+            if (ClimateColumns != null)
+                ClimateColumns.SetData(new Vector4[ClimateGrid.ColumnBufferCount(Grid.angularResolution)]);
+            if (ClimateState != null)
+                ClimateState.SetData(new Vector4[ClimateGrid.StateBufferCount()]);
         }
 
         public void ClearMobileMass()
@@ -233,8 +247,12 @@ namespace GeneSys.Simulation.Gpu
 
         private ComputeBuffer CreateColumnBuffer()
         {
-            int count = Mathf.Max(1, Grid.angularResolution);
-            return new ComputeBuffer(count, sizeof(float) * 4, ComputeBufferType.Structured);
+            return CreateStructuredBuffer(Mathf.Max(1, Grid.angularResolution));
+        }
+
+        private static ComputeBuffer CreateStructuredBuffer(int count)
+        {
+            return new ComputeBuffer(Mathf.Max(1, count), sizeof(float) * 4, ComputeBufferType.Structured);
         }
 
         private RenderTexture CreateTextureArray(string name, GraphicsFormat format, int slices)
@@ -378,6 +396,8 @@ namespace GeneSys.Simulation.Gpu
             WaterColumn?.Release();
             WaterFaceFlux?.Release();
             SedimentColumn?.Release();
+            ClimateColumns?.Release();
+            ClimateState?.Release();
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -405,6 +425,8 @@ namespace GeneSys.Simulation.Gpu
             WaterColumn = null;
             WaterFaceFlux = null;
             SedimentColumn = null;
+            ClimateColumns = null;
+            ClimateState = null;
         }
 
         private static void Release(RenderTexture texture)

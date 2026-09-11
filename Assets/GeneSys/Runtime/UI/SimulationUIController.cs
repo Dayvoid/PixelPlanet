@@ -384,7 +384,7 @@ namespace GeneSys.UI
 
         private static readonly int[] OverlayModes =
         {
-            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27
+            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28
         };
 
         private static int OverlayModeFromChoice(int index) =>
@@ -401,7 +401,7 @@ namespace GeneSys.UI
                     "Charge", "Wind", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories",
                     "Vertical Velocity", "Pressure Anomaly", "Mycology",
                     "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass", "Tree",
-                    "Mobile Sediment"
+                    "Mobile Sediment", "Climate"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(OverlayModeFromChoice(overlay.index)));
@@ -1530,7 +1530,9 @@ namespace GeneSys.UI
                    $"Nutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\n" +
                    $"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n" +
                    $"Light {inspection.light:F3}\n" +
-                   $"Sediment ρ {inspection.mobileSediment:F3}  fine {inspection.mobileFine:F3}  structural {inspection.mobileStructural:F3}";
+                   $"Sediment ρ {inspection.mobileSediment:F3}  fine {inspection.mobileFine:F3}  structural {inspection.mobileStructural:F3}\n" +
+                   $"Climate bin {inspection.climateBin}  T {inspection.climateMemory.x:F2}  albedo {inspection.climateMemory.w:F2}\n" +
+                   $"Wet {inspection.climateMemory.z:F2}  U {inspection.climateLand.x:F2}  bucket {inspection.climateLand.z:F2}";
         }
 
         private string FormatLifeInspection(CellInspection inspection, bool expanded)

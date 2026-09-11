@@ -545,6 +545,7 @@ namespace GeneSys.Persistence
 
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
+            host.RebuildClimate();
             return true;
         }
 

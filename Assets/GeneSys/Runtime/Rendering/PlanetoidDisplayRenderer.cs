@@ -2,6 +2,7 @@ using System;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Climate;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
@@ -137,7 +138,7 @@ namespace GeneSys.Rendering
 
         public void SetOverlay(int mode)
         {
-            OverlayMode = Mathf.Clamp(mode, 0, 27);
+            OverlayMode = Mathf.Clamp(mode, 0, ClimateVisuals.OverlayMode);
             if (displayMaterial != null) displayMaterial.SetInt("_OverlayMode", OverlayMode);
         }
 
@@ -197,6 +198,9 @@ namespace GeneSys.Rendering
             displayMaterial.SetTexture("_AcousticTex", resources.AcousticRead);
             displayMaterial.SetTexture("_LightTex", resources.LightField);
             displayMaterial.SetTexture("_MobileMassTex", resources.MobileMassRead);
+            if (resources.ClimateState != null)
+                displayMaterial.SetBuffer("_ClimateState", resources.ClimateState);
+            displayMaterial.SetInt("_ClimateBins", config != null ? ClimateGrid.ClampBinCount(config.climateBinCount) : ClimateGrid.DefaultBins);
         }
 
         private void HandleCamera()

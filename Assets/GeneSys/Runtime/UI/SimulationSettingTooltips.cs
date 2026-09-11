@@ -264,6 +264,45 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.atmosphericLapseRate)] =
                 "How quickly air cools with height. Steeper lapse favors clouds and storms aloft; shallower lapse keeps the column warmer and more stable.",
 
+            [nameof(SimulationConfig.climateLayerEnable)] =
+                "Runs the coarse climate pass on a slow cadence. When off, weather uses only the fine pixel stack and climate helpers stay identity.",
+            [nameof(SimulationConfig.climatePrevailingInject)] =
+                "Injects per-bin thermal/prevailing wind and the seasonal insolation envelope into fine weather. Off keeps local winds and solar unchanged.",
+            [nameof(SimulationConfig.climateAlbedoFeedback)] =
+                "Lets the coarse ice/snow albedo index scale heating on exposed surfaces. Off leaves LightField absorption as the only shade path.",
+            [nameof(SimulationConfig.climateBiomeFeedback)] =
+                "Aggregates canopy, organics, and ash into roughness and soil bucket scale. Off keeps wind damping and field capacity at their weather/hydrology sliders.",
+            [nameof(SimulationConfig.climateBinCount)] =
+                "Number of angular climate bins. More bins resolve rain-shadow and monsoon contrasts; fewer bins stay cheaper and smoother.",
+            [nameof(SimulationConfig.climateCouplePeriod)] =
+                "Fine ticks between climate aggregate/step/inject updates. Larger periods give seasonal memory; 1 updates every tick for tests.",
+            [nameof(SimulationConfig.climateSlabHeatCapacity)] =
+                "Thermal inertia of each climate bin. Higher capacity remembers seasons and oceans; lower capacity tracks the surface more closely.",
+            [nameof(SimulationConfig.climateHeatTransport)] =
+                "How fast neighboring climate bins share heat. Higher transport flattens angular temperature; zero isolates each sector.",
+            [nameof(SimulationConfig.climateMemoryRate)] =
+                "How quickly ice fraction and wetness ease toward the current surface. Higher memory locks ice edges and droughts in faster.",
+            [nameof(SimulationConfig.climateSeasonLengthDays)] =
+                "Simulated days in one insolation season cycle. Longer seasons stretch wet/dry envelopes; shorter seasons pulse faster.",
+            [nameof(SimulationConfig.climateSeasonalAmplitude)] =
+                "How strongly the seasonal envelope scales incoming light. Zero keeps daily insolation only; higher values deepen summers and winters.",
+            [nameof(SimulationConfig.climateThermalWindGain)] =
+                "How strongly neighboring slab temperatures drive a per-bin zonal wind. Higher gain makes monsoon-like flow toward warm sectors.",
+            [nameof(SimulationConfig.climateBaseAlbedo)] =
+                "Bare-ground reflectance used when ice, canopy, and ash are absent. Higher base albedo cools the climate slab.",
+            [nameof(SimulationConfig.climateIceAlbedo)] =
+                "Extra reflectance from the coarse ice index. Stronger ice albedo lets cold sectors lock in.",
+            [nameof(SimulationConfig.climateCanopyAlbedoDrop)] =
+                "How much living cover darkens a bin. Higher drop makes forests and mats pull more heat into the slab.",
+            [nameof(SimulationConfig.climateAshAlbedo)] =
+                "Extra reflectance from burn scar and ash cover. Higher values brighten scorched sectors and favor drought lock-in.",
+            [nameof(SimulationConfig.climateRoughnessGain)] =
+                "How much canopy increases near-surface wind damping. Higher roughness calms local jets over forests.",
+            [nameof(SimulationConfig.climateBucketGain)] =
+                "How much organics and detritus enlarge soil field capacity. Higher gain holds more groundwater in vegetated bins.",
+            [nameof(SimulationConfig.climateBurnBucketPenalty)] =
+                "How much ash cover shrinks field capacity. Higher penalty makes burned ground shed water and stay dry.",
+
             [nameof(SimulationConfig.mycologyInitialSporeLoad)] =
                 "Starting airborne and soil spore density at worldgen. Higher loads colonize soil and sediment faster after regenerate.",
             [nameof(SimulationConfig.mycologyRareStrainChance)] =

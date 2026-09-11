@@ -193,6 +193,27 @@ namespace GeneSys.Configuration
         [Range(-20f, 40f)] public float surfaceAirTemperature = 25f;
         [Range(0f, 40f)] public float atmosphericLapseRate = 10f;
 
+        [Header("Climate")]
+        public bool climateLayerEnable = true;
+        public bool climatePrevailingInject = true;
+        public bool climateAlbedoFeedback = true;
+        public bool climateBiomeFeedback = true;
+        [Range(8, 128)] public int climateBinCount = 32;
+        [Range(1, 256)] public int climateCouplePeriod = 20;
+        [Range(1f, 256f)] public float climateSlabHeatCapacity = 48f;
+        [Range(0f, 4f)] public float climateHeatTransport = 0.15f;
+        [Range(0f, 1f)] public float climateMemoryRate = 0.12f;
+        [Min(1f)] public float climateSeasonLengthDays = 12f;
+        [Range(0f, 1f)] public float climateSeasonalAmplitude = 0.15f;
+        [Range(0f, 4f)] public float climateThermalWindGain = 0.08f;
+        [Range(0f, 1f)] public float climateBaseAlbedo = 0.18f;
+        [Range(0f, 1f)] public float climateIceAlbedo = 0.55f;
+        [Range(0f, 1f)] public float climateCanopyAlbedoDrop = 0.12f;
+        [Range(0f, 1f)] public float climateAshAlbedo = 0.22f;
+        [Range(0f, 4f)] public float climateRoughnessGain = 0.8f;
+        [Range(0f, 4f)] public float climateBucketGain = 0.35f;
+        [Range(0f, 1f)] public float climateBurnBucketPenalty = 0.25f;
+
         [Header("Ecology - Mycology")]
         [Range(0f, 1f)] public float mycologyInitialSporeLoad = 0.08f;
         [Range(0f, 1f)] public float mycologyRareStrainChance = 0.04f;
@@ -540,6 +561,8 @@ namespace GeneSys.Configuration
                 _ => PolarGridDefinition.Validation
             };
             grid.Validate();
+            if (value == SimulationPreset.Validation)
+                climateLayerEnable = false;
         }
 
         private void OnValidate()
@@ -592,6 +615,21 @@ namespace GeneSys.Configuration
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
             atmosphericCflLimit = Mathf.Clamp(atmosphericCflLimit, 0.05f, 1f);
             atmosphericLapseRate = Mathf.Max(0f, atmosphericLapseRate);
+            climateBinCount = Mathf.Clamp(climateBinCount, 8, 128);
+            climateCouplePeriod = Mathf.Clamp(climateCouplePeriod, 1, 256);
+            climateSlabHeatCapacity = Mathf.Clamp(climateSlabHeatCapacity, 1f, 256f);
+            climateHeatTransport = Mathf.Max(0f, climateHeatTransport);
+            climateMemoryRate = Mathf.Clamp01(climateMemoryRate);
+            climateSeasonLengthDays = Mathf.Max(1f, climateSeasonLengthDays);
+            climateSeasonalAmplitude = Mathf.Clamp01(climateSeasonalAmplitude);
+            climateThermalWindGain = Mathf.Max(0f, climateThermalWindGain);
+            climateBaseAlbedo = Mathf.Clamp01(climateBaseAlbedo);
+            climateIceAlbedo = Mathf.Clamp01(climateIceAlbedo);
+            climateCanopyAlbedoDrop = Mathf.Clamp01(climateCanopyAlbedoDrop);
+            climateAshAlbedo = Mathf.Clamp01(climateAshAlbedo);
+            climateRoughnessGain = Mathf.Max(0f, climateRoughnessGain);
+            climateBucketGain = Mathf.Max(0f, climateBucketGain);
+            climateBurnBucketPenalty = Mathf.Clamp01(climateBurnBucketPenalty);
             hydrostaticIterations = Mathf.Clamp(hydrostaticIterations, 1, 64);
             mycologyInitialSporeLoad = Mathf.Max(0f, mycologyInitialSporeLoad);
             mycologyRareStrainChance = Mathf.Clamp01(mycologyRareStrainChance);

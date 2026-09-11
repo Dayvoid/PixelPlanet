@@ -56,6 +56,7 @@ float4 _DetritusA; // vaporAbsorb, evaporate, distribute, leach
 float4 _DetritusB; // decomposition, unused
 float4 _MaceFlags; // sediment, entrainment, shoreline, solute
 float4 _MaceExtra; // ash, magma, wear, unused
+float4 _WeatherI;
 Texture2DArray<float> _MobileMassRead;
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
@@ -69,6 +70,7 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 
 #define MACE_MOBILE_DECLARED 1
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
+#include "../../Shaders/Simulation/Common/Climate.hlsl"
 
 bool IsExposedSurface(int2 cell, uint material)
 {
@@ -115,7 +117,7 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
     bool exposed = IsExposedSurface(cell, material);
     bool host = IsGroundwaterHost(material, definition);
     float capacity = GroundwaterCapacity(definition);
-    float fieldCapacityFraction = saturate(_HydrologyC.z);
+    float fieldCapacityFraction = saturate(_HydrologyC.z) * ClimateBucketScale(cell.x);
     float waterHeatCapacity = max(0.001, D(9u).transport.y);
     float infiltrationRate = _Hydrology.x;
     float groundwaterRate = _Hydrology.y;
@@ -207,12 +209,14 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
         MaterialGpuData rightDef = D(rightMaterial);
         if (IsGroundwaterHost(leftMaterial, leftDef))
         {
-            groundwaterDelta += LateralGroundwaterReceive(groundwaterRead, A(left).y, capacity, GroundwaterCapacity(leftDef),
+            float leftScale = ClimateBucketScaleFace(cell.x, left.x);
+            groundwaterDelta += LateralGroundwaterReceive(groundwaterRead, A(left).y, capacity * leftScale, GroundwaterCapacity(leftDef) * leftScale,
                 porosity, saturate(leftDef.biology.z), lateralRate, _DeltaTime);
         }
         if (IsGroundwaterHost(rightMaterial, rightDef))
         {
-            groundwaterDelta += LateralGroundwaterReceive(groundwaterRead, A(right).y, capacity, GroundwaterCapacity(rightDef),
+            float rightScale = ClimateBucketScaleFace(cell.x, right.x);
+            groundwaterDelta += LateralGroundwaterReceive(groundwaterRead, A(right).y, capacity * rightScale, GroundwaterCapacity(rightDef) * rightScale,
                 porosity, saturate(rightDef.biology.z), lateralRate, _DeltaTime);
         }
         aux.y = max(0.0, groundwaterRead + groundwaterDelta);

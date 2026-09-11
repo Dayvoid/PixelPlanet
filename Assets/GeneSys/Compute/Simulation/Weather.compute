@@ -57,6 +57,7 @@ float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
+#include "../../Shaders/Simulation/Common/Climate.hlsl"
 
 bool IsExposedSurface(int2 cell, uint material)
 {
@@ -147,6 +148,8 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     float insolation = SolarInsolation(theta01, _WeatherC.y);
     float light = max(0.0, LightOf(cell));
     float heating = light / max(0.05, definition.transport.y);
+    if (IsExposedSurface(cell, material))
+        heating *= ClimateSurfaceAbsorb(cell.x);
     float coolingRate;
     if (radius > _AtmosphereStartRadius)
         coolingRate = _WeatherA.z;
@@ -312,7 +315,7 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
             flow += clamp(cAccel * _DeltaTime, -2.0, 2.0);
         }
 
-        float prevailing = _WeatherI.z;
+        float prevailing = ClimateWindBias(cell.x, ClimateShellOf(Radius01(cell.y, _GridSize.y)));
         if (abs(prevailing) > 1e-6)
         {
             flow.x += prevailing * _DeltaTime;
@@ -323,7 +326,11 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
         if (cell.y >= _GridSize.y - 1)
             flow.y = min(0.0, flow.y);
 
-        flow *= saturate(1.0 - _WeatherB.x * _DeltaTime);
+        float roughness = 1.0;
+        float radius = Radius01(cell.y, _GridSize.y);
+        if (radius < _AtmosphereStartRadius + 4.0 / max(1.0, (float)_GridSize.y))
+            roughness = ClimateRoughness(cell.x);
+        flow *= saturate(1.0 - _WeatherB.x * roughness * _DeltaTime);
     }
     else
     {

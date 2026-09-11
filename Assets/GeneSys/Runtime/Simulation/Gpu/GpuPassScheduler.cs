@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using GeneSys.Configuration;
 using GeneSys.Materials;
+using GeneSys.Simulation.Climate;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -46,6 +47,8 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
         private readonly ComputeShader maceTransport;
+        private readonly ComputeShader climate;
+        private bool climateInit;
         private readonly GraphicsBuffer strikeSeedBuffer;
         private readonly GraphicsBuffer strikeCounterBuffer;
         private readonly uint[] strikeCounterZero = new uint[1];
@@ -69,7 +72,7 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
             ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm,
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
-            ComputeShader maceTransport = null)
+            ComputeShader maceTransport = null, ComputeShader climate = null)
         {
             this.config = config;
             this.resources = resources;
@@ -89,6 +92,7 @@ namespace GeneSys.Simulation.Gpu
             this.combustion = combustion;
             this.storm = storm;
             this.maceTransport = maceTransport;
+            this.climate = climate;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -179,6 +183,7 @@ namespace GeneSys.Simulation.Gpu
                     SetCommon(flora, seedFlora, 0f);
                     flora.SetTexture(seedFlora, "_MaterialRead", resources.MaterialRead);
                     flora.SetTexture(seedFlora, "_LifeGenomeWrite", resources.LifeGenomeRead);
+                    BindClimateState(flora, seedFlora);
                     BindOrganismHistory(flora, seedFlora);
                     Dispatch(flora, seedFlora);
                 }
@@ -254,6 +259,7 @@ namespace GeneSys.Simulation.Gpu
             }
             resources.CopyReadToWrite();
             SeedMobileMass();
+            RebuildClimate();
         }
 
         public void QueueBrush(BrushCommand command)
@@ -358,6 +364,9 @@ namespace GeneSys.Simulation.Gpu
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
             SyncLegacyMobileIds();
+
+            if (config.climateLayerEnable && Due(config.climateCouplePeriod))
+                DispatchClimate(CadenceDt(deltaTime, config.climateCouplePeriod));
 
             // Atmospheric loop: light → forcing → continuity → pressure diffusion → dynamics → transport → water cycle → precipitation.
             if (flora != null)
@@ -703,6 +712,55 @@ namespace GeneSys.Simulation.Gpu
             shader.Dispatch(kernel, groupsX, 1, 1);
         }
 
+        public void RebuildClimate()
+        {
+            if (climate == null || resources.ClimateState == null) return;
+            DispatchClimate(CadenceDt(1f / Mathf.Max(1f, config.ticksPerSecond), config.climateCouplePeriod), true);
+        }
+
+        private void DispatchClimate(float deltaTime, bool init = false)
+        {
+            if (climate == null || resources.ClimateState == null || resources.ClimateColumns == null)
+                return;
+            if (!climate.HasKernel("ClimateAggregateColumns") || !climate.HasKernel("ClimateStep"))
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing climate compute kernel. Skipping climate pass.");
+                return;
+            }
+            int aggregate = climate.FindKernel("ClimateAggregateColumns");
+            int step = climate.FindKernel("ClimateStep");
+
+            climateInit = init;
+            BindClimatePass(aggregate, deltaTime);
+            DispatchColumns(climate, aggregate);
+            BindClimatePass(step, deltaTime);
+            int bins = ClimateGrid.ClampBinCount(config.climateBinCount);
+            climate.Dispatch(step, Mathf.Max(1, Mathf.CeilToInt(bins / 64f)), 1, 1);
+            climateInit = false;
+        }
+
+        private void BindClimatePass(int kernel, float deltaTime)
+        {
+            SetCommon(climate, kernel, deltaTime);
+            climate.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            climate.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            climate.SetTexture(kernel, "_StateRead", resources.StateRead);
+            climate.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            climate.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            climate.SetTexture(kernel, "_GrassRead", resources.GrassRead);
+            climate.SetTexture(kernel, "_TreeRead", resources.TreeRead);
+            climate.SetBuffer(kernel, "_ClimateColumns", resources.ClimateColumns);
+            climate.SetBuffer(kernel, "_ClimateState", resources.ClimateState);
+        }
+
+        private void BindClimateState(ComputeShader shader, int kernel)
+        {
+            if (resources.ClimateState == null) return;
+            if (shader != weather && shader != flora && shader != hydrology && shader != climate)
+                return;
+            shader.SetBuffer(kernel, "_ClimateState", resources.ClimateState);
+        }
+
         private void SetCommon(ComputeShader shader, int kernel, float deltaTime)
         {
             shader.SetInts("_GridSize", resources.Grid.angularResolution, resources.Grid.radialResolution);
@@ -825,6 +883,31 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_MaceF", new Vector4(0f, config.maceWearThreshold, config.maceStructuralDeplete, config.maceAshFillThreshold));
             shader.SetVector("_MaceG", new Vector4(config.maceEntrainmentScale, config.maceEntrainmentScale, config.maceRunoffGain, config.maceBedloadGain));
             shader.SetVector("_MaceH", new Vector4(1f, 1.6f, config.maceSoluteDepositRate, config.maceBioerosionScale));
+            shader.SetVector("_ClimateFlags", new Vector4(
+                config.climateLayerEnable ? 1f : 0f,
+                climateInit ? 1f : 0f,
+                config.climatePrevailingInject ? 1f : 0f,
+                config.climateAlbedoFeedback ? 1f : 0f));
+            shader.SetVector("_ClimateA", new Vector4(
+                ClimateGrid.ClampBinCount(config.climateBinCount),
+                Mathf.Max(1, config.climateCouplePeriod),
+                config.climateSlabHeatCapacity,
+                config.climateHeatTransport));
+            shader.SetVector("_ClimateB", new Vector4(
+                config.climateSeasonLengthDays,
+                config.climateSeasonalAmplitude,
+                config.climateThermalWindGain,
+                config.climateIceAlbedo));
+            shader.SetVector("_ClimateC", new Vector4(
+                config.climateCanopyAlbedoDrop,
+                config.climateRoughnessGain,
+                config.climateBucketGain,
+                config.climateMemoryRate));
+            shader.SetVector("_ClimateD", new Vector4(
+                config.climateBiomeFeedback ? 1f : 0f,
+                config.climateBaseAlbedo,
+                config.climateAshAlbedo,
+                config.climateBurnBucketPenalty));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)
@@ -860,6 +943,7 @@ namespace GeneSys.Simulation.Gpu
             {
                 shader.SetTexture(kernel, "_MobileMassRead", resources.MobileMassRead);
             }
+            BindClimateState(shader, kernel);
         }
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)
