@@ -1,0 +1,124 @@
+# Project History
+
+## How to maintain this file
+
+Use this as a **living milestone log**, not a raw commit dump.
+
+- Add new entries at the top (reverse chronological).
+- Group related commits into one entry per meaningful change wave.
+- For each entry include:
+  - **Date or date range**
+  - **Systems affected**
+  - **What changed**
+  - **Why / impact** (explicit if known, otherwise mark as inferred)
+- When intent is unclear from commits alone, say so rather than guessing.
+- Keep links to major plan docs current when scope shifts.
+
+Suggested entry template:
+
+```markdown
+## YYYY-MM-DD (or YYYY-MM-DD to YYYY-MM-DD) — Title
+- Systems: ...
+- What changed: ...
+- Why/impact: ...
+- Evidence: commit subjects ..., relevant docs/files ...
+```
+
+---
+
+## 2026-09-11 — Climate + MaCE integration and AI crew iteration
+
+- **Systems:** Climate layer, MaCE transport, AI crew tooling, planning docs
+- **What changed:**
+  - Added climate and MaCE design docs (`Add coarse-to-fine climate layer design doc.`, `Add MaCE transport design and sediment pilot docs.`).
+  - Added runtime milestones for climate and MaCE integration (`milestone - climate change`, `milestone - MaCE transport`).
+  - Iterated AI chat/agent loop behavior (`milestone - user chat LLM ACT loop`, `milestone - blank chat fix`, `milestone - verbose crew logs`).
+  - Included rejected/revert cycles around MaCA/MaCE direction.
+- **Why/impact:** Expanded the simulation toward slower-timescale climate forcing and mass-conserving mobile solids while maturing in-sim AI interaction tooling; the same-day reject/revert commits indicate active design stabilization.
+- **Evidence:** commits on 2026-09-11; `Assets/ClimatePlan.MD`, `Assets/MaCEPlan.MD`, `Assets/MaCE_SedimentPilot.MD`, runtime files under `Assets/GeneSys/Runtime/Simulation/Gpu/`.
+
+## 2026-09-10 — Thermal, magma, and local LLM capability push
+
+- **Systems:** Thermal/geology behavior, AI/LLM integration
+- **What changed:** `milestone - thermal overhaul`, `milestone - magma fix`, `milestone - LLM integration`, `milestone - LLM vision`.
+- **Why/impact:** Tightened core planetary energy/material behavior while introducing local LLM-assisted control/analysis capabilities in parallel.
+- **Evidence:** commits on 2026-09-10; AI runtime code under `Assets/GeneSys/Runtime/AI/`.
+
+## 2026-09-09 — Hydrology realignment milestone
+
+- **Systems:** Hydrology/weather mass accounting
+- **What changed:** `milestone - hydrology rework - unifying water`.
+- **Why/impact:** Consolidated water representation and transfer behavior consistent with the mass-conservation direction now documented in `WaterPlan.MD`.
+- **Evidence:** commit on 2026-09-09; `Assets/WaterPlan.MD`; hydrology/weather integration tests.
+
+## 2026-09-01 to 2026-09-03 — Atmospheric dynamics and solar forcing tuning
+
+- **Systems:** Weather transport/buoyancy/coriolis, polar solar behavior, cooling
+- **What changed:**
+  - Vapor stability fixes and precipitation/rain behavior adjustments.
+  - Vertical buoyancy, momentum/coriolis, dynamic wind damping/inertia coupling.
+  - Solar concentration/orbit/polar diminishment tuning and rim cooling fixes.
+- **Why/impact:** Built a more stable and expressive atmospheric loop capable of directional circulation patterns and fewer runaway states.
+- **Evidence:** commits including `milestone - vertical temp buoyancy`, `milestone - atmospheric momentum + coriolis`, `milestone - dynamic wind damping / intertia coupling`, `milestone - rim cooling inversion fix`.
+
+## 2026-08-30 — Trees + ecology UI expansion + precipitation rework
+
+- **Systems:** Tree subsystem, ecology settings UI, precipitation
+- **What changed:** `milestone - trees`, `milestone - ecology settings sub-tabs`, `milestone - percipitation rework 1`.
+- **Why/impact:** Expanded organism diversity and supporting controls while continuing water-cycle behavior adjustments.
+- **Evidence:** commits on 2026-08-30.
+
+## 2026-08-28 to 2026-08-29 — Hydrology stabilization wave
+
+- **Systems:** Hydrology, rain behavior, defaults/tests, wasps
+- **What changed:**
+  - Multiple hydrology fixes (`milestone - hydrology fix`, `part 1`, `part 2`).
+  - Rain and compute fixes, defaults tuning, and wasp milestone (`milestone waspss`).
+- **Why/impact:** Iterative reliability and balancing pass across water + ecosystem interactions.
+- **Evidence:** commits on 2026-08-28/29.
+
+## 2026-08-27 — Grass, crickets, probe controls, snapshots, and test expansion
+
+- **Systems:** Grass ecology, fauna (crickets), player/probe controls, persistence, tests
+- **What changed:**
+  - Introduced crickets (`milestone - crickets!`) and grass milestone commits.
+  - Added probe steering/life seeding workflow updates.
+  - Added world save milestone and test battery update.
+  - Included rejected/revert attempts during grass iteration.
+- **Why/impact:** Major ecosystem and tooling expansion day, with evidence of rapid prototyping and correction loops.
+- **Evidence:** commits on 2026-08-27; integration tests for grass/fauna/persistence.
+
+## 2026-08-26 — Algae behavior experimentation and UI restructuring
+
+- **Systems:** Flora behavior, cadence scheduling, UI architecture
+- **What changed:** Algal shift attempts plus revert/reject cycles, cadence tier milestone, settings/inspector UI rework, history panel addition.
+- **Why/impact:** Tuned biological behavior while improving operator controls and observability.
+- **Evidence:** commits on 2026-08-26.
+
+## 2026-08-24 to 2026-08-25 — Fire, lightning, probe UX, and algae/light coupling
+
+- **Systems:** Combustion, storm/lightning, probe tooling, algae/photosynthesis-light interplay
+- **What changed:** `milestone - combustion`, `milestone - lightning`, `milestone - probe PoC`, `milestone - probe + buttons + view`, `milestone - algae + light attenuation`.
+- **Why/impact:** Added key atmosphere-energy hazard loops and better hands-on interaction with the simulation.
+- **Evidence:** commits on 2026-08-24/25.
+
+## 2026-08-22 to 2026-08-23 — Closed-loop water cycle groundwork
+
+- **Systems:** Hydrology/weather water cycle
+- **What changed:** Water soakage milestone, closed-loop water system attempts, evaporation/vapor fixes, and vapor realignment.
+- **Why/impact:** Established the path toward the later unified water contract and conservation-focused weather behavior.
+- **Evidence:** commits on 2026-08-22/23; `Assets/WaterPlan.MD` references this realignment direction.
+
+## 2026-08-19 to 2026-08-20 — Mycology, worldgen, and simulation controls
+
+- **Systems:** Mycology ecology, world generation, presets/settings UX
+- **What changed:** Added mycology milestone, worldgen update, preset save/load, settings tooltips, and thermal survivability tuning (`heat death delay`).
+- **Why/impact:** Strengthened both ecosystem depth and usability/configurability.
+- **Evidence:** commits on 2026-08-19/20.
+
+## 2026-08-17 to 2026-08-18 — Project bootstrap and first simulation spine
+
+- **Systems:** Repository bootstrap, planetoid foundation, UI, early fluid/erosion/thermal visuals
+- **What changed:** Initial project import plus first planetoid and modern UI milestones, liquid water baseline, early erosion/vapor/fluid-density and visualization updates.
+- **Why/impact:** Established the initial architecture that later milestones iterated on.
+- **Evidence:** earliest commits beginning 2026-08-17.
