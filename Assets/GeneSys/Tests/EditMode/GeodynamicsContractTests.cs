@@ -121,7 +121,13 @@ namespace GeneSys.Tests
             string geology = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Geology.compute");
             Assert.That(geology, Does.Contain("Geodynamics.hlsl"));
             Assert.That(geology, Does.Contain("CoreHeatSource"));
+            Assert.That(geology, Does.Contain("GeodynamicsDikeNucleation"));
+            Assert.That(geology, Does.Not.Contain("weakness > 0.4 && (overpressure > 0.28"));
             Assert.That(geology, Does.Not.Contain("if (_MaceExtra.y > 0.5)"));
+
+            string geoHlsl = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/Geodynamics.hlsl");
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsDikeNucleation"));
+            Assert.That(geoHlsl, Does.Not.Contain("GeodynamicsFaultWeakness(theta, radius01) * 0.55"));
 
             string hydrology = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
             Assert.That(hydrology, Does.Contain("HydrothermalRelease"));
@@ -150,6 +156,11 @@ namespace GeneSys.Tests
             Assert.That(display, Does.Contain("_OverlayMode >= 29"));
             Assert.That(GeodynamicsVisuals.HeatFlowOverlay, Is.EqualTo(29));
             Assert.That(GeodynamicsVisuals.ReleaseOverlay, Is.EqualTo(32));
+            Assert.That(GeodynamicsVisuals.MaxOverlayMode, Is.EqualTo(32));
+
+            string renderer = File.ReadAllText("Assets/GeneSys/Runtime/Rendering/PlanetoidDisplayRenderer.cs");
+            Assert.That(renderer, Does.Contain("GeodynamicsVisuals.MaxOverlayMode"));
+            Assert.That(renderer, Does.Not.Contain("Clamp(mode, 0, ClimateVisuals.OverlayMode)"));
         }
     }
 }

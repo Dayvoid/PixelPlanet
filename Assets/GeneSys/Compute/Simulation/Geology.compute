@@ -140,7 +140,10 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     float pressureAbove = ReadState(cell + int2(0, 1)).y;
     float pressureGradient = max(0.0, state.y - pressureAbove);
 
-    if (mantle && weakness > 0.4 && (overpressure > 0.28 || volcanic > 0.2))
+    float dike = GeodynamicsDikeNucleation(cell.x, radius);
+    bool eventMelt = volcanic > 0.22 && overpressure > 0.12;
+    bool dikeMelt = dike > 0.45 && overpressure > 0.22 && weakness > 0.4;
+    if (mantle && (eventMelt || dikeMelt))
     {
         material = 6u;
         state.x = max(state.x, 950.0);

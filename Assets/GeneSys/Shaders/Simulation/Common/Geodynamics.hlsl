@@ -179,9 +179,34 @@ float2 GeodynamicsFlow(int theta, float radius01)
 
 float GeodynamicsVolcanicEnvelope(int theta, float radius01)
 {
-    float eventGain = GeodynamicsEnvelopeAt(theta, radius01, 2);
-    float seep = GeodynamicsOverpressure(theta, radius01) * GeodynamicsFaultWeakness(theta, radius01) * 0.55;
-    return saturate(max(eventGain, seep));
+    return GeodynamicsEnvelopeAt(theta, radius01, 2);
+}
+
+float GeodynamicsDikeNucleation(int theta, float radius01)
+{
+    if (_GeodynamicsFlags.x < 0.5)
+        return 0.0;
+    float weakness = GeodynamicsFaultWeakness(theta, radius01);
+    if (weakness < 0.35)
+        return 0.0;
+    int aBins = GeodynamicsAngularBins();
+    int width = max(1, _GridSize.x);
+    int bin = GeodynamicsAngularBin(theta);
+    int start = (int)((uint)bin * (uint)width / (uint)aBins);
+    int endExclusive = (int)((uint)(bin + 1) * (uint)width / (uint)aBins);
+    int span = max(1, endExclusive - start);
+    float u = ((float)(theta - start) + 0.5) / (float)span;
+    uint radKey = (uint)floor(radius01 * 36.0);
+    float meander = sin(radius01 * 22.0 + Hash01((uint)bin * 509u + (uint)_Seed) * 6.28318530718) * 0.32;
+    meander += (Hash01((uint)bin * 374761u + radKey * 127u + (uint)_Seed) - 0.5) * 0.22;
+    float center = saturate(0.5 + meander);
+    float filament = saturate((0.24 - abs(u - center)) / 0.24);
+    float gap = Hash01((uint)bin * 19349663u + radKey * 83492791u + (uint)_Seed);
+    if (gap < 0.3)
+        filament = 0.0;
+    float pocket = Hash01((uint)theta * 73856093u + radKey * 6151u + (uint)_Seed);
+    filament = max(filament, step(0.97, pocket) * 0.7);
+    return saturate(weakness * filament) * step(0.1, radius01) * step(radius01, _AtmosphereStartRadius - 0.03);
 }
 
 float GeodynamicsSeismicEnvelope(int theta, float radius01)
@@ -200,7 +225,8 @@ float GeodynamicsSeedFault(int theta, float radius01, float faultCount)
 {
     float count = max(1.0, faultCount);
     float angular = (theta + 0.5) / max(1.0, (float)_GridSize.x);
-    float wave = abs(frac(angular * count + Hash01((uint)theta * 509u + (uint)_Seed) * 0.15) - 0.5);
+    float wander = (Hash01((uint)floor(radius01 * 64.0) * 374761u + (uint)_Seed) - 0.5) * 0.045;
+    float wave = abs(frac(angular * count + wander + Hash01((uint)theta * 509u + (uint)_Seed) * 0.15) - 0.5);
     float band = saturate((0.035 - wave) * 28.0);
     return band * step(0.08, radius01) * step(radius01, _AtmosphereStartRadius + 0.02);
 }

@@ -139,7 +139,7 @@ namespace GeneSys.Rendering
 
         public void SetOverlay(int mode)
         {
-            OverlayMode = Mathf.Clamp(mode, 0, ClimateVisuals.OverlayMode);
+            OverlayMode = Mathf.Clamp(mode, 0, GeodynamicsVisuals.MaxOverlayMode);
             if (displayMaterial != null) displayMaterial.SetInt("_OverlayMode", OverlayMode);
         }
 

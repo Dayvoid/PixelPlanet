@@ -79,12 +79,11 @@ void InitializeFaults(uint3 id : SV_DispatchThreadID)
     int width = max(1, _GridSize.x);
     int theta = (int)((uint)cell.x * (uint)width / (uint)aBins);
     float fault = GeodynamicsSeedFault(theta, radius01, _WorldGenParams.w);
-    float depth = saturate(1.0 - radius01);
     float4 reservoir = float4(
         0.0,
         0.0,
         fault * 0.08,
-        saturate(depth * 0.28));
+        fault * 0.10);
     float4 kinematics = float4(0.0, 0.0, fault, 0.0);
     _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 0)] = reservoir;
     _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 1)] = kinematics;
@@ -117,8 +116,6 @@ void AggregateInterior(uint3 id : SV_DispatchThreadID)
             meanP += state.y;
             if (material == 6u)
                 meltProxy += 1.0;
-            else if (material == 3u && state.x > 700.0)
-                meltProxy += 0.35;
             waterProxy += max(0.0, aux.y);
             count += 1.0;
         }
@@ -178,11 +175,14 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     flow = clamp(flow, -2.0, 2.0);
 
     float melt = saturate(prevRes.w);
-    melt = saturate(melt + (thermal * 0.08 + aggregate.z * 0.35 + saturate(0.55 - radius01) * 0.02 - 0.012) * dt);
+    float residual = saturate(prevKin.z) * 0.10;
+    float targetMelt = max(aggregate.z, residual);
+    melt = saturate(lerp(melt, targetMelt, saturate(0.22 * dt)));
+    melt = saturate(melt + saturate(thermal) * 0.02 * dt);
     float overpressure = max(0.0, prevRes.y);
     overpressure += build * melt * dt;
-    overpressure += thermal * 0.04 * dt;
-    overpressure -= leak * overpressure * (0.35 + saturate(prevKin.z)) * dt;
+    overpressure += saturate(thermal) * 0.02 * dt;
+    overpressure -= leak * overpressure * (0.45 + saturate(prevKin.z)) * dt;
     overpressure = saturate(overpressure);
 
     float strain = saturate(prevRes.z);
@@ -196,7 +196,7 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     strain = saturate(strain);
 
     float weakness = saturate(prevKin.z);
-    weakness += strain * 0.04 * dt;
+    weakness += strain * 0.035 * dt * (0.12 + 0.88 * weakness);
     weakness -= healing * dt;
     weakness = saturate(weakness);
 
