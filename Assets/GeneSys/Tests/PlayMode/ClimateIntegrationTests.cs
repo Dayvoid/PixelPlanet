@@ -58,6 +58,7 @@ namespace GeneSys.Tests
             host.Config.dayLengthSeconds = 180f;
             host.Config.validationIntervalTicks = 100000;
             host.Config.climateLayerEnable = false;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.climatePrevailingInject = false;
             host.Config.climateAlbedoFeedback = false;
             host.Config.climateBiomeFeedback = false;

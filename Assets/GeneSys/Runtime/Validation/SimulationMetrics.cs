@@ -112,6 +112,19 @@ namespace GeneSys.Validation
         public double TotalHealth;
     }
 
+    public struct WorldGeodynamicsMetrics
+    {
+        public float MeanStrain;
+        public float MaxStrain;
+        public float MeanOverpressure;
+        public float MaxOverpressure;
+        public float MeanFaultWeakness;
+        public int ActiveEventCount;
+        public float ReleasedEnergy;
+        public float AffectedAngularFraction;
+        public bool HasNonFinite;
+    }
+
     public struct WorldMobileMetrics
     {
         public double CoarseSediment;
@@ -882,6 +895,96 @@ namespace GeneSys.Validation
             }
             return metrics;
         }
+
+        public static void MeasureGeodynamicsAsync(SimulationHost host, Action<WorldGeodynamicsMetrics> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources?.GeodynamicsStateRead == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+
+            ComputeBuffer state = host.Resources.GeodynamicsStateRead;
+            ComputeBuffer events = host.Resources.GeodynamicsEvents;
+            Action fail = () => completed?.Invoke(default);
+            try
+            {
+                AsyncGPUReadback.Request(state, stateRequest =>
+                {
+                    if (stateRequest.hasError)
+                    {
+                        fail();
+                        return;
+                    }
+                    Vector4[] reservoirs = stateRequest.GetData<Vector4>().ToArray();
+                    AsyncGPUReadback.Request(events, eventRequest =>
+                    {
+                        if (eventRequest.hasError)
+                        {
+                            fail();
+                            return;
+                        }
+                        Vector4[] eventValues = eventRequest.GetData<Vector4>().ToArray();
+                        completed?.Invoke(ComputeGeodynamicsMetrics(reservoirs, eventValues,
+                            host.Config != null ? host.Config.geodynamicsAngularBins : 64,
+                            host.Config != null ? host.Config.geodynamicsRadialBins : 16));
+                    });
+                });
+            }
+            catch (Exception)
+            {
+                fail();
+            }
+        }
+
+        private static WorldGeodynamicsMetrics ComputeGeodynamicsMetrics(Vector4[] state, Vector4[] events, int angularBins, int radialBins)
+        {
+            var metrics = new WorldGeodynamicsMetrics();
+            angularBins = Mathf.Clamp(angularBins, 16, 128);
+            radialBins = Mathf.Clamp(radialBins, 8, 32);
+            int cells = angularBins * radialBins;
+            var activeAngles = new bool[angularBins];
+            int counted = 0;
+            for (int a = 0; a < angularBins; a++)
+            {
+                for (int r = 0; r < radialBins; r++)
+                {
+                    int stateIndex = ((a * radialBins) + r) * 2;
+                    if (stateIndex + 1 >= state.Length) continue;
+                    Vector4 reservoir = state[stateIndex];
+                    Vector4 kinematics = state[stateIndex + 1];
+                    if (!Finite(reservoir) || !Finite(kinematics))
+                        metrics.HasNonFinite = true;
+                    metrics.MeanStrain += Mathf.Max(0f, reservoir.z);
+                    metrics.MaxStrain = Mathf.Max(metrics.MaxStrain, reservoir.z);
+                    metrics.MeanOverpressure += Mathf.Max(0f, reservoir.y);
+                    metrics.MaxOverpressure = Mathf.Max(metrics.MaxOverpressure, reservoir.y);
+                    metrics.MeanFaultWeakness += Mathf.Max(0f, kinematics.z);
+                    counted++;
+                    int eventIndex = a * radialBins + r;
+                    if (eventIndex < events.Length && events[eventIndex].y > 0.05f)
+                    {
+                        metrics.ActiveEventCount++;
+                        metrics.ReleasedEnergy += Mathf.Max(0f, events[eventIndex].w);
+                        activeAngles[a] = true;
+                    }
+                }
+            }
+            if (counted > 0)
+            {
+                metrics.MeanStrain /= counted;
+                metrics.MeanOverpressure /= counted;
+                metrics.MeanFaultWeakness /= counted;
+            }
+            int active = 0;
+            for (int i = 0; i < activeAngles.Length; i++)
+                if (activeAngles[i]) active++;
+            metrics.AffectedAngularFraction = active / (float)Mathf.Max(1, angularBins);
+            return metrics;
+        }
+
+        private static bool Finite(Vector4 value) =>
+            float.IsFinite(value.x) && float.IsFinite(value.y) && float.IsFinite(value.z) && float.IsFinite(value.w);
 
         public static int CountOceanAngleBasins(bool[] oceanAngles)
         {

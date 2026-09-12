@@ -34,7 +34,7 @@ MonoBehaviour:
   borderNoise: 0.035
   protrusionChance: 0.12
   groundwaterDepth: 0.55
-  faultCount: 12
+  tectonicFaultSeedCount: 12
   targetOceanCoverage: 0.5
   minOceanBasins: 2
   maxOceanBasins: 3
@@ -72,14 +72,30 @@ MonoBehaviour:
   phaseHysteresis: 0.02
   densityExchangeRate: 4
   densityExchangeEpsilon: 0.02
-  mantlePressure: 0.7
-  fractureRate: 0.2
+  geodynamicsLayerEnable: 1
+  geodynamicsAngularBins: 64
+  geodynamicsRadialBins: 16
+  geodynamicsPeriodTicks: 4
+  geodynamicsConvectionStrength: 0.12
+  geodynamicsPressureBuildRate: 0.35
+  geodynamicsPressureLeakage: 0.08
+  geodynamicsHeatCoupling: 0.15
+  tectonicStrainGain: 0.12
+  tectonicStrainTransfer: 0.18
+  tectonicFaultHealing: 0.015
+  tectonicEarthquakeThreshold: 0.82
+  tectonicReleaseFraction: 0.22
+  tectonicEventFootprint: 0.06
+  tectonicCooldownTicks: 240
+  tectonicMaxConcurrentEvents: 2
+  tectonicSurfaceCoupling: 0.18
   extrusionRate: 0.4
-  volcanicCooling: 0.15
+  volcanicCoolingRate: 0.15
   magmaViscosity: 0.5
-  hydrothermalStrength: 0.35
-  ventChemicalRate: 0.12
-  magmaEruption: 1
+  volcanicReleaseThreshold: 0.78
+  volcanicReleaseFraction: 0.2
+  volcanicSurfaceCoupling: 0.22
+  eruptionDriveScale: 0.55
   eruptionPressureStrength: 3
   eruptionFlowStrength: 5
   eruptionBurdenDepth: 10
@@ -87,8 +103,11 @@ MonoBehaviour:
   ashUpdraftStrength: 0.4
   ashSettlingStrength: 2
   ashFertilityStrength: 1
-  coreReactionFrequency: 2000
-  coreReactionMagnitude: 8
+  hydrothermalHeatTransferRate: 0.35
+  hydrothermalNutrientYield: 0.12
+  hydrothermalReleaseThreshold: 0.7
+  corePulsePeriodTicks: 2000
+  corePulseHeat: 8
   coreTemperature: 1500
   coreHeatRate: 0.15
   infiltrationRate: 0.5
@@ -98,7 +117,7 @@ MonoBehaviour:
   collapseRate: 0.03
   erosionRate: 0.04
   baseSoilCohesion: 0.75
-  stressDecayRate: 0.02
+  surfaceStressRecoveryRate: 0.02
   dryMoistureThreshold: 0.08
   moistureCohesionStrength: 0.85
   runoffRate: 0.45

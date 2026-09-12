@@ -273,20 +273,6 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    if (IsGroundwaterHost(material, definition) && aux.y > 0.0 && _Mechanics.y > 1e-8)
-    {
-        float hostBoil = WaterBoilTemperature(EffectivePressure(state.y, aux.x, _WeatherC.x), equilibrium, _WeatherE.z);
-        float boiled = GroundwaterBoilMass(aux.y, state.x, hostBoil + hysteresis, _DeltaTime);
-        if (boiled > 1e-8)
-        {
-            aux.y -= boiled;
-            aux.x += boiled;
-            state.x -= WaterLatentHeatDelta(boiled, _WeatherE.w, 0.8);
-            state.y += boiled * 0.5;
-            aux.z += boiled * max(0.0, _GeologyB.x) * max(0.0, _GeologyB.y);
-        }
-    }
-
     // Isolation and frozen-thermal ticks keep existing phase; boiling still runs when heat is enabled.
     if (_Mechanics.y <= 1e-8)
     {

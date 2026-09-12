@@ -315,7 +315,7 @@ namespace GeneSys.Validation
                 || host.Config.maceAsh || host.Config.maceMagma || host.Config.maceHardWear);
             if (!anyMace)
             {
-                Complete(true, passedMessage);
+                ValidateGeodynamics(passedMessage);
                 return;
             }
 
@@ -334,6 +334,30 @@ namespace GeneSys.Validation
                 {
                     if (!float.IsFinite(values[i])) { Complete(false, $"Non-finite mobile mass at sample {i}."); return; }
                     if (values[i] < -1e-4f) { Complete(false, $"Negative mobile mass {values[i]:0.###} at sample {i}."); return; }
+                }
+                ValidateGeodynamics(passedMessage);
+            });
+        }
+
+        private void ValidateGeodynamics(string passedMessage)
+        {
+            ComputeBuffer state = host.Resources?.GeodynamicsStateRead;
+            if (state == null)
+            {
+                Complete(true, passedMessage);
+                return;
+            }
+
+            AsyncGPUReadback.Request(state, request =>
+            {
+                if (request.hasError) { Complete(false, "Geodynamics GPU readback failed."); return; }
+                NativeArray<Vector4> values = request.GetData<Vector4>();
+                for (int i = 0; i < values.Length; i++)
+                {
+                    Vector4 value = values[i];
+                    if (!Finite(value)) { Complete(false, $"Non-finite geodynamics state at cell {i}."); return; }
+                    if (value.y < -0.01f || value.z < -0.01f || value.w < -0.01f)
+                    { Complete(false, $"Negative geodynamics reservoir at cell {i}."); return; }
                 }
                 Complete(true, passedMessage);
             });

@@ -340,6 +340,7 @@ namespace GeneSys.Tests
             host.Config.erosionRate = 0f;
             host.Config.fractureRate = 0f;
             host.Config.extrusionRate = 0f;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.mantlePressure = 0f;
             host.Config.magmaEruption = 0f;
             host.Config.pressureRate = 0f;
@@ -1833,7 +1834,7 @@ namespace GeneSys.Tests
             PaintField(host, x, y, 2f, -100f);
             PaintField(host, x, y, 5f, -100f);
             PaintField(host, x, y, 5f, 0.4f);
-            PaintField(host, x, y, 1f, 160f);
+            PaintField(host, x, y, 1f, 250f);
             yield return Step(host, 1);
             double massBefore = 0d;
             float vaporBefore = 0f;

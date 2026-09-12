@@ -5,6 +5,7 @@ using System.Text;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.Gpu;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -32,12 +33,14 @@ namespace GeneSys.Persistence
         private const int Version12 = 12;
         private const int Version13 = 13;
         private const int Version14 = 14;
+        private const int Version15 = 15;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
         private const int PayloadCountV11 = 38;
         private const int PayloadCountV12 = 41;
         private const int PayloadCountV14 = 47;
+        private const int PayloadCountV15 = 49;
 
         private readonly string directoryOverride;
         private string resolvedDirectory;
@@ -101,23 +104,25 @@ namespace GeneSys.Persistence
         }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
-            Save(host, path, Version14, completed);
+            Save(host, path, Version15, completed);
 
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = version >= Version14 ? Version14 : (version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9))));
+            int writeVersion = version >= Version15 ? Version15 : (version >= Version14 ? Version14 : (version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9)))));
             bool includeGrass = writeVersion >= Version10;
             bool includeWasp = writeVersion >= Version11;
             bool includeTree = writeVersion >= Version12;
             bool includeMobile = writeVersion >= Version14;
-            byte[][] payloads = new byte[PayloadCountV14][];
+            bool includeGeodynamics = writeVersion >= Version15;
+            byte[][] payloads = new byte[PayloadCountV15][];
             int remaining = PayloadCountV9;
             bool failed = false;
             bool grassBatchStarted = !includeGrass;
             bool waspBatchStarted = !includeWasp;
             bool treeBatchStarted = !includeTree;
             bool mobileBatchStarted = !includeMobile;
+            bool geodynamicsBatchStarted = !includeGeodynamics;
             RenderTexture[] textures =
             {
                 host.Resources.MaterialRead, host.Resources.StateRead,
@@ -202,6 +207,14 @@ namespace GeneSys.Persistence
                 }
             }
 
+            void RequestGeodynamicsBatch()
+            {
+                AsyncGPUReadback.Request(host.Resources.GeodynamicsStateRead,
+                    request => CompletePayload(PayloadCountV14, request));
+                AsyncGPUReadback.Request(host.Resources.GeodynamicsEvents,
+                    request => CompletePayload(PayloadCountV14 + 1, request));
+            }
+
             void CompletePayload(int index, UnityEngine.Rendering.AsyncGPUReadbackRequest request)
             {
                 if (request.hasError) failed = true;
@@ -236,6 +249,13 @@ namespace GeneSys.Persistence
                     RequestMobileMassBatch();
                     return;
                 }
+                if (includeGeodynamics && !geodynamicsBatchStarted)
+                {
+                    geodynamicsBatchStarted = true;
+                    remaining = PayloadCountV15 - PayloadCountV14;
+                    RequestGeodynamicsBatch();
+                    return;
+                }
                 if (!failed)
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Application.persistentDataPath);
@@ -260,7 +280,7 @@ namespace GeneSys.Persistence
                         WriteTreeConfig(writer, config);
                     if (writeVersion >= Version13)
                         WriteJsonConfig(writer, config);
-                    int payloadCount = includeMobile ? PayloadCountV14 : (includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9)));
+                    int payloadCount = includeGeodynamics ? PayloadCountV15 : (includeMobile ? PayloadCountV14 : (includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9))));
                     for (int i = 0; i < payloadCount; i++)
                     {
                         writer.Write(payloads[i].Length);
@@ -278,7 +298,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version < Version1 || version > Version14) return false;
+            if (version < Version1 || version > Version15) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();
@@ -543,9 +563,47 @@ namespace GeneSys.Persistence
                 MigrateLegacyMobileMass(host.Resources);
             }
 
+            if (version >= Version15)
+            {
+                if (!TryLoadGeodynamicsPayload(reader, host.Resources.GeodynamicsStateRead, GeodynamicsGrid.StateBufferCount()))
+                    return false;
+                if (!TryLoadGeodynamicsPayload(reader, host.Resources.GeodynamicsEvents, GeodynamicsGrid.EventBufferCount()))
+                    return false;
+                host.Resources.CopyGeodynamicsReadToWrite();
+            }
+            else
+            {
+                host.Resources.ClearGeodynamics();
+                host.RebuildGeodynamics(true);
+                host.ClearDeepTectonicStress();
+            }
+
             host.Resources.CopyReadToWrite();
             host.RestoreSimulationTick(tick);
             host.RebuildClimate();
+            if (version < Version15)
+                host.RebuildGeodynamics(true);
+            return true;
+        }
+
+        private static bool TryLoadGeodynamicsPayload(BinaryReader reader, ComputeBuffer buffer, int count)
+        {
+            int length = reader.ReadInt32();
+            byte[] payload = reader.ReadBytes(length);
+            if (payload.Length != length || buffer == null)
+                return false;
+            int expected = count * sizeof(float) * 4;
+            if (payload.Length != expected)
+                return false;
+            var floats = new float[count * 4];
+            Buffer.BlockCopy(payload, 0, floats, 0, expected);
+            var values = new Vector4[count];
+            for (int i = 0; i < count; i++)
+            {
+                int src = i * 4;
+                values[i] = new Vector4(floats[src], floats[src + 1], floats[src + 2], floats[src + 3]);
+            }
+            buffer.SetData(values);
             return true;
         }
 
@@ -727,7 +785,52 @@ namespace GeneSys.Persistence
             byte[] json = reader.ReadBytes(length);
             if (json.Length != length || config == null)
                 return;
-            JsonUtility.FromJsonOverwrite(Encoding.UTF8.GetString(json), config);
+            string text = Encoding.UTF8.GetString(json);
+            JsonUtility.FromJsonOverwrite(text, config);
+            ApplyLegacyGeologyJsonAliases(text, config);
+        }
+
+        public static void ApplyLegacyGeologyJsonAliases(string json, SimulationConfig config)
+        {
+            if (string.IsNullOrEmpty(json) || config == null) return;
+            ApplyLegacyFloat(json, "geodynamicsPressureBuildRate", "mantlePressure", v => config.geodynamicsPressureBuildRate = v);
+            ApplyLegacyFloat(json, "tectonicStrainGain", "fractureRate", v => config.tectonicStrainGain = v);
+            ApplyLegacyFloat(json, "volcanicCoolingRate", "volcanicCooling", v => config.volcanicCoolingRate = v);
+            ApplyLegacyFloat(json, "eruptionDriveScale", "magmaEruption", v => config.eruptionDriveScale = v);
+            ApplyLegacyFloat(json, "hydrothermalHeatTransferRate", "hydrothermalStrength", v => config.hydrothermalHeatTransferRate = v);
+            ApplyLegacyFloat(json, "hydrothermalNutrientYield", "ventChemicalRate", v => config.hydrothermalNutrientYield = v);
+            ApplyLegacyFloat(json, "corePulseHeat", "coreReactionMagnitude", v => config.corePulseHeat = v);
+            ApplyLegacyFloat(json, "surfaceStressRecoveryRate", "stressDecayRate", v => config.surfaceStressRecoveryRate = v);
+            ApplyLegacyInt(json, "tectonicFaultSeedCount", "faultCount", v => config.tectonicFaultSeedCount = v);
+            ApplyLegacyInt(json, "corePulsePeriodTicks", "coreReactionFrequency", v => config.corePulsePeriodTicks = v);
+        }
+
+        private static void ApplyLegacyFloat(string json, string currentName, string legacyName, Action<float> assign)
+        {
+            if (json.Contains("\"" + currentName + "\"")) return;
+            if (!TryReadJsonNumber(json, legacyName, out float value)) return;
+            assign(value);
+        }
+
+        private static void ApplyLegacyInt(string json, string currentName, string legacyName, Action<int> assign)
+        {
+            if (json.Contains("\"" + currentName + "\"")) return;
+            if (!TryReadJsonNumber(json, legacyName, out float value)) return;
+            assign(Mathf.RoundToInt(value));
+        }
+
+        private static bool TryReadJsonNumber(string json, string name, out float value)
+        {
+            value = 0f;
+            string token = "\"" + name + "\":";
+            int index = json.IndexOf(token, StringComparison.Ordinal);
+            if (index < 0) return false;
+            int start = index + token.Length;
+            int end = start;
+            while (end < json.Length && (char.IsDigit(json[end]) || json[end] is '.' or '-' or '+' or 'e' or 'E'))
+                end++;
+            return float.TryParse(json.Substring(start, end - start), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out value);
         }
 
         private static void MigrateLegacyVaporPixels(byte[] payload)

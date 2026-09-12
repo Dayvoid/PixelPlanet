@@ -35,6 +35,7 @@ float4 _WorldGenV3A; // limestoneCount, limestoneMinSize, limestoneMaxSize, lime
 float4 _WorldGenV3B; // limestoneProtrusionDistance, clayCount, clayMinSize, clayMaxSize
 float4 _WorldGenV3C; // clayProtrusionChance, clayProtrusionDistance, unused, unused
 float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
+#include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 
 static const uint METAL_ID = 13u;
 static const uint ICE_ID = 10u;
@@ -233,10 +234,10 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     else if (radius < terrainSurface) material = 7;
     else material = 1;
 
-    float faultCount = max(1.0, _WorldGenParams.w);
     float angular = (id.x + 0.5) / _GridSize.x;
-    float faultWave = abs(frac(angular * faultCount + AngularNoise(id.y, 509) * 0.15) - 0.5);
-    float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, terrainSurface + 0.02);
+    float fault = GeodynamicsFaultWeakness((int)id.x, radius);
+    if (fault <= 1e-4)
+        fault = GeodynamicsSeedFault((int)id.x, radius, _WorldGenParams.w);
     fault = max(fault, ocean * 0.15 * step(crustEdge, radius));
 
     float temperature = lerp(WorldgenCoreTemperature(), 15.0, saturate(radius));
@@ -289,7 +290,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     _MaterialWrite[id.xy] = material;
     _StateWrite[id.xy] = float4(temperature, pressure, surfaceWater, 0.0);
     _FlowWrite[id.xy] = 0.0;
-    _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
+    _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, 0.0);
     _ShadeWrite[id.xy] = shade;
     _EcologyWrite[id.xy] = SanitizeEcology(float4(sporeLoad, 0.0, (float)traits, 0.0));
     _CombustionWrite[id.xy] = SeedCombustion(material, definition);
@@ -330,10 +331,10 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     else if (radius < terrainSurface) material = 7;
     else material = 1;
 
-    float faultCount = max(1.0, _WorldGenParams.w);
     float angular = (id.x + 0.5) / _GridSize.x;
-    float faultWave = abs(frac(angular * faultCount + AngularNoise(id.y, 509) * 0.15) - 0.5);
-    float fault = saturate((0.035 - faultWave) * 28.0) * step(coreEdge * 0.75, radius) * step(radius, terrainSurface + 0.02);
+    float fault = GeodynamicsFaultWeakness((int)id.x, radius);
+    if (fault <= 1e-4)
+        fault = GeodynamicsSeedFault((int)id.x, radius, _WorldGenParams.w);
     fault = max(fault, ocean * 0.15 * step(crustEdge, radius));
 
     // Stage 1.5: limestone bodies in the granite band (before metal).
@@ -427,7 +428,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     _MaterialWrite[id.xy] = material;
     _StateWrite[id.xy] = float4(temperature, pressure, surfaceWater, 0.0);
     _FlowWrite[id.xy] = 0.0;
-    _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, fault);
+    _AuxWrite[id.xy] = float4(vapor, groundwater, 0.0, 0.0);
     _ShadeWrite[id.xy] = shade;
     _EcologyWrite[id.xy] = SanitizeEcology(float4(sporeLoad, 0.0, (float)traits, 0.0));
     _CombustionWrite[id.xy] = SeedCombustion(material, definition);

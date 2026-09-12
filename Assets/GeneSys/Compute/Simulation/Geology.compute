@@ -1,7 +1,8 @@
 #pragma kernel Volcanism
 #pragma kernel EruptionMotion
 #pragma kernel AshTransport
-#pragma kernel CoreReaction
+#pragma kernel CoreHeatSource
+#pragma kernel ClearDeepTectonicStress
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -46,6 +47,8 @@ float4 _EruptionB;
 float4 _MaceFlags;
 float4 _MaceExtra;
 
+#include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
+
 int2 Cell(int2 value) { return ClampCell(value, _GridSize); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 uint ReadMaterial(int2 cell) { return _MaterialRead.Load(int3(Cell(cell), 0)); }
@@ -71,7 +74,7 @@ bool IsOpenCell(uint material)
 float CellBurden(uint material)
 {
     MaterialGpuData definition = D(material);
-    return max(0.05, definition.physical.x) + definition.physical.y * 0.75 + _Erosion.z * 0.15;
+    return max(0.05, definition.physical.x) + definition.physical.y * 0.75;
 }
 
 float ColumnBurden(int2 magmaCell)
@@ -125,47 +128,44 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     bool hardCrust = IsHardCrustMaterial(material);
     bool softCrust = IsSoftCrustMaterial(material);
     bool crust = hardCrust || softCrust;
-    float fault = saturate(aux.w);
     float eruption = saturate(_EruptionA.x);
+    float overpressure = GeodynamicsOverpressure(cell.x, radius);
+    float weakness = GeodynamicsFaultWeakness(cell.x, radius);
+    float volcanic = GeodynamicsVolcanicEnvelope(cell.x, radius);
+    float viscosity = max(0.0, _Volcanic.z);
 
     if (mantle || magma)
-        state.y += _Geology.x * (1.0 - radius) * _DeltaTime;
+        state.y += overpressure * _Volcanic.x * (1.0 - radius) * 0.35 * _DeltaTime;
 
     float pressureAbove = ReadState(cell + int2(0, 1)).y;
     float pressureGradient = max(0.0, state.y - pressureAbove);
-    if (mantle || magma)
-        aux.w = saturate(fault + pressureGradient * _Geology.y * _DeltaTime);
 
-    if (mantle && fault > 0.45 && state.y > 0.35)
+    if (mantle && weakness > 0.4 && (overpressure > 0.28 || volcanic > 0.2))
     {
-        if (_MaceExtra.y < 0.5)
-        {
-            material = 6u;
-            state.x = max(state.x, 950.0);
-            state.y = max(0.0, state.y - _Geology.z * _DeltaTime);
-            flow.y += _Geology.z * (1.0 - _WeatherC.w * 0.35) * _DeltaTime;
-        }
+        material = 6u;
+        state.x = max(state.x, 950.0);
+        state.y = max(0.0, state.y - _Volcanic.x * _DeltaTime);
+        flow.y += _Volcanic.x * (1.0 - viscosity * 0.35) * (0.35 + volcanic) * _DeltaTime;
     }
-    else if (crust && fault > 0.65 && pressureGradient > 0.25)
+    else if (crust && volcanic > 0.45 && pressureGradient > 0.2)
     {
         uint below = ReadMaterial(cell + int2(0, -1));
-        // Soft soil/sediment use EruptionMotion when magmaEruption > 0.
         bool allowSoftIntrusion = softCrust && eruption <= 0.0001;
         if ((below == 6u || below == 3u) && (hardCrust || allowSoftIntrusion))
         {
             material = 6u;
             state.x = max(state.x, 900.0);
-            state.y += _Geology.z * 0.25;
+            state.y += _Volcanic.x * 0.25;
         }
     }
 
     if (magma)
     {
-        state.x -= _Geology.w * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
+        state.x -= _Volcanic.y * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
         // Surface/extruded lava crusts once it has given up a latent-equivalent of heat.
         // Paying latent every tick while still magma would be an infinite heater; requiring
         // T + latent < 780 means the cell actually cooled through the freeze budget.
-        if (_MaceExtra.y < 0.5 && state.x < 780.0)
+        if (state.x < 780.0)
         {
             float freezeCp = EffectiveCellHeatCapacity(D(material), state, aux, D(9u).transport.y, false);
             float latent = MaterialPhaseLatentDelta(D(material).motion.y, _WeatherE.w, freezeCp);
@@ -187,11 +187,6 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    if (_MaceExtra.y > 0.5)
-    {
-        WriteCell(cell, ReadMaterial(cell), ReadState(cell), ReadFlow(cell), ReadAux(cell), ReadEcology(cell), ReadCombustion(cell), ReadLife(cell), ReadGenome(cell));
-        return;
-    }
     uint material = ReadMaterial(cell);
     float4 state = ReadState(cell);
     float2 flow = ReadFlow(cell);
@@ -218,9 +213,10 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
             float4 belowState = ReadState(below);
             float2 belowFlow = ReadFlow(below);
             float pressureGradient = max(0.0, belowState.y - state.y);
-            float viscosityFactor = max(0.15, 1.0 - _WeatherC.w * 0.35);
-            float drive = (pressureGradient * _EruptionA.y + max(0.0, belowFlow.y) * _EruptionA.z + _Geology.z * 0.35)
-                * viscosityFactor * eruption;
+            float viscosityFactor = max(0.15, 1.0 - _Volcanic.z * 0.35);
+            float volcanic = GeodynamicsVolcanicEnvelope(cell.x, Radius01(cell.y, _GridSize.y));
+            float drive = (pressureGradient * _EruptionA.y + max(0.0, belowFlow.y) * _EruptionA.z + _Volcanic.x * 0.35)
+                * viscosityFactor * eruption * (0.65 + volcanic * 0.7);
 
             float burden = ColumnBurden(below);
             float resistance = max(0.02, burden * lerp(1.0, 0.02, eruption));
@@ -266,9 +262,10 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
             float4 aboveLife = ReadLife(above);
             uint4 aboveGenome = ReadGenome(above);
             float pressureGradient = max(0.0, state.y - aboveState.y);
-            float viscosityFactor = max(0.15, 1.0 - _WeatherC.w * 0.35);
-            float drive = (pressureGradient * _EruptionA.y + max(0.0, flow.y) * _EruptionA.z + _Geology.z * 0.35)
-                * viscosityFactor * eruption;
+            float viscosityFactor = max(0.15, 1.0 - _Volcanic.z * 0.35);
+            float volcanic = GeodynamicsVolcanicEnvelope(cell.x, Radius01(cell.y, _GridSize.y));
+            float drive = (pressureGradient * _EruptionA.y + max(0.0, flow.y) * _EruptionA.z + _Volcanic.x * 0.35)
+                * viscosityFactor * eruption * (0.65 + volcanic * 0.7);
             float burden = ColumnBurden(cell);
             float resistance = max(0.02, burden * lerp(1.0, 0.02, eruption));
             float overdrive = drive / max(0.02, resistance);
@@ -391,11 +388,6 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
-    if (_MaceExtra.x > 0.5)
-    {
-        WriteCell(cell, ReadMaterial(cell), ReadState(cell), ReadFlow(cell), ReadAux(cell), ReadEcology(cell), ReadCombustion(cell), ReadLife(cell), ReadGenome(cell));
-        return;
-    }
     uint material = ReadMaterial(cell);
     float4 state = ReadState(cell);
     float2 flow = ReadFlow(cell);
@@ -442,7 +434,7 @@ void AshTransport(uint3 id : SV_DispatchThreadID)
 }
 
 [numthreads(8, 8, 1)]
-void CoreReaction(uint3 id : SV_DispatchThreadID)
+void CoreHeatSource(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
@@ -469,4 +461,18 @@ void CoreReaction(uint3 id : SV_DispatchThreadID)
     }
 
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+}
+
+[numthreads(8, 8, 1)]
+void ClearDeepTectonicStress(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = ReadMaterial(cell);
+    float4 state = ReadState(cell);
+    float2 flow = ReadFlow(cell);
+    float4 aux = ReadAux(cell);
+    if (material == 2u || material == 3u || material == 6u)
+        aux.w = 0.0;
+    WriteCell(cell, material, state, flow, aux, ReadEcology(cell), ReadCombustion(cell), ReadLife(cell), ReadGenome(cell));
 }

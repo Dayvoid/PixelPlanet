@@ -85,6 +85,7 @@ namespace GeneSys.Tests
             host.Clock.SetRunning(false);
             host.Config.slowPassInterval = 1;
             host.Config.validationIntervalTicks = 100000;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.magmaEruption = 0f;
             host.Config.fractureRate = 0f;
             host.Config.extrusionRate = 0f;
@@ -115,6 +116,7 @@ namespace GeneSys.Tests
             host.Config.maceAsh = false;
             host.Config.maceMagma = false;
             host.Config.maceHardWear = false;
+            host.Config.geodynamicsLayerEnable = true;
             host.Config.validationIntervalTicks = 1000;
             host.Config.slowPassInterval = 4;
         }

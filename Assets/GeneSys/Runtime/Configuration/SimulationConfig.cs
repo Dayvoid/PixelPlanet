@@ -35,7 +35,8 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float protrusionChance = 0.12f;
         [FormerlySerializedAs("initialWaterTable")]
         [Range(0f, 1f)] public float groundwaterDepth = 0.55f;
-        [Range(0, 64)] public int faultCount = 12;
+        [FormerlySerializedAs("faultCount")]
+        [Range(0, 64)] public int tectonicFaultSeedCount = 12;
         [Range(0.2f, 0.8f)] public float targetOceanCoverage = 0.5f;
         [Range(2, 3)] public int minOceanBasins = 2;
         [Range(2, 3)] public int maxOceanBasins = 3;
@@ -76,26 +77,76 @@ namespace GeneSys.Configuration
         [Range(0f, 64f)] public float densityExchangeRate = 4f;
         [Range(0.001f, 0.25f)] public float densityExchangeEpsilon = 0.02f;
 
-        [Header("Geology")]
-        [Range(0f, 4f)] public float mantlePressure = 0.7f;
-        [Range(0f, 4f)] public float fractureRate = 0.2f;
+        [Header("Geodynamics")]
+        public bool geodynamicsLayerEnable = true;
+        [Range(16, 128)] public int geodynamicsAngularBins = 64;
+        [Range(8, 32)] public int geodynamicsRadialBins = 16;
+        [Range(1, 64)] public int geodynamicsPeriodTicks = 4;
+        [Range(0f, 4f)] public float geodynamicsConvectionStrength = 0.12f;
+        [FormerlySerializedAs("mantlePressure")]
+        [Range(0f, 4f)] public float geodynamicsPressureBuildRate = 0.35f;
+        [Range(0f, 4f)] public float geodynamicsPressureLeakage = 0.08f;
+        [Range(0f, 4f)] public float geodynamicsHeatCoupling = 0.15f;
+
+        [Header("Tectonics")]
+        [FormerlySerializedAs("fractureRate")]
+        [Range(0f, 4f)] public float tectonicStrainGain = 0.12f;
+        [Range(0f, 4f)] public float tectonicStrainTransfer = 0.18f;
+        [Range(0f, 4f)] public float tectonicFaultHealing = 0.015f;
+        [Range(0.1f, 2f)] public float tectonicEarthquakeThreshold = 0.82f;
+        [Range(0.05f, 0.25f)] public float tectonicReleaseFraction = 0.22f;
+        [Range(0.01f, 0.25f)] public float tectonicEventFootprint = 0.06f;
+        [Range(16, 4000)] public int tectonicCooldownTicks = 240;
+        [Range(1, 8)] public int tectonicMaxConcurrentEvents = 2;
+        [Range(0f, 1f)] public float tectonicSurfaceCoupling = 0.18f;
+
+        [Header("Volcanism")]
         [Range(0f, 4f)] public float extrusionRate = 0.4f;
-        [Range(0f, 2f)] public float volcanicCooling = 0.15f;
+        [FormerlySerializedAs("volcanicCooling")]
+        [Range(0f, 2f)] public float volcanicCoolingRate = 0.15f;
         [Range(0f, 2f)] public float magmaViscosity = 0.5f;
-        [Range(0f, 4f)] public float hydrothermalStrength = 0.35f;
-        [Range(0f, 4f)] public float ventChemicalRate = 0.12f;
-        [Range(0f, 1f)] public float magmaEruption = 1f;
+        [Range(0.1f, 2f)] public float volcanicReleaseThreshold = 0.78f;
+        [Range(0.05f, 0.25f)] public float volcanicReleaseFraction = 0.2f;
+        [Range(0f, 1f)] public float volcanicSurfaceCoupling = 0.22f;
+
+        [Header("Eruption")]
+        [FormerlySerializedAs("magmaEruption")]
+        [Range(0f, 1f)] public float eruptionDriveScale = 0.55f;
         [Range(0f, 4f)] public float eruptionPressureStrength = 3f;
         [Range(0f, 8f)] public float eruptionFlowStrength = 5f;
         [Range(1, 16)] public int eruptionBurdenDepth = 10;
         [Range(0.05f, 4f)] public float eruptionBlastThreshold = 1.25f;
+
+        [Header("Ash")]
         [Range(0f, 4f)] public float ashUpdraftStrength = 0.4f;
         [Range(0f, 4f)] public float ashSettlingStrength = 2f;
         [Range(0f, 4f)] public float ashFertilityStrength = 1f;
-        [Range(0, 10000)] public int coreReactionFrequency = 2000;
-        [Range(0f, 500f)] public float coreReactionMagnitude = 8f;
+
+        [Header("Hydrothermal")]
+        [FormerlySerializedAs("hydrothermalStrength")]
+        [Range(0f, 4f)] public float hydrothermalHeatTransferRate = 0.35f;
+        [FormerlySerializedAs("ventChemicalRate")]
+        [Range(0f, 4f)] public float hydrothermalNutrientYield = 0.12f;
+        [Range(0.1f, 2f)] public float hydrothermalReleaseThreshold = 0.7f;
+
+        [Header("Core")]
+        [FormerlySerializedAs("coreReactionFrequency")]
+        [Range(0, 10000)] public int corePulsePeriodTicks = 2000;
+        [FormerlySerializedAs("coreReactionMagnitude")]
+        [Range(0f, 500f)] public float corePulseHeat = 8f;
         [Range(200f, 3000f)] public float coreTemperature = 1500f;
         [Range(0f, 8f)] public float coreHeatRate = 0.15f;
+
+        public int faultCount { get => tectonicFaultSeedCount; set => tectonicFaultSeedCount = value; }
+        public float mantlePressure { get => geodynamicsPressureBuildRate; set => geodynamicsPressureBuildRate = value; }
+        public float fractureRate { get => tectonicStrainGain; set => tectonicStrainGain = value; }
+        public float volcanicCooling { get => volcanicCoolingRate; set => volcanicCoolingRate = value; }
+        public float magmaEruption { get => eruptionDriveScale; set => eruptionDriveScale = value; }
+        public float hydrothermalStrength { get => hydrothermalHeatTransferRate; set => hydrothermalHeatTransferRate = value; }
+        public float ventChemicalRate { get => hydrothermalNutrientYield; set => hydrothermalNutrientYield = value; }
+        public int coreReactionFrequency { get => corePulsePeriodTicks; set => corePulsePeriodTicks = value; }
+        public float coreReactionMagnitude { get => corePulseHeat; set => corePulseHeat = value; }
+        public float stressDecayRate { get => surfaceStressRecoveryRate; set => surfaceStressRecoveryRate = value; }
 
         [Header("Hydrology and erosion")]
         [Range(0f, 4f)] public float infiltrationRate = 0.5f;
@@ -105,7 +156,8 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float collapseRate = 0.03f;
         [Range(0f, 2f)] public float erosionRate = 0.04f;
         [Range(0f, 2f)] public float baseSoilCohesion = 0.75f;
-        [Range(0f, 2f)] public float stressDecayRate = 0.02f;
+        [FormerlySerializedAs("stressDecayRate")]
+        [Range(0f, 2f)] public float surfaceStressRecoveryRate = 0.02f;
         [Range(0.01f, 1f)] public float dryMoistureThreshold = 0.08f;
         [Range(0f, 2f)] public float moistureCohesionStrength = 0.85f;
         [Range(0f, 4f)] public float runoffRate = 0.45f;
@@ -1000,10 +1052,36 @@ namespace GeneSys.Configuration
             coreHeatGlow = Mathf.Max(0f, coreHeatGlow);
             coreVisualScale = Mathf.Clamp(coreVisualScale, 0.5f, 2f);
             uiFadeDelay = Mathf.Max(0f, uiFadeDelay);
-            coreReactionFrequency = Mathf.Max(0, coreReactionFrequency);
-            coreReactionMagnitude = Mathf.Max(0f, coreReactionMagnitude);
+            geodynamicsAngularBins = Mathf.Clamp(geodynamicsAngularBins, 16, 128);
+            geodynamicsRadialBins = Mathf.Clamp(geodynamicsRadialBins, 8, 32);
+            geodynamicsPeriodTicks = Mathf.Clamp(geodynamicsPeriodTicks, 1, 64);
+            geodynamicsConvectionStrength = Mathf.Max(0f, geodynamicsConvectionStrength);
+            geodynamicsPressureBuildRate = Mathf.Max(0f, geodynamicsPressureBuildRate);
+            geodynamicsPressureLeakage = Mathf.Max(0f, geodynamicsPressureLeakage);
+            geodynamicsHeatCoupling = Mathf.Max(0f, geodynamicsHeatCoupling);
+            tectonicFaultSeedCount = Mathf.Clamp(tectonicFaultSeedCount, 0, 64);
+            tectonicStrainGain = Mathf.Max(0f, tectonicStrainGain);
+            tectonicStrainTransfer = Mathf.Max(0f, tectonicStrainTransfer);
+            tectonicFaultHealing = Mathf.Max(0f, tectonicFaultHealing);
+            tectonicEarthquakeThreshold = Mathf.Max(0.1f, tectonicEarthquakeThreshold);
+            tectonicReleaseFraction = Mathf.Clamp(tectonicReleaseFraction, 0.05f, 0.25f);
+            tectonicEventFootprint = Mathf.Clamp(tectonicEventFootprint, 0.01f, 0.25f);
+            tectonicCooldownTicks = Mathf.Clamp(tectonicCooldownTicks, 16, 4000);
+            tectonicMaxConcurrentEvents = Mathf.Clamp(tectonicMaxConcurrentEvents, 1, 8);
+            tectonicSurfaceCoupling = Mathf.Clamp01(tectonicSurfaceCoupling);
+            volcanicCoolingRate = Mathf.Max(0f, volcanicCoolingRate);
+            volcanicReleaseThreshold = Mathf.Max(0.1f, volcanicReleaseThreshold);
+            volcanicReleaseFraction = Mathf.Clamp(volcanicReleaseFraction, 0.05f, 0.25f);
+            volcanicSurfaceCoupling = Mathf.Clamp01(volcanicSurfaceCoupling);
+            eruptionDriveScale = Mathf.Clamp01(eruptionDriveScale);
+            hydrothermalHeatTransferRate = Mathf.Max(0f, hydrothermalHeatTransferRate);
+            hydrothermalNutrientYield = Mathf.Max(0f, hydrothermalNutrientYield);
+            hydrothermalReleaseThreshold = Mathf.Max(0.1f, hydrothermalReleaseThreshold);
+            corePulsePeriodTicks = Mathf.Max(0, corePulsePeriodTicks);
+            corePulseHeat = Mathf.Max(0f, corePulseHeat);
             coreTemperature = Mathf.Clamp(coreTemperature, 200f, 3000f);
             coreHeatRate = Mathf.Max(0f, coreHeatRate);
+            surfaceStressRecoveryRate = Mathf.Max(0f, surfaceStressRecoveryRate);
             probeOrbitRadius = Mathf.Clamp(probeOrbitRadius, 0.8f, 2f);
             probeSpriteScale = Mathf.Clamp(probeSpriteScale, 0.01f, 1f);
             probeSpriteRotationOffset = Mathf.Clamp(probeSpriteRotationOffset, -180f, 180f);

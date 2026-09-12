@@ -73,6 +73,24 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceMobileGeologyTests");
         }
 
+        [MenuItem("Tools/GeneSys/Run Geodynamics EditMode Tests")]
+        public static void RunGeodynamicsEditMode()
+        {
+            GeneSysTestObserver.Run(TestMode.EditMode, "GeneSys.Tests.GeodynamicsContractTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run Geodynamics PlayMode Tests")]
+        public static void RunGeodynamicsPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.GeodynamicsIntegrationTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run Geology PlayMode Tests")]
+        public static void RunGeologyPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.GeologyIntegrationTests");
+        }
+
         public static void RunPlayModeGroup(string groupName)
         {
             GeneSysTestObserver.Run(TestMode.PlayMode, groupName);

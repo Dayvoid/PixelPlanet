@@ -91,6 +91,7 @@ namespace GeneSys.Tests
             host.Config.thermalRate = 0f;
             host.Config.electricalRate = 0f;
             host.Config.pressureRate = 0f;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.mantlePressure = 0f;
             host.Config.fractureRate = 0f;
             host.Config.extrusionRate = 0f;

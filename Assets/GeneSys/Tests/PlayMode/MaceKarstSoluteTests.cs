@@ -98,6 +98,7 @@ namespace GeneSys.Tests
         private static void ConfigureKarst(SimulationHost host)
         {
             host.Clock.SetRunning(false);
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.slowPassInterval = 1;
             host.Config.validationIntervalTicks = 100000;
             host.Config.maceSedimentPilot = true;
@@ -124,6 +125,7 @@ namespace GeneSys.Tests
             host.Config.maceAsh = false;
             host.Config.maceMagma = false;
             host.Config.maceHardWear = false;
+            host.Config.geodynamicsLayerEnable = true;
             host.Config.dissolutionRate = 0.03f;
             host.Config.validationIntervalTicks = 1000;
             host.Config.slowPassInterval = 4;

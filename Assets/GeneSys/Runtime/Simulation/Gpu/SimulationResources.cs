@@ -1,5 +1,6 @@
 using System;
 using GeneSys.Simulation.Climate;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -75,6 +76,11 @@ namespace GeneSys.Simulation.Gpu
         public ComputeBuffer SedimentColumn { get; private set; }
         public ComputeBuffer ClimateColumns { get; private set; }
         public ComputeBuffer ClimateState { get; private set; }
+        public ComputeBuffer GeodynamicsColumns { get; private set; }
+        public ComputeBuffer GeodynamicsStateRead { get; private set; }
+        public ComputeBuffer GeodynamicsStateWrite { get; private set; }
+        public ComputeBuffer GeodynamicsEvents { get; private set; }
+        public ComputeBuffer GeodynamicsEventCounter { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -129,6 +135,11 @@ namespace GeneSys.Simulation.Gpu
             SedimentColumn = CreateColumnBuffer();
             ClimateColumns = CreateStructuredBuffer(ClimateGrid.ColumnBufferCount(Grid.angularResolution));
             ClimateState = CreateStructuredBuffer(ClimateGrid.StateBufferCount());
+            GeodynamicsColumns = CreateStructuredBuffer(GeodynamicsGrid.ColumnBufferCount());
+            GeodynamicsStateRead = CreateStructuredBuffer(GeodynamicsGrid.StateBufferCount());
+            GeodynamicsStateWrite = CreateStructuredBuffer(GeodynamicsGrid.StateBufferCount());
+            GeodynamicsEvents = CreateStructuredBuffer(GeodynamicsGrid.EventBufferCount());
+            GeodynamicsEventCounter = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Structured);
             MobileMassRead = CreateTextureArray("GeneSys Mobile Mass A", GraphicsFormat.R32_SFloat, MobileMassSliceCount);
             MobileMassWrite = CreateTextureArray("GeneSys Mobile Mass B", GraphicsFormat.R32_SFloat, MobileMassSliceCount);
             MaceAffinity = CreateTexture("GeneSys MaCE Affinity", GraphicsFormat.R32_SFloat);
@@ -141,6 +152,7 @@ namespace GeneSys.Simulation.Gpu
             ClearTree();
             ClearWaterColumns();
             ClearClimate();
+            ClearGeodynamics();
             ClearMobileMass();
         }
 
@@ -159,6 +171,32 @@ namespace GeneSys.Simulation.Gpu
                 ClimateColumns.SetData(new Vector4[ClimateGrid.ColumnBufferCount(Grid.angularResolution)]);
             if (ClimateState != null)
                 ClimateState.SetData(new Vector4[ClimateGrid.StateBufferCount()]);
+        }
+
+        public void ClearGeodynamics()
+        {
+            if (GeodynamicsColumns != null)
+                GeodynamicsColumns.SetData(new Vector4[GeodynamicsGrid.ColumnBufferCount()]);
+            if (GeodynamicsStateRead != null)
+                GeodynamicsStateRead.SetData(new Vector4[GeodynamicsGrid.StateBufferCount()]);
+            if (GeodynamicsStateWrite != null)
+                GeodynamicsStateWrite.SetData(new Vector4[GeodynamicsGrid.StateBufferCount()]);
+            if (GeodynamicsEvents != null)
+                GeodynamicsEvents.SetData(new Vector4[GeodynamicsGrid.EventBufferCount()]);
+            GeodynamicsEventCounter?.SetData(new uint[1]);
+        }
+
+        public void SwapGeodynamics()
+        {
+            (GeodynamicsStateRead, GeodynamicsStateWrite) = (GeodynamicsStateWrite, GeodynamicsStateRead);
+        }
+
+        public void CopyGeodynamicsReadToWrite()
+        {
+            if (GeodynamicsStateRead == null || GeodynamicsStateWrite == null) return;
+            var values = new Vector4[GeodynamicsGrid.StateBufferCount()];
+            GeodynamicsStateRead.GetData(values);
+            GeodynamicsStateWrite.SetData(values);
         }
 
         public void ClearMobileMass()
@@ -293,7 +331,7 @@ namespace GeneSys.Simulation.Gpu
             (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
             // Storm, Light, Fauna, Acoustic, Claims, Grass, Propagule, Wasp, grass visit, root flux,
             // hydrostatic column scratch, and MaCE mobile/scratch are excluded: other kernels do not
-            // copy them through WriteCell.
+            // copy them through WriteCell. Geodynamics lattice buffers are also excluded.
         }
 
         public void SwapMobileMass()
@@ -398,6 +436,11 @@ namespace GeneSys.Simulation.Gpu
             SedimentColumn?.Release();
             ClimateColumns?.Release();
             ClimateState?.Release();
+            GeodynamicsColumns?.Release();
+            GeodynamicsStateRead?.Release();
+            GeodynamicsStateWrite?.Release();
+            GeodynamicsEvents?.Release();
+            GeodynamicsEventCounter?.Release();
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -427,6 +470,11 @@ namespace GeneSys.Simulation.Gpu
             SedimentColumn = null;
             ClimateColumns = null;
             ClimateState = null;
+            GeodynamicsColumns = null;
+            GeodynamicsStateRead = null;
+            GeodynamicsStateWrite = null;
+            GeodynamicsEvents = null;
+            GeodynamicsEventCounter = null;
         }
 
         private static void Release(RenderTexture texture)

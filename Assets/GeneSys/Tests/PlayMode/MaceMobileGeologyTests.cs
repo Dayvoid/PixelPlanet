@@ -93,9 +93,10 @@ namespace GeneSys.Tests
             host.Config.maceAsh = false;
             host.Config.maceMagma = false;
             host.Config.maceHardWear = false;
+            host.Config.geodynamicsLayerEnable = true;
             host.Config.validationIntervalTicks = 1000;
             host.Config.slowPassInterval = 4;
-            host.Config.fractureRate = 0.2f;
+            host.Config.fractureRate = 0.12f;
             host.Config.erosionRate = 0.04f;
         }
 

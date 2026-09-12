@@ -3,6 +3,7 @@ using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Climate;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
@@ -201,6 +202,12 @@ namespace GeneSys.Rendering
             if (resources.ClimateState != null)
                 displayMaterial.SetBuffer("_ClimateState", resources.ClimateState);
             displayMaterial.SetInt("_ClimateBins", config != null ? ClimateGrid.ClampBinCount(config.climateBinCount) : ClimateGrid.DefaultBins);
+            if (resources.GeodynamicsStateRead != null)
+                displayMaterial.SetBuffer("_GeodynamicsState", resources.GeodynamicsStateRead);
+            if (resources.GeodynamicsEvents != null)
+                displayMaterial.SetBuffer("_GeodynamicsEvents", resources.GeodynamicsEvents);
+            displayMaterial.SetInt("_GeodynamicsAngularBins", config != null ? GeodynamicsGrid.ClampAngularBins(config.geodynamicsAngularBins) : GeodynamicsGrid.DefaultAngularBins);
+            displayMaterial.SetInt("_GeodynamicsRadialBins", config != null ? GeodynamicsGrid.ClampRadialBins(config.geodynamicsRadialBins) : GeodynamicsGrid.DefaultRadialBins);
         }
 
         private void HandleCamera()

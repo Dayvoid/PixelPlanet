@@ -106,6 +106,7 @@ namespace GeneSys.Tests
             host.Config.magmaEruption = 0f;
             host.Config.ashSettlingStrength = 0f;
             host.Config.ashUpdraftStrength = 0f;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.mantlePressure = 0f;
             host.Config.fractureRate = 0f;
             host.Config.extrusionRate = 0f;

@@ -14,6 +14,20 @@ namespace GeneSys.Tests
 {
     public sealed class GeologyIntegrationTests
     {
+        [TearDown]
+        public void RestoreSharedConfig()
+        {
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            if (host == null || host.Config == null) return;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.eruptionDriveScale = 0.55f;
+            host.Config.geodynamicsPressureBuildRate = 0.35f;
+            host.Config.tectonicStrainGain = 0.12f;
+            host.Config.extrusionRate = 0.4f;
+            host.Config.validationIntervalTicks = 1000;
+            host.Config.slowPassInterval = 4;
+        }
+
         private static IEnumerator WaitForHost()
         {
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
@@ -210,6 +224,7 @@ namespace GeneSys.Tests
             host.Clock.SetRunning(false);
             host.Config.slowPassInterval = 1;
             host.Config.transportPassInterval = 1;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.volcanicCooling = 0f;
             host.Config.gravityStrength = 0f;
             host.Config.fractureRate = 0f;
@@ -232,6 +247,7 @@ namespace GeneSys.Tests
             host.Config.slowPassInterval = 1;
             host.Config.transportPassInterval = 1;
             host.Config.validationIntervalTicks = 100000;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.magmaEruption = 0f;
             host.Config.gravityStrength = 0f;
             host.Config.fractureRate = 0f;
@@ -268,11 +284,12 @@ namespace GeneSys.Tests
         {
             host.Config.slowPassInterval = 4;
             host.Config.validationIntervalTicks = 1000;
-            host.Config.magmaEruption = 0f;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.magmaEruption = 0.55f;
             host.Config.gravityStrength = 1f;
-            host.Config.fractureRate = 0.2f;
-            host.Config.extrusionRate = 0.3f;
-            host.Config.mantlePressure = 0.7f;
+            host.Config.fractureRate = 0.12f;
+            host.Config.extrusionRate = 0.4f;
+            host.Config.mantlePressure = 0.35f;
             host.Config.volcanicCooling = 0.15f;
             host.Config.dissolutionRate = 0.03f;
             host.Config.collapseRate = 0.03f;
@@ -635,12 +652,13 @@ namespace GeneSys.Tests
             Assert.That(materialsB, Is.EqualTo(materialsA));
 
             // Restore safe defaults on shared config asset.
-            host.Config.magmaEruption = 0f;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.magmaEruption = 0.55f;
             host.Config.gravityStrength = 1f;
-            host.Config.fractureRate = 0.2f;
+            host.Config.fractureRate = 0.12f;
             host.Config.volcanicCooling = 0.15f;
-            host.Config.extrusionRate = 0.3f;
-            host.Config.mantlePressure = 0.7f;
+            host.Config.extrusionRate = 0.4f;
+            host.Config.mantlePressure = 0.35f;
         }
 
         [UnityTest]
@@ -650,19 +668,20 @@ namespace GeneSys.Tests
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureStressIsolation(host);
-            host.Config.stressDecayRate = 0f;
+            host.Config.surfaceStressRecoveryRate = 0f;
             host.Config.seed = 4242;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
             int x = host.Grid.angularResolution / 2;
             int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.6f), 8, host.Grid.radialResolution - 8);
-            PaintSupportedColumn(host, x, y, MaterialIds.Rock);
+            PaintSupportedColumn(host, x, y, MaterialIds.Soil);
             yield return Step(host, 1);
 
-            // Build partial stress via tectonic loading, then freeze fracture.
-            host.Config.fractureRate = 0.5f;
-            PaintPressure(host, x, y, 2f);
+            host.Config.erosionRate = 0.8f;
+            host.Config.windStrength = 2f;
+            host.Config.baseSoilCohesion = 0f;
+            DriveWindErosion(host, x, y);
             yield return Step(host, 20);
 
             float stressBefore = -1f;
@@ -673,11 +692,12 @@ namespace GeneSys.Tests
                 materialBefore = mats[index];
                 stressBefore = aux[index].w;
             });
-            Assert.That(materialBefore, Is.EqualTo(MaterialIds.Rock));
+            Assert.That(materialBefore, Is.EqualTo(MaterialIds.Soil));
             Assert.That(stressBefore, Is.InRange(0.1f, 1.0f));
 
-            host.Config.fractureRate = 0f;
-            host.Config.stressDecayRate = 0.5f;
+            host.Config.erosionRate = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.surfaceStressRecoveryRate = 0.5f;
             const int decayTicks = 16;
             float expectedDrop = 0.5f * (1f / host.Config.ticksPerSecond) * decayTicks;
             yield return Step(host, decayTicks);
@@ -691,7 +711,7 @@ namespace GeneSys.Tests
                 stressAfter = aux[index].w;
             });
 
-            Assert.That(materialAfter, Is.EqualTo(MaterialIds.Rock));
+            Assert.That(materialAfter, Is.EqualTo(MaterialIds.Soil));
             Assert.That(stressAfter, Is.LessThan(stressBefore - expectedDrop * 0.5f));
             Assert.That(stressAfter, Is.EqualTo(Mathf.Max(0f, stressBefore - expectedDrop)).Within(0.08f));
 

@@ -1,4 +1,5 @@
 #pragma kernel Groundwater
+#pragma kernel HydrothermalRelease
 #pragma kernel ErosionAndCollapse
 #pragma kernel AshFertilization
 #pragma kernel DetritusExchange
@@ -57,6 +58,8 @@ float4 _DetritusB; // decomposition, unused
 float4 _MaceFlags; // sediment, entrainment, shoreline, solute
 float4 _MaceExtra; // ash, magma, wear, unused
 float4 _WeatherI;
+float4 _PressureA;
+float4 _Hydrothermal;
 Texture2DArray<float> _MobileMassRead;
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
@@ -69,8 +72,10 @@ float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
 #define MACE_MOBILE_DECLARED 1
+#define GENESYS_HYDROTHERMAL_DECLARED 1
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 #include "../../Shaders/Simulation/Common/Climate.hlsl"
+#include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 
 bool IsExposedSurface(int2 cell, uint material)
 {
@@ -246,6 +251,51 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
 }
 
 [numthreads(8, 8, 1)]
+void HydrothermalRelease(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = M(cell);
+    float4 state = S(cell);
+    float2 flow = F(cell);
+    float4 aux = A(cell);
+    float4 ecology = E(cell);
+    float4 combustion = Comb(cell);
+    MaterialGpuData definition = D(material);
+    if (!IsGroundwaterHost(material, definition) || aux.y <= 0.0 || _Mechanics.y <= 1e-8)
+    {
+        Write(cell, material, state, flow, aux, ecology, combustion);
+        return;
+    }
+
+    float radius = Radius01(cell.y, _GridSize.y);
+    float envelope = GeodynamicsHydrothermalEnvelope(cell.x, radius);
+    float weakness = GeodynamicsFaultWeakness(cell.x, radius);
+    float equilibrium = PressureEquilibriumAt(cell.y, _GridSize.y, _PressureA.y, _PressureA.z);
+    float hysteresis = max(0.001, _WeatherC.z);
+    float hostBoil = WaterBoilTemperature(EffectivePressure(state.y, aux.x, _WeatherC.x), equilibrium, _WeatherE.z);
+    bool permeable = envelope > 0.08 || weakness > 0.2 || state.x > hostBoil + 80.0;
+    if (!permeable)
+    {
+        Write(cell, material, state, flow, aux, ecology, combustion);
+        return;
+    }
+
+    float boiled = GroundwaterBoilMass(aux.y, state.x, hostBoil + hysteresis, _DeltaTime);
+    if (boiled > 1e-8)
+    {
+        aux.y -= boiled;
+        aux.x += boiled;
+        state.x -= WaterLatentHeatDelta(boiled, _WeatherE.w, 0.8);
+        state.y += boiled * 0.5;
+        float chemistry = max(envelope, max(weakness, step(hostBoil + 80.0, state.x)));
+        aux.z += boiled * max(0.0, _Hydrothermal.x) * max(0.0, _Hydrothermal.y) * chemistry;
+    }
+
+    Write(cell, material, state, flow, aux, ecology, combustion);
+}
+
+[numthreads(8, 8, 1)]
 void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
@@ -272,7 +322,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         + (float)CountTreeRootsOnCell(_TreeRead, cell, _GridSize) * saturate(_TreeH.y) * _Erosion.z);
 
     // Continuous linear recovery for sediment-source solids. Sustained loading must
-    // exceed stressDecayRate (_Erosion.w) on average to accumulate toward conversion.
+    // exceed surfaceStressRecoveryRate (_Erosion.w) on average to accumulate toward conversion.
     if (IsHardCrustMaterial(material) || material == 7u || material == 15u)
         aux.w = max(0.0, aux.w - max(0.0, _Erosion.w) * _DeltaTime);
 
@@ -324,7 +374,12 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
     }
 
     uint below = M(cell + int2(0, -1));
-    if ((material == 4u || material == 7u || material == 14u || material == 15u) && (below == 0u || below == 1u) && cohesion < _Hydrology.w)
+    float seismic = GeodynamicsSeismicEnvelope(cell.x, Radius01(cell.y, _GridSize.y));
+    bool unsupported = below == 0u || below == 1u;
+    if (seismic > 0.02 && (exposed || localMoisture > dryThreshold || unsupported || cohesion < 0.55))
+        aux.w = saturate(aux.w + seismic * saturate(_Hydrothermal.w) * 0.35 * _DeltaTime);
+
+    if ((material == 4u || material == 7u || material == 14u || material == 15u) && unsupported && cohesion < _Hydrology.w)
     {
         if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5)
             material = 8u;

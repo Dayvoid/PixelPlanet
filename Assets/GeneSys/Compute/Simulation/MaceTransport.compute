@@ -73,6 +73,7 @@ float4 _WeatherE;
 float4 _GrassI;
 float4 _TreeH;
 float4 _Geology;
+float4 _Volcanic;
 
 MaterialGpuData Mat(uint id) { return _MaterialDefinitions[min(id, 255u)]; }
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
@@ -254,7 +255,7 @@ float BuildChannelAffinity(int2 cell, uint material, int slice)
         float pressureAbove = cell.y + 1 < _GridSize.y ? S(cell + int2(0, 1)).y : 0.0;
         affinity += max(0.0, _MaceE.w) * max(0.0, S(cell).y - pressureAbove);
         affinity += max(0.0, _EruptionA.z) * max(0.0, F(cell).y) * 0.15;
-        affinity -= max(0.0, _WeatherC.w) * 0.35;
+        affinity -= max(0.0, _Volcanic.z) * 0.35;
     }
     return affinity;
 }

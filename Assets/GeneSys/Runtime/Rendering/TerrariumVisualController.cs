@@ -303,8 +303,10 @@ namespace GeneSys.Rendering
                     float coreScale = (displayedCore * 2.0f) * config.coreVisualScale;
                     coreRenderer.transform.localScale = Vector3.one * coreScale;
                     coreMaterial.SetFloat("_Intensity", config.coreVisualStrength);
-                    coreMaterial.SetFloat("_CirculationSpeed", config.coreCirculationSpeed);
+                    coreMaterial.SetFloat("_CirculationSpeed", config.coreCirculationSpeed * (0.65f + config.geodynamicsConvectionStrength));
                     coreMaterial.SetFloat("_HeatGlow", config.coreHeatGlow);
+                    coreMaterial.SetFloat("_SimHeatGlow", 0.7f + config.geodynamicsHeatCoupling + config.coreHeatRate * 0.4f);
+                    coreMaterial.SetFloat("_SimCirculation", 0.5f + config.geodynamicsConvectionStrength * 2f);
                     coreMaterial.SetFloat("_CoreRadius", 0.85f);
                     coreMaterial.SetFloat("_EdgeSoftness", 1.6f);
                 }

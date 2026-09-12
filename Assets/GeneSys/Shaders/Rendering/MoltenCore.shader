@@ -45,6 +45,8 @@ Shader "GeneSys/Molten Core"
                 float _HeatGlow;
                 float _CoreRadius;
                 float _EdgeSoftness;
+                float _SimHeatGlow;
+                float _SimCirculation;
             CBUFFER_END
 
             struct Attributes
@@ -155,7 +157,10 @@ Shader "GeneSys/Molten Core"
                 molten = lerp(molten, _SlagColor.rgb, slag * (1.0 - coreSolid * 0.85) * 0.8);
 
                 // Thermal glow scaling and incandescence boost
-                float3 finalColor = molten * (_HeatGlow * pulse * _Intensity);
+                float simHeat = max(0.25, _SimHeatGlow);
+                float simFlow = max(0.25, _SimCirculation);
+                float3 finalColor = molten * (_HeatGlow * pulse * _Intensity * simHeat);
+                finalColor = lerp(finalColor, finalColor * float3(1.15, 0.85, 0.55), saturate(simFlow * 0.35));
 
                 // Edge falloff: 100% solid in the center to obliterate underlying radial singularity,
                 // smooth thermal transition into the planetary mantle at the perimeter.

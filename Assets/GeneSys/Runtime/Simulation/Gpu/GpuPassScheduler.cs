@@ -4,6 +4,7 @@ using System.Diagnostics;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation.Climate;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -48,7 +49,9 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader storm;
         private readonly ComputeShader maceTransport;
         private readonly ComputeShader climate;
+        private readonly ComputeShader geodynamics;
         private bool climateInit;
+        private bool geodynamicsInit;
         private readonly GraphicsBuffer strikeSeedBuffer;
         private readonly GraphicsBuffer strikeCounterBuffer;
         private readonly uint[] strikeCounterZero = new uint[1];
@@ -72,7 +75,7 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
             ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm,
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
-            ComputeShader maceTransport = null, ComputeShader climate = null)
+            ComputeShader maceTransport = null, ComputeShader climate = null, ComputeShader geodynamics = null)
         {
             this.config = config;
             this.resources = resources;
@@ -93,6 +96,7 @@ namespace GeneSys.Simulation.Gpu
             this.storm = storm;
             this.maceTransport = maceTransport;
             this.climate = climate;
+            this.geodynamics = geodynamics;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -159,7 +163,7 @@ namespace GeneSys.Simulation.Gpu
             SetCommon(worldGeneration, kernel, 0f);
             worldGeneration.SetInt("_Seed", config.seed);
             worldGeneration.SetVector("_LayerRatios", new Vector4(config.coreRatio, config.mantleRatio, config.crustRatio, config.soilRatio));
-            worldGeneration.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, 0f, config.faultCount));
+            worldGeneration.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, 0f, config.tectonicFaultSeedCount));
             worldGeneration.SetVector("_WorldWaterA", new Vector4(config.targetOceanCoverage, config.minOceanBasins, config.maxOceanBasins, config.seaLevelRadius));
             worldGeneration.SetVector("_WorldWaterB", new Vector4(config.basinDepth, config.terrainRelief, config.coastRoughness, config.initialGroundwaterSaturation));
             worldGeneration.SetVector("_WorldWaterC", new Vector4(config.initialAtmosphericHumidity, config.groundwaterDepth, config.frozenOceans ? 1f : 0f, 0f));
@@ -174,6 +178,8 @@ namespace GeneSys.Simulation.Gpu
             }
             worldGeneration.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             BindWorldgenOutputs(worldGeneration, kernel);
+            InitializeGeodynamicsFaults();
+            BindGeodynamicsState(worldGeneration, kernel);
             Dispatch(worldGeneration, kernel);
             if (flora != null)
             {
@@ -260,6 +266,7 @@ namespace GeneSys.Simulation.Gpu
             resources.CopyReadToWrite();
             SeedMobileMass();
             RebuildClimate();
+            RebuildGeodynamics(true);
         }
 
         public void QueueBrush(BrushCommand command)
@@ -341,25 +348,29 @@ namespace GeneSys.Simulation.Gpu
                 globalAdjusts.Clear();
             }
 
+            if (config.geodynamicsLayerEnable && Due(config.geodynamicsPeriodTicks))
+                DispatchGeodynamics(CadenceDt(deltaTime, config.geodynamicsPeriodTicks));
+
+            if (config.coreHeatRate > 0f
+                || (config.corePulsePeriodTicks > 0 && config.corePulseHeat > 0f))
+                DispatchPass(geology, geology.FindKernel("CoreHeatSource"), deltaTime);
+
+            if (Due(config.slowPassInterval))
+                DispatchPass(geology, geology.FindKernel("Volcanism"), CadenceDt(deltaTime, config.slowPassInterval));
+
             for (int i = 0; i < config.materialSubsteps; i++)
             {
                 float subDt = deltaTime / config.materialSubsteps;
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("ThermalAndPressure"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("LiquidDensityExchange"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotion"), subDt);
-                DispatchPass(geology, geology.FindKernel("EruptionMotion"), subDt);
+                if (!config.maceMagma)
+                    DispatchPass(geology, geology.FindKernel("EruptionMotion"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
             }
 
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), deltaTime);
             DispatchMaceEarly(deltaTime);
-
-            if (Due(config.slowPassInterval))
-                DispatchPass(geology, geology.FindKernel("Volcanism"), CadenceDt(deltaTime, config.slowPassInterval));
-
-            if (config.coreHeatRate > 0f
-                || (config.coreReactionFrequency > 0 && config.coreReactionMagnitude > 0f))
-                DispatchPass(geology, geology.FindKernel("CoreReaction"), deltaTime);
 
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
@@ -375,7 +386,8 @@ namespace GeneSys.Simulation.Gpu
             DispatchPass(weather, weather.FindKernel("AtmosphericContinuity"), deltaTime);
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PressureDiffusion"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericDynamics"), deltaTime);
-            DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
+            if (!config.maceAsh)
+                DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
             DispatchPass(weather, weather.FindKernel("Precipitation"), deltaTime);
@@ -385,6 +397,7 @@ namespace GeneSys.Simulation.Gpu
 
             // Soak this tick's rain/ponding, then saturation seeps see the updated water table.
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
+            DispatchPass(hydrology, hydrology.FindKernel("HydrothermalRelease"), deltaTime);
             DispatchHydrostaticLeveling(deltaTime);
 
             // Erosion sees the current tick's moisture, exposure, and flow after weather/runoff.
@@ -761,6 +774,102 @@ namespace GeneSys.Simulation.Gpu
             shader.SetBuffer(kernel, "_ClimateState", resources.ClimateState);
         }
 
+        public void ClearDeepTectonicStress()
+        {
+            if (geology == null || !geology.HasKernel("ClearDeepTectonicStress")) return;
+            DispatchPass(geology, geology.FindKernel("ClearDeepTectonicStress"), 0f);
+        }
+
+        public void RebuildGeodynamics(bool init = false)
+        {
+            if (geodynamics == null || resources.GeodynamicsStateRead == null) return;
+            if (init)
+                InitializeGeodynamicsFaults();
+            DispatchGeodynamics(CadenceDt(1f / Mathf.Max(1f, config.ticksPerSecond), config.geodynamicsPeriodTicks), init);
+        }
+
+        private void InitializeGeodynamicsFaults()
+        {
+            if (geodynamics == null || !geodynamics.HasKernel("InitializeFaults") || resources.GeodynamicsStateWrite == null)
+                return;
+            int kernel = geodynamics.FindKernel("InitializeFaults");
+            geodynamicsInit = true;
+            BindGeodynamicsPass(kernel, 0f);
+            DispatchGeodynamicsGrid(geodynamics, kernel);
+            resources.SwapGeodynamics();
+            resources.CopyGeodynamicsReadToWrite();
+            geodynamicsInit = false;
+        }
+
+        private void DispatchGeodynamics(float deltaTime, bool init = false)
+        {
+            if (geodynamics == null || resources.GeodynamicsStateRead == null)
+                return;
+            if (!geodynamics.HasKernel("AggregateInterior") || !geodynamics.HasKernel("StepGeodynamics") || !geodynamics.HasKernel("SelectEvents"))
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing geodynamics compute kernel. Skipping geodynamics pass.");
+                return;
+            }
+
+            int aggregate = geodynamics.FindKernel("AggregateInterior");
+            int step = geodynamics.FindKernel("StepGeodynamics");
+            int select = geodynamics.FindKernel("SelectEvents");
+            geodynamicsInit = init;
+            BindGeodynamicsPass(aggregate, deltaTime);
+            geodynamics.SetTexture(aggregate, "_MaterialRead", resources.MaterialRead);
+            geodynamics.SetTexture(aggregate, "_StateRead", resources.StateRead);
+            geodynamics.SetTexture(aggregate, "_AuxRead", resources.AuxRead);
+            DispatchGeodynamicsGrid(geodynamics, aggregate);
+
+            BindGeodynamicsPass(step, deltaTime);
+            DispatchGeodynamicsGrid(geodynamics, step);
+
+            if (!init && config.geodynamicsLayerEnable)
+            {
+                resources.GeodynamicsEventCounter.SetData(new uint[1]);
+                BindGeodynamicsPass(select, deltaTime);
+                DispatchGeodynamicsGrid(geodynamics, select);
+                if (geodynamics.HasKernel("CommitEvent"))
+                {
+                    int commit = geodynamics.FindKernel("CommitEvent");
+                    BindGeodynamicsPass(commit, deltaTime);
+                    geodynamics.Dispatch(commit, 1, 1, 1);
+                }
+            }
+
+            resources.SwapGeodynamics();
+            geodynamicsInit = false;
+        }
+
+        private void BindGeodynamicsPass(int kernel, float deltaTime)
+        {
+            SetCommon(geodynamics, kernel, deltaTime);
+            geodynamics.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            geodynamics.SetBuffer(kernel, "_GeodynamicsState", resources.GeodynamicsStateRead);
+            geodynamics.SetBuffer(kernel, "_GeodynamicsStateWrite", resources.GeodynamicsStateWrite);
+            geodynamics.SetBuffer(kernel, "_GeodynamicsEvents", resources.GeodynamicsEvents);
+            geodynamics.SetBuffer(kernel, "_GeodynamicsColumns", resources.GeodynamicsColumns);
+            geodynamics.SetBuffer(kernel, "_GeodynamicsEventCounter", resources.GeodynamicsEventCounter);
+        }
+
+        private void BindGeodynamicsState(ComputeShader shader, int kernel)
+        {
+            if (resources.GeodynamicsStateRead == null || resources.GeodynamicsEvents == null) return;
+            if (shader != geology && shader != hydrology && shader != materialSimulation && shader != worldGeneration && shader != geodynamics)
+                return;
+            shader.SetBuffer(kernel, "_GeodynamicsState", resources.GeodynamicsStateRead);
+            shader.SetBuffer(kernel, "_GeodynamicsEvents", resources.GeodynamicsEvents);
+        }
+
+        private void DispatchGeodynamicsGrid(ComputeShader shader, int kernel)
+        {
+            int angular = GeodynamicsGrid.ClampAngularBins(config.geodynamicsAngularBins);
+            int radial = GeodynamicsGrid.ClampRadialBins(config.geodynamicsRadialBins);
+            int groupsX = Mathf.Max(1, Mathf.CeilToInt(angular / 8f));
+            int groupsY = Mathf.Max(1, Mathf.CeilToInt(radial / 8f));
+            shader.Dispatch(kernel, groupsX, groupsY, 1);
+        }
+
         private void SetCommon(ComputeShader shader, int kernel, float deltaTime)
         {
             shader.SetInts("_GridSize", resources.Grid.angularResolution, resources.Grid.radialResolution);
@@ -770,15 +879,51 @@ namespace GeneSys.Simulation.Gpu
             shader.SetFloat("_PlayableInnerRadius", resources.Grid.playableInnerRadius);
             shader.SetFloat("_AtmosphereStartRadius", resources.Grid.atmosphereStartRadius);
             shader.SetVector("_Mechanics", new Vector4(config.gravityStrength, config.thermalRate, config.electricalRate, config.pressureRate));
+            shader.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, 0f, config.tectonicFaultSeedCount));
             shader.SetVector("_ThermalA", new Vector4(config.thermalMoistureBoost, config.thermalPressureEffect, config.coreTemperature, config.coreHeatRate));
-            shader.SetVector("_Geology", new Vector4(config.mantlePressure, config.fractureRate, config.extrusionRate, config.volcanicCooling));
-            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalStrength, config.ventChemicalRate, config.coreReactionFrequency, config.coreReactionMagnitude));
-            shader.SetVector("_EruptionA", new Vector4(config.magmaEruption, config.eruptionPressureStrength, config.eruptionFlowStrength, config.eruptionBurdenDepth));
+            shader.SetVector("_Geology", new Vector4(config.geodynamicsPressureBuildRate, config.tectonicStrainGain, config.extrusionRate, config.volcanicCoolingRate));
+            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalHeatTransferRate, config.hydrothermalNutrientYield, config.corePulsePeriodTicks, config.corePulseHeat));
+            shader.SetVector("_EruptionA", new Vector4(config.eruptionDriveScale, config.eruptionPressureStrength, config.eruptionFlowStrength, config.eruptionBurdenDepth));
             shader.SetVector("_EruptionB", new Vector4(config.eruptionBlastThreshold, config.ashUpdraftStrength, config.ashSettlingStrength, config.ashFertilityStrength));
+            shader.SetVector("_GeodynamicsFlags", new Vector4(
+                config.geodynamicsLayerEnable ? 1f : 0f,
+                geodynamicsInit ? 1f : 0f,
+                GeodynamicsGrid.ClampAngularBins(config.geodynamicsAngularBins),
+                GeodynamicsGrid.ClampRadialBins(config.geodynamicsRadialBins)));
+            shader.SetVector("_GeodynamicsA", new Vector4(
+                Mathf.Max(1, config.geodynamicsPeriodTicks),
+                config.geodynamicsConvectionStrength,
+                config.geodynamicsPressureBuildRate,
+                config.geodynamicsPressureLeakage));
+            shader.SetVector("_GeodynamicsB", new Vector4(
+                config.geodynamicsHeatCoupling,
+                config.tectonicStrainGain,
+                config.tectonicStrainTransfer,
+                config.tectonicFaultHealing));
+            shader.SetVector("_GeodynamicsC", new Vector4(
+                config.tectonicEarthquakeThreshold,
+                config.tectonicReleaseFraction,
+                config.tectonicEventFootprint,
+                config.tectonicCooldownTicks));
+            shader.SetVector("_GeodynamicsD", new Vector4(
+                config.tectonicMaxConcurrentEvents,
+                config.tectonicSurfaceCoupling,
+                config.volcanicReleaseThreshold,
+                config.volcanicReleaseFraction));
+            shader.SetVector("_Volcanic", new Vector4(
+                config.extrusionRate,
+                config.volcanicCoolingRate,
+                config.magmaViscosity,
+                config.volcanicSurfaceCoupling));
+            shader.SetVector("_Hydrothermal", new Vector4(
+                config.hydrothermalHeatTransferRate,
+                config.hydrothermalNutrientYield,
+                config.hydrothermalReleaseThreshold,
+                config.tectonicSurfaceCoupling));
             shader.SetVector("_Hydrology", new Vector4(config.infiltrationRate, config.groundwaterRate, config.dissolutionRate, config.collapseRate));
             shader.SetVector("_HydrologyB", new Vector4(config.springDischargeRate, 0f, 0f, 0f));
             shader.SetVector("_HydrologyC", new Vector4(config.runoffRate, config.pondingRate, config.fieldCapacityFraction, 0f));
-            shader.SetVector("_Erosion", new Vector4(config.erosionRate, config.dryMoistureThreshold, config.baseSoilCohesion, config.stressDecayRate));
+            shader.SetVector("_Erosion", new Vector4(config.erosionRate, config.dryMoistureThreshold, config.baseSoilCohesion, config.surfaceStressRecoveryRate));
             shader.SetVector("_MoistureErosion", new Vector4(config.dryMoistureThreshold, config.moistureCohesionStrength, 0f, 0f));
             float polarOutput = PolarPoleGeometry.SolarPolarOutput(
                 SolarAngle01, PolarPoleGeometry.PoleAngle01(config.seed), config.solarPolarOutputMin);
@@ -944,6 +1089,7 @@ namespace GeneSys.Simulation.Gpu
                 shader.SetTexture(kernel, "_MobileMassRead", resources.MobileMassRead);
             }
             BindClimateState(shader, kernel);
+            BindGeodynamicsState(shader, kernel);
         }
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)

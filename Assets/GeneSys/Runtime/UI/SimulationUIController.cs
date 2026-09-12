@@ -24,7 +24,15 @@ namespace GeneSys.UI
             { "World generation", "world" },
             { "Material mechanics", "world" },
             { "Geology", "geology" },
+            { "Geodynamics", "geology" },
+            { "Tectonics", "geology" },
+            { "Volcanism", "geology" },
+            { "Eruption", "geology" },
+            { "Ash", "geology" },
+            { "Hydrothermal", "geology" },
+            { "Core", "geology" },
             { "Hydrology and erosion", "hydrology" },
+            { "Climate", "weather" },
             { "MaCE transport", "hydrology" },
             { "Solar and weather", "weather" },
             { "Ecology - Mycology", "ecology-mycology" },
@@ -59,7 +67,8 @@ namespace GeneSys.UI
             nameof(SimulationConfig.maceSolute),
             nameof(SimulationConfig.maceAsh),
             nameof(SimulationConfig.maceMagma),
-            nameof(SimulationConfig.maceHardWear)
+            nameof(SimulationConfig.maceHardWear),
+            nameof(SimulationConfig.geodynamicsLayerEnable)
         };
 
         private static readonly HashSet<string> SkipSettingsFields = new()
@@ -384,7 +393,7 @@ namespace GeneSys.UI
 
         private static readonly int[] OverlayModes =
         {
-            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28
+            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
         };
 
         private static int OverlayModeFromChoice(int index) =>
@@ -398,10 +407,11 @@ namespace GeneSys.UI
                 overlay.choices = new List<string>
                 {
                     "Material", "Temperature", "Pressure", "Composite Water", "Relative Humidity", "Cloud",
-                    "Charge", "Wind", "Nutrient/Soil Quality", "Fault/Stress", "Toxicity/Calories",
+                    "Charge", "Wind", "Nutrient/Soil Quality", "Surface Failure Stress", "Toxicity/Calories",
                     "Vertical Velocity", "Pressure Anomaly", "Mycology",
                     "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass", "Tree",
-                    "Mobile Sediment", "Climate"
+                    "Mobile Sediment", "Climate",
+                    "Interior Heat/Flow", "Overpressure/Melt", "Tectonic Strain", "Interior Releases"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(OverlayModeFromChoice(overlay.index)));
@@ -1527,7 +1537,7 @@ namespace GeneSys.UI
             return header +
                    $"\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\n" +
                    $"Vapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\n" +
-                   $"Nutrient {inspection.aux.z:F3}  Stress {inspection.aux.w:F3}\n" +
+                   $"Nutrient {inspection.aux.z:F3}  Surface Stress {inspection.aux.w:F3}\n" +
                    $"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n" +
                    $"Light {inspection.light:F3}\n" +
                    $"Sediment ρ {inspection.mobileSediment:F3}  fine {inspection.mobileFine:F3}  structural {inspection.mobileStructural:F3}\n" +

@@ -6,9 +6,10 @@
 //   aux.x    = atmospheric vapor mass (humidity carried by Air cells; never a separate Gas pixel)
 //   aux.y    = subsurface groundwater mass
 //   aux.z    = nutrient / fertility
-//   aux.w    = shared fault / erosion stress
-//              Granite, Basalt, Limestone, Soil, and Clay recover linearly via stressDecayRate (_Erosion.w)
-//              in ErosionAndCollapse; Mantle/Magma keep tectonic fault semantics without decay.
+//   aux.w    = surfaceFailureStress only (crust, soil, clay, limestone).
+//              Recovers linearly via surfaceStressRecoveryRate (_Erosion.w) in ErosionAndCollapse.
+//              Tectonic strain, fault weakness, melt, and overpressure live on the coarse
+//              geodynamics lattice (see Geodynamics.hlsl). Mantle/Magma no longer store fault in aux.w.
 // Ecology (dedicated RGBA32F field, not packed into aux):
 //   ecology.x = viable spore load on air/water carriers and colonized substrate
 //   ecology.y = myco value in [0, 1] on Soil/Sediment (flora fertility threshold)

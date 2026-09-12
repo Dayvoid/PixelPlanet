@@ -35,6 +35,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader storm;
         [SerializeField] private ComputeShader maceTransport;
         [SerializeField] private ComputeShader climate;
+        [SerializeField] private ComputeShader geodynamics;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -120,10 +121,12 @@ namespace GeneSys.Simulation
                 maceTransport = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/MaceTransport.compute");
             if (climate == null)
                 climate = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Climate.compute");
+            if (geodynamics == null)
+                geodynamics = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Geodynamics.compute");
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree, maceTransport, climate);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree, maceTransport, climate, geodynamics);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
@@ -183,6 +186,16 @@ namespace GeneSys.Simulation
         public void RebuildClimate()
         {
             if (IsReady) scheduler.RebuildClimate();
+        }
+
+        public void RebuildGeodynamics(bool init = false)
+        {
+            if (IsReady) scheduler.RebuildGeodynamics(init);
+        }
+
+        public void ClearDeepTectonicStress()
+        {
+            if (IsReady) scheduler.ClearDeepTectonicStress();
         }
 
         public void FillShadesFromMaterials()

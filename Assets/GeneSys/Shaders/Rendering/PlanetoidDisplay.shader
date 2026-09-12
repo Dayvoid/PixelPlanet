@@ -59,6 +59,10 @@ Shader "GeneSys/Planetoid Display"
             Texture2DArray<float> _MobileMassTex;
             StructuredBuffer<float4> _ClimateState;
             int _ClimateBins;
+            StructuredBuffer<float4> _GeodynamicsState;
+            StructuredBuffer<float4> _GeodynamicsEvents;
+            int _GeodynamicsAngularBins;
+            int _GeodynamicsRadialBins;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
             Texture2D<float4> _Categories;
@@ -554,6 +558,41 @@ Shader "GeneSys/Planetoid Display"
                         color = lerp(float3(0.42, 0.28, 0.12), float3(0.18, 0.42, 0.78), wet);
                     color = lerp(color, float3(0.92, 0.94, 0.98), albedo * 0.35);
                     color = lerp(color, color * float3(0.75, 1.05, 0.7), saturate(land.w) * 0.25);
+                }
+                else if (_OverlayMode >= 29 && _OverlayMode <= 32)
+                {
+                    int aBins = max(16, _GeodynamicsAngularBins);
+                    int rBins = max(8, _GeodynamicsRadialBins);
+                    int ab = (int)((uint)cell.x * (uint)aBins / max(1u, width));
+                    float outer = max(0.05, _AtmosphereStartRadius);
+                    int rb = clamp((int)((simulationRadius / outer) * rBins), 0, rBins - 1);
+                    int stateIndex = ((ab * rBins) + rb) * 2;
+                    float4 reservoir = _GeodynamicsState[stateIndex];
+                    float4 kinematics = _GeodynamicsState[stateIndex + 1];
+                    float4 ev = _GeodynamicsEvents[ab * rBins + rb];
+                    if (_OverlayMode == 29)
+                    {
+                        float heat = saturate((reservoir.x + 8.0) / 24.0);
+                        float flow = saturate(length(kinematics.xy) * 0.6);
+                        color = lerp(float3(0.05, 0.04, 0.08), float3(1.0, 0.35, 0.08), heat);
+                        color = lerp(color, float3(0.15, 0.75, 1.0), flow * 0.45);
+                    }
+                    else if (_OverlayMode == 30)
+                    {
+                        color = float3(saturate(reservoir.y), saturate(reservoir.w), 0.08);
+                    }
+                    else if (_OverlayMode == 31)
+                    {
+                        color = float3(saturate(reservoir.z), saturate(kinematics.z), 0.06);
+                    }
+                    else
+                    {
+                        int type = (int)round(ev.x);
+                        color = float3(0.04, 0.04, 0.05);
+                        if (type == 1) color = lerp(color, float3(0.95, 0.82, 0.2), saturate(ev.y));
+                        else if (type == 2) color = lerp(color, float3(1.0, 0.28, 0.06), saturate(ev.y));
+                        else if (type == 3) color = lerp(color, float3(0.2, 0.75, 1.0), saturate(ev.y));
+                    }
                 }
 
                 float radialGrid = frac(simulationRadius * height);

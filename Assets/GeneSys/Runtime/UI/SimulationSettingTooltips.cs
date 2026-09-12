@@ -41,8 +41,8 @@ namespace GeneSys.UI
                 "Chance that a denser inner layer punches into the layer above during worldgen. Creates dikes, irregular crust, and local stress that later volcanism and hydrology exploit.",
             [nameof(SimulationConfig.groundwaterDepth)] =
                 "How deep the initial water table sits inside the crust. Deeper tables favor aquifers and springs; shallower tables wet the soil and speed infiltration, caves, and mycology.",
-            [nameof(SimulationConfig.faultCount)] =
-                "Number of generated crustal faults. More faults raise starting stress, give magma preferential paths, and fragment aquifers along weakness planes.",
+            [nameof(SimulationConfig.tectonicFaultSeedCount)] =
+                "Number of worldgen weakness bands written into the geodynamics lattice. More seeds bias aquifers and later strain toward a few persistent fault zones without storing tectonic stress in surface cells.",
             [nameof(SimulationConfig.targetOceanCoverage)] =
                 "Target fraction of surface angle covered by ocean basins. Higher coverage expands the water cycle, coastal weather, hydrothermal vents, and spore transport by water.",
             [nameof(SimulationConfig.minOceanBasins)] =
@@ -119,22 +119,54 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.densityExchangeEpsilon)] =
                 "Minimum density difference required before a swap. Larger epsilon prevents jittery mixing; smaller epsilon lets close-density materials keep sorting.",
 
-            [nameof(SimulationConfig.mantlePressure)] =
-                "Background pressure added in the deep interior each volcanism pass. Higher mantle pressure drives extrusion, eruptions, geysers, and hydrothermal vents.",
-            [nameof(SimulationConfig.fractureRate)] =
-                "How fast pressure gradients turn into fault stress. Higher values crack crust more readily, opening magma dikes, caves, and fluid pathways.",
+            [nameof(SimulationConfig.geodynamicsLayerEnable)] =
+                "Runs the coarse interior lattice that stores heat anomalies, melt overpressure, tectonic strain, and fault weakness. Disable it to freeze regional geology while leaving painted magma and weather intact.",
+            [nameof(SimulationConfig.geodynamicsAngularBins)] =
+                "How many angular sectors the interior lattice uses. More bins resolve narrower plumes and fault zones at a small extra dispatch cost; 64 is the Standard default.",
+            [nameof(SimulationConfig.geodynamicsRadialBins)] =
+                "How many radial shells the interior lattice uses from core to atmosphere. More shells separate deep melt from crustal strain without adding a full-grid geology pass.",
+            [nameof(SimulationConfig.geodynamicsPeriodTicks)] =
+                "Ticks between lattice aggregate, convection, and event-selection steps. Lower values make pressure and strain evolve faster; higher values keep geology slow relative to weather.",
+            [nameof(SimulationConfig.geodynamicsConvectionStrength)] =
+                "How strongly thermal anomalies drive slow angular and radial mantle flow on the lattice. Higher convection shifts heat and strain between neighboring sectors over many ticks.",
+            [nameof(SimulationConfig.geodynamicsPressureBuildRate)] =
+                "How quickly melt-bearing lattice cells accumulate overpressure. This replaces the old global mantle-pressure feed so only active interior regions pressurize.",
+            [nameof(SimulationConfig.geodynamicsPressureLeakage)] =
+                "How fast overpressure drains through damaged faults and ordinary leakage. Higher leakage prevents runaway reservoirs and lengthens the quiet rebuild after a release.",
+            [nameof(SimulationConfig.geodynamicsHeatCoupling)] =
+                "How tightly fine-grid temperature feeds the lattice thermal anomaly. Stronger coupling lets core heat and surface cooling reshape convection cells.",
+            [nameof(SimulationConfig.tectonicStrainGain)] =
+                "How quickly lattice flow, divergence, and overpressure become stored elastic strain. Higher gain shortens the time to the next earthquake-prone local maximum.",
+            [nameof(SimulationConfig.tectonicStrainTransfer)] =
+                "How much strain diffuses into neighboring sectors, including aftershock loading after a quake. Higher transfer creates event sequences without ringing the whole planet.",
+            [nameof(SimulationConfig.tectonicFaultHealing)] =
+                "How fast lattice fault weakness recovers between events. Higher healing closes old paths; lower healing keeps dikes and vents reusable.",
+            [nameof(SimulationConfig.tectonicEarthquakeThreshold)] =
+                "Strain a sector must exceed, as a local maximum, before an earthquake release can fire. Higher thresholds make quakes rarer and more localized.",
+            [nameof(SimulationConfig.tectonicReleaseFraction)] =
+                "Share of stored regional strain spent when a quake fires. Capped so a single event cannot empty the interior or affect the whole world.",
+            [nameof(SimulationConfig.tectonicEventFootprint)] =
+                "Angular fraction a release can influence. The default stays well under a tenth of the circumference so most surface columns stay quiet.",
+            [nameof(SimulationConfig.tectonicCooldownTicks)] =
+                "Refractory time after a sector releases. During cooldown, strain can rebuild but that sector will not fire another event.",
+            [nameof(SimulationConfig.tectonicMaxConcurrentEvents)] =
+                "Soft cap on how many lattice cells may hold an active release at once. Defaults keep activity regional rather than globally synchronized.",
+            [nameof(SimulationConfig.tectonicSurfaceCoupling)] =
+                "How much a seismic envelope adds to surfaceFailureStress on weak, wet, exposed, or unsupported crust. It never directly replaces terrain cells.",
             [nameof(SimulationConfig.extrusionRate)] =
-                "How quickly overpressured magma and rock are driven toward the surface. Raises volcanic flow, cone building, and ash production when eruptions are enabled.",
-            [nameof(SimulationConfig.volcanicCooling)] =
+                "How quickly overpressured magma is driven toward the surface once the lattice supplies a volcanic envelope. Raises flow and cone building without a global pressure feed.",
+            [nameof(SimulationConfig.volcanicCoolingRate)] =
                 "How fast extruded magma loses heat, especially in air. Higher cooling freezes lava into basalt sooner and shortens surface flows.",
             [nameof(SimulationConfig.magmaViscosity)] =
                 "Resistance of magma to flow. Higher viscosity builds steep cones and pressure; lower viscosity favors long, fluid shield-style flows.",
-            [nameof(SimulationConfig.hydrothermalStrength)] =
-                "Heat and water exchanged at magma–ocean or magma–aquifer contacts. Stronger vents warm seawater, drive geysers, and seed nutrient-rich chemistry.",
-            [nameof(SimulationConfig.ventChemicalRate)] =
-                "Nutrient added when hydrothermal heat is transferred. Raises seafloor and spring fertility that mycology and later organisms can exploit.",
-            [nameof(SimulationConfig.magmaEruption)] =
-                "Master mix for explosive eruptions. At 0, pressure still builds quietly; raising it enables blast events, ash lofting, and violent surface breakout.",
+            [nameof(SimulationConfig.volcanicReleaseThreshold)] =
+                "Melt-overpressure score a sector must exceed as a local maximum before a volcanic release envelope is created.",
+            [nameof(SimulationConfig.volcanicReleaseFraction)] =
+                "Share of stored melt overpressure spent when a volcanic release fires. Kept low so vents pulse instead of draining the mantle.",
+            [nameof(SimulationConfig.volcanicSurfaceCoupling)] =
+                "How strongly a volcanic envelope boosts fine-grid extrusion and eruption drive inside the event footprint.",
+            [nameof(SimulationConfig.eruptionDriveScale)] =
+                "Master mix for fine-grid eruption motion. At 0, magma stays put; raising it enables burden breakthrough, ash blasts, and column flow.",
             [nameof(SimulationConfig.eruptionPressureStrength)] =
                 "How much local overpressure contributes to eruption drive. Higher values make trapped magma punch through burden more aggressively.",
             [nameof(SimulationConfig.eruptionFlowStrength)] =
@@ -149,10 +181,16 @@ namespace GeneSys.UI
                 "How quickly airborne ash falls out. Faster settling fertilizes nearby soil; slower settling keeps ash in the air longer for weather and transport.",
             [nameof(SimulationConfig.ashFertilityStrength)] =
                 "Nutrient added when ash weathers into soil or sediment. Stronger fertility boosts mycology growth where fallout accumulates.",
-            [nameof(SimulationConfig.coreReactionFrequency)] =
-                "Ticks between core thermal pulses. 0 disables pulses. More frequent reactions inject heat and pressure into mantle convection and volcanism.",
-            [nameof(SimulationConfig.coreReactionMagnitude)] =
-                "Size of each core heat/pressure pulse. Larger pulses can trigger widespread volcanism, hydrothermal spikes, and atmospheric heating.",
+            [nameof(SimulationConfig.hydrothermalHeatTransferRate)] =
+                "How strongly permeable, hot groundwater hosts boil after the groundwater pass. Requires heat plus fault weakness or a hydrothermal envelope; mass moves from aux.y to aux.x first.",
+            [nameof(SimulationConfig.hydrothermalNutrientYield)] =
+                "Nutrient added when hydrothermal boiling occurs. Raises spring and seafloor fertility that mycology and later organisms can exploit.",
+            [nameof(SimulationConfig.hydrothermalReleaseThreshold)] =
+                "Lattice score needed for a named hydrothermal release. Lower values vent more often along weak, wet sectors; higher values keep chemistry rare.",
+            [nameof(SimulationConfig.corePulsePeriodTicks)] =
+                "Ticks between core heat pulses. 0 disables pulses. Pulses add temperature only and do not invent interior pressure.",
+            [nameof(SimulationConfig.corePulseHeat)] =
+                "Temperature added to Core cells on each pulse. Larger pulses warm the geothermal gradient without writing pressure or stress.",
             [nameof(SimulationConfig.coreTemperature)] =
                 "Held interior temperature of Core cells and the worldgen geothermal gradient source. Heat filters outward through crust materials into surface weather.",
             [nameof(SimulationConfig.coreHeatRate)] =
@@ -172,8 +210,8 @@ namespace GeneSys.UI
                 "How aggressively surface flow strips soil and sediment. Stronger erosion carves channels, delivers nutrient downstream, and can unroof rock.",
             [nameof(SimulationConfig.baseSoilCohesion)] =
                 "Baseline resistance of soil and sediment to erosion. Higher cohesion preserves slopes and mycology habitat; lower cohesion lets rain and runoff reshape land quickly.",
-            [nameof(SimulationConfig.stressDecayRate)] =
-                "How fast stored fault and slope stress relaxes. Higher decay heals fractures; lower decay lets stress accumulate toward collapse and eruptive breakout.",
+            [nameof(SimulationConfig.surfaceStressRecoveryRate)] =
+                "How fast surfaceFailureStress on crust, soil, and clay relaxes. Higher recovery heals slopes; lower recovery lets erosion or seismic coupling accumulate toward collapse.",
             [nameof(SimulationConfig.dryMoistureThreshold)] =
                 "Moisture level below which soil loses cohesion. Drier thresholds make arid crust dusty and erodible; wetter thresholds keep banks stable until they dry further.",
             [nameof(SimulationConfig.moistureCohesionStrength)] =

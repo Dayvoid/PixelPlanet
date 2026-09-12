@@ -139,6 +139,7 @@ namespace GeneSys.Tests
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.magmaEruption = 0f;
+            host.Config.geodynamicsLayerEnable = false;
             host.Config.mantlePressure = 0f;
             host.Config.fractureRate = 0f;
             host.Config.extrusionRate = 0f;

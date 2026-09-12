@@ -183,6 +183,7 @@ namespace GeneSys.Editor
             SetObject(host, "storm", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Storm.compute"));
             SetObject(host, "maceTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MaceTransport.compute"));
             SetObject(host, "climate", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Climate.compute"));
+            SetObject(host, "geodynamics", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Geodynamics.compute"));
             SetObject(host, "display", display);
             SetObject(host, "visuals", visuals);
             SetObject(host, "ui", ui);
@@ -235,6 +236,7 @@ namespace GeneSys.Editor
             SetObject(host, "hydrostatic", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrostatic.compute"));
             SetObject(host, "maceTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MaceTransport.compute"));
             SetObject(host, "climate", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Climate.compute"));
+            SetObject(host, "geodynamics", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Geodynamics.compute"));
             document.panelSettings = panelSettings;
             EditorUtility.SetDirty(document);
             EditorSceneManager.MarkSceneDirty(host.gameObject.scene);

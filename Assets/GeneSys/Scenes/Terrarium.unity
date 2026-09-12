@@ -315,6 +315,9 @@ MonoBehaviour:
   wasp: {fileID: 7200000, guid: b8c3e5a91d4f7206c9e2a5b8d1f40736, type: 3}
   combustion: {fileID: 7200000, guid: 4e8c1d7a9b3f4a21b6c5e0d8f1a2b3c4, type: 3}
   storm: {fileID: 7200000, guid: 8c2f9a1b4d6e70f3a5c8e1d2b4f60718, type: 3}
+  maceTransport: {fileID: 7200000, guid: 3f7c9a12e4b84d6e90a1c5d8e2f6b0a4, type: 3}
+  climate: {fileID: 7200000, guid: 9a4f4de2ec14a724e977a634aa0b2f35, type: 3}
+  geodynamics: {fileID: 7200000, guid: 6d1e8c4a2f5b7093e0a7c1d8b4f26350, type: 3}
   display: {fileID: 1464804660}
   visuals: {fileID: 1393613925}
   ui: {fileID: 1401685496}
