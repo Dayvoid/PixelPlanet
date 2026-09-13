@@ -50,6 +50,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader maceTransport;
         private readonly ComputeShader climate;
         private readonly ComputeShader geodynamics;
+        private readonly ComputeShader margolusTransport;
         private bool climateInit;
         private bool geodynamicsInit;
         private readonly GraphicsBuffer strikeSeedBuffer;
@@ -75,7 +76,8 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
             ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm,
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
-            ComputeShader maceTransport = null, ComputeShader climate = null, ComputeShader geodynamics = null)
+            ComputeShader maceTransport = null, ComputeShader climate = null, ComputeShader geodynamics = null,
+            ComputeShader margolusTransport = null)
         {
             this.config = config;
             this.resources = resources;
@@ -97,6 +99,7 @@ namespace GeneSys.Simulation.Gpu
             this.maceTransport = maceTransport;
             this.climate = climate;
             this.geodynamics = geodynamics;
+            this.margolusTransport = margolusTransport;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -362,15 +365,24 @@ namespace GeneSys.Simulation.Gpu
             {
                 float subDt = deltaTime / config.materialSubsteps;
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("ThermalAndPressure"), subDt);
-                DispatchPass(materialSimulation, materialSimulation.FindKernel("LiquidDensityExchange"), subDt);
-                DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotion"), subDt);
+                if (config.useLegacyTransport)
+                {
+                    DispatchPass(materialSimulation, materialSimulation.FindKernel("LiquidDensityExchange"), subDt);
+                    DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotion"), subDt);
+                }
                 if (!config.maceMagma)
                     DispatchPass(geology, geology.FindKernel("EruptionMotion"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
             }
 
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), deltaTime);
-            DispatchMaceEarly(deltaTime);
+            if (config.useMargolusTransport)
+            {
+                for (int m = 0; m < config.margolusSubsteps; m++)
+                    DispatchMargolus(deltaTime / config.margolusSubsteps);
+            }
+            if (config.useLegacyTransport)
+                DispatchMaceEarly(deltaTime);
 
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
@@ -665,6 +677,54 @@ namespace GeneSys.Simulation.Gpu
                 SyncLegacyMobileIds();
             if (reconcile)
                 ReconcileMaceIds(deltaTime);
+        }
+
+        private void DispatchMargolus(float deltaTime)
+        {
+            if (margolusTransport == null) return;
+            int phaseEven = margolusTransport.FindKernel("MargolusPhaseEven");
+            int phaseOdd = margolusTransport.FindKernel("MargolusPhaseOdd");
+            if (phaseEven < 0 || phaseOdd < 0) return;
+
+            SetCommon(margolusTransport, phaseEven, deltaTime);
+            BindMargolusParams(phaseEven);
+            BindPassTextures(margolusTransport, phaseEven);
+            margolusTransport.SetBuffer(phaseEven, "_MaterialDefinitions", materialBuffer);
+            margolusTransport.SetTexture(phaseEven, "_GrassRead", resources.GrassRead);
+            margolusTransport.SetTexture(phaseEven, "_TreeRead", resources.TreeRead);
+            DispatchMargolusBlocks(margolusTransport, phaseEven);
+            resources.Swap();
+
+            SetCommon(margolusTransport, phaseOdd, deltaTime);
+            BindMargolusParams(phaseOdd);
+            BindPassTextures(margolusTransport, phaseOdd);
+            margolusTransport.SetBuffer(phaseOdd, "_MaterialDefinitions", materialBuffer);
+            margolusTransport.SetTexture(phaseOdd, "_GrassRead", resources.GrassRead);
+            margolusTransport.SetTexture(phaseOdd, "_TreeRead", resources.TreeRead);
+            DispatchMargolusBlocks(margolusTransport, phaseOdd);
+            resources.Swap();
+        }
+
+        private void BindMargolusParams(int kernel)
+        {
+            margolusTransport.SetVector("_MargolusParams", new Vector4(
+                config.margolusGravityBias,
+                config.margolusReposeFriction,
+                config.margolusMetricEnable ? 1f : 0f,
+                config.margolusFluidEnable ? config.margolusFluidLevelingBias : 0f));
+            margolusTransport.SetVector("_MargolusFlags", new Vector4(
+                config.useMargolusTransport ? 1f : 0f,
+                config.margolusFluidEnable ? 1f : 0f,
+                0f, 0f));
+        }
+
+        private void DispatchMargolusBlocks(ComputeShader shader, int kernel)
+        {
+            int numBlocksX = resources.Grid.angularResolution / 2;
+            int numBlocksY = resources.Grid.radialResolution / 2;
+            int groupsX = Mathf.Max(1, Mathf.CeilToInt(numBlocksX / 8f));
+            int groupsY = Mathf.Max(1, Mathf.CeilToInt(numBlocksY / 8f));
+            shader.Dispatch(kernel, groupsX, groupsY, 1);
         }
 
         // Column solver profiles the surface once, relaxes the face exchange against the tiny
@@ -1053,6 +1113,15 @@ namespace GeneSys.Simulation.Gpu
                 config.climateBaseAlbedo,
                 config.climateAshAlbedo,
                 config.climateBurnBucketPenalty));
+            shader.SetVector("_MargolusParams", new Vector4(
+                config.margolusGravityBias,
+                config.margolusReposeFriction,
+                config.margolusMetricEnable ? 1f : 0f,
+                config.margolusFluidEnable ? config.margolusFluidLevelingBias : 0f));
+            shader.SetVector("_MargolusFlags", new Vector4(
+                config.useMargolusTransport ? 1f : 0f,
+                config.margolusFluidEnable ? 1f : 0f,
+                0f, 0f));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)

@@ -36,6 +36,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader maceTransport;
         [SerializeField] private ComputeShader climate;
         [SerializeField] private ComputeShader geodynamics;
+        [SerializeField] private ComputeShader margolusTransport;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -123,10 +124,12 @@ namespace GeneSys.Simulation
                 climate = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Climate.compute");
             if (geodynamics == null)
                 geodynamics = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Geodynamics.compute");
+            if (margolusTransport == null)
+                margolusTransport = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree, maceTransport, climate, geodynamics);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree, maceTransport, climate, geodynamics, margolusTransport);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();

@@ -91,6 +91,42 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.GeologyIntegrationTests");
         }
 
+        [MenuItem("Tools/GeneSys/Run Margolus EditMode Tests")]
+        public static void RunMargolusEditMode()
+        {
+            GeneSysTestObserver.Run(TestMode.EditMode, "GeneSys.Tests.MargolusContractTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run Margolus Prototype PlayMode Tests")]
+        public static void RunMargolusPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MargolusPrototypeTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run Margolus Metric PlayMode Tests")]
+        public static void RunMargolusMetricPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MargolusMetricTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run Margolus GeoInterface PlayMode Tests")]
+        public static void RunMargolusGeoInterfacePlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MargolusGeoInterfaceTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run Margolus WorldGen Stability PlayMode Tests")]
+        public static void RunMargolusWorldGenStabilityPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MargolusWorldGenStabilityTests");
+        }
+
+        [MenuItem("Tools/GeneSys/Run WorldGen PlayMode Tests")]
+        public static void RunWorldGenPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.WorldGenIntegrationTests");
+        }
+
         public static void RunPlayModeGroup(string groupName)
         {
             GeneSysTestObserver.Run(TestMode.PlayMode, groupName);
@@ -126,6 +162,8 @@ namespace GeneSys.Editor
         public static void Run(TestMode mode, string groupName = null, string[] testNames = null)
         {
             EnsureRegistered();
+            if (running && !EditorApplication.isPlaying)
+                running = false;
             if (running || EditorApplication.isPlaying)
             {
                 Debug.LogWarning("GeneSys tests are already running. Wait for the current run to finish.");

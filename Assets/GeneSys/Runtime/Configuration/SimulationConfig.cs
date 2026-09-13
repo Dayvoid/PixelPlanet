@@ -165,6 +165,16 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float pondingRate = 0.85f;
         [Range(0f, 4f)] public float springDischargeRate = 0.9f;
 
+        [Header("Margolus CA transport")]
+        public bool useMargolusTransport = false;
+        public bool useLegacyTransport = true;
+        [Range(1, 4)] public int margolusSubsteps = 1;
+        [Range(0f, 4f)] public float margolusGravityBias = 1f;
+        [Range(0f, 4f)] public float margolusReposeFriction = 1f;
+        public bool margolusMetricEnable = true;
+        public bool margolusFluidEnable = true;
+        [Range(0f, 2f)] public float margolusFluidLevelingBias = 0.5f;
+
         [Header("MaCE transport")]
         public bool maceSedimentPilot = false;
         public bool maceEntrainment = false;
@@ -1100,6 +1110,10 @@ namespace GeneSys.Configuration
             probeLifeSeedMinCount = Mathf.Clamp(probeLifeSeedMinCount, 1, 8);
             probeLifeSeedMaxCount = Mathf.Clamp(probeLifeSeedMaxCount, probeLifeSeedMinCount, 8);
             probeLifeSeedSporeLoad = Mathf.Clamp01(probeLifeSeedSporeLoad);
+            margolusSubsteps = Mathf.Clamp(margolusSubsteps, 1, 4);
+            margolusGravityBias = Mathf.Max(0f, margolusGravityBias);
+            margolusReposeFriction = Mathf.Max(0.1f, margolusReposeFriction);
+            margolusFluidLevelingBias = Mathf.Max(0f, margolusFluidLevelingBias);
             maceBeta = Mathf.Max(0f, maceBeta);
             maceFineBeta = Mathf.Max(0f, maceFineBeta);
             maceGravityGain = Mathf.Max(0f, maceGravityGain);

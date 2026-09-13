@@ -57,6 +57,8 @@ float4 _DetritusA; // vaporAbsorb, evaporate, distribute, leach
 float4 _DetritusB; // decomposition, unused
 float4 _MaceFlags; // sediment, entrainment, shoreline, solute
 float4 _MaceExtra; // ash, magma, wear, unused
+float4 _MargolusFlags;
+float4 _MargolusParams;
 float4 _WeatherI;
 float4 _PressureA;
 float4 _Hydrothermal;
@@ -333,7 +335,12 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         aux.w += carve;
         if (aux.w > 1.25)
         {
-            if (_MaceFlags.x < 0.5 && _MaceFlags.w < 0.5)
+            if (_MargolusFlags.x > 0.5)
+            {
+                material = 8u;
+                aux.w = 0.0;
+            }
+            else if (_MaceFlags.x < 0.5 && _MaceFlags.w < 0.5)
             {
                 material = 8u;
                 aux.w = 0.0;
@@ -354,9 +361,17 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             aux.w += erode;
             if (aux.w > 1.0)
             {
-                if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5)
+                if (_MargolusFlags.x > 0.5)
+                {
                     material = 8u;
-                aux.w = (_MaceFlags.x > 0.5 || _MaceFlags.y > 0.5) ? aux.w : 0.0;
+                    aux.w = 0.0;
+                }
+                else
+                {
+                    if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5)
+                        material = 8u;
+                    aux.w = (_MaceFlags.x > 0.5 || _MaceFlags.y > 0.5) ? aux.w : 0.0;
+                }
             }
         }
     }
@@ -366,10 +381,18 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         aux.w += erode;
         if (aux.w > 1.0)
         {
-            if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5 && _MaceFlags.w < 0.5)
+            if (_MargolusFlags.x > 0.5)
+            {
                 material = 8u;
-            if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5 && _MaceFlags.w < 0.5)
                 aux.w = 0.0;
+            }
+            else
+            {
+                if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5 && _MaceFlags.w < 0.5)
+                    material = 8u;
+                if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5 && _MaceFlags.w < 0.5)
+                    aux.w = 0.0;
+            }
         }
     }
 

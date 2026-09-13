@@ -35,12 +35,15 @@ float4 _WorldGenV3A; // limestoneCount, limestoneMinSize, limestoneMaxSize, lime
 float4 _WorldGenV3B; // limestoneProtrusionDistance, clayCount, clayMinSize, clayMaxSize
 float4 _WorldGenV3C; // clayProtrusionChance, clayProtrusionDistance, unused, unused
 float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
+float4 _MargolusFlags;
+float4 _MargolusParams;
 #include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 
 static const uint METAL_ID = 13u;
 static const uint ICE_ID = 10u;
 static const uint LIMESTONE_ID = 14u;
 static const uint CLAY_ID = 15u;
+static const uint SEDIMENT_ID = 8u;
 
 bool FrozenOceansEnabled()
 {
@@ -80,6 +83,16 @@ float AngularNoise(uint theta, uint salt)
     float a = Hash01(coarse + (uint)_Seed * 7919 + salt);
     float b = Hash01(next + (uint)_Seed * 7919 + salt);
     return lerp(a, b, t) * 2.0 - 1.0;
+}
+
+float ComputeCrustEdge(uint x)
+{
+    float noise = AngularNoise(x, 17) * _WorldGenParams.x;
+    float protrusionNoise = AngularNoise(x, 103);
+    float protrusion = protrusionNoise > (1.0 - _WorldGenParams.y) ? _WorldGenParams.x * 2.0 : 0.0;
+    float coreEdge = _LayerRatios.x + noise * 0.65;
+    float mantleEdge = coreEdge + _LayerRatios.y + noise;
+    return mantleEdge + _LayerRatios.z + noise * 0.4 + protrusion;
 }
 
 int GetBasinCount()
@@ -234,6 +247,29 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     else if (radius < terrainSurface) material = 7;
     else material = 1;
 
+    if (_MargolusFlags.x > 0.5)
+    {
+        uint xL = (id.x + (uint)_GridSize.x - 1u) % (uint)_GridSize.x;
+        uint xR = (id.x + 1u) % (uint)_GridSize.x;
+        float crustL = ComputeCrustEdge(xL);
+        float crustR = ComputeCrustEdge(xR);
+        float maxHigherNeighbor = max(crustL, crustR);
+        float cliffDrop = maxHigherNeighbor - crustEdge;
+
+        if (cliffDrop > 0.006 && radius >= crustEdge && radius <= terrainSurface && material == 7u)
+        {
+            material = SEDIMENT_ID;
+        }
+        else if (crustEdge > min(crustL, crustR) + 0.006 && radius < crustEdge + 0.004 && material == 7u)
+        {
+            material = 4u;
+        }
+        else if (ocean > 0.15 && ocean < 0.45 && material == 7u && radius >= terrainSurface - 0.006)
+        {
+            material = SEDIMENT_ID;
+        }
+    }
+
     float angular = (id.x + 0.5) / _GridSize.x;
     float fault = GeodynamicsFaultWeakness((int)id.x, radius);
     if (fault <= 1e-4)
@@ -262,7 +298,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
 
     float groundwaterDepth = saturate(_WorldWaterC.y);
     float groundwater = 0.0;
-    if ((material == 4u || material == 7u || material == LIMESTONE_ID || material == CLAY_ID) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
+    if ((material == 4u || material == 7u || material == SEDIMENT_ID || material == LIMESTONE_ID || material == CLAY_ID) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
     {
         float base = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed);
         groundwater = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
@@ -331,6 +367,32 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     else if (radius < terrainSurface) material = 7;
     else material = 1;
 
+    if (_MargolusFlags.x > 0.5)
+    {
+        uint xL = (id.x + (uint)_GridSize.x - 1u) % (uint)_GridSize.x;
+        uint xR = (id.x + 1u) % (uint)_GridSize.x;
+        float crustL = ComputeCrustEdge(xL);
+        float crustR = ComputeCrustEdge(xR);
+        float maxHigherNeighbor = max(crustL, crustR);
+        float cliffDrop = maxHigherNeighbor - crustEdge;
+
+        // Base of steep bedrock cliff: seed natural talus apron of Sediment (8)
+        if (cliffDrop > 0.006 && radius >= crustEdge && radius <= terrainSurface && material == 7u)
+        {
+            material = SEDIMENT_ID;
+        }
+        // Face of elevated cliff: thin/strip loose soil so sheer cliffs expose crystalline bedrock (Granite 4)
+        else if (crustEdge > min(crustL, crustR) + 0.006 && radius < crustEdge + 0.004 && material == 7u)
+        {
+            material = 4u;
+        }
+        // Coastal shoreline transition: place marine sediment apron along the ocean margin
+        else if (ocean > 0.15 && ocean < 0.45 && material == 7u && radius >= terrainSurface - 0.006)
+        {
+            material = SEDIMENT_ID;
+        }
+    }
+
     float angular = (id.x + 0.5) / _GridSize.x;
     float fault = GeodynamicsFaultWeakness((int)id.x, radius);
     if (fault <= 1e-4)
@@ -355,7 +417,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     {
         bool replaceable = material == 4u || material == LIMESTONE_ID
             || (material == 3u && radius >= mantleEdge - _WorldGenV2B.x)
-            || ((material == 7u || material == CLAY_ID) && radius <= crustEdge + _WorldGenV2B.x + _LayerRatios.w)
+            || ((material == 7u || material == CLAY_ID || material == SEDIMENT_ID) && radius <= crustEdge + _WorldGenV2B.x + _LayerRatios.w)
             || (material == 2u && radius >= coreEdge - _WorldGenV2B.x * 0.5);
         if (replaceable) material = METAL_ID;
     }
@@ -371,9 +433,9 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     // Stage 4: fill oceans last (preserve ice shelves).
     if (material == 1u && ocean > 0.2 && radius < seaLevel)
         material = OceanFillId();
-    else if (material == 7u && ocean > 0.2 && radius < seaLevel && radius >= terrainSurface - 0.008)
+    else if ((material == 7u || material == SEDIMENT_ID) && ocean > 0.2 && radius < seaLevel && radius >= terrainSurface - 0.008)
     {
-        // Keep thin ocean-floor soil from stage 1.
+        // Keep thin ocean-floor soil/sediment from stage 1.
     }
 
     float temperature = lerp(WorldgenCoreTemperature(), 15.0, saturate(radius));
@@ -393,14 +455,14 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     float surfaceWater = 0.0;
     if (material == 9u || IsOceanFillIce(material, ocean, radius, seaLevel))
         surfaceWater = CanonicalStandingWaterMass(id.y, seaLevel);
-    else if ((material == 7u || material == CLAY_ID) && radius > terrainSurface - 0.008)
+    else if ((material == 7u || material == CLAY_ID || material == SEDIMENT_ID) && radius > terrainSurface - 0.008)
         surfaceWater = ocean * 0.05;
     else if (material == ICE_ID)
         surfaceWater = lerp(0.15, 0.85, iceStrength);
 
     float groundwaterDepth = saturate(_WorldWaterC.y);
     float groundwater = 0.0;
-    if ((material == 4u || material == METAL_ID || material == 7u || material == LIMESTONE_ID || material == CLAY_ID) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
+    if ((material == 4u || material == METAL_ID || material == 7u || material == SEDIMENT_ID || material == LIMESTONE_ID || material == CLAY_ID) && radius > mantleEdge && radius < lerp(mantleEdge, terrainSurface, groundwaterDepth))
     {
         float base = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed);
         groundwater = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
