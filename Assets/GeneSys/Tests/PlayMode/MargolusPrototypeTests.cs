@@ -250,5 +250,97 @@ namespace GeneSys.Tests
             Assert.That(spreadLaterally, Is.True, "Oversteepened sediment spire should collapse diagonally into a talus pile.");
             RestoreConfig(host);
         }
+
+        [UnityTest]
+        public IEnumerator OversteepenedSoilColumnCollapsesAtSurface()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusOnly(host);
+            host.Config.seed = 4422;
+            host.Regenerate();
+            for (int i = 0; i < 4; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.75f), 10, height - 20);
+
+            // Create flat rock floor
+            for (int dx = -6; dx <= 6; dx++)
+            {
+                Paint(host, x + dx, floorY, MaterialIds.Rock);
+                for (int dy = 1; dy <= 6; dy++)
+                    Paint(host, x + dx, floorY + dy, MaterialIds.Air);
+            }
+
+            // Paint a 1-column spire of 4 soil blocks on top of floor
+            for (int dy = 1; dy <= 4; dy++)
+            {
+                Paint(host, x, floorY + dy, MaterialIds.Soil);
+            }
+
+            yield return Step(host, 1);
+            yield return Step(host, 24);
+
+            bool spreadLaterally = false;
+            yield return ReadMaterials(host, mats =>
+            {
+                uint leftNeighbor = mats[(floorY + 1) * width + (x - 1)];
+                uint rightNeighbor = mats[(floorY + 1) * width + (x + 1)];
+                if (leftNeighbor == MaterialIds.Soil || rightNeighbor == MaterialIds.Soil)
+                    spreadLaterally = true;
+            });
+
+            Assert.That(spreadLaterally, Is.True, "Oversteepened soil spire at surface radius must collapse diagonally into a talus pile instead of standing as a stationary sheer column.");
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator OversteepenedClayColumnCollapsesAtSurface()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusOnly(host);
+            host.Config.seed = 7711;
+            host.Regenerate();
+            for (int i = 0; i < 4; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.75f), 10, height - 20);
+
+            // Create flat rock floor
+            for (int dx = -6; dx <= 6; dx++)
+            {
+                Paint(host, x + dx, floorY, MaterialIds.Rock);
+                for (int dy = 1; dy <= 6; dy++)
+                    Paint(host, x + dx, floorY + dy, MaterialIds.Air);
+            }
+
+            // Paint a 1-column spire of 4 clay blocks on top of floor
+            for (int dy = 1; dy <= 4; dy++)
+            {
+                Paint(host, x, floorY + dy, MaterialIds.Clay);
+            }
+
+            yield return Step(host, 1);
+            yield return Step(host, 24);
+
+            bool spreadLaterally = false;
+            yield return ReadMaterials(host, mats =>
+            {
+                uint leftNeighbor = mats[(floorY + 1) * width + (x - 1)];
+                uint rightNeighbor = mats[(floorY + 1) * width + (x + 1)];
+                if (leftNeighbor == MaterialIds.Clay || rightNeighbor == MaterialIds.Clay)
+                    spreadLaterally = true;
+            });
+
+            Assert.That(spreadLaterally, Is.True, "Oversteepened clay spire at surface radius must collapse diagonally into a talus pile instead of standing as a stationary sheer column.");
+            RestoreConfig(host);
+        }
     }
 }

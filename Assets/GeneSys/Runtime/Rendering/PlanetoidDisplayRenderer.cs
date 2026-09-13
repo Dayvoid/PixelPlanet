@@ -178,7 +178,14 @@ namespace GeneSys.Rendering
             displayMaterial.SetFloat("_SolarAngle01", solarAngle);
             displayMaterial.SetFloat("_DayNightLightingStrength", lightingStrength);
             if (config != null)
+            {
                 displayMaterial.SetFloat("_VaporCapacityScale", config.vaporCapacityScale);
+                displayMaterial.SetFloat("_MaceMobileDisplay", (config.useLegacyTransport && (config.maceSedimentPilot || config.maceEntrainment)) ? 1f : 0f);
+            }
+            else
+            {
+                displayMaterial.SetFloat("_MaceMobileDisplay", 0f);
+            }
         }
 
         private void RefreshTextures()

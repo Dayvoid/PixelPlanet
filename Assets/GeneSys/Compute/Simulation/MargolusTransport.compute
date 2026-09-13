@@ -139,7 +139,7 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
                 else if (IsMargolusGranular(c2.material, d2))
                 {
                     float tanRepose = MargolusTanRepose(c2.material, d2) * friction;
-                    if (tanRepose * metric <= 1.05)
+                    if (tanRepose * metric <= 2.5)
                         slideRight = (MargolusRootCohesion(p2) < 0.35);
                 }
             }
@@ -159,7 +159,7 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
                 else if (IsMargolusGranular(c3.material, d3))
                 {
                     float tanRepose = MargolusTanRepose(c3.material, d3) * friction;
-                    if (tanRepose * metric <= 1.05)
+                    if (tanRepose * metric <= 2.5)
                         slideLeft = (MargolusRootCohesion(p3) < 0.35);
                 }
             }

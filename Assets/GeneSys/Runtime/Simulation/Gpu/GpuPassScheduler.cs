@@ -53,6 +53,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader margolusTransport;
         private bool climateInit;
         private bool geodynamicsInit;
+        private bool lastLegacyTransport = true;
         private readonly GraphicsBuffer strikeSeedBuffer;
         private readonly GraphicsBuffer strikeCounterBuffer;
         private readonly uint[] strikeCounterZero = new uint[1];
@@ -100,6 +101,7 @@ namespace GeneSys.Simulation.Gpu
             this.climate = climate;
             this.geodynamics = geodynamics;
             this.margolusTransport = margolusTransport;
+            lastLegacyTransport = config != null ? config.useLegacyTransport : true;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -267,7 +269,10 @@ namespace GeneSys.Simulation.Gpu
                 }
             }
             resources.CopyReadToWrite();
-            SeedMobileMass();
+            if (config.useLegacyTransport)
+                SeedMobileMass();
+            else
+                resources.ClearMobileMass();
             RebuildClimate();
             RebuildGeodynamics(true);
         }
@@ -316,6 +321,16 @@ namespace GeneSys.Simulation.Gpu
         public void Step(float deltaTime)
         {
             var stopwatch = Stopwatch.StartNew();
+            if (!config.useLegacyTransport && lastLegacyTransport)
+            {
+                resources.ClearMobileMass();
+            }
+            else if (config.useLegacyTransport && !lastLegacyTransport)
+            {
+                SeedMobileMass();
+            }
+            lastLegacyTransport = config.useLegacyTransport;
+
             if (brushCommands.Count > 0)
             {
                 brushBuffer.SetData(brushCommands);
@@ -386,7 +401,8 @@ namespace GeneSys.Simulation.Gpu
 
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
-            SyncLegacyMobileIds();
+            if (config.useLegacyTransport)
+                SyncLegacyMobileIds();
 
             if (config.climateLayerEnable && Due(config.climateCouplePeriod))
                 DispatchClimate(CadenceDt(deltaTime, config.climateCouplePeriod));
@@ -417,7 +433,8 @@ namespace GeneSys.Simulation.Gpu
             {
                 float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
                 DispatchPass(hydrology, hydrology.FindKernel("ErosionAndCollapse"), slowDt);
-                DispatchMaceAfterErosion(slowDt);
+                if (config.useLegacyTransport)
+                    DispatchMaceAfterErosion(slowDt);
                 DispatchPass(hydrology, hydrology.FindKernel("AshFertilization"), slowDt);
                 DispatchPass(hydrology, hydrology.FindKernel("DetritusExchange"), slowDt);
             }
@@ -556,6 +573,11 @@ namespace GeneSys.Simulation.Gpu
 
         private void SeedMobileMass()
         {
+            if (!config.useLegacyTransport)
+            {
+                resources.ClearMobileMass();
+                return;
+            }
             int kernel = MaceKernel("SeedFromMaterials");
             if (kernel < 0) return;
             DispatchMaceKernel(kernel, 0f, true, false);
@@ -565,7 +587,7 @@ namespace GeneSys.Simulation.Gpu
 
         private void ApplyMobileEdits()
         {
-            if (!MaceReady || !AnyMaceFlag || brushCommands.Count == 0) return;
+            if (!config.useLegacyTransport || !MaceReady || !AnyMaceFlag || brushCommands.Count == 0) return;
             int kernel = MaceKernel("ApplyMobileEdits");
             if (kernel < 0) return;
             BindMaceCommon(kernel, 0f);
@@ -578,7 +600,7 @@ namespace GeneSys.Simulation.Gpu
 
         private void SyncLegacyMobileIds()
         {
-            if (!MaceReady || !AnyMaceFlag) return;
+            if (!config.useLegacyTransport || !MaceReady || !AnyMaceFlag) return;
             int kernel = MaceKernel("SyncLegacyIds");
             if (kernel < 0) return;
             DispatchMaceKernel(kernel, 0f, true, false);

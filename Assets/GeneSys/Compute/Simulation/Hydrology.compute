@@ -404,7 +404,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
 
     if ((material == 4u || material == 7u || material == 14u || material == 15u) && unsupported && cohesion < _Hydrology.w)
     {
-        if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5)
+        if (_MargolusFlags.x > 0.5 || (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5))
             material = 8u;
     }
 

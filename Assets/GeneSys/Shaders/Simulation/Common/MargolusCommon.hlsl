@@ -74,7 +74,7 @@ float MargolusTanRepose(uint material, MaterialGpuData def)
     {
         if (material == 8u) reposeRad = 0.436; // ~25 deg
         else if (material == 7u) reposeRad = 0.593; // ~34 deg
-        else if (material == 15u) reposeRad = 0.698; // ~40 deg
+        else if (material == 15u) reposeRad = 0.489; // ~28 deg
         else reposeRad = 0.523; // ~30 deg
     }
     return tan(clamp(reposeRad, 0.05, 1.45));
