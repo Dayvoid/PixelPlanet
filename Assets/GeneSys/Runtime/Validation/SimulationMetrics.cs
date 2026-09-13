@@ -125,20 +125,6 @@ namespace GeneSys.Validation
         public bool HasNonFinite;
     }
 
-    public struct WorldMobileMetrics
-    {
-        public double CoarseSediment;
-        public double FineSediment;
-        public double Solute;
-        public double Magma;
-        public double Ash;
-        public double Structural;
-        public double TotalSolidMass;
-        public float MinChannel;
-        public bool HasNonFinite;
-        public bool HasNegative;
-    }
-
     public static class SimulationMetrics
     {
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
@@ -171,72 +157,6 @@ namespace GeneSys.Validation
                     });
                 });
             });
-        }
-
-        public static void MeasureMobileMassAsync(SimulationHost host, Action<WorldMobileMetrics> completed)
-        {
-            if (host == null || !host.IsReady || host.Resources?.MobileMassRead == null)
-            {
-                completed?.Invoke(default);
-                return;
-            }
-
-            RenderTexture mobile = host.Resources.MobileMassRead;
-            Action fail = () => completed?.Invoke(default);
-            RequestFieldSlice(mobile, SimulationResources.MobileSliceCoarse, fail, coarseReq =>
-            {
-                float[] coarse = coarseReq.GetData<float>().ToArray();
-                RequestFieldSlice(mobile, SimulationResources.MobileSliceFine, fail, fineReq =>
-                {
-                    float[] fine = fineReq.GetData<float>().ToArray();
-                    RequestFieldSlice(mobile, SimulationResources.MobileSliceSolute, fail, soluteReq =>
-                    {
-                        float[] solute = soluteReq.GetData<float>().ToArray();
-                        RequestFieldSlice(mobile, SimulationResources.MobileSliceMagma, fail, magmaReq =>
-                        {
-                            float[] magma = magmaReq.GetData<float>().ToArray();
-                            RequestFieldSlice(mobile, SimulationResources.MobileSliceAsh, fail, ashReq =>
-                            {
-                                float[] ash = ashReq.GetData<float>().ToArray();
-                                RequestFieldSlice(mobile, SimulationResources.MobileSliceStructural, fail, structuralReq =>
-                                {
-                                    float[] structural = structuralReq.GetData<float>().ToArray();
-                                    completed?.Invoke(ComputeMobileMetrics(coarse, fine, solute, magma, ash, structural));
-                                });
-                            });
-                        });
-                    });
-                });
-            });
-        }
-
-        private static WorldMobileMetrics ComputeMobileMetrics(float[] coarse, float[] fine, float[] solute, float[] magma, float[] ash, float[] structural)
-        {
-            var metrics = new WorldMobileMetrics { MinChannel = float.MaxValue };
-            int count = coarse.Length;
-            for (int i = 0; i < count; i++)
-            {
-                float c = i < coarse.Length ? coarse[i] : 0f;
-                float f = i < fine.Length ? fine[i] : 0f;
-                float s = i < solute.Length ? solute[i] : 0f;
-                float m = i < magma.Length ? magma[i] : 0f;
-                float a = i < ash.Length ? ash[i] : 0f;
-                float st = i < structural.Length ? structural[i] : 0f;
-                if (!float.IsFinite(c) || !float.IsFinite(f) || !float.IsFinite(s) || !float.IsFinite(m) || !float.IsFinite(a) || !float.IsFinite(st))
-                    metrics.HasNonFinite = true;
-                if (c < -1e-6f || f < -1e-6f || s < -1e-6f || m < -1e-6f || a < -1e-6f || st < -1e-6f)
-                    metrics.HasNegative = true;
-                metrics.CoarseSediment += Math.Max(0d, c);
-                metrics.FineSediment += Math.Max(0d, f);
-                metrics.Solute += Math.Max(0d, s);
-                metrics.Magma += Math.Max(0d, m);
-                metrics.Ash += Math.Max(0d, a);
-                metrics.Structural += Math.Max(0d, st);
-                metrics.MinChannel = Mathf.Min(metrics.MinChannel, Mathf.Min(c, Mathf.Min(f, Mathf.Min(s, Mathf.Min(m, Mathf.Min(a, st))))));
-            }
-            metrics.TotalSolidMass = metrics.CoarseSediment + metrics.FineSediment + metrics.Solute + metrics.Magma + metrics.Ash + metrics.Structural;
-            if (count == 0) metrics.MinChannel = 0f;
-            return metrics;
         }
 
         public static void MeasureFloraAsync(SimulationHost host, Action<FloraMetrics> completed)

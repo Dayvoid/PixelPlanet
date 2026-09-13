@@ -155,8 +155,8 @@ namespace GeneSys.Tests
             Assert.That(structs.Contains("#define TREE_WOOD_ID 135u"));
             Assert.That(structs.Contains("TreeFuel"));
             Assert.That(structs.Contains("CountTreeRootsOnCell"));
-            string motion = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute");
-            Assert.That(motion.Contains("IsTreeMaterial(material)"));
+            string motion = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");
+            Assert.That(motion.Contains("IsTreeMaterial(c.material)"));
             string builder = File.ReadAllText("Assets/GeneSys/Editor/GeneSysProjectBuilder.cs");
             Assert.That(builder.Contains("PlantResources.compute"));
             Assert.That(builder.Contains("Tree.compute"));

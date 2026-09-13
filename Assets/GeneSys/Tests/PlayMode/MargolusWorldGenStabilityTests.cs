@@ -98,8 +98,7 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.useOgWorldgen = false;
-            host.Config.useMargolusTransport = true;
-            host.Config.useLegacyTransport = false;
+            host.Config.enableMaterialTransport = true;
             host.Config.seed = 6150;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
@@ -130,8 +129,7 @@ namespace GeneSys.Tests
             Assert.That(hasNan, Is.False, "WorldGen states must contain no NaNs or Infinities.");
 
             // Restore defaults
-            host.Config.useMargolusTransport = false;
-            host.Config.useLegacyTransport = true;
+            host.Config.enableMaterialTransport = true;
         }
 
         [UnityTest]
@@ -142,8 +140,7 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.useOgWorldgen = false;
-            host.Config.useMargolusTransport = true;
-            host.Config.useLegacyTransport = false;
+            host.Config.enableMaterialTransport = true;
             host.Config.margolusSubsteps = 1;
             host.Config.margolusGravityBias = 1f;
             host.Config.margolusReposeFriction = 1f;
@@ -199,8 +196,7 @@ namespace GeneSys.Tests
             Assert.That(flowNan, Is.False, "Flow velocity texture must remain strictly finite after endurance run.");
 
             // Restore defaults
-            host.Config.useMargolusTransport = false;
-            host.Config.useLegacyTransport = true;
+            host.Config.enableMaterialTransport = true;
         }
     }
 }

@@ -47,13 +47,11 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader wasp;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
-        private readonly ComputeShader maceTransport;
         private readonly ComputeShader climate;
         private readonly ComputeShader geodynamics;
         private readonly ComputeShader margolusTransport;
         private bool climateInit;
         private bool geodynamicsInit;
-        private bool lastLegacyTransport = true;
         private readonly GraphicsBuffer strikeSeedBuffer;
         private readonly GraphicsBuffer strikeCounterBuffer;
         private readonly uint[] strikeCounterZero = new uint[1];
@@ -77,7 +75,7 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
             ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm,
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
-            ComputeShader maceTransport = null, ComputeShader climate = null, ComputeShader geodynamics = null,
+            ComputeShader climate = null, ComputeShader geodynamics = null,
             ComputeShader margolusTransport = null)
         {
             this.config = config;
@@ -97,11 +95,9 @@ namespace GeneSys.Simulation.Gpu
             this.wasp = wasp;
             this.combustion = combustion;
             this.storm = storm;
-            this.maceTransport = maceTransport;
             this.climate = climate;
             this.geodynamics = geodynamics;
             this.margolusTransport = margolusTransport;
-            lastLegacyTransport = config != null ? config.useLegacyTransport : true;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -269,10 +265,6 @@ namespace GeneSys.Simulation.Gpu
                 }
             }
             resources.CopyReadToWrite();
-            if (config.useLegacyTransport)
-                SeedMobileMass();
-            else
-                resources.ClearMobileMass();
             RebuildClimate();
             RebuildGeodynamics(true);
         }
@@ -299,7 +291,6 @@ namespace GeneSys.Simulation.Gpu
             materialSimulation.SetInt("_BrushCount", brushCommands.Count);
             materialSimulation.SetBuffer(brushKernel, "_BrushCommands", brushBuffer);
             DispatchPass(materialSimulation, brushKernel, 0f);
-            ApplyMobileEdits();
             brushCommands.Clear();
         }
 
@@ -321,15 +312,6 @@ namespace GeneSys.Simulation.Gpu
         public void Step(float deltaTime)
         {
             var stopwatch = Stopwatch.StartNew();
-            if (!config.useLegacyTransport && lastLegacyTransport)
-            {
-                resources.ClearMobileMass();
-            }
-            else if (config.useLegacyTransport && !lastLegacyTransport)
-            {
-                SeedMobileMass();
-            }
-            lastLegacyTransport = config.useLegacyTransport;
 
             if (brushCommands.Count > 0)
             {
@@ -338,7 +320,6 @@ namespace GeneSys.Simulation.Gpu
                 materialSimulation.SetInt("_BrushCount", brushCommands.Count);
                 materialSimulation.SetBuffer(brushKernel, "_BrushCommands", brushBuffer);
                 DispatchPass(materialSimulation, brushKernel, deltaTime);
-                ApplyMobileEdits();
                 if (storm != null)
                 {
                     int stormBrush = storm.FindKernel("ApplyStormEdits");
@@ -384,29 +365,19 @@ namespace GeneSys.Simulation.Gpu
             {
                 float subDt = deltaTime / config.materialSubsteps;
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("ThermalAndPressure"), subDt);
-                if (config.useLegacyTransport)
-                {
-                    DispatchPass(materialSimulation, materialSimulation.FindKernel("LiquidDensityExchange"), subDt);
-                    DispatchPass(materialSimulation, materialSimulation.FindKernel("MaterialMotion"), subDt);
-                }
-                if (!config.maceMagma)
-                    DispatchPass(geology, geology.FindKernel("EruptionMotion"), subDt);
+                DispatchPass(geology, geology.FindKernel("EruptionMotion"), subDt);
                 DispatchPass(materialSimulation, materialSimulation.FindKernel("Electrical"), subDt);
             }
 
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), deltaTime);
-            if (config.useMargolusTransport)
+            if (config.enableMaterialTransport)
             {
                 for (int m = 0; m < config.margolusSubsteps; m++)
                     DispatchMargolus(deltaTime / config.margolusSubsteps);
             }
-            if (config.useLegacyTransport)
-                DispatchMaceEarly(deltaTime);
 
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
-            if (config.useLegacyTransport)
-                SyncLegacyMobileIds();
 
             if (config.climateLayerEnable && Due(config.climateCouplePeriod))
                 DispatchClimate(CadenceDt(deltaTime, config.climateCouplePeriod));
@@ -418,8 +389,7 @@ namespace GeneSys.Simulation.Gpu
             DispatchPass(weather, weather.FindKernel("AtmosphericContinuity"), deltaTime);
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PressureDiffusion"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericDynamics"), deltaTime);
-            if (!config.maceAsh)
-                DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
+            DispatchPass(geology, geology.FindKernel("AshTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("AtmosphericTransport"), deltaTime);
             DispatchPass(weather, weather.FindKernel("WaterCycle"), deltaTime);
             DispatchPass(weather, weather.FindKernel("Precipitation"), deltaTime);
@@ -437,8 +407,6 @@ namespace GeneSys.Simulation.Gpu
             {
                 float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
                 DispatchPass(hydrology, hydrology.FindKernel("ErosionAndCollapse"), slowDt);
-                if (config.useLegacyTransport)
-                    DispatchMaceAfterErosion(slowDt);
                 DispatchPass(hydrology, hydrology.FindKernel("AshFertilization"), slowDt);
                 DispatchPass(hydrology, hydrology.FindKernel("DetritusExchange"), slowDt);
             }
@@ -513,198 +481,6 @@ namespace GeneSys.Simulation.Gpu
             resources.Swap();
         }
 
-        private bool MaceReady => maceTransport != null && resources.MobileMassRead != null;
-
-        private bool AnyMaceFlag =>
-            config.maceSedimentPilot || config.maceEntrainment || config.maceShorelineSorting
-            || config.maceSolute || config.maceAsh || config.maceMagma || config.maceHardWear;
-
-        private int MaceKernel(string name)
-        {
-            if (!MaceReady) return -1;
-            return maceTransport.FindKernel(name);
-        }
-
-        private void BindMaceCommon(int kernel, float deltaTime)
-        {
-            SetCommon(maceTransport, kernel, deltaTime);
-            maceTransport.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
-            maceTransport.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
-            maceTransport.SetTexture(kernel, "_StateRead", resources.StateRead);
-            maceTransport.SetTexture(kernel, "_FlowRead", resources.FlowRead);
-            maceTransport.SetTexture(kernel, "_AuxRead", resources.AuxRead);
-            maceTransport.SetTexture(kernel, "_ShadeRead", resources.ShadeRead);
-            maceTransport.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
-            maceTransport.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
-            maceTransport.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
-            maceTransport.SetTexture(kernel, "_GrassRead", resources.GrassRead);
-            maceTransport.SetTexture(kernel, "_TreeRead", resources.TreeRead);
-            maceTransport.SetTexture(kernel, "_MobileMassRead", resources.MobileMassRead);
-            maceTransport.SetTexture(kernel, "_MaceAffinityRead", resources.MaceAffinity);
-            maceTransport.SetTexture(kernel, "_MaceNormalizerRead", resources.MaceNormalizer);
-            maceTransport.SetTexture(kernel, "_MaceTransferRead", resources.MaceTransferRead);
-        }
-
-        private void BindMaceMobileWrite(int kernel)
-        {
-            maceTransport.SetTexture(kernel, "_MobileMassWrite", resources.MobileMassWrite);
-        }
-
-        private void BindMaceCoreWrite(int kernel)
-        {
-            maceTransport.SetTexture(kernel, "_MaterialWrite", resources.MaterialWrite);
-            maceTransport.SetTexture(kernel, "_StateWrite", resources.StateWrite);
-            maceTransport.SetTexture(kernel, "_FlowWrite", resources.FlowWrite);
-            maceTransport.SetTexture(kernel, "_AuxWrite", resources.AuxWrite);
-            maceTransport.SetTexture(kernel, "_ShadeWrite", resources.ShadeWrite);
-            maceTransport.SetTexture(kernel, "_EcologyWrite", resources.EcologyWrite);
-            maceTransport.SetTexture(kernel, "_CombustionWrite", resources.CombustionWrite);
-            maceTransport.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeWrite);
-        }
-
-        private void DispatchMaceKernel(int kernel, float deltaTime, bool writeMobile, bool writeCore, bool writeAffinity = false, bool writeNormalizer = false, bool writeTransfer = false, bool writeColumns = false)
-        {
-            if (kernel < 0) return;
-            BindMaceCommon(kernel, deltaTime);
-            if (writeMobile) BindMaceMobileWrite(kernel);
-            if (writeCore) BindMaceCoreWrite(kernel);
-            if (writeAffinity) maceTransport.SetTexture(kernel, "_MaceAffinityWrite", resources.MaceAffinity);
-            if (writeNormalizer) maceTransport.SetTexture(kernel, "_MaceNormalizerWrite", resources.MaceNormalizer);
-            if (writeTransfer) maceTransport.SetTexture(kernel, "_MaceTransferWrite", resources.MaceTransferWrite);
-            if (writeColumns) maceTransport.SetBuffer(kernel, "_SedimentColumns", resources.SedimentColumn);
-            Dispatch(maceTransport, kernel);
-        }
-
-        private void SeedMobileMass()
-        {
-            if (!config.useLegacyTransport)
-            {
-                resources.ClearMobileMass();
-                return;
-            }
-            int kernel = MaceKernel("SeedFromMaterials");
-            if (kernel < 0) return;
-            DispatchMaceKernel(kernel, 0f, true, false);
-            resources.SwapMobileMass();
-            Graphics.CopyTexture(resources.MobileMassRead, resources.MobileMassWrite);
-        }
-
-        private void ApplyMobileEdits()
-        {
-            if (!config.useLegacyTransport || !MaceReady || !AnyMaceFlag || brushCommands.Count == 0) return;
-            int kernel = MaceKernel("ApplyMobileEdits");
-            if (kernel < 0) return;
-            BindMaceCommon(kernel, 0f);
-            BindMaceMobileWrite(kernel);
-            maceTransport.SetInt("_BrushCount", brushCommands.Count);
-            maceTransport.SetBuffer(kernel, "_BrushCommands", brushBuffer);
-            Dispatch(maceTransport, kernel);
-            resources.SwapMobileMass();
-        }
-
-        private void SyncLegacyMobileIds()
-        {
-            if (!config.useLegacyTransport || !MaceReady || !AnyMaceFlag) return;
-            int kernel = MaceKernel("SyncLegacyIds");
-            if (kernel < 0) return;
-            DispatchMaceKernel(kernel, 0f, true, false);
-            resources.SwapMobileMass();
-        }
-
-        private void TransportMaceChannel(int slice, float deltaTime)
-        {
-            maceTransport.SetInt("_MaceChannel", slice);
-            int affinity = MaceKernel("BuildAffinity");
-            int normalizer = MaceKernel("BuildNormalizer");
-            int redistribute = MaceKernel("RedistributeChannel");
-            int overflow = MaceKernel("OverflowProject");
-            DispatchMaceKernel(affinity, deltaTime, false, false, writeAffinity: true);
-            DispatchMaceKernel(normalizer, deltaTime, false, false, writeNormalizer: true);
-            DispatchMaceKernel(redistribute, deltaTime, true, false);
-            resources.SwapMobileMass();
-            DispatchMaceKernel(overflow, deltaTime, true, false);
-            resources.SwapMobileMass();
-        }
-
-        private void ReconcileMaceIds(float deltaTime)
-        {
-            int kernel = MaceKernel("ReconcileIds");
-            if (kernel < 0) return;
-            DispatchMaceKernel(kernel, deltaTime, false, true);
-            resources.Swap();
-        }
-
-        private void DispatchMaceEarly(float deltaTime)
-        {
-            if (!MaceReady) return;
-            bool transport = config.maceSedimentPilot || config.maceShorelineSorting
-                || config.maceSolute || config.maceAsh || config.maceMagma;
-            if (!transport) return;
-
-            if (config.maceSedimentPilot || config.maceShorelineSorting)
-            {
-                int columns = MaceKernel("BuildSedimentColumns");
-                if (columns >= 0)
-                {
-                    BindMaceCommon(columns, deltaTime);
-                    maceTransport.SetBuffer(columns, "_SedimentColumns", resources.SedimentColumn);
-                    DispatchColumns(maceTransport, columns);
-                }
-                TransportMaceChannel(SimulationResources.MobileSliceCoarse, deltaTime);
-                if (config.maceShorelineSorting)
-                    TransportMaceChannel(SimulationResources.MobileSliceFine, deltaTime);
-            }
-            if (config.maceSolute)
-                TransportMaceChannel(SimulationResources.MobileSliceSolute, deltaTime);
-            if (config.maceAsh)
-                TransportMaceChannel(SimulationResources.MobileSliceAsh, deltaTime);
-            if (config.maceMagma)
-                TransportMaceChannel(SimulationResources.MobileSliceMagma, deltaTime);
-            int cross = MaceKernel("CrossChannelMobile");
-            if (cross >= 0 && (config.maceAsh || config.maceMagma || config.maceSolute))
-            {
-                DispatchMaceKernel(cross, deltaTime, true, false, writeTransfer: true);
-                resources.SwapMobileMass();
-                resources.SwapMaceTransfer();
-                int ack = MaceKernel("AcknowledgeTransfers");
-                if (ack >= 0)
-                {
-                    DispatchMaceKernel(ack, deltaTime, false, true);
-                    resources.Swap();
-                }
-            }
-            ReconcileMaceIds(deltaTime);
-        }
-
-        private void DispatchMaceAfterErosion(float deltaTime)
-        {
-            if (!MaceReady) return;
-            bool extract = config.maceEntrainment || config.maceSolute || config.maceHardWear;
-            bool reconcile = extract || config.maceSedimentPilot || config.maceAsh || config.maceMagma;
-            if (!extract && !reconcile) return;
-
-            if (extract)
-            {
-                int kernel = MaceKernel("ExtractStructural");
-                if (kernel >= 0)
-                {
-                    DispatchMaceKernel(kernel, deltaTime, true, false, writeTransfer: true);
-                    resources.SwapMobileMass();
-                    resources.SwapMaceTransfer();
-                }
-                int ack = MaceKernel("AcknowledgeTransfers");
-                if (ack >= 0)
-                {
-                    DispatchMaceKernel(ack, deltaTime, false, true);
-                    resources.Swap();
-                }
-            }
-            else if (config.maceSedimentPilot)
-                SyncLegacyMobileIds();
-            if (reconcile)
-                ReconcileMaceIds(deltaTime);
-        }
-
         private void DispatchMargolus(float deltaTime)
         {
             if (margolusTransport == null) return;
@@ -739,7 +515,7 @@ namespace GeneSys.Simulation.Gpu
                 config.margolusMetricEnable ? 1f : 0f,
                 config.margolusFluidEnable ? config.margolusFluidLevelingBias : 0f));
             margolusTransport.SetVector("_MargolusFlags", new Vector4(
-                config.useMargolusTransport ? 1f : 0f,
+                config.enableMaterialTransport ? 1f : 0f,
                 config.margolusFluidEnable ? 1f : 0f,
                 0f, 0f));
         }
@@ -774,7 +550,6 @@ namespace GeneSys.Simulation.Gpu
             hydrostatic.SetBuffer(build, "_MaterialDefinitions", materialBuffer);
             hydrostatic.SetTexture(build, "_MaterialRead", resources.MaterialRead);
             hydrostatic.SetTexture(build, "_StateRead", resources.StateRead);
-            hydrostatic.SetTexture(build, "_MobileMassRead", resources.MobileMassRead);
             hydrostatic.SetBuffer(build, "_WaterColumns", resources.WaterColumn);
             hydrostatic.SetBuffer(build, "_WaterFaceFlux", resources.WaterFaceFlux);
             DispatchColumns(hydrostatic, build);
@@ -1113,24 +888,6 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_StormE", new Vector4(config.stormFlashVaporization, config.stormChannelChargeDrain, config.stormTargetRange, config.stormMaxChannelLength));
             shader.SetVector("_StormF", new Vector4(config.stormStrikeBranchChance, config.stormSheetBranchChance, config.stormMaxStrikesPerTick, config.stormTortuosity));
             shader.SetVector("_StormG", new Vector4(config.stormMinimumHeight, config.stormStrikeAirHeatFraction, 0f, 0f));
-            shader.SetVector("_MaceFlags", new Vector4(
-                config.maceSedimentPilot ? 1f : 0f,
-                config.maceEntrainment ? 1f : 0f,
-                config.maceShorelineSorting ? 1f : 0f,
-                config.maceSolute ? 1f : 0f));
-            shader.SetVector("_MaceExtra", new Vector4(
-                config.maceAsh ? 1f : 0f,
-                config.maceMagma ? 1f : 0f,
-                config.maceHardWear ? 1f : 0f,
-                0f));
-            shader.SetVector("_MaceA", new Vector4(config.maceBeta, config.maceGravityGain, config.maceSupportGain, config.maceReposeGain));
-            shader.SetVector("_MaceB", new Vector4(config.maceMinMass, config.maceSedimentFillThreshold, config.maceSedimentClearThreshold, config.maceLambda));
-            shader.SetVector("_MaceC", new Vector4(1f, config.maceMagmaFillThreshold, config.maceExtractRate, config.maceHardCrustAlpha));
-            shader.SetVector("_MaceD", new Vector4(config.maceBeta, config.maceFineBeta, config.maceSoluteBeta, config.maceAshBeta));
-            shader.SetVector("_MaceE", new Vector4(config.maceMagmaBeta, config.maceAshLift, config.maceAshSettle, config.maceMagmaEruptionGain));
-            shader.SetVector("_MaceF", new Vector4(0f, config.maceWearThreshold, config.maceStructuralDeplete, config.maceAshFillThreshold));
-            shader.SetVector("_MaceG", new Vector4(config.maceEntrainmentScale, config.maceEntrainmentScale, config.maceRunoffGain, config.maceBedloadGain));
-            shader.SetVector("_MaceH", new Vector4(1f, 1.6f, config.maceSoluteDepositRate, config.maceBioerosionScale));
             shader.SetVector("_ClimateFlags", new Vector4(
                 config.climateLayerEnable ? 1f : 0f,
                 climateInit ? 1f : 0f,
@@ -1162,7 +919,7 @@ namespace GeneSys.Simulation.Gpu
                 config.margolusMetricEnable ? 1f : 0f,
                 config.margolusFluidEnable ? config.margolusFluidLevelingBias : 0f));
             shader.SetVector("_MargolusFlags", new Vector4(
-                config.useMargolusTransport ? 1f : 0f,
+                config.enableMaterialTransport ? 1f : 0f,
                 config.margolusFluidEnable ? 1f : 0f,
                 0f, 0f));
         }
@@ -1195,10 +952,6 @@ namespace GeneSys.Simulation.Gpu
             {
                 shader.SetTexture(kernel, "_GrassRead", resources.GrassRead);
                 shader.SetTexture(kernel, "_TreeRead", resources.TreeRead);
-            }
-            if (shader == hydrology)
-            {
-                shader.SetTexture(kernel, "_MobileMassRead", resources.MobileMassRead);
             }
             BindClimateState(shader, kernel);
             BindGeodynamicsState(shader, kernel);

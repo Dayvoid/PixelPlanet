@@ -123,8 +123,8 @@ namespace GeneSys.Tests
             Assert.That(scheduler, Does.Contain("DispatchGeodynamics"));
             Assert.That(scheduler, Does.Contain("DispatchTectonicKinematics"));
             Assert.That(scheduler, Does.Contain("FindKernel(\"TectonicVertical\")"));
-            Assert.That(scheduler, Does.Contain("if (!config.maceMagma)"));
-            Assert.That(scheduler, Does.Contain("if (!config.maceAsh)"));
+            Assert.That(scheduler, Does.Not.Contain("maceMagma"));
+            Assert.That(scheduler, Does.Not.Contain("maceAsh"));
             Assert.That(scheduler, Does.Contain("CoreHeatSource"));
             Assert.That(scheduler, Does.Contain("HydrothermalRelease"));
             Assert.That(scheduler, Does.Not.Contain("FindKernel(\"CoreReaction\")"));
@@ -158,7 +158,9 @@ namespace GeneSys.Tests
         {
             string snapshot = File.ReadAllText("Assets/GeneSys/Runtime/Persistence/WorldSnapshotService.cs");
             Assert.That(snapshot, Does.Contain("private const int Version15 = 15;"));
+            Assert.That(snapshot, Does.Contain("private const int Version16 = 16;"));
             Assert.That(snapshot, Does.Contain("private const int PayloadCountV15 = 49;"));
+            Assert.That(snapshot, Does.Contain("private const int PayloadCountV16 = 43;"));
             Assert.That(snapshot, Does.Contain("RequestGeodynamicsBatch"));
             Assert.That(snapshot, Does.Contain("ApplyLegacyGeologyJsonAliases"));
             Assert.That(snapshot, Does.Contain("RebuildGeodynamics(true)"));

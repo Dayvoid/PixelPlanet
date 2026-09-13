@@ -82,8 +82,7 @@ namespace GeneSys.Tests
             host.Config.precipitationRate = 0f;
             host.Config.coreHeatRate = 0f;
 
-            host.Config.useMargolusTransport = true;
-            host.Config.useLegacyTransport = false;
+            host.Config.enableMaterialTransport = true;
             host.Config.margolusSubsteps = 1;
             host.Config.margolusGravityBias = 1f;
             host.Config.margolusReposeFriction = 1f;
@@ -92,8 +91,7 @@ namespace GeneSys.Tests
 
         private static void RestoreConfig(SimulationHost host)
         {
-            host.Config.useMargolusTransport = false;
-            host.Config.useLegacyTransport = true;
+            host.Config.enableMaterialTransport = true;
             host.Config.geodynamicsLayerEnable = true;
             host.Config.slowPassInterval = 4;
         }

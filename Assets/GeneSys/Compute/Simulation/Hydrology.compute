@@ -55,14 +55,11 @@ float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMois
 float4 _TreeH; // seedAtWorldgen, cohesionBonus, canopyOpacity, exposureDamage
 float4 _DetritusA; // vaporAbsorb, evaporate, distribute, leach
 float4 _DetritusB; // decomposition, unused
-float4 _MaceFlags; // sediment, entrainment, shoreline, solute
-float4 _MaceExtra; // ash, magma, wear, unused
 float4 _MargolusFlags;
 float4 _MargolusParams;
 float4 _WeatherI;
 float4 _PressureA;
 float4 _Hydrothermal;
-Texture2DArray<float> _MobileMassRead;
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -73,7 +70,6 @@ float4 E(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
 float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
-#define MACE_MOBILE_DECLARED 1
 #define GENESYS_HYDROTHERMAL_DECLARED 1
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 #include "../../Shaders/Simulation/Common/Climate.hlsl"
@@ -83,12 +79,12 @@ bool IsExposedSurface(int2 cell, uint material)
 {
     if (cell.y >= _GridSize.y - 1) return false;
     uint above = M(cell + int2(0, 1));
-    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u && material != 11u;
+    return D(above).metadata.x <= 1.0 && material != 1u && material != 0u;
 }
 
 bool IsRewritableCarrier(uint material)
 {
-    return material == 0u || material == 1u || material == 9u || material == 10u || material == 11u;
+    return material == 0u || material == 1u || material == 9u || material == 10u;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
@@ -335,18 +331,8 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         aux.w += carve;
         if (aux.w > 1.25)
         {
-            if (_MargolusFlags.x > 0.5)
-            {
-                material = 8u;
-                aux.w = 0.0;
-            }
-            else if (_MaceFlags.x < 0.5 && _MaceFlags.w < 0.5)
-            {
-                material = 8u;
-                aux.w = 0.0;
-                state.z += aux.y * 0.2;
-                aux.y *= 0.8;
-            }
+            material = 8u;
+            aux.w = 0.0;
         }
     }
 
@@ -361,17 +347,8 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             aux.w += erode;
             if (aux.w > 1.0)
             {
-                if (_MargolusFlags.x > 0.5)
-                {
-                    material = 8u;
-                    aux.w = 0.0;
-                }
-                else
-                {
-                    if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5)
-                        material = 8u;
-                    aux.w = (_MaceFlags.x > 0.5 || _MaceFlags.y > 0.5) ? aux.w : 0.0;
-                }
+                material = 8u;
+                aux.w = 0.0;
             }
         }
     }
@@ -381,18 +358,8 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         aux.w += erode;
         if (aux.w > 1.0)
         {
-            if (_MargolusFlags.x > 0.5)
-            {
-                material = 8u;
-                aux.w = 0.0;
-            }
-            else
-            {
-                if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5 && _MaceFlags.w < 0.5)
-                    material = 8u;
-                if (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5 && _MaceFlags.w < 0.5)
-                    aux.w = 0.0;
-            }
+            material = 8u;
+            aux.w = 0.0;
         }
     }
 
@@ -404,8 +371,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
 
     if ((material == 4u || material == 7u || material == 14u || material == 15u) && unsupported && cohesion < _Hydrology.w)
     {
-        if (_MargolusFlags.x > 0.5 || (_MaceFlags.x < 0.5 && _MaceFlags.y < 0.5 && _MaceExtra.z < 0.5))
-            material = 8u;
+        material = 8u;
     }
 
     Write(cell, material, state, flow, aux, ecology, combustion);
@@ -423,12 +389,6 @@ void AshFertilization(uint3 id : SV_DispatchThreadID)
     float4 ecology = E(cell);
     float4 combustion = Comb(cell);
     float fertility = max(0.0, _EruptionB.w);
-
-    if (_MaceExtra.x > 0.5)
-    {
-        Write(cell, material, state, flow, aux, ecology, combustion);
-        return;
-    }
 
     if (material == 12u && cell.y > 0)
     {
@@ -692,7 +652,7 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             if (slotMass > 1e-6)
             {
                 float rescued = max(0.0, aux.x);
-                if (material == 0u || material == 1u || material == 11u)
+                if (material == 0u || material == 1u)
                     rescued += max(0.0, state.z);
                 else if (IsAirborneLiquid(cell, material))
                     rescued += max(0.0, state.z); // The profile skipped this drop, so its mass is not in newVolume.

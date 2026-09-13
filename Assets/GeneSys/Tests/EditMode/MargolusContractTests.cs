@@ -23,8 +23,7 @@ namespace GeneSys.Tests
         public void MargolusConfigDefaultsAndClamps()
         {
             var config = ScriptableObject.CreateInstance<SimulationConfig>();
-            Assert.That(config.useMargolusTransport, Is.False);
-            Assert.That(config.useLegacyTransport, Is.True);
+            Assert.That(config.enableMaterialTransport, Is.True);
             Assert.That(config.margolusSubsteps, Is.EqualTo(1));
             Assert.That(config.margolusGravityBias, Is.EqualTo(1f));
             Assert.That(config.margolusReposeFriction, Is.EqualTo(1f));
@@ -54,19 +53,19 @@ namespace GeneSys.Tests
         }
 
         [Test]
-        public void MargolusSedimentDisplayContractGuardsGhostSediment()
+        public void MargolusContractExcludesLegacyMaceAndMobileDisplay()
         {
             string displayShader = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");
-            Assert.That(displayShader.Contains("_MaceMobileDisplay"), "PlanetoidDisplay.shader should declare _MaceMobileDisplay");
-            Assert.That(displayShader.Contains("float mobileSediment = _MaceMobileDisplay > 0.5 ?"), "PlanetoidDisplay.shader should guard mobileSediment by _MaceMobileDisplay");
+            Assert.That(displayShader, Does.Not.Contain("_MaceMobileDisplay"), "PlanetoidDisplay.shader should not declare _MaceMobileDisplay");
+            Assert.That(displayShader, Does.Not.Contain("_MobileMassTex"), "PlanetoidDisplay.shader should not reference _MobileMassTex");
 
             string renderer = File.ReadAllText("Assets/GeneSys/Runtime/Rendering/PlanetoidDisplayRenderer.cs");
-            Assert.That(renderer.Contains("_MaceMobileDisplay"), "PlanetoidDisplayRenderer.cs should set _MaceMobileDisplay");
-            Assert.That(renderer.Contains("config.useLegacyTransport && (config.maceSedimentPilot || config.maceEntrainment)"), "PlanetoidDisplayRenderer.cs should only enable mobile display in legacy mode");
+            Assert.That(renderer, Does.Not.Contain("_MaceMobileDisplay"), "PlanetoidDisplayRenderer.cs should not set _MaceMobileDisplay");
 
             string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
-            Assert.That(scheduler.Contains("resources.ClearMobileMass()"), "GpuPassScheduler.cs should clear mobile mass when legacy transport is disabled");
-            Assert.That(scheduler.Contains("if (config.useLegacyTransport)"), "GpuPassScheduler.cs should guard legacy transport passes");
+            Assert.That(scheduler, Does.Not.Contain("maceTransport"), "GpuPassScheduler.cs should not contain maceTransport");
+            Assert.That(scheduler, Does.Not.Contain("_MaceFlags"), "GpuPassScheduler.cs should not declare _MaceFlags");
+            Assert.That(scheduler, Does.Contain("config.enableMaterialTransport"), "GpuPassScheduler.cs should guard transport passes with enableMaterialTransport");
         }
     }
 }

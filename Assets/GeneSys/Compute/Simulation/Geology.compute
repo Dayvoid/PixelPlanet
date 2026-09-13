@@ -48,8 +48,6 @@ float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse,
 float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
 float4 _EruptionA;
 float4 _EruptionB;
-float4 _MaceFlags;
-float4 _MaceExtra;
 
 #include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 

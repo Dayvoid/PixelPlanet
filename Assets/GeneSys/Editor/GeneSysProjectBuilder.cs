@@ -181,7 +181,6 @@ namespace GeneSys.Editor
             SetObject(host, "wasp", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Wasp.compute"));
             SetObject(host, "combustion", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Combustion.compute"));
             SetObject(host, "storm", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Storm.compute"));
-            SetObject(host, "maceTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MaceTransport.compute"));
             SetObject(host, "climate", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Climate.compute"));
             SetObject(host, "geodynamics", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Geodynamics.compute"));
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));
@@ -235,7 +234,6 @@ namespace GeneSys.Editor
             SetObject(host, "tree", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Tree.compute"));
             SetObject(host, "wasp", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Wasp.compute"));
             SetObject(host, "hydrostatic", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrostatic.compute"));
-            SetObject(host, "maceTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MaceTransport.compute"));
             SetObject(host, "climate", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Climate.compute"));
             SetObject(host, "geodynamics", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Geodynamics.compute"));
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));

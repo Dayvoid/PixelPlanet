@@ -289,7 +289,7 @@ namespace GeneSys.Validation
                                                                                 Complete(false, $"Tracked water sink {-signedDrift:P2} exceeds tolerance.");
                                                                                 return;
                                                                             }
-                                                                            ValidateMobileMass($"Fields finite; tracked water drift {signedDrift:P2}.");
+                                                                            ValidateGeodynamics($"Fields finite; tracked water drift {signedDrift:P2}.");
                                                                         });
                                                                     });
                                                                 });
@@ -305,37 +305,6 @@ namespace GeneSys.Validation
                         });
                     });
                 });
-            });
-        }
-
-        private void ValidateMobileMass(string passedMessage)
-        {
-            bool anyMace = host?.Config != null && (host.Config.maceSedimentPilot || host.Config.maceEntrainment
-                || host.Config.maceShorelineSorting || host.Config.maceSolute
-                || host.Config.maceAsh || host.Config.maceMagma || host.Config.maceHardWear);
-            if (!anyMace)
-            {
-                ValidateGeodynamics(passedMessage);
-                return;
-            }
-
-            RenderTexture mobile = host.Resources?.MobileMassRead;
-            if (mobile == null)
-            {
-                Complete(true, passedMessage);
-                return;
-            }
-
-            AsyncGPUReadback.Request(mobile, 0, 0, mobile.width, 0, mobile.height, 0, SimulationResources.MobileMassSliceCount, request =>
-            {
-                if (request.hasError) { Complete(false, "Mobile mass GPU readback failed."); return; }
-                NativeArray<float> values = request.GetData<float>();
-                for (int i = 0; i < values.Length; i++)
-                {
-                    if (!float.IsFinite(values[i])) { Complete(false, $"Non-finite mobile mass at sample {i}."); return; }
-                    if (values[i] < -1e-4f) { Complete(false, $"Negative mobile mass {values[i]:0.###} at sample {i}."); return; }
-                }
-                ValidateGeodynamics(passedMessage);
             });
         }
 

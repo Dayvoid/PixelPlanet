@@ -81,17 +81,9 @@
 //   Film soak and Water-pixel contact drain state.z into aux.y up to porosity capacity.
 //   Excess above field capacity percolates radially inward, then weeps from exposed hosts.
 //   Hosts hotter than the pressure-adjusted boil point convert aux.y to aux.x.
-// MaCE mobile mass (dedicated Tex2DArray, excluded from WriteCell / global Swap):
-//   slice 0 = coarse/ordinary sediment
-//   slice 1 = fine/clay sediment
-//   slice 2 = solute (mineral load; does not replace aux.y)
-//   slice 3 = magma
-//   slice 4 = ash (soot in combustion.z stays separate)
-//   slice 5 = structural mass
-//   One full pixel is mass 1. Conservation is the unweighted channel sum.
-//   Polar geometry affects slope/affinity only. Down is y-1.
-//   ID 8/12/6 are hysteretic views of fill. state.z remains the water ledger;
-//   Air state.z is cloud condensate. MaCE never invents vapor.
+// Material transport:
+//   Margolus Cellular Automata (MaCA) operates on discrete material cells (Sediment, Ash, Magma)
+//   conserving cell tokens without Eulerian smearing or dual-ledger ghost fields.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 // Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
 // each writes only its own cell. So both sides must derive the transferred mass from the same

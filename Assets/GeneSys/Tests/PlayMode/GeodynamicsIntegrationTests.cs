@@ -139,21 +139,6 @@ namespace GeneSys.Tests
             assign(metrics);
         }
 
-        private static IEnumerator MeasureMobile(SimulationHost host, Action<WorldMobileMetrics> assign)
-        {
-            bool ready = false;
-            WorldMobileMetrics metrics = default;
-            SimulationMetrics.MeasureMobileMassAsync(host, result =>
-            {
-                metrics = result;
-                ready = true;
-            });
-            for (int i = 0; i < 240 && !ready; i++)
-                yield return null;
-            Assert.That(ready, Is.True);
-            assign(metrics);
-        }
-
         private static void Paint(SimulationHost host, int x, int y, uint materialId)
         {
             host.QueueBrush(new GpuPassScheduler.BrushCommand
@@ -207,8 +192,6 @@ namespace GeneSys.Tests
             host.Config.eruptionDriveScale = 0.55f;
             host.Config.hydrothermalReleaseThreshold = 0.7f;
             host.Config.hydrothermalHeatTransferRate = 0.35f;
-            host.Config.maceMagma = false;
-            host.Config.maceAsh = false;
             host.Config.validationIntervalTicks = 1000;
             host.Config.slowPassInterval = 4;
             host.Config.thermalRate = 0.35f;
@@ -567,57 +550,6 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator ExclusiveMaceMagmaDoesNotDoubleConsume()
-        {
-            SceneManager.LoadScene("Terrarium");
-            yield return WaitForHost();
-            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
-            host.Clock.SetRunning(false);
-            host.Config.geodynamicsLayerEnable = false;
-            host.Config.maceMagma = true;
-            host.Config.maceAsh = false;
-            host.Config.maceSedimentPilot = true;
-            host.Config.eruptionDriveScale = 0f;
-            host.Config.extrusionRate = 0f;
-            host.Config.validationIntervalTicks = 100000;
-            host.Regenerate();
-            for (int i = 0; i < 5; i++) yield return null;
-
-            int x = host.Grid.angularResolution / 2;
-            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.55f), 8, host.Grid.radialResolution - 8);
-            Paint(host, x, y - 1, MaterialIds.Rock);
-            Paint(host, x, y, MaterialIds.Magma);
-            Paint(host, x, y + 1, MaterialIds.Air);
-            yield return Step(host, 1);
-
-            WorldMobileMetrics before = default;
-            int magmaBefore = 0;
-            int ashBefore = 0;
-            yield return MeasureMobile(host, result => before = result);
-            yield return ReadMaterials(host, mats =>
-            {
-                magmaBefore = Count(mats, MaterialIds.Magma);
-                ashBefore = Count(mats, MaterialIds.Ash);
-            });
-            yield return Step(host, 12);
-            WorldMobileMetrics after = default;
-            int magmaAfter = 0;
-            int ashAfter = 0;
-            yield return MeasureMobile(host, result => after = result);
-            yield return ReadMaterials(host, mats =>
-            {
-                magmaAfter = Count(mats, MaterialIds.Magma);
-                ashAfter = Count(mats, MaterialIds.Ash);
-            });
-
-            Assert.That(after.HasNonFinite, Is.False);
-            Assert.That(after.HasNegative, Is.False);
-            Assert.That(magmaAfter, Is.GreaterThan(0));
-            Assert.That(ashAfter, Is.EqualTo(ashBefore));
-            RestoreDefaults(host);
-        }
-
-        [UnityTest]
         public IEnumerator SnapshotV15RoundTripsLattice()
         {
             SceneManager.LoadScene("Terrarium");
@@ -792,10 +724,9 @@ namespace GeneSys.Tests
             return -1;
         }
 
-        private static void RestoreTransport(SimulationHost host, bool margolus, bool legacy)
+        private static void RestoreTransport(SimulationHost host, bool transport)
         {
-            host.Config.useMargolusTransport = margolus;
-            host.Config.useLegacyTransport = legacy;
+            host.Config.enableMaterialTransport = transport;
         }
 
         private static void ConfigureKinematics(SimulationHost host)
@@ -814,8 +745,7 @@ namespace GeneSys.Tests
             host.Config.tectonicConvergenceScale = 4f;
             host.Config.tectonicDisplacementScale = 4f;
             host.Config.tectonicCoseismicScale = 0f;
-            host.Config.useMargolusTransport = false;
-            host.Config.useLegacyTransport = false;
+            host.Config.enableMaterialTransport = false;
             host.Config.volcanicCoolingRate = 0f;
             host.Config.slowPassInterval = 1000;
             host.Config.coreHeatRate = 0f;
@@ -871,8 +801,7 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.Clock.SetRunning(false);
             host.Config.seed = 8801;
-            bool margolus = host.Config.useMargolusTransport;
-            bool legacy = host.Config.useLegacyTransport;
+            bool transport = host.Config.enableMaterialTransport;
             ConfigureKinematics(host);
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -906,7 +835,7 @@ namespace GeneSys.Tests
                 Assert.That(Count(mats, MaterialIds.Core), Is.EqualTo(coreBefore));
             });
             RestoreDefaults(host);
-            RestoreTransport(host, margolus, legacy);
+            RestoreTransport(host, transport);
         }
 
         [UnityTest]
@@ -917,8 +846,7 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.Clock.SetRunning(false);
             host.Config.seed = 8802;
-            bool margolus = host.Config.useMargolusTransport;
-            bool legacy = host.Config.useLegacyTransport;
+            bool transport = host.Config.enableMaterialTransport;
             ConfigureKinematics(host);
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -954,7 +882,7 @@ namespace GeneSys.Tests
                 Assert.That(surfaceAfter, Is.LessThan(surfaceBefore));
             });
             RestoreDefaults(host);
-            RestoreTransport(host, margolus, legacy);
+            RestoreTransport(host, transport);
         }
 
         [UnityTest]
@@ -965,8 +893,7 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.Clock.SetRunning(false);
             host.Config.seed = 8803;
-            bool margolus = host.Config.useMargolusTransport;
-            bool legacy = host.Config.useLegacyTransport;
+            bool transport = host.Config.enableMaterialTransport;
             ConfigureKinematics(host);
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1021,7 +948,7 @@ namespace GeneSys.Tests
                 Assert.That(delta, Is.LessThan(width / 2));
             });
             RestoreDefaults(host);
-            RestoreTransport(host, margolus, legacy);
+            RestoreTransport(host, transport);
         }
 
         [UnityTest]
@@ -1032,8 +959,7 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.Clock.SetRunning(false);
             host.Config.seed = 8804;
-            bool margolus = host.Config.useMargolusTransport;
-            bool legacy = host.Config.useLegacyTransport;
+            bool transport = host.Config.enableMaterialTransport;
             ConfigureKinematics(host);
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -1080,7 +1006,7 @@ namespace GeneSys.Tests
                 Assert.That(aux[(y0 + 5) * width + waterX].w, Is.LessThan(0.05f));
             });
             RestoreDefaults(host);
-            RestoreTransport(host, margolus, legacy);
+            RestoreTransport(host, transport);
         }
     }
 }

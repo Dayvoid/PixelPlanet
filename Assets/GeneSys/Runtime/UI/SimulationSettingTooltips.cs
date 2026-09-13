@@ -235,6 +235,21 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.springDischargeRate)] =
                 "How quickly saturated aquifers above field capacity weep to the surface. Stronger seeps feed streams, wet soil, and can flood low terrain.",
 
+            [nameof(SimulationConfig.enableMaterialTransport)] =
+                "Enables discrete Margolus Cellular Automata (MaCA) material transport. Partitions the grid into 2x2 alternating blocks to strictly conserve mass while simulating gravity settling, angle of repose, buoyancy, and fluid leveling.",
+            [nameof(SimulationConfig.margolusSubsteps)] =
+                "Number of 2-phase Margolus partitioning steps per simulation tick. Higher values accelerate material settling and slope relaxation per frame at a small compute cost.",
+            [nameof(SimulationConfig.margolusGravityBias)] =
+                "Strength of gravity in Margolus block energy minimization. Higher values pull loose sediment, ice, and liquids downward more decisively.",
+            [nameof(SimulationConfig.margolusReposeFriction)] =
+                "Resistance against diagonal block sliding. Higher friction maintains steeper natural angles of repose for granular materials like sediment; lower friction lets piles slump flat.",
+            [nameof(SimulationConfig.margolusMetricEnable)] =
+                "Enables polar metric compensation in Margolus transport, balancing radial vs angular block swap probabilities across differing ring circumferences.",
+            [nameof(SimulationConfig.margolusFluidEnable)] =
+                "Allows liquid materials to perform lateral fluid leveling swaps in addition to standard granular repose settling.",
+            [nameof(SimulationConfig.margolusFluidLevelingBias)] =
+                "Strength of horizontal leveling pressure for fluids during Margolus block swaps. Higher bias flattens liquid surfaces more aggressively.",
+
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",
             [nameof(SimulationConfig.solarIntensity)] =
@@ -967,73 +982,6 @@ namespace GeneSys.UI
                 "Maximum organisms in a life-seed burst. Spawns are sequential ticks, not a same-tick clump.",
             [nameof(SimulationConfig.probeLifeSeedSporeLoad)] =
                 "Spore load written when life seed drops flora. Eggs use the cricket-egg material instead of this value.",
-
-            [nameof(SimulationConfig.maceSedimentPilot)] =
-                "Enables mass-conserving sediment transport. Soft-crust falling-sand slides are gated; Sediment ID becomes a fill threshold over a conserved mobile channel.",
-            [nameof(SimulationConfig.maceEntrainment)] =
-                "When the sediment pilot is on, erosion spends structural mass into coarse/fine channels instead of flipping Soil or Clay directly to Sediment.",
-            [nameof(SimulationConfig.maceShorelineSorting)] =
-                "Transports coarse and fine sediment with different affinities so beaches can sort while surface water stays on the existing state.z ledger.",
-            [nameof(SimulationConfig.maceSolute)] =
-                "Dissolves hard crust into a conserved solute channel guided by groundwater. Caves appear only after structural mass is actually removed.",
-            [nameof(SimulationConfig.maceAsh)] =
-                "Moves ash as a conserved mobile channel with lift and settling affinities. Legacy AshTransport stays on until this flag is enabled.",
-            [nameof(SimulationConfig.maceMagma)] =
-                "Moves magma as a conserved mobile channel driven by pressure and buoyancy. EruptionMotion stays on until this flag is enabled.",
-            [nameof(SimulationConfig.maceHardWear)] =
-                "Slowly converts locked granite, basalt, and limestone into mobile fines when crust erosion stress stays above the wear threshold.",
-            [nameof(SimulationConfig.maceBeta)] =
-                "MaCE sharpness for coarse sediment. Higher values make piles grainier and more downhill; lower values smear like wet clay.",
-            [nameof(SimulationConfig.maceFineBeta)] =
-                "MaCE sharpness for the fine/clay sediment channel. Keep lower than coarse beta so silt travels farther along wet or windy faces.",
-            [nameof(SimulationConfig.maceGravityGain)] =
-                "How strongly lower radius attracts mobile mass. Scales with the existing gravity strength so unsupported piles fall inward.",
-            [nameof(SimulationConfig.maceSupportGain)] =
-                "Affinity bonus for resting on rigid or already-filled cells. Higher support keeps cones standing once they reach repose.",
-            [nameof(SimulationConfig.maceReposeGain)] =
-                "Penalty for slopes steeper than the host material angle of repose. Physical arc length is used so the angle stays meaningful at every radius.",
-            [nameof(SimulationConfig.maceSedimentFillThreshold)] =
-                "Loose Air or Void becomes Sediment when coarse plus fine fill crosses this value. Separate from the clear threshold to stop flicker.",
-            [nameof(SimulationConfig.maceSedimentClearThreshold)] =
-                "Sediment returns to Air or Void when fill falls below this value. Must stay at or below the fill threshold.",
-            [nameof(SimulationConfig.maceMinMass)] =
-                "Skip threshold for empty mobile cells. Mass below this is treated as zero for eligibility and transport.",
-            [nameof(SimulationConfig.maceLambda)] =
-                "Under-relaxation rate. Supported piles at repose keep lambda at zero; unsupported mass redistributes this fraction per tick.",
-            [nameof(SimulationConfig.maceEntrainmentScale)] =
-                "Extra mobility and affinity from exposed-face flow. Roots reduce this instead of deleting mass.",
-            [nameof(SimulationConfig.maceRunoffGain)] =
-                "Affinity from lateral flow and head-like runoff once shoreline or entrainment terms are active.",
-            [nameof(SimulationConfig.maceBedloadGain)] =
-                "Wet bedload term that couples surface film and groundwater wetness to sediment affinity.",
-            [nameof(SimulationConfig.maceExtractRate)] =
-                "How quickly erosion stress converts structural mass into mobile sediment in the same cell.",
-            [nameof(SimulationConfig.maceStructuralDeplete)] =
-                "Structural hosts keep their lithology ID until remaining structural mass falls below this value.",
-            [nameof(SimulationConfig.maceHardCrustAlpha)] =
-                "Very slow hard-crust wear rate. Only fires when crust erosion stress exceeds the wear threshold.",
-            [nameof(SimulationConfig.maceWearThreshold)] =
-                "Crust erosion stress that must be exceeded before hard lithology can shed structural mass.",
-            [nameof(SimulationConfig.maceSoluteBeta)] =
-                "MaCE sharpness for dissolved mineral load. Solute only moves through wet groundwater hosts.",
-            [nameof(SimulationConfig.maceSoluteDepositRate)] =
-                "Rate at which drying hosts precipitate solute back into fines without changing the water ledger.",
-            [nameof(SimulationConfig.maceAshBeta)] =
-                "MaCE sharpness for the ash channel. Lower values keep plumes smeared; higher values settle into crisp ash beds.",
-            [nameof(SimulationConfig.maceAshLift)] =
-                "How strongly upward flow and heat loft mobile ash. Settling still wins when updraft is weak.",
-            [nameof(SimulationConfig.maceAshSettle)] =
-                "Downward bias that drops airborne ash onto sediment or soil beds.",
-            [nameof(SimulationConfig.maceMagmaBeta)] =
-                "MaCE sharpness for mobile melt. High values keep conduits tight; low values let lava smear.",
-            [nameof(SimulationConfig.maceMagmaEruptionGain)] =
-                "Pressure-gradient affinity that drives magma into overburden and open cells.",
-            [nameof(SimulationConfig.maceAshFillThreshold)] =
-                "Air or Void becomes Ash when the ash channel crosses this fill. Clear uses the shared clear threshold.",
-            [nameof(SimulationConfig.maceMagmaFillThreshold)] =
-                "Loose carriers become Magma when the magma channel crosses this fill.",
-            [nameof(SimulationConfig.maceBioerosionScale)] =
-                "Multiplier on hard-crust wear when the host is marked bio-modifiable. Does not read mantle fault stress.",
         };
 
         public static bool TryGet(string fieldName, out string tooltip)

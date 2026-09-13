@@ -43,36 +43,6 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.HydrologyIntegrationTests");
         }
 
-        [MenuItem("Tools/GeneSys/Run MaCE EditMode Tests")]
-        public static void RunMaceEditMode()
-        {
-            GeneSysTestObserver.Run(TestMode.EditMode, "GeneSys.Tests.MaceTests");
-        }
-
-        [MenuItem("Tools/GeneSys/Run MaCE Sediment PlayMode Tests")]
-        public static void RunMaceSedimentPlayMode()
-        {
-            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceSedimentIntegrationTests");
-        }
-
-        [MenuItem("Tools/GeneSys/Run MaCE Shoreline PlayMode Tests")]
-        public static void RunMaceShorelinePlayMode()
-        {
-            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceShorelineMixtureTests");
-        }
-
-        [MenuItem("Tools/GeneSys/Run MaCE Karst PlayMode Tests")]
-        public static void RunMaceKarstPlayMode()
-        {
-            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceKarstSoluteTests");
-        }
-
-        [MenuItem("Tools/GeneSys/Run MaCE Geology PlayMode Tests")]
-        public static void RunMaceGeologyPlayMode()
-        {
-            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MaceMobileGeologyTests");
-        }
-
         [MenuItem("Tools/GeneSys/Run Geodynamics EditMode Tests")]
         public static void RunGeodynamicsEditMode()
         {

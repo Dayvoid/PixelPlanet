@@ -24,6 +24,7 @@ namespace GeneSys.Configuration
         [Range(1, 32)] public int slowPassInterval = 4;
         [Range(1, 8)] public int transportPassInterval = 2;
         public int seed = 12345;
+        [System.Obsolete("OG worldgen is deprecated; use GenerateWorldV2.")]
         public bool useOgWorldgen = false;
 
         [Header("World generation")]
@@ -142,15 +143,25 @@ namespace GeneSys.Configuration
         [Range(200f, 3000f)] public float coreTemperature = 1500f;
         [Range(0f, 8f)] public float coreHeatRate = 0.15f;
 
+        [System.Obsolete("Use tectonicFaultSeedCount.")]
         public int faultCount { get => tectonicFaultSeedCount; set => tectonicFaultSeedCount = value; }
+        [System.Obsolete("Use geodynamicsPressureBuildRate.")]
         public float mantlePressure { get => geodynamicsPressureBuildRate; set => geodynamicsPressureBuildRate = value; }
+        [System.Obsolete("Use tectonicStrainGain.")]
         public float fractureRate { get => tectonicStrainGain; set => tectonicStrainGain = value; }
+        [System.Obsolete("Use volcanicCoolingRate.")]
         public float volcanicCooling { get => volcanicCoolingRate; set => volcanicCoolingRate = value; }
+        [System.Obsolete("Use eruptionDriveScale.")]
         public float magmaEruption { get => eruptionDriveScale; set => eruptionDriveScale = value; }
+        [System.Obsolete("Use hydrothermalHeatTransferRate.")]
         public float hydrothermalStrength { get => hydrothermalHeatTransferRate; set => hydrothermalHeatTransferRate = value; }
+        [System.Obsolete("Use hydrothermalNutrientYield.")]
         public float ventChemicalRate { get => hydrothermalNutrientYield; set => hydrothermalNutrientYield = value; }
+        [System.Obsolete("Use corePulsePeriodTicks.")]
         public int coreReactionFrequency { get => corePulsePeriodTicks; set => corePulsePeriodTicks = value; }
+        [System.Obsolete("Use corePulseHeat.")]
         public float coreReactionMagnitude { get => corePulseHeat; set => corePulseHeat = value; }
+        [System.Obsolete("Use surfaceStressRecoveryRate.")]
         public float stressDecayRate { get => surfaceStressRecoveryRate; set => surfaceStressRecoveryRate = value; }
 
         [Header("Hydrology and erosion")]
@@ -170,50 +181,14 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float pondingRate = 0.85f;
         [Range(0f, 4f)] public float springDischargeRate = 0.9f;
 
-        [Header("Margolus CA transport")]
-        public bool useMargolusTransport = false;
-        public bool useLegacyTransport = true;
+        [Header("Material transport (Margolus CA)")]
+        public bool enableMaterialTransport = true;
         [Range(1, 4)] public int margolusSubsteps = 1;
         [Range(0f, 4f)] public float margolusGravityBias = 1f;
         [Range(0f, 4f)] public float margolusReposeFriction = 1f;
         public bool margolusMetricEnable = true;
         public bool margolusFluidEnable = true;
         [Range(0f, 2f)] public float margolusFluidLevelingBias = 0.5f;
-
-        [Header("MaCE transport")]
-        public bool maceSedimentPilot = false;
-        public bool maceEntrainment = false;
-        public bool maceShorelineSorting = false;
-        public bool maceSolute = false;
-        public bool maceAsh = false;
-        public bool maceMagma = false;
-        public bool maceHardWear = false;
-        [Range(0f, 8f)] public float maceBeta = 2.5f;
-        [Range(0f, 8f)] public float maceFineBeta = 1.4f;
-        [Range(0f, 4f)] public float maceGravityGain = 1f;
-        [Range(0f, 4f)] public float maceSupportGain = 0.6f;
-        [Range(0f, 4f)] public float maceReposeGain = 1.2f;
-        [Range(0f, 1f)] public float maceSedimentFillThreshold = 0.35f;
-        [Range(0f, 1f)] public float maceSedimentClearThreshold = 0.08f;
-        [Range(0.00001f, 0.1f)] public float maceMinMass = 0.0001f;
-        [Range(0f, 8f)] public float maceLambda = 2f;
-        [Range(0f, 4f)] public float maceEntrainmentScale = 1f;
-        [Range(0f, 4f)] public float maceRunoffGain = 0.6f;
-        [Range(0f, 4f)] public float maceBedloadGain = 0.5f;
-        [Range(0f, 1f)] public float maceExtractRate = 0.25f;
-        [Range(0f, 1f)] public float maceStructuralDeplete = 0.05f;
-        [Range(0f, 0.01f)] public float maceHardCrustAlpha = 0.0002f;
-        [Range(0f, 2f)] public float maceWearThreshold = 1.25f;
-        [Range(0f, 4f)] public float maceSoluteBeta = 2f;
-        [Range(0f, 4f)] public float maceSoluteDepositRate = 0.15f;
-        [Range(0f, 8f)] public float maceAshBeta = 1.8f;
-        [Range(0f, 4f)] public float maceAshLift = 1f;
-        [Range(0f, 4f)] public float maceAshSettle = 1f;
-        [Range(0f, 8f)] public float maceMagmaBeta = 2.2f;
-        [Range(0f, 4f)] public float maceMagmaEruptionGain = 1f;
-        [Range(0f, 1f)] public float maceAshFillThreshold = 0.25f;
-        [Range(0f, 1f)] public float maceMagmaFillThreshold = 0.35f;
-        [Range(0f, 2f)] public float maceBioerosionScale = 1f;
 
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
@@ -1124,32 +1099,6 @@ namespace GeneSys.Configuration
             margolusGravityBias = Mathf.Max(0f, margolusGravityBias);
             margolusReposeFriction = Mathf.Max(0.1f, margolusReposeFriction);
             margolusFluidLevelingBias = Mathf.Max(0f, margolusFluidLevelingBias);
-            maceBeta = Mathf.Max(0f, maceBeta);
-            maceFineBeta = Mathf.Max(0f, maceFineBeta);
-            maceGravityGain = Mathf.Max(0f, maceGravityGain);
-            maceSupportGain = Mathf.Max(0f, maceSupportGain);
-            maceReposeGain = Mathf.Max(0f, maceReposeGain);
-            maceSedimentFillThreshold = Mathf.Clamp01(maceSedimentFillThreshold);
-            maceSedimentClearThreshold = Mathf.Clamp(maceSedimentClearThreshold, 0f, maceSedimentFillThreshold);
-            maceMinMass = Mathf.Clamp(maceMinMass, 0.00001f, 0.1f);
-            maceLambda = Mathf.Max(0f, maceLambda);
-            maceEntrainmentScale = Mathf.Max(0f, maceEntrainmentScale);
-            maceRunoffGain = Mathf.Max(0f, maceRunoffGain);
-            maceBedloadGain = Mathf.Max(0f, maceBedloadGain);
-            maceExtractRate = Mathf.Clamp01(maceExtractRate);
-            maceStructuralDeplete = Mathf.Clamp01(maceStructuralDeplete);
-            maceHardCrustAlpha = Mathf.Clamp(maceHardCrustAlpha, 0f, 0.01f);
-            maceWearThreshold = Mathf.Max(0f, maceWearThreshold);
-            maceSoluteBeta = Mathf.Max(0f, maceSoluteBeta);
-            maceSoluteDepositRate = Mathf.Max(0f, maceSoluteDepositRate);
-            maceAshBeta = Mathf.Max(0f, maceAshBeta);
-            maceAshLift = Mathf.Max(0f, maceAshLift);
-            maceAshSettle = Mathf.Max(0f, maceAshSettle);
-            maceMagmaBeta = Mathf.Max(0f, maceMagmaBeta);
-            maceMagmaEruptionGain = Mathf.Max(0f, maceMagmaEruptionGain);
-            maceAshFillThreshold = Mathf.Clamp01(maceAshFillThreshold);
-            maceMagmaFillThreshold = Mathf.Clamp01(maceMagmaFillThreshold);
-            maceBioerosionScale = Mathf.Max(0f, maceBioerosionScale);
         }
     }
 }

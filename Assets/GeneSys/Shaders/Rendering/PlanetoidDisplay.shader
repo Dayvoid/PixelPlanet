@@ -10,7 +10,6 @@ Shader "GeneSys/Planetoid Display"
         _OverlayMode ("Overlay Mode", Int) = 0
         _SolarAngle01 ("Solar Angle", Float) = 0
         _DayNightLightingStrength ("Day Night Lighting Strength", Float) = 0.85
-        _MaceMobileDisplay ("MACE Mobile Display", Float) = 0
     }
 
     SubShader
@@ -57,7 +56,6 @@ Shader "GeneSys/Planetoid Display"
             Texture2DArray<float4> _TreeTex;
             Texture2D<float2> _AcousticTex;
             Texture2D<float> _LightTex;
-            Texture2DArray<float> _MobileMassTex;
             StructuredBuffer<float4> _ClimateState;
             int _ClimateBins;
             StructuredBuffer<float4> _GeodynamicsState;
@@ -74,7 +72,6 @@ Shader "GeneSys/Planetoid Display"
             float _SolarAngle01;
             float _DayNightLightingStrength;
             float _VaporCapacityScale;
-            float _MaceMobileDisplay;
 
             float DisplayVaporSaturation(float temperature)
             {
@@ -340,9 +337,6 @@ Shader "GeneSys/Planetoid Display"
                         color = lerp(color, float3(0.85, 0.90, 0.95), saturate((relativeHumidity - 0.75) * 2.2) * 0.45);
                     if (!atmosphereCarrier && state.z > 0.02 && state.z < 0.55 && material != 9u && material != 10u)
                         color = lerp(color, float3(0.70, 0.86, 0.96), saturate(state.z * 2.0) * 0.28);
-                    float mobileSediment = _MaceMobileDisplay > 0.5 ? (max(0.0, _MobileMassTex.Load(int4(cell, 0, 0))) + max(0.0, _MobileMassTex.Load(int4(cell, 1, 0)))) : 0.0;
-                    if (mobileSediment > 0.05 && (material == 1u || material == 0u || material == 7u || material == 15u))
-                        color = lerp(color, float3(0.62, 0.52, 0.28), saturate(mobileSediment) * 0.65);
 
                     float soot = saturate(combustion.z);
                     if (soot > 0.02)
@@ -537,13 +531,6 @@ Shader "GeneSys/Planetoid Display"
                     }
                     else if (material == 134u || material == 135u)
                         color = float3(0.55, 0.12, 0.12);
-                }
-                else if (_OverlayMode == 27)
-                {
-                    float coarse = saturate(_MobileMassTex.Load(int4(cell, 0, 0)));
-                    float fine = saturate(_MobileMassTex.Load(int4(cell, 1, 0)));
-                    float structural = saturate(_MobileMassTex.Load(int4(cell, 5, 0)));
-                    color = float3(coarse, fine, structural);
                 }
                 else if (_OverlayMode == 28)
                 {

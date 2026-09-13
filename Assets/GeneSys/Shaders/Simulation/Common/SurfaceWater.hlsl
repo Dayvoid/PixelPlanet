@@ -10,28 +10,16 @@
 // it holds, or the face exchange stops conserving mass. Include this after the file's
 // C/S/M/D accessors so both compute shaders resolve to the exact same code.
 
-float SurfaceSedimentFill(int2 cell)
-{
-#ifdef MACE_MOBILE_DECLARED
-    // Shoreline only. Air state.z stays cloud condensate and must not be treated as film.
-    if (_MaceFlags.z < 0.5) return 0.0;
-    cell = C(cell);
-    return max(0.0, _MobileMassRead.Load(int4(cell, 0, 0))) + max(0.0, _MobileMassRead.Load(int4(cell, 1, 0)));
-#else
-    return 0.0;
-#endif
-}
-
 bool IsAtmosphereCell(int2 cell, uint material)
 {
     float category = D(material).metadata.x;
-    if (category == 1.0 || material == 11u) return true;
+    if (category == 1.0) return true;
     return material == 0u && Radius01(cell.y, _GridSize.y) >= _AtmosphereStartRadius;
 }
 
 bool IsOpenCarrier(uint material)
 {
-    return material == 0u || material == 1u || material == 11u || D(material).metadata.x == 1.0;
+    return material == 0u || material == 1u || D(material).metadata.x == 1.0;
 }
 
 // A cell that carries surface film and can hand it to an open cell above.
@@ -39,7 +27,6 @@ bool IsOpenCarrier(uint material)
 bool IsFilmSubstrate(int2 cell, uint material)
 {
     if (IsAtmosphereCell(cell, material)) return false;
-    if (SurfaceSedimentFill(cell) > 1e-4) return true;
     return material != 0u && material != 9u && material != 10u;
 }
 
@@ -154,7 +141,7 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
             }
         }
         temperature = volume > 1e-6 ? heat / volume : 15.0;
-        head = (float)(bedY + 1) + volume + (bedY >= 0 ? SurfaceSedimentFill(int2(x, bedY)) : 0.0);
+        head = (float)(bedY + 1) + volume;
         return;
     }
 
@@ -167,7 +154,7 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
         volume = max(0.0, state.z);
         temperature = state.x;
     }
-    head = (float)(bedY + 1) + volume + SurfaceSedimentFill(bed);
+    head = (float)(bedY + 1) + volume;
 }
 
 void PartitionSurfaceVolume(float volume, bool canFilm, out int cells, out float remainder)

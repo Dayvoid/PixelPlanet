@@ -572,11 +572,15 @@ namespace GeneSys.Tests
                     PaintWater(host, xx, yy, -100f);
                     PaintGroundwater(host, xx, yy, -100f);
                     PaintVapor(host, xx, yy, -100f);
+                    PaintHeat(host, xx, yy, -500f);
                 }
             }
             Paint(host, x, y + 1, MaterialIds.Ash);
             PaintVapor(host, x, y + 1, -100f);
+            PaintHeat(host, x, y + 1, -500f);
             PaintVapor(host, x, y, 0.8f);
+            PaintHeat(host, x, y, -500f);
+
             yield return Step(host, 1);
 
             int ashCount = 0;
@@ -594,7 +598,10 @@ namespace GeneSys.Tests
                     for (int yy = y - 1; yy <= y + 2; yy++)
                     {
                         int i = yy * width + xx;
-                        if (mats[i] == MaterialIds.Ash) ashCount++;
+                        if (mats[i] == MaterialIds.Ash)
+                        {
+                            ashCount++;
+                        }
                         boxWater += Math.Max(0d, states[i].z) + Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
                         boxVapor += Math.Max(0d, aux[i].x);
                     }

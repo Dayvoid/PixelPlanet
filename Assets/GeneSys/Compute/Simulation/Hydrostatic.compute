@@ -7,7 +7,6 @@
 
 Texture2D<uint> _MaterialRead;
 Texture2D<float4> _StateRead;
-Texture2DArray<float> _MobileMassRead;
 RWStructuredBuffer<float4> _WaterColumns;
 RWStructuredBuffer<float4> _WaterFaceFlux;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
@@ -20,14 +19,12 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _HydrologyC; // runoffRate, pondingRate, fieldCapacityFraction, unused
 float4 _WeatherC; // vaporPressureScale, solarAngle01, phaseHysteresis, magmaViscosity
-float4 _MaceFlags; // sediment, entrainment, shoreline, solute
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
 
-#define MACE_MOBILE_DECLARED 1
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 
 [numthreads(64, 1, 1)]

@@ -1,6 +1,5 @@
 using GeneSys.AI;
 using GeneSys.Configuration;
-using GeneSys.Integration;
 using GeneSys.Materials;
 using GeneSys.Rendering;
 using GeneSys.Simulation.Gpu;
@@ -12,7 +11,7 @@ using UnityEngine;
 
 namespace GeneSys.Simulation
 {
-    public sealed class SimulationHost : MonoBehaviour, IWorldSimulationBridge
+    public sealed class SimulationHost : MonoBehaviour
     {
         [Header("Data")]
         [SerializeField] private SimulationConfig config;
@@ -33,7 +32,6 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader wasp;
         [SerializeField] private ComputeShader combustion;
         [SerializeField] private ComputeShader storm;
-        [SerializeField] private ComputeShader maceTransport;
         [SerializeField] private ComputeShader climate;
         [SerializeField] private ComputeShader geodynamics;
         [SerializeField] private ComputeShader margolusTransport;
@@ -78,7 +76,6 @@ namespace GeneSys.Simulation
         public RenderTexture WaspField => Resources?.WaspRead;
         public RenderTexture PropaguleField => Resources?.PropaguleRead;
         public RenderTexture AcousticField => Resources?.AcousticRead;
-        public RenderTexture MobileMassField => Resources?.MobileMassRead;
 
         private void Start()
         {
@@ -118,8 +115,6 @@ namespace GeneSys.Simulation
 #if UNITY_EDITOR
             if (hydrostatic == null)
                 hydrostatic = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrostatic.compute");
-            if (maceTransport == null)
-                maceTransport = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/MaceTransport.compute");
             if (climate == null)
                 climate = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Climate.compute");
             if (geodynamics == null)
@@ -129,7 +124,7 @@ namespace GeneSys.Simulation
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree, maceTransport, climate, geodynamics, margolusTransport);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, grass, combustion, storm, wasp, plantResources, tree, climate, geodynamics, margolusTransport);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();

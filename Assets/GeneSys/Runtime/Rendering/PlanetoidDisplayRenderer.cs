@@ -180,11 +180,6 @@ namespace GeneSys.Rendering
             if (config != null)
             {
                 displayMaterial.SetFloat("_VaporCapacityScale", config.vaporCapacityScale);
-                displayMaterial.SetFloat("_MaceMobileDisplay", (config.useLegacyTransport && (config.maceSedimentPilot || config.maceEntrainment)) ? 1f : 0f);
-            }
-            else
-            {
-                displayMaterial.SetFloat("_MaceMobileDisplay", 0f);
             }
         }
 
@@ -205,7 +200,6 @@ namespace GeneSys.Rendering
             displayMaterial.SetTexture("_TreeTex", resources.TreeRead);
             displayMaterial.SetTexture("_AcousticTex", resources.AcousticRead);
             displayMaterial.SetTexture("_LightTex", resources.LightField);
-            displayMaterial.SetTexture("_MobileMassTex", resources.MobileMassRead);
             if (resources.ClimateState != null)
                 displayMaterial.SetBuffer("_ClimateState", resources.ClimateState);
             displayMaterial.SetInt("_ClimateBins", config != null ? ClimateGrid.ClampBinCount(config.climateBinCount) : ClimateGrid.DefaultBins);
