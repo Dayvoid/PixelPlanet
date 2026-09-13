@@ -26,6 +26,23 @@ Suggested entry template:
 
 ---
 
+## 2026-09-13 — Transition from MaCE to MaCA (Affinity-Driven Margolus CA) material transport and surface interface rework
+
+- **Systems:** MaCA (Margolus Cellular Automata) discrete material transport, Legacy MaCE bridging, Hydrology / Geodynamics surface interface, World generation stability, Rendering / PlanetoidDisplay.
+- **What changed:**
+  - Transitioned the simulation from continuous fractional flux advection (MaCE) to exact, discrete $2 \times 2$ block partition cellular automata (MaCA) in `MargolusTransport.compute` and `MargolusCommon.hlsl`.
+  - Implemented Hamiltonian energy minimization across all candidate $2 \times 2$ permutations (Identity, Vertical Swap, Horizontal Swap, Diagonal Swaps, Rotations, Diagonal Projections) driven by gravity, momentum, and pairwise material affinity.
+  - Implemented polar metric aspect ratio compensation ($\gamma(y) = \frac{2\pi \cdot \text{Radius}(y) \cdot N_y}{N_x}$) ensuring physically consistent, altitude-invariant angles of repose across standard polar grids.
+  - Added toroidal seam wrapping modulo grid width across the $x = 0 \leftrightarrow x = W - 1$ boundary, eliminating edge collapse or boundary shearing.
+  - Integrated stress-to-sediment detachment in `Hydrology.compute` (`aux.w > 1.0` detaches into mobile Sediment ID 8) and locked deep bedrock beneath standing liquid bodies.
+  - Retuned world generation with pre-relaxed talus aprons, exposed crystalline granite cliff faces, and continental shelf marine sedimentation.
+  - Recalibrated surface granular collapse envelopes (Soil, Clay, Sediment), preventing unnatural sheer vertical columns and needles from freezing on polar terrain.
+  - Resolved "ghost sediment" visual artifact by decoupling legacy continuous mobile mass rendering (`_MaceMobileDisplay` in `PlanetoidDisplay.shader` and `PlanetoidDisplayRenderer.cs`), ensuring discrete Air/Soil cells vacated by sediment do not retain brown continuous tinting.
+  - Added runtime legacy compatibility toggles (`useLegacyTransport`) in `SimulationConfig.cs` and `GpuPassScheduler.cs`, automatically clearing continuous mobile mass buffers when switching to MaCA and re-seeding when switching back.
+  - Authored full test coverage: `MargolusContractTests` (EditMode), `MargolusPrototypeTests` (PlayMode), `MargolusMetricTests` (PlayMode), `MargolusGeoInterfaceTests` (PlayMode), and `MargolusWorldGenStabilityTests` (PlayMode).
+- **Why/impact:** Eliminates fractional mass dissipation, float rounding drift, and advective blur inherent in continuous Euler flux models. Guarantees exact, discrete pixel conservation ($N(t) \equiv N(0)$) while delivering natural granular talus slopes, dynamic slope collapse, and stable bedrock foundations.
+- **Evidence:** `Assets/GeneSys/Compute/Simulation/MargolusTransport.compute`, `Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl`, `Assets/GeneSys/Tests/EditMode/MargolusContractTests.cs`, `Assets/GeneSys/Tests/PlayMode/Margolus*.cs`, `Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs`, `Assets/GeneSys/Runtime/Rendering/PlanetoidDisplayRenderer.cs`, `Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader`.
+
 ## 2026-09-11 — Climate + MaCE integration and AI crew iteration
 
 - **Systems:** Climate layer, MaCE transport, AI crew tooling, planning docs
