@@ -45,12 +45,17 @@ namespace GeneSys.Tests
             Assert.That(config.volcanicReleaseFraction, Is.LessThanOrEqualTo(0.25f));
             Assert.That(config.tectonicEventFootprint, Is.LessThanOrEqualTo(0.1f));
             Assert.That(config.tectonicMaxConcurrentEvents, Is.EqualTo(2));
+            Assert.That(config.tectonicKinematicCoupling, Is.EqualTo(0.15f).Within(0.0001f));
+            Assert.That(config.tectonicUpliftScale, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(config.tectonicDisplacementScale, Is.EqualTo(1f).Within(0.0001f));
             Assert.That(config.eruptionDriveScale, Is.InRange(0.2f, 0.8f));
             config.tectonicReleaseFraction = 0.9f;
             config.geodynamicsAngularBins = 4;
+            config.tectonicKinematicCoupling = 2f;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
             Assert.That(config.tectonicReleaseFraction, Is.LessThanOrEqualTo(0.25f));
             Assert.That(config.geodynamicsAngularBins, Is.InRange(16, 128));
+            Assert.That(config.tectonicKinematicCoupling, Is.InRange(0f, 1f));
             Object.DestroyImmediate(config);
         }
 
@@ -104,6 +109,11 @@ namespace GeneSys.Tests
             Assert.That(shader, Is.Not.Null);
             foreach (string kernel in new[] { "InitializeFaults", "AggregateInterior", "StepGeodynamics", "SelectEvents", "CommitEvent" })
                 Assert.That(shader.FindKernel(kernel), Is.GreaterThanOrEqualTo(0), kernel);
+
+            ComputeShader geology = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Geology.compute");
+            Assert.That(geology, Is.Not.Null);
+            foreach (string kernel in new[] { "TectonicDisplacement", "TectonicVertical" })
+                Assert.That(geology.FindKernel(kernel), Is.GreaterThanOrEqualTo(0), kernel);
         }
 
         [Test]
@@ -111,6 +121,8 @@ namespace GeneSys.Tests
         {
             string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
             Assert.That(scheduler, Does.Contain("DispatchGeodynamics"));
+            Assert.That(scheduler, Does.Contain("DispatchTectonicKinematics"));
+            Assert.That(scheduler, Does.Contain("FindKernel(\"TectonicVertical\")"));
             Assert.That(scheduler, Does.Contain("if (!config.maceMagma)"));
             Assert.That(scheduler, Does.Contain("if (!config.maceAsh)"));
             Assert.That(scheduler, Does.Contain("CoreHeatSource"));
@@ -122,11 +134,15 @@ namespace GeneSys.Tests
             Assert.That(geology, Does.Contain("Geodynamics.hlsl"));
             Assert.That(geology, Does.Contain("CoreHeatSource"));
             Assert.That(geology, Does.Contain("GeodynamicsDikeNucleation"));
+            Assert.That(geology, Does.Contain("TectonicDisplacement"));
+            Assert.That(geology, Does.Contain("TectonicVertical"));
             Assert.That(geology, Does.Not.Contain("weakness > 0.4 && (overpressure > 0.28"));
             Assert.That(geology, Does.Not.Contain("if (_MaceExtra.y > 0.5)"));
 
             string geoHlsl = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/Geodynamics.hlsl");
             Assert.That(geoHlsl, Does.Contain("GeodynamicsDikeNucleation"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsVerticalDrive"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsAngularDrive"));
             Assert.That(geoHlsl, Does.Not.Contain("GeodynamicsFaultWeakness(theta, radius01) * 0.55"));
 
             string hydrology = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute");

@@ -367,7 +367,11 @@ namespace GeneSys.Simulation.Gpu
             }
 
             if (config.geodynamicsLayerEnable && Due(config.geodynamicsPeriodTicks))
-                DispatchGeodynamics(CadenceDt(deltaTime, config.geodynamicsPeriodTicks));
+            {
+                float geoDt = CadenceDt(deltaTime, config.geodynamicsPeriodTicks);
+                DispatchGeodynamics(geoDt);
+                DispatchTectonicKinematics(geoDt);
+            }
 
             if (config.coreHeatRate > 0f
                 || (config.corePulsePeriodTicks > 0 && config.corePulseHeat > 0f))
@@ -883,6 +887,16 @@ namespace GeneSys.Simulation.Gpu
             geodynamicsInit = false;
         }
 
+        private void DispatchTectonicKinematics(float deltaTime)
+        {
+            if (geology == null || config.tectonicKinematicCoupling <= 0f)
+                return;
+            if (geology.HasKernel("TectonicDisplacement"))
+                DispatchPass(geology, geology.FindKernel("TectonicDisplacement"), deltaTime);
+            if (geology.HasKernel("TectonicVertical"))
+                DispatchPass(geology, geology.FindKernel("TectonicVertical"), deltaTime);
+        }
+
         private void DispatchGeodynamics(float deltaTime, bool init = false)
         {
             if (geodynamics == null || resources.GeodynamicsStateRead == null)
@@ -992,6 +1006,13 @@ namespace GeneSys.Simulation.Gpu
                 config.tectonicSurfaceCoupling,
                 config.volcanicReleaseThreshold,
                 config.volcanicReleaseFraction));
+            shader.SetVector("_GeodynamicsK", new Vector4(
+                config.tectonicKinematicCoupling,
+                config.tectonicUpliftScale,
+                config.tectonicConvergenceScale,
+                config.tectonicDisplacementScale));
+            shader.SetVector("_GeodynamicsL", new Vector4(
+                config.tectonicCoseismicScale, 0f, 0f, 0f));
             shader.SetVector("_Volcanic", new Vector4(
                 config.extrusionRate,
                 config.volcanicCoolingRate,

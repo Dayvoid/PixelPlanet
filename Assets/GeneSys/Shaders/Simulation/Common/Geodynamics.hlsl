@@ -18,6 +18,8 @@ float4 _GeodynamicsA; // period, convection, pressureBuild, pressureLeakage
 float4 _GeodynamicsB; // heatCoupling, strainGain, strainTransfer, faultHealing
 float4 _GeodynamicsC; // earthquakeThreshold, releaseFraction, footprint, cooldownTicks
 float4 _GeodynamicsD; // maxConcurrent, surfaceCoupling, volcanicThreshold, volcanicReleaseFraction
+float4 _GeodynamicsK; // kinematicCoupling, upliftScale, convergenceScale, displacementScale
+float4 _GeodynamicsL; // coseismicScale, unused
 #ifndef GENESYS_VOLCANIC_DECLARED
 #define GENESYS_VOLCANIC_DECLARED
 float4 _Volcanic; // extrusionRate, coolingRate, magmaViscosity, volcanicSurfaceCoupling
@@ -229,6 +231,61 @@ float GeodynamicsSeedFault(int theta, float radius01, float faultCount)
     float wave = abs(frac(angular * count + wander + Hash01((uint)theta * 509u + (uint)_Seed) * 0.15) - 0.5);
     float band = saturate((0.035 - wave) * 28.0);
     return band * step(0.08, radius01) * step(radius01, _AtmosphereStartRadius + 0.02);
+}
+
+float GeodynamicsAngularDrive(int theta, float radius01)
+{
+    if (_GeodynamicsFlags.x < 0.5)
+        return 0.0;
+    float2 flow = GeodynamicsFlow(theta, radius01);
+    float seismic = GeodynamicsSeismicEnvelope(theta, radius01);
+    float weakness = GeodynamicsFaultWeakness(theta, radius01);
+    float slip = seismic * weakness * max(0.0, _GeodynamicsL.x);
+    float polarity = flow.x == 0.0 ? 1.0 : sign(flow.x);
+    return clamp(flow.x + slip * polarity, -4.0, 4.0);
+}
+
+float GeodynamicsConvergence(int theta, float radius01)
+{
+    if (_GeodynamicsFlags.x < 0.5)
+        return 0.0;
+    int a0 = GeodynamicsAngularBin(theta);
+    int r0 = GeodynamicsRadialBin(radius01);
+    float left = GeodynamicsKinematics(a0 - 1, r0).x;
+    float right = GeodynamicsKinematics(a0 + 1, r0).x;
+    return clamp(left - right, -4.0, 4.0);
+}
+
+float GeodynamicsVerticalDrive(int theta, float radius01)
+{
+    if (_GeodynamicsFlags.x < 0.5)
+        return 0.0;
+    float2 flow = GeodynamicsFlow(theta, radius01);
+    float convergence = GeodynamicsConvergence(theta, radius01);
+    float overpressure = GeodynamicsOverpressure(theta, radius01);
+    float seismic = GeodynamicsSeismicEnvelope(theta, radius01);
+    float upliftScale = max(0.0, _GeodynamicsK.y);
+    float convergenceScale = max(0.0, _GeodynamicsK.z);
+    float coseismic = max(0.0, _GeodynamicsL.x);
+    float drive = upliftScale * (flow.y + overpressure)
+        + convergenceScale * convergence
+        + coseismic * seismic;
+    return clamp(drive, -8.0, 8.0);
+}
+
+float GeodynamicsKinematicChance(float drive)
+{
+    float coupling = saturate(_GeodynamicsK.x);
+    float strength = abs(drive) * coupling;
+    if (strength < 0.25)
+        return 0.0;
+    return saturate((strength - 0.25) * 2.0 + 1e-4);
+}
+
+float GeodynamicsKinematicGate(int theta)
+{
+    int bin = GeodynamicsAngularBin(theta);
+    return Hash01((uint)bin * 73856093u + (uint)_Tick * 19349663u + (uint)_Seed);
 }
 
 #endif

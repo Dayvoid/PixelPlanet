@@ -195,6 +195,11 @@ namespace GeneSys.Tests
             host.Config.tectonicCooldownTicks = 240;
             host.Config.tectonicMaxConcurrentEvents = 2;
             host.Config.tectonicSurfaceCoupling = 0.18f;
+            host.Config.tectonicKinematicCoupling = 0.15f;
+            host.Config.tectonicUpliftScale = 1f;
+            host.Config.tectonicConvergenceScale = 1f;
+            host.Config.tectonicDisplacementScale = 1f;
+            host.Config.tectonicCoseismicScale = 0.35f;
             host.Config.extrusionRate = 0.4f;
             host.Config.volcanicReleaseThreshold = 0.78f;
             host.Config.volcanicReleaseFraction = 0.2f;
@@ -207,6 +212,8 @@ namespace GeneSys.Tests
             host.Config.validationIntervalTicks = 1000;
             host.Config.slowPassInterval = 4;
             host.Config.thermalRate = 0.35f;
+            host.Config.coreHeatRate = 0.15f;
+            host.Config.volcanicCoolingRate = 0.15f;
         }
 
         private static void QuietSurface(SimulationHost host)
@@ -217,6 +224,7 @@ namespace GeneSys.Tests
             host.Config.erosionRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.precipitationRate = 0f;
+            host.Config.tectonicKinematicCoupling = 0f;
             host.Config.validationIntervalTicks = 100000;
         }
 
@@ -769,6 +777,310 @@ namespace GeneSys.Tests
             for (int i = 0; i < materials.Length; i++)
                 if (materials[i] == id) count++;
             return count;
+        }
+
+        private static int LidSurfaceY(uint[] materials, int x, int width, int height)
+        {
+            for (int y = height - 1; y >= 0; y--)
+            {
+                uint id = materials[y * width + x];
+                if (id == MaterialIds.Rock || id == MaterialIds.Basalt || id == MaterialIds.Soil
+                    || id == MaterialIds.Sediment || id == MaterialIds.Ice || id == MaterialIds.Metal
+                    || id == MaterialIds.Limestone || id == MaterialIds.Clay)
+                    return y;
+            }
+            return -1;
+        }
+
+        private static void RestoreTransport(SimulationHost host, bool margolus, bool legacy)
+        {
+            host.Config.useMargolusTransport = margolus;
+            host.Config.useLegacyTransport = legacy;
+        }
+
+        private static void ConfigureKinematics(SimulationHost host)
+        {
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.geodynamicsPeriodTicks = 1;
+            host.Config.geodynamicsConvectionStrength = 0f;
+            host.Config.geodynamicsHeatCoupling = 0f;
+            host.Config.geodynamicsPressureBuildRate = 0f;
+            host.Config.tectonicStrainGain = 0f;
+            host.Config.tectonicEarthquakeThreshold = 2f;
+            host.Config.volcanicReleaseThreshold = 2f;
+            host.Config.hydrothermalReleaseThreshold = 2f;
+            host.Config.tectonicKinematicCoupling = 1f;
+            host.Config.tectonicUpliftScale = 4f;
+            host.Config.tectonicConvergenceScale = 4f;
+            host.Config.tectonicDisplacementScale = 4f;
+            host.Config.tectonicCoseismicScale = 0f;
+            host.Config.useMargolusTransport = false;
+            host.Config.useLegacyTransport = false;
+            host.Config.volcanicCoolingRate = 0f;
+            host.Config.slowPassInterval = 1000;
+            host.Config.coreHeatRate = 0f;
+            host.Config.thermalRate = 0f;
+            QuietSurface(host);
+            host.Config.tectonicKinematicCoupling = 1f;
+        }
+
+        private static void ForceKinematics(SimulationHost host, float flowX, float flowY, float overpressure = 0f)
+        {
+            int angularBins = host.Config.geodynamicsAngularBins;
+            int radialBins = host.Config.geodynamicsRadialBins;
+            var state = new Vector4[GeodynamicsGrid.StateBufferCount()];
+            host.Resources.GeodynamicsStateRead.GetData(state);
+            for (int a = 0; a < angularBins; a++)
+            {
+                for (int r = 0; r < radialBins; r++)
+                {
+                    int res = GeodynamicsGrid.StateIndex(a, r, GeodynamicsGrid.SlotReservoir, angularBins, radialBins);
+                    int kin = GeodynamicsGrid.StateIndex(a, r, GeodynamicsGrid.SlotKinematics, angularBins, radialBins);
+                    Vector4 reservoir = state[res];
+                    reservoir.x = 0f;
+                    reservoir.y = overpressure;
+                    reservoir.z = 0f;
+                    reservoir.w = 0f;
+                    state[res] = reservoir;
+                    Vector4 kinematics = state[kin];
+                    kinematics.x = flowX;
+                    kinematics.y = flowY;
+                    state[kin] = kinematics;
+                }
+            }
+            host.Resources.GeodynamicsStateRead.SetData(state);
+            host.Resources.GeodynamicsStateWrite.SetData(state);
+        }
+
+        private static void PaintLidColumn(SimulationHost host, int x, int y0)
+        {
+            int height = host.Grid.radialResolution;
+            for (int y = Mathf.Max(1, y0 - 8); y < y0; y++)
+                Paint(host, x, y, MaterialIds.Mantle);
+            for (int y = y0; y < y0 + 6 && y < height; y++)
+                Paint(host, x, y, MaterialIds.Rock);
+            for (int y = y0 + 6; y < height; y++)
+                Paint(host, x, y, MaterialIds.Air);
+        }
+
+        [UnityTest]
+        public IEnumerator ForcedUpliftRaisesSolidEdgeAndKeepsCoreCount()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 8801;
+            bool margolus = host.Config.useMargolusTransport;
+            bool legacy = host.Config.useLegacyTransport;
+            ConfigureKinematics(host);
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            PaintLidColumn(host, x, y0);
+            yield return Step(host, 1);
+
+            int surfaceBefore = 0;
+            int coreBefore = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                surfaceBefore = LidSurfaceY(mats, x, width, height);
+                coreBefore = Count(mats, MaterialIds.Core);
+            });
+            Assert.That(surfaceBefore, Is.GreaterThan(0));
+
+            for (int i = 0; i < 10; i++)
+            {
+                ForceKinematics(host, 0f, 2f);
+                yield return Step(host, 1);
+            }
+
+            yield return ReadMaterials(host, mats =>
+            {
+                int surfaceAfter = LidSurfaceY(mats, x, width, height);
+                Assert.That(surfaceAfter, Is.GreaterThan(surfaceBefore));
+                Assert.That(Count(mats, MaterialIds.Core), Is.EqualTo(coreBefore));
+            });
+            RestoreDefaults(host);
+            RestoreTransport(host, margolus, legacy);
+        }
+
+        [UnityTest]
+        public IEnumerator ForcedSubsidenceLowersSolidEdge()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 8802;
+            bool margolus = host.Config.useMargolusTransport;
+            bool legacy = host.Config.useLegacyTransport;
+            ConfigureKinematics(host);
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            PaintLidColumn(host, x, y0);
+            yield return Step(host, 1);
+
+            int surfaceBefore = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                Assert.That(mats[(y0 - 1) * width + x], Is.EqualTo(MaterialIds.Mantle));
+                Assert.That(mats[(y0 + 5) * width + x], Is.EqualTo(MaterialIds.Rock));
+                Assert.That(mats[(y0 + 6) * width + x], Is.EqualTo(MaterialIds.Air));
+                surfaceBefore = LidSurfaceY(mats, x, width, height);
+            });
+            Assert.That(surfaceBefore, Is.EqualTo(y0 + 5));
+
+            for (int i = 0; i < 8; i++)
+            {
+                ForceKinematics(host, 0f, -2f);
+                yield return Step(host, 1);
+            }
+
+            yield return ReadMaterials(host, mats =>
+            {
+                int surfaceAfter = LidSurfaceY(mats, x, width, height);
+                Assert.That(mats[surfaceBefore * width + x], Is.Not.EqualTo(MaterialIds.Rock),
+                    "Subsidence should vacate the old surface cell");
+                Assert.That(surfaceAfter, Is.LessThan(surfaceBefore));
+            });
+            RestoreDefaults(host);
+            RestoreTransport(host, margolus, legacy);
+        }
+
+        [UnityTest]
+        public IEnumerator ForcedAngularFlowShiftsLidMarkerAndWrapsSeam()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 8803;
+            bool margolus = host.Config.useMargolusTransport;
+            bool legacy = host.Config.useLegacyTransport;
+            ConfigureKinematics(host);
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width - 2;
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            for (int dx = -4; dx <= 4; dx++)
+            {
+                int px = (x + dx + width) % width;
+                Paint(host, px, y0 - 1, MaterialIds.Mantle);
+                Paint(host, px, y0, MaterialIds.Rock);
+                Paint(host, px, y0 + 1, MaterialIds.Rock);
+                Paint(host, px, y0 + 2, MaterialIds.Air);
+            }
+            Paint(host, x, y0 + 1, MaterialIds.Metal);
+            yield return Step(host, 1);
+
+            int markerBefore = -1;
+            yield return ReadMaterials(host, mats =>
+            {
+                for (int dx = -8; dx <= 8; dx++)
+                {
+                    int px = (x + dx + width) % width;
+                    if (mats[(y0 + 1) * width + px] == MaterialIds.Metal)
+                        markerBefore = px;
+                }
+            });
+            Assert.That(markerBefore, Is.EqualTo(x));
+
+            for (int i = 0; i < 12; i++)
+            {
+                ForceKinematics(host, 2f, 0f);
+                yield return Step(host, 1);
+            }
+
+            yield return ReadMaterials(host, mats =>
+            {
+                int markerAfter = -1;
+                for (int px = 0; px < width; px++)
+                {
+                    if (mats[(y0 + 1) * width + px] == MaterialIds.Metal)
+                    {
+                        markerAfter = px;
+                        break;
+                    }
+                }
+                Assert.That(markerAfter, Is.GreaterThanOrEqualTo(0));
+                int delta = (markerAfter - markerBefore + width) % width;
+                Assert.That(delta, Is.GreaterThan(0));
+                Assert.That(delta, Is.LessThan(width / 2));
+            });
+            RestoreDefaults(host);
+            RestoreTransport(host, margolus, legacy);
+        }
+
+        [UnityTest]
+        public IEnumerator KinematicUpliftDoesNotStealWaterOrMagma()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 8804;
+            bool margolus = host.Config.useMargolusTransport;
+            bool legacy = host.Config.useLegacyTransport;
+            ConfigureKinematics(host);
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int waterX = width / 3;
+            int magmaX = (2 * width) / 3;
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            PaintLidColumn(host, waterX, y0);
+            PaintLidColumn(host, magmaX, y0);
+            yield return Step(host, 1);
+            Paint(host, waterX - 1, y0 + 6, MaterialIds.Rock);
+            Paint(host, waterX + 1, y0 + 6, MaterialIds.Rock);
+            Paint(host, waterX, y0 + 6, MaterialIds.Water);
+            PaintField(host, waterX, y0 + 6, 2f, 1f);
+            Paint(host, magmaX, y0 + 2, MaterialIds.Magma);
+            PaintField(host, magmaX, y0 + 2, 1f, 1200f);
+            yield return Step(host, 1);
+
+            int waterSurfaceBefore = 0;
+            int magmaSurfaceBefore = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                waterSurfaceBefore = LidSurfaceY(mats, waterX, width, height);
+                magmaSurfaceBefore = LidSurfaceY(mats, magmaX, width, height);
+                Assert.That(mats[(y0 + 6) * width + waterX], Is.EqualTo(MaterialIds.Water));
+                Assert.That(mats[(y0 + 2) * width + magmaX], Is.EqualTo(MaterialIds.Magma));
+            });
+
+            for (int i = 0; i < 8; i++)
+            {
+                ForceKinematics(host, 0f, 2f);
+                yield return Step(host, 1);
+            }
+
+            yield return ReadMaterialsAndAux(host, (mats, aux) =>
+            {
+                uint waterCell = mats[(y0 + 6) * width + waterX];
+                Assert.That(waterCell, Is.Not.EqualTo(MaterialIds.Rock).And.Not.EqualTo(MaterialIds.Soil));
+                Assert.That(mats[(y0 + 2) * width + magmaX], Is.EqualTo(MaterialIds.Magma));
+                Assert.That(LidSurfaceY(mats, waterX, width, height), Is.EqualTo(waterSurfaceBefore));
+                Assert.That(LidSurfaceY(mats, magmaX, width, height), Is.EqualTo(magmaSurfaceBefore));
+                Assert.That(aux[(y0 + 5) * width + waterX].w, Is.LessThan(0.05f));
+            });
+            RestoreDefaults(host);
+            RestoreTransport(host, margolus, legacy);
         }
     }
 }

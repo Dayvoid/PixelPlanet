@@ -16,6 +16,7 @@ Texture2D<uint> _MaterialRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
+int _Tick;
 int _Seed;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
