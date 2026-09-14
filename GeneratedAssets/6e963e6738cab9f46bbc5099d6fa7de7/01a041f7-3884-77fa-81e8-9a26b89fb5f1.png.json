@@ -1,0 +1,31 @@
+{
+    "asset": "6e963e6738cab9f46bbc5099d6fa7de7",
+    "fileName": "01a041f7-3884-77fa-81e8-9a26b89fb5f1.png",
+    "prompt": "",
+    "negativePrompt": "",
+    "model": "scenario-image-transform",
+    "modelName": "Image Transform",
+    "customSeed": -1,
+    "w3CTraceId": "",
+    "feedback": 0,
+    "refinementMode": "Pixelate",
+    "pixelateTargetSize": 256,
+    "pixelateKeepImageSize": true,
+    "pixelatePixelBlockSize": 8,
+    "pixelatePixelGridSize": 32,
+    "pixelateMode": 0,
+    "pixelateOutlineThickness": 0,
+    "doodles": {
+        "m_Items": []
+    },
+    "upscaleFactor": 0,
+    "dimensions": {
+        "width": 0,
+        "height": 0
+    },
+    "spriteSheet": false,
+    "duration": 0.0,
+    "dynamicParams": {
+        "serializedData": []
+    }
+}

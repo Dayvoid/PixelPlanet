@@ -1,3 +1,4 @@
+> **SUPERSEDED.** Continuous MaCE transport was never the live path. GeneSys uses discrete Margolus CA (MargolusTransport.compute). Kept as historical design notes only.
 # MaCE Sediment Pilot (v1)
 
 Pressure-test continuous mobile solids transport on soft crust before wider MaCE adoption.

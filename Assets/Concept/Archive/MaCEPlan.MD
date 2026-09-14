@@ -1,3 +1,4 @@
+> **SUPERSEDED.** Continuous MaCE transport was never the live path. GeneSys uses discrete Margolus CA (MargolusTransport.compute). Kept as historical design notes only.
 # MaCE Material Transport Plan
 
 Adopt Mass-Conserving Evolution (MaCE) as GeneSys’s **mobile-phase transport law** for geo / surface / hydro interface dynamics.
