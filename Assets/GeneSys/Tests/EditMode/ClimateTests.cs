@@ -45,6 +45,34 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void InterpBinsBlendsNeighborsAtEdgesAndWraps()
+        {
+            const int width = 24;
+            const int bins = 8;
+            ClimateGrid.InterpBins(1, width, bins, out int center0, out int center1, out float centerT);
+            Assert.That(center0, Is.EqualTo(0));
+            Assert.That(center1, Is.EqualTo(1));
+            Assert.That(centerT, Is.EqualTo(0f).Within(1e-5f));
+
+            ClimateGrid.ThetaRange(1, width, bins, out int start, out _);
+            ClimateGrid.InterpBins(start - 1, width, bins, out int left0, out int left1, out float leftT);
+            ClimateGrid.InterpBins(start, width, bins, out int right0, out int right1, out float rightT);
+            Assert.That(left0, Is.EqualTo(0));
+            Assert.That(left1, Is.EqualTo(1));
+            Assert.That(right0, Is.EqualTo(0));
+            Assert.That(right1, Is.EqualTo(1));
+            Assert.That(rightT, Is.GreaterThan(leftT));
+            Assert.That(leftT, Is.GreaterThan(0f));
+            Assert.That(rightT, Is.LessThan(1f));
+
+            ClimateGrid.InterpBins(0, width, bins, out int wrap0, out int wrap1, out float wrapT);
+            Assert.That(wrap0, Is.EqualTo(bins - 1));
+            Assert.That(wrap1, Is.EqualTo(0));
+            Assert.That(wrapT, Is.GreaterThan(0f));
+            Assert.That(wrapT, Is.LessThan(1f));
+        }
+
+        [Test]
         public void ValidationPresetDisablesClimateLayer()
         {
             var config = ScriptableObject.CreateInstance<SimulationConfig>();
@@ -63,6 +91,10 @@ namespace GeneSys.Tests
             string climate = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Climate.compute");
             Assert.That(climate.Contains("#pragma kernel ClimateAggregateColumns"));
             Assert.That(climate.Contains("#pragma kernel ClimateStep"));
+            string climateHlsl = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/Climate.hlsl");
+            Assert.That(climateHlsl, Does.Contain("ClimateInterpBins"));
+            Assert.That(climateHlsl, Does.Contain("ClimateLerpLand(theta)"));
+            Assert.That(climateHlsl, Does.Contain("ClimateLerpMemory(theta)"));
             Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute").Contains("Climate.hlsl"));
             Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Flora.compute").Contains("Climate.hlsl"));
             Assert.That(File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute").Contains("Climate.hlsl"));

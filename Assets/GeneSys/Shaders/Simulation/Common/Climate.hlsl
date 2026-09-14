@@ -50,6 +50,42 @@ float4 ClimateLandOf(int bin)
     return _ClimateState[bin * 3 + 1];
 }
 
+// Reconstruct coarse fields at a cell center by lerping neighboring bin centers.
+// Nearest-bin injectors put a 1-cell jump in wind/albedo on every bin edge; donor-face
+// vapor/cloud/heat transport then diverges there and etches a dry vertical seam.
+void ClimateInterpBins(int theta, out int bin0, out int bin1, out float t)
+{
+    int bins = ClimateBinCount();
+    int width = max(1, _GridSize.x);
+    theta = WrapTheta(theta, width);
+    float coord = ((float)theta + 0.5) * (float)bins / (float)width - 0.5;
+    float i0f = floor(coord);
+    t = coord - i0f;
+    int i0 = (int)i0f;
+    bin0 = i0 % bins;
+    if (bin0 < 0)
+        bin0 += bins;
+    bin1 = bin0 + 1;
+    if (bin1 >= bins)
+        bin1 = 0;
+}
+
+float4 ClimateLerpMemory(int theta)
+{
+    int bin0, bin1;
+    float t;
+    ClimateInterpBins(theta, bin0, bin1, t);
+    return lerp(ClimateMemoryOf(bin0), ClimateMemoryOf(bin1), t);
+}
+
+float4 ClimateLerpLand(int theta)
+{
+    int bin0, bin1;
+    float t;
+    ClimateInterpBins(theta, bin0, bin1, t);
+    return lerp(ClimateLandOf(bin0), ClimateLandOf(bin1), t);
+}
+
 float4 ClimateSurfaceOf(int bin)
 {
     return ClimateMemoryOf(bin);
@@ -73,7 +109,7 @@ float ClimateSurfaceAbsorb(int theta)
 {
     if (_ClimateFlags.x < 0.5 || _ClimateFlags.w < 0.5)
         return 1.0;
-    float albedo = saturate(ClimateMemoryOf(ClimateBin(theta)).w);
+    float albedo = saturate(ClimateLerpMemory(theta).w);
     return saturate(1.0 - albedo);
 }
 
@@ -81,7 +117,7 @@ float ClimateWindBias(int theta, int shell)
 {
     if (_ClimateFlags.x < 0.5 || _ClimateFlags.z < 0.5)
         return _WeatherI.z;
-    float u = ClimateLandOf(ClimateBin(theta)).x;
+    float u = ClimateLerpLand(theta).x;
     if (shell >= 2)
         u = -u;
     return u;
@@ -91,14 +127,14 @@ float ClimateRoughness(int theta)
 {
     if (_ClimateFlags.x < 0.5 || _ClimateD.x < 0.5)
         return 1.0;
-    return max(1.0, ClimateLandOf(ClimateBin(theta)).y);
+    return max(1.0, ClimateLerpLand(theta).y);
 }
 
 float ClimateBucketScale(int theta)
 {
     if (_ClimateFlags.x < 0.5 || _ClimateD.x < 0.5)
         return 1.0;
-    return max(0.05, ClimateLandOf(ClimateBin(theta)).z);
+    return max(0.05, ClimateLerpLand(theta).z);
 }
 
 float ClimateBucketScaleFace(int thetaA, int thetaB)

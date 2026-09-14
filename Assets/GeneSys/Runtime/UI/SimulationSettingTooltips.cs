@@ -332,9 +332,9 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.climateLayerEnable)] =
                 "Runs the coarse climate pass on a slow cadence. When off, weather uses only the fine pixel stack and climate helpers stay identity.",
             [nameof(SimulationConfig.climatePrevailingInject)] =
-                "Injects per-bin thermal/prevailing wind and the seasonal insolation envelope into fine weather. Off keeps local winds and solar unchanged.",
+                "Injects thermal/prevailing wind and the seasonal insolation envelope into fine weather. Wind is interpolated between bin centers so vapor/cloud transport does not seam at bin edges. Off keeps local winds and solar unchanged.",
             [nameof(SimulationConfig.climateAlbedoFeedback)] =
-                "Lets the coarse ice/snow albedo index scale heating on exposed surfaces. Off leaves LightField absorption as the only shade path.",
+                "Lets the coarse ice/snow albedo index scale heating on exposed surfaces. Absorption is interpolated between bins so heating walls do not sit on bin edges. Off leaves LightField absorption as the only shade path.",
             [nameof(SimulationConfig.climateBiomeFeedback)] =
                 "Aggregates canopy, organics, and ash into roughness and soil bucket scale. Off keeps wind damping and field capacity at their weather/hydrology sliders.",
             [nameof(SimulationConfig.climateBinCount)] =
@@ -352,7 +352,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.climateSeasonalAmplitude)] =
                 "How strongly the seasonal envelope scales incoming light. Zero keeps daily insolation only; higher values deepen summers and winters.",
             [nameof(SimulationConfig.climateThermalWindGain)] =
-                "How strongly neighboring slab temperatures drive a per-bin zonal wind. Higher gain makes monsoon-like flow toward warm sectors.",
+                "How strongly neighboring slab temperatures drive zonal wind. Higher gain makes monsoon-like flow toward warm sectors. Fine-grid wind is interpolated between bins; this slider still sets the contrast, not a wall at each bin edge.",
             [nameof(SimulationConfig.climateBaseAlbedo)] =
                 "Bare-ground reflectance used when ice, canopy, and ash are absent. Higher base albedo cools the climate slab.",
             [nameof(SimulationConfig.climateIceAlbedo)] =

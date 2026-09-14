@@ -36,6 +36,26 @@ namespace GeneSys.Simulation.Climate
             return (int)((long)theta * bins / width);
         }
 
+        public static int WrapBin(int bin, int bins)
+        {
+            bins = ClampBinCount(bins);
+            int wrapped = bin % bins;
+            return wrapped < 0 ? wrapped + bins : wrapped;
+        }
+
+        // Matches Climate.hlsl ClimateInterpBins: lerp neighboring bin centers at a cell center.
+        public static void InterpBins(int theta, int width, int bins, out int bin0, out int bin1, out float t)
+        {
+            bins = ClampBinCount(bins);
+            width = Mathf.Max(1, width);
+            theta = WrapTheta(theta, width);
+            float coord = (theta + 0.5f) * bins / width - 0.5f;
+            int i0 = Mathf.FloorToInt(coord);
+            t = coord - i0;
+            bin0 = WrapBin(i0, bins);
+            bin1 = WrapBin(i0 + 1, bins);
+        }
+
         public static void ThetaRange(int bin, int width, int bins, out int start, out int endExclusive)
         {
             bins = ClampBinCount(bins);
