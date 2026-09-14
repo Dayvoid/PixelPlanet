@@ -644,6 +644,11 @@ bool PrecipitationAirReceiver(int2 dest, uint destMat)
     return IsAtmosphereCell(dest, destMat) && IsOpenCarrier(destMat) && destMat != 9u && destMat != 10u;
 }
 
+bool PrecipitationClearAirDest(int2 dest, uint destMat)
+{
+    return PrecipitationAirReceiver(dest, destMat) && max(0.0, S(dest).z) <= PRECIP_CLOUD_BASE;
+}
+
 int2 CloudPrecipReceiver(int2 source)
 {
     int2 down = source + int2(0, -1);
@@ -654,10 +659,10 @@ int2 CloudPrecipReceiver(int2 source)
     bool frozen = LiquidPixelId(S(source).x, max(0.001, _WeatherC.z)) == 10u;
     int dx = abs(wind) > 0.12 ? (wind > 0.0 ? 1 : -1)
            : (frozen && h < 0.5 ? -1 : 1);
-    bool downAir = PrecipitationAirReceiver(down, downMat);
-    // Sidestep when the shaft is blocked. Frozen condensate also fans while the
-    // shaft is clear so snow/ice does not stay single-file; rain does not.
-    bool trySide = !downOk || (frozen && downAir && h < 0.38);
+    // Sidestep only when the shaft is blocked. Fanning into clear air while the
+    // column is still cloudy stamped a sheet of Ice/Water pixels that sat in the
+    // sky as frozen cloud.
+    bool trySide = !downOk || (abs(wind) > 0.12 && PrecipitationClearAirDest(down, downMat));
     if (trySide)
     {
         [unroll]
@@ -691,12 +696,17 @@ float CloudPrecipTransfer(int2 source)
     uint destMat = M(dest);
     if (!PrecipitationReceiverOk(dest, destMat))
         return 0.0;
-    if (PrecipitationAirReceiver(dest, destMat) && max(0.0, S(dest).z) > retain)
-        return 0.0;
+    bool destAir = PrecipitationAirReceiver(dest, destMat);
+    bool materialize = PrecipitationClearAirDest(dest, destMat);
     float eq = PressureEquilibriumAt(source.y, _GridSize.y, _PressureA.y, _PressureA.z);
     float ready = PrecipitationMass(cloud, retain, state.x, CellEffectivePressure(state, A(source)), eq, F(source).y, _WeatherB.w, _WeatherE.z, _DeltaTime);
+    float excess = max(0.0, cloud - retain);
+    // Interior cloudy air keeps the mass as cloud so a saturated deck drains
+    // instead of freezing in place or becoming a Water/Ice tower.
+    if (destAir && !materialize)
+        return min(ready, excess);
     uint decision = (uint)source.x * 73856093u + (uint)source.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed * 9137u + 41u;
-    return PrecipitationEmitMass(ready, max(0.0, cloud - retain), PrecipitationAirReceiver(dest, destMat), decision);
+    return PrecipitationEmitMass(ready, excess, destAir, decision);
 }
 
 [numthreads(8, 8, 1)]
@@ -754,7 +764,8 @@ void Precipitation(uint3 id : SV_DispatchThreadID)
             float srcMassHeat = incoming * waterCp;
             state.x = (state.x * destMassHeat + incomingHeat * waterCp) / max(1e-5, destMassHeat + srcMassHeat);
             state.z = incoming + residualCloud;
-            material = LiquidPixelId(state.x, hysteresis);
+            if (residualCloud <= PRECIP_CLOUD_BASE)
+                material = LiquidPixelId(state.x, hysteresis);
         }
         else
         {

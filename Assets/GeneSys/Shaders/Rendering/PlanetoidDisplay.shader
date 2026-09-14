@@ -263,7 +263,7 @@ Shader "GeneSys/Planetoid Display"
                 float4 baseColor = _Palette.Load(int3((int)material, (int)shade, 0));
                 float4 materialProperties = _Properties.Load(int3((int)material, 0, 0));
                 float3 color = baseColor.rgb;
-                bool atmosphereCarrier = material == 1u || simulationRadius >= _AtmosphereStartRadius;
+                bool atmosphereCarrier = material == 1u;
                 float cloud = atmosphereCarrier ? saturate(state.z * 2.5) : 0.0;
                 float relativeHumidity = atmosphereCarrier ? DisplayRelativeHumidity(aux.x, state.x) : 0.0;
 
@@ -372,7 +372,7 @@ Shader "GeneSys/Planetoid Display"
                 else if (_OverlayMode == 3) color = lerp(float3(0.05, 0.08, 0.12), float3(0.95, 0.95, 1.0), relativeHumidity);
                 else if (_OverlayMode == 4) color = state.w >= 0.0 ? float3(saturate(abs(state.w)), 0.1, 0.05) : float3(0.05, 0.2, saturate(abs(state.w)));
                 else if (_OverlayMode == 5) color = float3(saturate(flow.x * 0.5 + 0.5), saturate(flow.y * 0.5 + 0.5), saturate(length(flow)));
-                else if (_OverlayMode == 6) color = lerp(float3(0.02, 0.02, 0.08), float3(0.9, 0.95, 1.0), saturate(aux.x));
+                else if (_OverlayMode == 6) color = lerp(float3(0.02, 0.02, 0.08), float3(0.9, 0.95, 1.0), atmosphereCarrier ? saturate(aux.x) : 0.0);
                 else if (_OverlayMode == 7) color = lerp(float3(0.08, 0.02, 0.0), float3(0.0, 0.25, 1.0), saturate(aux.y));
                 else if (_OverlayMode == 8) color = lerp(float3(0.0, 0.05, 0.0), float3(0.2, 1.0, 0.1), saturate(aux.z));
                 else if (_OverlayMode == 9) color = lerp(float3(0.0, 0.0, 0.0), float3(1.0, 0.4, 0.0), saturate(aux.w));

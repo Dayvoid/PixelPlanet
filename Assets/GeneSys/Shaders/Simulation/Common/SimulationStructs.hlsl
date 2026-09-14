@@ -71,8 +71,8 @@
 // Atmosphere representation:
 //   Air (ID 1) is the permanent atmospheric carrier. Legacy Vapor (ID 11) pixels
 //   migrate to Air while keeping vapor mass in aux.x. Clouds are atmospheric state.z.
-//   Precipitation converts cloud-base condensate into Water/Ice pixels or surface film
-//   from temperature, pressure, and updraft.
+//   Precipitation sediments excess cloud downward through cloudy air, then
+//   materializes Water/Ice only in clear air or onto a surface.
 // Moisture-aware soil erosion:
 //   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
 //   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.
@@ -1031,6 +1031,12 @@ float WaterLatentHeatDelta(float mass, float latentScale, float strength)
 
 #ifndef PRECIP_MIN_DROP
 #define PRECIP_MIN_DROP 0.45
+#endif
+
+// Dest air with more cloud than this is still in-cloud. Precipitation only
+// materializes a Water/Ice pixel once the drop reaches clear air or the surface.
+#ifndef PRECIP_CLOUD_BASE
+#define PRECIP_CLOUD_BASE 0.05
 #endif
 
 float PrecipitationMass(float cloud, float retain, float temperature, float pressure, float equilibrium, float radialFlow, float precipitationRate, float pressureResponse, float dt)

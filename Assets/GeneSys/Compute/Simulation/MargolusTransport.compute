@@ -95,6 +95,26 @@ float MargolusRootCohesion(int2 cell)
         + (float)CountTreeRootsOnCell(_TreeRead, cell, _GridSize) * saturate(_TreeH.y);
 }
 
+bool AirborneIceCanSlide(int2 cell, uint material)
+{
+    if (material != 10u) return false;
+    int y = cell.y;
+    [loop]
+    while (y > 0)
+    {
+        uint below = _MaterialRead.Load(int3(int2(cell.x, y - 1), 0));
+        if (below != 9u && below != 10u)
+            return IsMargolusOpenCarrier(below, Mat(below));
+        y--;
+    }
+    return false;
+}
+
+bool MargolusCanSlide(int2 cell, uint material, MaterialGpuData def)
+{
+    return IsMargolusFluid(material, def) || AirborneIceCanSlide(cell, material);
+}
+
 void SwapCells(inout MargolusCell a, inout MargolusCell b)
 {
     MargolusCell tmp = a;
@@ -150,7 +170,7 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
                 bool supportedBelow = pin0 || (rho0 >= rho2 * 0.6);
                 if (supportedBelow)
                 {
-                    if (IsMargolusFluid(c2.material, d2))
+                    if (MargolusCanSlide(p2, c2.material, d2))
                     {
                         slideRight = true;
                     }
@@ -169,7 +189,7 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
                 bool supportedBelow = pin1 || (rho1 >= rho3 * 0.6);
                 if (supportedBelow)
                 {
-                    if (IsMargolusFluid(c3.material, d3))
+                    if (MargolusCanSlide(p3, c3.material, d3))
                     {
                         slideLeft = true;
                     }

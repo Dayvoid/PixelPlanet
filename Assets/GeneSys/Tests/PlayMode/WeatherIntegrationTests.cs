@@ -177,6 +177,7 @@ namespace GeneSys.Tests
             host.Config.electricalRate = 0f;
             host.Config.pressureRate = 0f;
             host.Config.geodynamicsLayerEnable = false;
+            host.Config.climateLayerEnable = false;
             host.Config.mantlePressure = 0f;
             host.Config.fractureRate = 0f;
             host.Config.extrusionRate = 0f;
@@ -869,6 +870,9 @@ namespace GeneSys.Tests
             host.Config.atmosphericAdvectionRate = 2.5f;
             host.Config.vaporDiffusionRate = 0.01f;
             host.Config.atmosphericBuoyancy = 3f;
+            host.Config.verticalBuoyancyStrength = 1f;
+            host.Config.velocityAdvectionRate = 2f;
+            host.Config.atmosphericLapseRate = 0f;
             host.Config.atmosphericCflLimit = 0.7f;
             host.Config.vaporCapacityScale = 2f;
             host.Config.pressureDiffusionRate = 0f;
@@ -885,9 +889,11 @@ namespace GeneSys.Tests
             yield return ReadFields(host, (_, __, aux, ___) =>
             {
                 for (int dy = 0; dy <= 6; dy++)
+                for (int dx = -2; dx <= 2; dx++)
                 {
-                    float vapor = aux[(y0 + dy) * width + x].x;
-                    if (vapor > 0f) PaintField(host, x, y0 + dy, 6f, -vapor);
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    float vapor = aux[(y0 + dy) * width + xx].x;
+                    if (vapor > 0f) PaintField(host, xx, y0 + dy, 6f, -vapor);
                 }
             });
             yield return Step(host, 1);
@@ -905,7 +911,8 @@ namespace GeneSys.Tests
             yield return ReadFields(host, (_, __, aux, ___) =>
             {
                 for (int dy = 3; dy <= 6; dy++)
-                    highBand += aux[(y0 + dy) * width + x].x;
+                for (int dx = -1; dx <= 1; dx++)
+                    highBand += aux[(y0 + dy) * width + host.Grid.WrapTheta(x + dx)].x;
             });
             Assert.That(highBand, Is.GreaterThan(0.05f), "Vapor should loft several radial cells without relying on diffusion.");
         }
