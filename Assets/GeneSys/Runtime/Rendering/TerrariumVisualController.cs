@@ -637,17 +637,6 @@ namespace GeneSys.Rendering
                 Transform coreChild = display.transform.Find("Planetary Core");
                 if (coreChild != null) SafeDestroy(coreChild.gameObject);
             }
-            else
-            {
-                var solarChild = GameObject.Find("Solar Orbit");
-                if (solarChild != null) SafeDestroy(solarChild);
-                var coreChild = GameObject.Find("Planetary Core");
-                if (coreChild != null) SafeDestroy(coreChild);
-            }
-
-            var existingVisuals = GameObject.Find("Terrarium Visuals");
-            if (existingVisuals != null)
-                SafeDestroy(existingVisuals);
         }
 
         private void OnDisable()

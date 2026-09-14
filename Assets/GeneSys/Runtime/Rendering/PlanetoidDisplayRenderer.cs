@@ -134,6 +134,7 @@ namespace GeneSys.Rendering
             PushGraphicsUniforms();
             meshRenderer.sharedMaterial = displayMaterial;
             meshRenderer.sortingOrder = 50;
+            meshRenderer.enabled = true;
             RefreshTextures();
         }
 
@@ -163,7 +164,7 @@ namespace GeneSys.Rendering
 
         private void LateUpdate()
         {
-            if (resources == null || displayMaterial == null) return;
+            if (resources == null || !resources.IsCreated || displayMaterial == null) return;
             RefreshTextures();
             PushGraphicsUniforms();
             HandleCamera();
@@ -437,6 +438,28 @@ namespace GeneSys.Rendering
             return PolarCoordinateTransforms.TryDisplayUvToCell(grid, uv, out cell);
         }
 
+        public void ClearResources()
+        {
+            resources = null;
+            if (meshRenderer != null)
+            {
+                meshRenderer.sharedMaterial = null;
+                meshRenderer.enabled = false;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (meshRenderer != null)
+                meshRenderer.enabled = false;
+        }
+
+        private void OnEnable()
+        {
+            if (meshRenderer != null && displayMaterial != null && resources != null && resources.IsCreated)
+                meshRenderer.enabled = true;
+        }
+
         private void OnDestroy()
         {
             DestroyRuntimeAssets();
@@ -451,6 +474,12 @@ namespace GeneSys.Rendering
 
         private void DestroyRuntimeAssets()
         {
+            if (meshRenderer != null)
+            {
+                meshRenderer.sharedMaterial = null;
+                meshRenderer.enabled = false;
+            }
+            resources = null;
             SafeDestroy(displayMaterial);
             SafeDestroy(palette);
             SafeDestroy(properties);

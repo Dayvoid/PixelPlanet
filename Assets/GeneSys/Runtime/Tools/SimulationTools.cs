@@ -52,6 +52,11 @@ namespace GeneSys.Tools
             Inspect(cell);
         }
 
+        private void OnDisable()
+        {
+            readbackPending = false;
+        }
+
         private void Update()
         {
             if (host == null || !host.IsReady || Mouse.current == null) return;
@@ -250,7 +255,7 @@ namespace GeneSys.Tools
             inspection.grassTiming = new Vector4[GrassGenome.SlotCount];
             inspection.grassGenomes = new GrassGenome.Packed[GrassGenome.SlotCount];
             inspection.grassDonors = new GrassGenome.Packed[GrassGenome.SlotCount];
-            if (host.Resources.GrassRead == null)
+            if (host.Resources.GrassRead == null || host.Resources.GrassRead.volumeDepth < GrassGenome.GrassSliceCount)
             {
                 ReadWaspSlices(host, cell, inspection);
                 return;

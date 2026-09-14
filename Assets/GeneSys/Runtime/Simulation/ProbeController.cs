@@ -586,11 +586,6 @@ namespace GeneSys.Simulation
                 Transform orbitChild = display.transform.Find("Probe Orbit");
                 if (orbitChild != null) SafeDestroy(orbitChild.gameObject);
             }
-            else
-            {
-                var existingProbeOrbit = GameObject.Find("Probe Orbit");
-                if (existingProbeOrbit != null) SafeDestroy(existingProbeOrbit);
-            }
         }
 
         private static void SafeDestroy(UnityEngine.Object obj)

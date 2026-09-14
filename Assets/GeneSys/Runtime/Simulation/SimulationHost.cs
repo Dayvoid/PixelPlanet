@@ -380,6 +380,7 @@ namespace GeneSys.Simulation
         {
             scheduler?.Dispose();
             scheduler = null;
+            if (display != null) display.ClearResources();
             Resources?.Dispose();
             Resources = null;
         }
