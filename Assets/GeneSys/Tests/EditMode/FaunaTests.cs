@@ -110,8 +110,8 @@ namespace GeneSys.Tests
             Assert.That(cricket.stableId, Is.EqualTo((int)MaterialIds.Cricket));
             Assert.That(egg.stableId, Is.EqualTo((int)MaterialIds.CricketEgg));
             Assert.That(cricket.category, Is.EqualTo(MaterialCategory.Biological));
-            Assert.That(cricket.densityDisplaceable, Is.False);
-            Assert.That(egg.densityDisplaceable, Is.False);
+            Assert.That(cricket.category, Is.EqualTo(MaterialCategory.Biological));
+            Assert.That(egg.category, Is.EqualTo(MaterialCategory.Biological));
             Assert.That(cricket.caloricContent, Is.GreaterThan(0f));
 
             MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");

@@ -269,7 +269,7 @@ void ClimateStep(uint3 id : SV_DispatchThreadID)
     float albedo = saturate(_ClimateD.y + _ClimateB.w * ice - _ClimateC.x * canopy * biome + _ClimateD.z * ashFrac * biome);
     float capacity = max(1.0, _ClimateA.z) * (1.0 + waterFrac);
     float absorbed = insolation * (1.0 - albedo);
-    float lw = max(0.0, _WeatherA.z);
+    float lw = max(0.0, _ClimateE.x);
     float heatGain = absorbed * max(0.0, _WeatherA.x) * 32.0;
     T_slab += _DeltaTime / capacity * (heatGain - lw * (T_slab - _WeatherA.y));
     float leftT = init ? ClimateSkinT(leftLower, leftSurface) : ClimateMemoryOf(leftBin).x;

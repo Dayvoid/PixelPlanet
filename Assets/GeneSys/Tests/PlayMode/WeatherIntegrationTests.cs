@@ -57,6 +57,7 @@ namespace GeneSys.Tests
             host.Config.prevailingWind = 0f;
             host.Config.evaporationRate = 0.1f;
             host.Config.condensationRate = 0.12f;
+            host.Config.dewRate = 0.12f;
             host.Config.precipitationRate = 0.2f;
             host.Config.vaporPressureScale = 0.25f;
             host.Config.atmosphericAdvectionRate = 0.85f;
@@ -200,7 +201,6 @@ namespace GeneSys.Tests
             host.Config.temperatureAdvectionRate = 0f;
             host.Config.pressureCompressibility = 0f;
             host.Config.precipitationRate = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.latentHeatScale = 0f;
             host.Config.waterPressureResponse = 0f;
         }
@@ -305,6 +305,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -373,6 +374,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 1.5f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -395,9 +397,11 @@ namespace GeneSys.Tests
                 Paint(host, x + dx, airY, MaterialIds.Air);
                 Paint(host, x + dx, airY + 1, MaterialIds.Rock);
             }
+            host.Config.evaporationRate = 0f;
             PaintField(host, x, surfaceY, 2f, 0.5f);
             PaintField(host, x, surfaceY, 1f, 40f);
             yield return Step(host, 1);
+            host.Config.evaporationRate = 1.5f;
 
             float surfaceWaterBefore = 0f;
             float columnVaporBefore = 0f;
@@ -429,6 +433,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 3f;
@@ -531,6 +536,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 3f;
@@ -608,6 +614,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -653,6 +660,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -697,6 +705,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -745,6 +754,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 8f;
@@ -798,6 +808,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -851,6 +862,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -907,6 +919,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -984,6 +997,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -1058,6 +1072,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 2f;
@@ -1115,6 +1130,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 3f;
@@ -1215,6 +1231,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 2f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -1280,6 +1297,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
@@ -1340,6 +1358,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
@@ -1409,6 +1428,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0.8f;
             host.Config.atmosphericAdvectionRate = 0f;
@@ -1473,6 +1493,7 @@ namespace GeneSys.Tests
             host.Config.targetOceanCoverage = 0.5f;
             host.Config.evaporationRate = 0.25f;
             host.Config.condensationRate = 0.2f;
+            host.Config.dewRate = 0.2f;
             host.Config.precipitationRate = 0.25f;
             host.Config.atmosphericAdvectionRate = 0.85f;
             host.Regenerate();
@@ -1515,6 +1536,9 @@ namespace GeneSys.Tests
             host.Config.validationIntervalTicks = 100000;
             host.Config.atmosphericAdvectionRate = 0.85f;
             host.Config.vaporDiffusionRate = 0.05f;
+            host.Config.floraGrowthRate = 0f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
@@ -1563,6 +1587,9 @@ namespace GeneSys.Tests
             host.Config.seed = 4242;
             host.Config.targetOceanCoverage = 0.55f;
             host.Config.dayLengthSeconds = 60f;
+            host.Config.floraGrowthRate = 0f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
@@ -1613,13 +1640,13 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 2f;
+            host.Config.dewRate = 2f;
             host.Config.precipitationRate = 1f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.gravityStrength = 0f;
             host.Config.vaporCapacityScale = 0.05f;
             host.Config.cloudRetainMass = 0.05f;
@@ -1650,6 +1677,7 @@ namespace GeneSys.Tests
             PaintField(host, x, cloudY, 6f, 0.4f);
             yield return Step(host, 1);
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
 
             float waterBefore = 0f;
             yield return ReadFields(host, (_, states, aux, __) => waterBefore = SumWaterBox(states, aux, width, x - 2, x + 2, floorY, cloudY + 1));
@@ -1685,6 +1713,7 @@ namespace GeneSys.Tests
 
             host.Config.precipitationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.gravityStrength = 1f;
             yield return Step(host, 8);
 
@@ -1719,6 +1748,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
@@ -1753,6 +1783,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 1f;
             host.Config.gravityStrength = 0f;
             host.Config.vaporCapacityScale = 0.05f;
@@ -1804,6 +1835,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.gravityStrength = 0f;
             host.Config.vaporCapacityScale = 2f;
@@ -1875,6 +1907,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.gravityStrength = 0f;
             host.Config.vaporCapacityScale = 2f;
@@ -2083,12 +2116,12 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.phaseHysteresis = 0.01f;
             host.Config.thermalRate = 1f;
             host.Config.waterPressureResponse = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.materialSubsteps = substeps;
             host.Config.slowPassInterval = 100000;
             host.Regenerate();
@@ -2134,6 +2167,7 @@ namespace GeneSys.Tests
             host.Config.latentHeatScale = 0.35f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.gravityStrength = 0f;
             host.Config.slowPassInterval = 100000;
@@ -2179,6 +2213,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 2f;
+            host.Config.dewRate = 2f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporCapacityScale = 0.05f;
             host.Config.cloudRetainMass = 1f;
@@ -2315,6 +2350,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 2f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporCapacityScale = 0.05f;
             host.Config.atmosphericAdvectionRate = 0f;
@@ -2375,6 +2411,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 1.2f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporCapacityScale = 0.08f;
             host.Config.atmosphericAdvectionRate = 0f;
@@ -2439,6 +2476,7 @@ namespace GeneSys.Tests
             host.Config.atmosphericLapseRate = 20f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
@@ -2468,6 +2506,7 @@ namespace GeneSys.Tests
             DisableWeatherNoise(host);
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporCapacityScale = 0.01f;
             host.Config.atmosphericAdvectionRate = 0f;
@@ -2494,6 +2533,7 @@ namespace GeneSys.Tests
             PaintField(host, x, airY, 1f, 20f);
             yield return Step(host, 1);
             host.Config.condensationRate = 2f;
+            host.Config.dewRate = 2f;
             float filmBefore = 0f;
             float vaporBefore = 0f;
             yield return ReadFields(host, (_, states, aux, __) =>
@@ -2524,6 +2564,7 @@ namespace GeneSys.Tests
             host.Config.solarPolarOutputMin = 1f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -2565,6 +2606,57 @@ namespace GeneSys.Tests
                 Assert.That(clearGain, Is.GreaterThan(cloudGain + 0.02f),
                     $"Clear ground should heat more than cloud-shaded ground. Clear {clearGain:F3} cloud {cloudGain:F3}");
             });
+        }
+
+        [UnityTest]
+        public IEnumerator EvaporationDoesNotPushAirAboveSaturationExceptBoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 2f;
+            host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.thermalRate = 0f;
+            host.Config.combustionHeatYield = 0f;
+            host.Config.stormStrikeHeat = 0f;
+            host.Config.hydrothermalNutrientRate = 0f;
+            host.Config.vaporCapacityScale = 0.2f;
+            host.Config.windStrength = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = SurfaceY(host);
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                Paint(host, x + dx, y - 1, MaterialIds.Rock);
+                Paint(host, x + dx, y, MaterialIds.Water);
+                PaintField(host, x + dx, y, 2f, 1f);
+                Paint(host, x + dx, y + 1, MaterialIds.Air);
+                PaintField(host, x + dx, y + 1, 6f, -100f);
+            }
+            yield return Step(host, 12);
+
+            float scale = host.Config.vaporCapacityScale;
+            int oversat = 0;
+            yield return ReadFields(host, (mats, states, aux, _) =>
+            {
+                for (int dx = -3; dx <= 3; dx++)
+                {
+                    int xx = ((x + dx) % width + width) % width;
+                    int idx = (y + 1) * width + xx;
+                    if (mats[idx] != MaterialIds.Air) continue;
+                    float t = Mathf.Clamp(states[idx].x, -40f, 80f);
+                    float es = Mathf.Exp(SimulationMetrics.WaterMagnusA * t / Mathf.Max(1e-3f, SimulationMetrics.WaterMagnusB + t));
+                    float sat = Mathf.Max(1e-4f, Mathf.Max(0.001f, scale) * es);
+                    if (aux[idx].x > sat + 0.02f) oversat++;
+                }
+            });
+            Assert.That(oversat, Is.EqualTo(0), "Magnus-deficit evaporation must not push air above saturation.");
         }
 
         private sealed class SimulationConfigSnapshot

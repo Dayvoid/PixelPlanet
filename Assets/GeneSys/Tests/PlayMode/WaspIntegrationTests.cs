@@ -101,6 +101,7 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -125,7 +126,6 @@ namespace GeneSys.Tests
             host.Config.combustionBurnRate = 0f;
             host.Config.combustionIgnitionAccumulationRate = 0f;
             host.Config.stormChargeSeparationRate = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.validationIntervalTicks = 100000;
             host.Config.faunaWanderRate = 0f;
             host.Config.faunaHopImpulse = 0f;

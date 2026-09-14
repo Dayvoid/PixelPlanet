@@ -79,12 +79,12 @@ namespace GeneSys.Tests
             host.Config.groundwaterRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.coreHeatRate = 0f;
 
             host.Config.enableMaterialTransport = true;
             host.Config.margolusSubsteps = 1;
-            host.Config.margolusGravityBias = 1f;
             host.Config.margolusReposeFriction = 1f;
             host.Config.margolusMetricEnable = true;
         }

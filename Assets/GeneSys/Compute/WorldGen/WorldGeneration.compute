@@ -36,7 +36,7 @@ float4 _WorldGenV3A; // limestoneCount, limestoneMinSize, limestoneMaxSize, lime
 float4 _WorldGenV3B; // limestoneProtrusionDistance, clayCount, clayMinSize, clayMaxSize
 float4 _WorldGenV3C; // clayProtrusionChance, clayProtrusionDistance, unused, unused
 float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
-float4 _MargolusFlags;
+float4 _WorldGenFlags; // x = enableMaterialTransport (seed Margolus talus)
 float4 _MargolusParams;
 #include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 
@@ -248,7 +248,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     else if (radius < terrainSurface) material = 7;
     else material = 1;
 
-    if (_MargolusFlags.x > 0.5)
+    if (_WorldGenFlags.x > 0.5)
     {
         uint xL = (id.x + (uint)_GridSize.x - 1u) % (uint)_GridSize.x;
         uint xR = (id.x + 1u) % (uint)_GridSize.x;
@@ -367,7 +367,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     else if (radius < terrainSurface) material = 7;
     else material = 1;
 
-    if (_MargolusFlags.x > 0.5)
+    if (_WorldGenFlags.x > 0.5)
     {
         uint xL = (id.x + (uint)_GridSize.x - 1u) % (uint)_GridSize.x;
         uint xR = (id.x + 1u) % (uint)_GridSize.x;

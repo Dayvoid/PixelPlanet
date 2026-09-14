@@ -70,8 +70,6 @@ MonoBehaviour:
   thermalPressureEffect: 0.6
   electricalRate: 0.3
   phaseHysteresis: 0.02
-  densityExchangeRate: 4
-  densityExchangeEpsilon: 0.02
   geodynamicsLayerEnable: 1
   geodynamicsAngularBins: 64
   geodynamicsRadialBins: 16
@@ -94,7 +92,6 @@ MonoBehaviour:
   magmaViscosity: 0.5
   volcanicReleaseThreshold: 0.78
   volcanicReleaseFraction: 0.2
-  volcanicSurfaceCoupling: 0.22
   eruptionDriveScale: 0.55
   eruptionPressureStrength: 3
   eruptionFlowStrength: 5
@@ -103,7 +100,7 @@ MonoBehaviour:
   ashUpdraftStrength: 0.4
   ashSettlingStrength: 2
   ashFertilityStrength: 1
-  hydrothermalHeatTransferRate: 0.35
+  hydrothermalNutrientRate: 0.35
   hydrothermalNutrientYield: 0.12
   hydrothermalReleaseThreshold: 0.7
   corePulsePeriodTicks: 2000

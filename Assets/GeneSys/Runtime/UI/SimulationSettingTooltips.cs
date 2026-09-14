@@ -114,10 +114,6 @@ namespace GeneSys.UI
                 "How quickly charge spreads through conductive materials. Affects electrical expansion, mycology electrical stress, and any future bioelectric sensing.",
             [nameof(SimulationConfig.phaseHysteresis)] =
                 "Temperature buffer around melt and boil points. Higher hysteresis slows flickering phase changes in magma, water, ice, and vapor, stabilizing weather and geology.",
-            [nameof(SimulationConfig.densityExchangeRate)] =
-                "How readily density-displaceable materials swap with fluids. Higher rates make wood, ash, and sediment float or sink faster through water and magma.",
-            [nameof(SimulationConfig.densityExchangeEpsilon)] =
-                "Minimum density difference required before a swap. Larger epsilon prevents jittery mixing; smaller epsilon lets close-density materials keep sorting.",
 
             [nameof(SimulationConfig.geodynamicsLayerEnable)] =
                 "Runs the coarse interior lattice that stores heat anomalies, melt overpressure, tectonic strain, and fault weakness. Disable it to freeze regional geology while leaving painted magma and weather intact.",
@@ -173,8 +169,6 @@ namespace GeneSys.UI
                 "Melt-overpressure score a sector must exceed as a local maximum before a volcanic release envelope is created.",
             [nameof(SimulationConfig.volcanicReleaseFraction)] =
                 "Share of stored melt overpressure spent when a volcanic release fires. Kept low so vents pulse instead of draining the mantle.",
-            [nameof(SimulationConfig.volcanicSurfaceCoupling)] =
-                "How strongly a volcanic envelope boosts fine-grid extrusion and eruption drive inside the event footprint.",
             [nameof(SimulationConfig.eruptionDriveScale)] =
                 "Master mix for fine-grid eruption motion. At 0, magma stays put; raising it enables burden breakthrough, ash blasts, and column flow.",
             [nameof(SimulationConfig.eruptionPressureStrength)] =
@@ -191,8 +185,8 @@ namespace GeneSys.UI
                 "How quickly airborne ash falls out. Faster settling fertilizes nearby soil; slower settling keeps ash in the air longer for weather and transport.",
             [nameof(SimulationConfig.ashFertilityStrength)] =
                 "Nutrient added when ash weathers into soil or sediment. Stronger fertility boosts mycology growth where fallout accumulates.",
-            [nameof(SimulationConfig.hydrothermalHeatTransferRate)] =
-                "How strongly permeable, hot groundwater hosts boil after the groundwater pass. Requires heat plus fault weakness or a hydrothermal envelope; mass moves from aux.y to aux.x first.",
+            [nameof(SimulationConfig.hydrothermalNutrientRate)] =
+                "How strongly hydrothermal boiling deposits nutrients after groundwater boil. Requires heat plus fault weakness or a hydrothermal envelope; mass moves from aux.y to aux.x first.",
             [nameof(SimulationConfig.hydrothermalNutrientYield)] =
                 "Nutrient added when hydrothermal boiling occurs. Raises spring and seafloor fertility that mycology and later organisms can exploit.",
             [nameof(SimulationConfig.hydrothermalReleaseThreshold)] =
@@ -239,16 +233,14 @@ namespace GeneSys.UI
                 "Enables discrete Margolus Cellular Automata (MaCA) material transport. Partitions the grid into 2x2 alternating blocks to strictly conserve mass while simulating gravity settling, angle of repose, buoyancy, and fluid leveling.",
             [nameof(SimulationConfig.margolusSubsteps)] =
                 "Number of 2-phase Margolus partitioning steps per simulation tick. Higher values accelerate material settling and slope relaxation per frame at a small compute cost.",
-            [nameof(SimulationConfig.margolusGravityBias)] =
-                "Strength of gravity in Margolus block energy minimization. Higher values pull loose sediment, ice, and liquids downward more decisively.",
             [nameof(SimulationConfig.margolusReposeFriction)] =
                 "Resistance against diagonal block sliding. Higher friction maintains steeper natural angles of repose for granular materials like sediment; lower friction lets piles slump flat.",
             [nameof(SimulationConfig.margolusMetricEnable)] =
                 "Enables polar metric compensation in Margolus transport, balancing radial vs angular block swap probabilities across differing ring circumferences.",
             [nameof(SimulationConfig.margolusFluidEnable)] =
-                "Allows liquid materials to perform lateral fluid leveling swaps in addition to standard granular repose settling.",
-            [nameof(SimulationConfig.margolusFluidLevelingBias)] =
-                "Strength of horizontal leveling pressure for fluids during Margolus block swaps. Higher bias flattens liquid surfaces more aggressively.",
+                "Allows magma to perform lateral leveling swaps. Water stays on the hydrostatic solver for horizontal free-surface leveling.",
+            [nameof(SimulationConfig.margolusMagmaLevelingBias)] =
+                "Strength of horizontal magma leveling during Margolus block swaps. Water surfaces are leveled only by the hydrostatic column solver.",
 
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",
@@ -278,6 +270,8 @@ namespace GeneSys.UI
                 "How fast a saturation deficit becomes vapor. Evaporation stops when the air is saturated and increases with wind over wet surfaces.",
             [nameof(SimulationConfig.condensationRate)] =
                 "How fast saturated air becomes cloud condensate. Higher rates build visible clouds sooner and feed precipitation.",
+            [nameof(SimulationConfig.dewRate)] =
+                "How fast airborne vapor deposits as dew on surfaces colder than the dew point. Independent of condensationRate, which only forms in-air cloud.",
             [nameof(SimulationConfig.precipitationRate)] =
                 "How often dense cloud sheds a rain or snow pixel. Higher rates form drops more often; lower rates keep long-lived clouds. Each airborne drop carries a substantial mass so landed water can pond.",
             [nameof(SimulationConfig.vaporPressureScale)] =
@@ -365,6 +359,8 @@ namespace GeneSys.UI
                 "How much organics and detritus enlarge soil field capacity. Higher gain holds more groundwater in vegetated bins.",
             [nameof(SimulationConfig.climateBurnBucketPenalty)] =
                 "How much ash cover shrinks field capacity. Higher penalty makes burned ground shed water and stay dry.",
+            [nameof(SimulationConfig.climateSlabRadiativeCooling)] =
+                "Longwave cooling of the coarse climate slab toward space temperature. Independent of atmosphereRadiativeCooling so fine-air and slab energy budgets can be tuned separately. coreTemperature is also the geodynamics radial reference profile.",
 
             [nameof(SimulationConfig.mycologyInitialSporeLoad)] =
                 "Starting airborne and soil spore density at worldgen. Higher loads colonize soil and sediment faster after regenerate.",
@@ -1015,7 +1011,7 @@ namespace GeneSys.UI
             [nameof(MaterialDefinition.shadeVariation)] =
                 "How much neighboring cells of this material dither their display color. Visual only.",
             [nameof(MaterialDefinition.density)] =
-                "Mass per cell used by gravity settling and density displacement. Denser materials sink through fluids; lighter ones float when Density Displaceable is on.",
+                "Mass per cell used by Margolus gravity settling. Denser movable cells sink through lighter neighbors; lighter cells rise.",
             [nameof(MaterialDefinition.rigidity)] =
                 "Resistance to grain flow and collapse. High rigidity keeps crust and metal in place; low rigidity lets piles slump toward their angle of repose.",
             [nameof(MaterialDefinition.angleOfRepose)] =
@@ -1023,9 +1019,7 @@ namespace GeneSys.UI
             [nameof(MaterialDefinition.grainSize)] =
                 "Characteristic grain scale. Larger grains move more sluggishly under gravity and affect how piles pack.",
             [nameof(MaterialDefinition.buoyancyBias)] =
-                "Scales density-exchange rate against liquids, not the float/sink decision. Positive bias swaps faster; density still decides direction.",
-            [nameof(MaterialDefinition.densityDisplaceable)] =
-                "Allows this material to density-sort against liquids. Density alone decides float versus sink; buoyancy bias only changes how fast swaps happen.",
+                "Extra density weighting hint for biology and display. Margolus density sort uses physical density plus groundwater saturation.",
             [nameof(MaterialDefinition.thermalConductivity)] =
                 "How quickly this material exchanges heat with neighbors. High conductivity couples it to solar weather, magma, and phase changes.",
             [nameof(MaterialDefinition.heatCapacity)] =

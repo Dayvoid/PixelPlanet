@@ -89,6 +89,7 @@ namespace GeneSys.Tests
             host.Config.groundwaterRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.coreHeatRate = 0f;
             host.Config.thermalRate = 0f;
@@ -97,7 +98,6 @@ namespace GeneSys.Tests
 
             host.Config.enableMaterialTransport = true;
             host.Config.margolusSubsteps = 1;
-            host.Config.margolusGravityBias = 1f;
             host.Config.margolusReposeFriction = 1f;
             host.Config.margolusMetricEnable = true;
             host.Config.margolusFluidEnable = true;
@@ -217,6 +217,157 @@ namespace GeneSys.Tests
             Assert.That(resultMat == MaterialIds.Soil || resultMat == MaterialIds.Sediment, Is.True,
                 "Soil under stress either remains intact or converts into mobile Sediment.");
 
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator AshFallsAtMostOneBlockPairPerTickWithBothPasses()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusOnly(host);
+            host.Config.ashUpdraftStrength = 0f;
+            host.Config.ashSettlingStrength = 8f;
+            host.Config.eruptionDriveScale = 0f;
+            host.Config.seed = 5511;
+            host.Regenerate();
+            for (int i = 0; i < 4; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.62f), 8, height - 16);
+            int startY = floorY + 6;
+            for (int y = floorY; y <= startY + 1; y++)
+            {
+                Paint(host, x - 1, y, MaterialIds.Rock);
+                Paint(host, x + 1, y, MaterialIds.Rock);
+                Paint(host, x, y, MaterialIds.Air);
+            }
+            Paint(host, x, floorY, MaterialIds.Rock);
+            Paint(host, x, startY, MaterialIds.Ash);
+            yield return Step(host, 1);
+
+            int ashY = startY;
+            yield return ReadMaterials(host, mats =>
+            {
+                for (int y = floorY; y <= startY + 1; y++)
+                {
+                    if (mats[y * width + x] == MaterialIds.Ash)
+                        ashY = y;
+                }
+            });
+            yield return Step(host, 1);
+            int afterY = ashY;
+            yield return ReadMaterials(host, mats =>
+            {
+                for (int y = floorY; y <= startY + 1; y++)
+                {
+                    if (mats[y * width + x] == MaterialIds.Ash)
+                        afterY = y;
+                }
+            });
+            Assert.That(ashY - afterY, Is.LessThanOrEqualTo(2),
+                "AshTransport no longer settles downward, so a tick should move ash by at most the Margolus even+odd drop.");
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator MagmaColumnSettlesWithEruptionMotionDisabled()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusOnly(host);
+            host.Config.eruptionDriveScale = 0f;
+            host.Config.magmaEruption = 0f;
+            host.Config.seed = 6622;
+            host.Regenerate();
+            for (int i = 0; i < 4; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.64f), 8, height - 16);
+            for (int y = floorY; y <= floorY + 5; y++)
+            {
+                Paint(host, x - 1, y, MaterialIds.Rock);
+                Paint(host, x + 1, y, MaterialIds.Rock);
+                Paint(host, x, y, MaterialIds.Air);
+            }
+            Paint(host, x, floorY, MaterialIds.Rock);
+            Paint(host, x, floorY + 4, MaterialIds.Magma);
+            yield return Step(host, 1);
+            yield return Step(host, 16);
+
+            uint atFloor = 0;
+            uint atStart = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                atFloor = mats[(floorY + 1) * width + x];
+                atStart = mats[(floorY + 4) * width + x];
+            });
+            Assert.That(atFloor, Is.EqualTo(MaterialIds.Magma), "Magma should settle onto the floor via Margolus when EruptionMotion is off.");
+            Assert.That(atStart, Is.Not.EqualTo(MaterialIds.Magma));
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator HydrostaticPondStaysLevelWithMargolusOn()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusOnly(host);
+            host.Config.pondingRate = 0f;
+            host.Config.runoffRate = 0f;
+            host.Config.hydrostaticIterations = 0;
+            host.Config.seed = 7733;
+            host.Regenerate();
+            for (int i = 0; i < 4; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int midX = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.70f), 10, height - 20);
+            for (int dy = 0; dy <= 2; dy++)
+            {
+                Paint(host, midX - 5, floorY + dy, MaterialIds.Core);
+                Paint(host, midX + 5, floorY + dy, MaterialIds.Core);
+            }
+            for (int dx = -4; dx <= 4; dx++)
+            {
+                Paint(host, midX + dx, floorY - 1, MaterialIds.Core);
+                Paint(host, midX + dx, floorY, MaterialIds.Core);
+                Paint(host, midX + dx, floorY + 1, MaterialIds.Water);
+                Paint(host, midX + dx, floorY + 2, MaterialIds.Air);
+            }
+            yield return Step(host, 1);
+            int waterAfterPaint = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                for (int dx = -4; dx <= 4; dx++)
+                {
+                    if (mats[(floorY + 1) * width + (midX + dx)] == MaterialIds.Water)
+                        waterAfterPaint++;
+                }
+            });
+            Assert.That(waterAfterPaint, Is.GreaterThanOrEqualTo(7),
+                "Pond paint should land as a Water row before settling.");
+            yield return Step(host, 20);
+
+            int waterCells = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                for (int dx = -4; dx <= 4; dx++)
+                {
+                    if (mats[(floorY + 1) * width + (midX + dx)] == MaterialIds.Water)
+                        waterCells++;
+                }
+            });
+            Assert.That(waterCells, Is.GreaterThanOrEqualTo(7),
+                "A hydrostatic pond should remain a contiguous Water row with Margolus gravity settling enabled.");
             RestoreConfig(host);
         }
     }

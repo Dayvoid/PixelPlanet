@@ -486,38 +486,53 @@ namespace GeneSys.Simulation.Gpu
             if (margolusTransport == null) return;
             int phaseEven = margolusTransport.FindKernel("MargolusPhaseEven");
             int phaseOdd = margolusTransport.FindKernel("MargolusPhaseOdd");
-            if (phaseEven < 0 || phaseOdd < 0) return;
+            int grassEven = margolusTransport.FindKernel("MargolusGrassEven");
+            int grassOdd = margolusTransport.FindKernel("MargolusGrassOdd");
+            if (phaseEven < 0 || phaseOdd < 0 || grassEven < 0 || grassOdd < 0) return;
 
-            SetCommon(margolusTransport, phaseEven, deltaTime);
-            BindMargolusParams(phaseEven);
-            BindPassTextures(margolusTransport, phaseEven);
-            margolusTransport.SetBuffer(phaseEven, "_MaterialDefinitions", materialBuffer);
-            margolusTransport.SetTexture(phaseEven, "_GrassRead", resources.GrassRead);
-            margolusTransport.SetTexture(phaseEven, "_TreeRead", resources.TreeRead);
+            BindMargolusPhase(phaseEven, deltaTime);
             DispatchMargolusBlocks(margolusTransport, phaseEven);
+            BindMargolusGrass(grassEven, deltaTime);
+            DispatchMargolusBlocks(margolusTransport, grassEven);
             resources.Swap();
+            resources.SwapGrass();
 
-            SetCommon(margolusTransport, phaseOdd, deltaTime);
-            BindMargolusParams(phaseOdd);
-            BindPassTextures(margolusTransport, phaseOdd);
-            margolusTransport.SetBuffer(phaseOdd, "_MaterialDefinitions", materialBuffer);
-            margolusTransport.SetTexture(phaseOdd, "_GrassRead", resources.GrassRead);
-            margolusTransport.SetTexture(phaseOdd, "_TreeRead", resources.TreeRead);
+            BindMargolusPhase(phaseOdd, deltaTime);
             DispatchMargolusBlocks(margolusTransport, phaseOdd);
+            BindMargolusGrass(grassOdd, deltaTime);
+            DispatchMargolusBlocks(margolusTransport, grassOdd);
             resources.Swap();
+            resources.SwapGrass();
+        }
+
+        private void BindMargolusPhase(int kernel, float deltaTime)
+        {
+            SetCommon(margolusTransport, kernel, deltaTime);
+            BindMargolusParams(kernel);
+            BindPassTextures(margolusTransport, kernel);
+            margolusTransport.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            margolusTransport.SetTexture(kernel, "_GrassRead", resources.GrassRead);
+            margolusTransport.SetTexture(kernel, "_TreeRead", resources.TreeRead);
+        }
+
+        private void BindMargolusGrass(int kernel, float deltaTime)
+        {
+            SetCommon(margolusTransport, kernel, deltaTime);
+            BindMargolusParams(kernel);
+            BindPassTextures(margolusTransport, kernel);
+            margolusTransport.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            margolusTransport.SetTexture(kernel, "_GrassRead", resources.GrassRead);
+            margolusTransport.SetTexture(kernel, "_GrassWrite", resources.GrassWrite);
+            margolusTransport.SetTexture(kernel, "_TreeRead", resources.TreeRead);
         }
 
         private void BindMargolusParams(int kernel)
         {
             margolusTransport.SetVector("_MargolusParams", new Vector4(
-                config.margolusGravityBias,
+                1f,
                 config.margolusReposeFriction,
                 config.margolusMetricEnable ? 1f : 0f,
-                config.margolusFluidEnable ? config.margolusFluidLevelingBias : 0f));
-            margolusTransport.SetVector("_MargolusFlags", new Vector4(
-                config.enableMaterialTransport ? 1f : 0f,
-                config.margolusFluidEnable ? 1f : 0f,
-                0f, 0f));
+                config.margolusFluidEnable ? config.margolusMagmaLevelingBias : 0f));
         }
 
         private void DispatchMargolusBlocks(ComputeShader shader, int kernel)
@@ -753,7 +768,7 @@ namespace GeneSys.Simulation.Gpu
             shader.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, 0f, config.tectonicFaultSeedCount));
             shader.SetVector("_ThermalA", new Vector4(config.thermalMoistureBoost, config.thermalPressureEffect, config.coreTemperature, config.coreHeatRate));
             shader.SetVector("_Geology", new Vector4(config.geodynamicsPressureBuildRate, config.tectonicStrainGain, config.extrusionRate, config.volcanicCoolingRate));
-            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalHeatTransferRate, config.hydrothermalNutrientYield, config.corePulsePeriodTicks, config.corePulseHeat));
+            shader.SetVector("_GeologyB", new Vector4(config.hydrothermalNutrientRate, config.hydrothermalNutrientYield, config.corePulsePeriodTicks, config.corePulseHeat));
             shader.SetVector("_EruptionA", new Vector4(config.eruptionDriveScale, config.eruptionPressureStrength, config.eruptionFlowStrength, config.eruptionBurdenDepth));
             shader.SetVector("_EruptionB", new Vector4(config.eruptionBlastThreshold, config.ashUpdraftStrength, config.ashSettlingStrength, config.ashFertilityStrength));
             shader.SetVector("_GeodynamicsFlags", new Vector4(
@@ -792,9 +807,9 @@ namespace GeneSys.Simulation.Gpu
                 config.extrusionRate,
                 config.volcanicCoolingRate,
                 config.magmaViscosity,
-                config.volcanicSurfaceCoupling));
+                0f));
             shader.SetVector("_Hydrothermal", new Vector4(
-                config.hydrothermalHeatTransferRate,
+                config.hydrothermalNutrientRate,
                 config.hydrothermalNutrientYield,
                 config.hydrothermalReleaseThreshold,
                 config.tectonicSurfaceCoupling));
@@ -807,16 +822,15 @@ namespace GeneSys.Simulation.Gpu
                 SolarAngle01, PolarPoleGeometry.PoleAngle01(config.seed), config.solarPolarOutputMin);
             shader.SetVector("_WeatherA", new Vector4(config.solarIntensity * polarOutput, config.spaceTemperature, config.atmosphereRadiativeCooling, config.windStrength));
             shader.SetVector("_WeatherB", new Vector4(config.windDamping, config.evaporationRate, config.condensationRate, config.precipitationRate));
-            shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, config.magmaViscosity));
+            shader.SetVector("_WeatherC", new Vector4(config.vaporPressureScale, SolarAngle01, config.phaseHysteresis, 0f));
             shader.SetVector("_WeatherD", new Vector4(config.atmosphericAdvectionRate, config.vaporDiffusionRate, config.atmosphericBuoyancy, 0f));
             shader.SetVector("_WeatherE", new Vector4(config.vaporCapacityScale, config.cloudRetainMass, config.waterPressureResponse, config.latentHeatScale));
             shader.SetVector("_WeatherF", new Vector4(config.surfaceAirHeatExchange, config.temperatureAdvectionRate, config.pressureCompressibility, config.atmosphericCflLimit));
             shader.SetVector("_WeatherG", new Vector4(config.surfaceAirTemperature, config.atmosphericLapseRate, config.terrainRadiativeCooling, config.verticalBuoyancyStrength));
-            shader.SetVector("_WeatherH", new Vector4(config.atmosphereAbsorption, 0f, 0f, 0f));
+            shader.SetVector("_WeatherH", new Vector4(config.atmosphereAbsorption, config.dewRate, 0f, 0f));
             shader.SetVector("_WeatherI", new Vector4(config.coriolisStrength, config.velocityAdvectionRate, config.prevailingWind, 0f));
             shader.SetVector("_PressureA", new Vector4(config.pressureDiffusionRate, config.pressureEquilibriumGradient, config.pressureEquilibriumMaximum, 0f));
             shader.SetVector("_PressureB", new Vector4(config.gasPressureDiffusivity, config.fluidPressureDiffusivity, config.porousPressureDiffusivity, config.rigidPressureDiffusivity));
-            shader.SetVector("_DensityExchange", new Vector4(config.densityExchangeRate, config.densityExchangeEpsilon, 0f, 0f));
             shader.SetVector("_MycologyA", new Vector4(config.mycologyInitialSporeLoad, config.mycologyRareStrainChance, config.mycologyAirTransportRate, config.mycologyWaterTransportRate));
             shader.SetVector("_MycologyB", new Vector4(config.mycologyDiffusionRate, config.mycologySettlingRate, config.mycologySporulationRate, config.mycologyGrowthRate));
             shader.SetVector("_MycologyC", new Vector4(config.mycologyDecayRate, config.mycologyGrowthTempMin, config.mycologyGrowthTempMax, config.mycologyGrowthMoistureMin));
@@ -913,15 +927,13 @@ namespace GeneSys.Simulation.Gpu
                 config.climateBaseAlbedo,
                 config.climateAshAlbedo,
                 config.climateBurnBucketPenalty));
+            shader.SetVector("_ClimateE", new Vector4(config.climateSlabRadiativeCooling, 0f, 0f, 0f));
             shader.SetVector("_MargolusParams", new Vector4(
-                config.margolusGravityBias,
+                1f,
                 config.margolusReposeFriction,
                 config.margolusMetricEnable ? 1f : 0f,
-                config.margolusFluidEnable ? config.margolusFluidLevelingBias : 0f));
-            shader.SetVector("_MargolusFlags", new Vector4(
-                config.enableMaterialTransport ? 1f : 0f,
-                config.margolusFluidEnable ? 1f : 0f,
-                0f, 0f));
+                config.margolusFluidEnable ? config.margolusMagmaLevelingBias : 0f));
+            shader.SetVector("_WorldGenFlags", new Vector4(config.enableMaterialTransport ? 1f : 0f, 0f, 0f, 0f));
         }
 
         private void BindPassTextures(ComputeShader shader, int kernel)
@@ -1297,6 +1309,7 @@ namespace GeneSys.Simulation.Gpu
             if (!paintedThisTick)
             {
                 SetCommon(tree, physiology, deltaTime);
+                tree.SetFloat("_TreeReceiptScale", Due(config.transportPassInterval) ? Interval(config.transportPassInterval) : 0f);
                 tree.SetBuffer(physiology, "_MaterialDefinitions", materialBuffer);
                 BindTreeWorldReads(physiology);
                 tree.SetTexture(physiology, "_AuxWrite", resources.AuxWrite);

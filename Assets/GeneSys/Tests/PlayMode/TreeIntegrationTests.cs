@@ -129,6 +129,7 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -152,7 +153,6 @@ namespace GeneSys.Tests
             host.Config.treeSeedAtWorldgen = false;
             host.Config.combustionIgnitionAccumulationRate = 0f;
             host.Config.stormChargeSeparationRate = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.treeGeneExpressionRange = 0f;
             host.Config.treeGrowthCost = 0f;
             host.Config.treeDecayRate = 0f;
@@ -637,6 +637,68 @@ namespace GeneSys.Tests
                 yield return null;
             Assert.That(done, Is.True, validator.LastMessage);
             Assert.That(validator.LastValidationPassed, Is.True, validator.LastMessage);
+        }
+
+        [UnityTest]
+        public IEnumerator HydrationAccountingMatchesAcrossTransportCadences()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = 40;
+            int y = SurfaceY(host);
+            host.Config.treeInitialHydration = 0.25f;
+            host.Config.treeWaterUptakeRate = 0.6f;
+            host.Config.treeMaintenanceRate = 0f;
+            host.Config.treeNightDrain = 0f;
+
+            host.Config.transportPassInterval = 1;
+            yield return PlantSprout(host, x, y);
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(host.Grid.WrapTheta(x - 1), y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(5f, 1.5f, 0f, 0f)
+            });
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(host.Grid.WrapTheta(x + 1), y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(5f, 1.5f, 0f, 0f)
+            });
+            yield return Step(host, 8);
+            float hydrationFast = 0f;
+            yield return ReadTreeCell(host, x, y, (_, phys, __, ___) => hydrationFast = phys.y);
+
+            yield return PrepareIsolatedWorld(host);
+            host.Config.treeInitialHydration = 0.25f;
+            host.Config.treeWaterUptakeRate = 0.6f;
+            host.Config.treeMaintenanceRate = 0f;
+            host.Config.treeNightDrain = 0f;
+            host.Config.transportPassInterval = 4;
+            yield return PlantSprout(host, x, y);
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(host.Grid.WrapTheta(x - 1), y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(5f, 1.5f, 0f, 0f)
+            });
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(host.Grid.WrapTheta(x + 1), y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(5f, 1.5f, 0f, 0f)
+            });
+            yield return Step(host, 8);
+            float hydrationSlow = 0f;
+            yield return ReadTreeCell(host, x, y, (_, phys, __, ___) => hydrationSlow = phys.y);
+            Assert.That(hydrationSlow, Is.EqualTo(hydrationFast).Within(0.08f),
+                $"Receipt cadence should preserve hydration. interval1={hydrationFast:F3} interval4={hydrationSlow:F3}");
         }
 
         private sealed class SimulationConfigSnapshot

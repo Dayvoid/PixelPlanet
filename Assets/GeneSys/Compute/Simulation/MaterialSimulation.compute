@@ -297,7 +297,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         if (liquidId == 9u)
             state.x = max(WATER_MELT_TEMP + hysteresis, state.x - WaterLatentHeatDelta(melted, _WeatherE.w, 0.4));
         else
-            state.x = max(definition.phase.x + hysteresis, state.x - MaterialPhaseLatentDelta(definition.motion.y, _WeatherE.w, heatCapacity));
+            state.x = max(definition.phase.x + hysteresis, state.x - MaterialPhaseLatentDelta(definition.motion.x, _WeatherE.w, heatCapacity));
     }
     else if (solidId > 0u && material != solidId && state.x < definition.phase.x - hysteresis)
     {
@@ -306,7 +306,7 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
         if (solidId == 10u)
             state.x = min(WATER_MELT_TEMP - hysteresis, state.x + WaterLatentHeatDelta(frozen, _WeatherE.w, 0.4));
         else
-            state.x = min(definition.phase.x - hysteresis, state.x + MaterialPhaseLatentDelta(definition.motion.y, _WeatherE.w, heatCapacity));
+            state.x = min(definition.phase.x - hysteresis, state.x + MaterialPhaseLatentDelta(definition.motion.x, _WeatherE.w, heatCapacity));
     }
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }

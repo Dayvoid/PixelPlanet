@@ -111,20 +111,19 @@ namespace GeneSys.Persistence
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = version >= Version16 ? Version16 : (version >= Version15 ? Version15 : (version >= Version14 ? Version14 : (version >= Version13 ? Version13 : (version >= Version12 ? Version12 : (version >= Version11 ? Version11 : (version >= Version10 ? Version10 : Version9))))));
+            int writeVersion = Mathf.Clamp(version, Version1, Version16);
             bool includeGrass = writeVersion >= Version10;
             bool includeWasp = writeVersion >= Version11;
             bool includeTree = writeVersion >= Version12;
-            bool includeLegacyMobile = writeVersion == Version14 || writeVersion == Version15;
             bool includeGeodynamics = writeVersion >= Version15;
-            int payloadCount = writeVersion >= Version16 ? PayloadCountV16 : (writeVersion == Version15 ? PayloadCountV15 : (writeVersion == Version14 ? PayloadCountV14 : (includeTree ? PayloadCountV12 : (includeWasp ? PayloadCountV11 : (includeGrass ? PayloadCountV10 : PayloadCountV9)))));
+            int payloadCount = writeVersion >= Version16 ? PayloadCountV16
+                : writeVersion >= Version15 ? PayloadCountV15
+                : writeVersion >= Version14 ? PayloadCountV14
+                : writeVersion >= Version12 ? PayloadCountV12
+                : writeVersion >= Version11 ? PayloadCountV11
+                : writeVersion >= Version10 ? PayloadCountV10
+                : PayloadCountV9;
             byte[][] payloads = new byte[payloadCount][];
-            if (includeLegacyMobile)
-            {
-                byte[] dummySlice = new byte[host.Resources.Grid.angularResolution * host.Resources.Grid.radialResolution * sizeof(float)];
-                for (int slice = 0; slice < 6; slice++)
-                    payloads[PayloadCountV12 + slice] = dummySlice;
-            }
             int remaining = PayloadCountV9;
             bool failed = false;
             bool grassBatchStarted = !includeGrass;
@@ -258,7 +257,10 @@ namespace GeneSys.Persistence
                     writer.Write(host.Resources.Grid.radialResolution);
                     writer.Write(config.seed);
                     writer.Write(host.Clock.TickCount);
-                    WriteConfig(writer, config);
+                    if (writeVersion >= Version13)
+                        WriteConfig(writer, config);
+                    else
+                        WriteConfigLegacy(writer, config);
                     WriteEcologyConfig(writer, config);
                     WriteFloraConfig(writer, config);
                     WriteFaunaConfig(writer, config);
@@ -645,6 +647,29 @@ namespace GeneSys.Persistence
             UnityEngine.Object.Destroy(genomeStaging);
         }
 
+        private static void WriteConfigLegacy(BinaryWriter writer, SimulationConfig config)
+        {
+            writer.Write(config.targetOceanCoverage);
+            writer.Write(config.minOceanBasins);
+            writer.Write(config.maxOceanBasins);
+            writer.Write(config.seaLevelRadius);
+            writer.Write(config.basinDepth);
+            writer.Write(config.terrainRelief);
+            writer.Write(config.coastRoughness);
+            writer.Write(config.initialGroundwaterSaturation);
+            writer.Write(config.initialAtmosphericHumidity);
+            writer.Write(config.groundwaterDepth);
+            writer.Write(config.runoffRate);
+            writer.Write(config.pondingRate);
+            writer.Write(0f);
+            writer.Write(config.springDischargeRate);
+            writer.Write(0f);
+            writer.Write(0f);
+            writer.Write(0f);
+            writer.Write(config.hydrothermalStrength);
+            writer.Write(config.ventChemicalRate);
+        }
+
         private static void WriteConfig(BinaryWriter writer, SimulationConfig config)
         {
             writer.Write(config.targetOceanCoverage);
@@ -731,7 +756,8 @@ namespace GeneSys.Persistence
             ApplyLegacyFloat(json, "tectonicStrainGain", "fractureRate", v => config.tectonicStrainGain = v);
             ApplyLegacyFloat(json, "volcanicCoolingRate", "volcanicCooling", v => config.volcanicCoolingRate = v);
             ApplyLegacyFloat(json, "eruptionDriveScale", "magmaEruption", v => config.eruptionDriveScale = v);
-            ApplyLegacyFloat(json, "hydrothermalHeatTransferRate", "hydrothermalStrength", v => config.hydrothermalHeatTransferRate = v);
+            ApplyLegacyFloat(json, "hydrothermalNutrientRate", "hydrothermalHeatTransferRate", v => config.hydrothermalNutrientRate = v);
+            ApplyLegacyFloat(json, "hydrothermalNutrientRate", "hydrothermalStrength", v => config.hydrothermalNutrientRate = v);
             ApplyLegacyFloat(json, "hydrothermalNutrientYield", "ventChemicalRate", v => config.hydrothermalNutrientYield = v);
             ApplyLegacyFloat(json, "corePulseHeat", "coreReactionMagnitude", v => config.corePulseHeat = v);
             ApplyLegacyFloat(json, "surfaceStressRecoveryRate", "stressDecayRate", v => config.surfaceStressRecoveryRate = v);

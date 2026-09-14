@@ -166,22 +166,9 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
 
     if (magma)
     {
+        // Volcanic cooling sink only. Magma↔Basalt ID flips are owned by PhaseChange
+        // (Magma melt 700 °C, Basalt melt 780 °C = intentional hysteresis).
         state.x -= _Volcanic.y * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
-        // Surface/extruded lava crusts once it has given up a latent-equivalent of heat.
-        // Paying latent every tick while still magma would be an infinite heater; requiring
-        // T + latent < 780 means the cell actually cooled through the freeze budget.
-        if (state.x < 780.0)
-        {
-            float freezeCp = EffectiveCellHeatCapacity(D(material), state, aux, D(9u).transport.y, false);
-            float latent = MaterialPhaseLatentDelta(D(material).motion.y, _WeatherE.w, freezeCp);
-            if (state.x + latent < 780.0)
-            {
-                state.x = min(780.0, state.x + latent);
-                material = 5u;
-                state.y *= 0.5;
-                flow *= 0.25;
-            }
-        }
     }
 
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
@@ -311,6 +298,7 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
         }
     }
 
+    // Pressure-driven eruption only. Magma fall and lateral spread are Margolus fluid rules.
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
@@ -323,16 +311,14 @@ int2 AshDestination(int2 source)
     float2 flow = ReadFlow(source);
     MaterialGpuData definition = D(sourceMaterial);
     float buoyancy = saturate(definition.biology.w);
-    float density = max(0.05, definition.physical.x);
     float lift = max(0.0, flow.y) * _EruptionB.y + max(0.0, state.x - 80.0) * 0.004 * buoyancy;
-    float settle = _EruptionB.z * density * (1.0 - buoyancy * 0.65);
-    float net = lift - settle;
 
     int direction = ((source.x + _Tick) & 1) == 0 ? -1 : 1;
     if (abs(flow.x) > 0.15)
         direction = flow.x > 0.0 ? 1 : -1;
 
-    if (net > 0.08)
+    // Buoyant lift only. Ash fall / repose settling is owned by Margolus.
+    if (lift > 0.08)
     {
         int2 up = ClampCell(source + int2(0, 1), _GridSize);
         if (IsOpenCell(ReadMaterial(up))) return up;
@@ -340,15 +326,6 @@ int2 AshDestination(int2 source)
         if (IsOpenCell(ReadMaterial(diagonalUp))) return diagonalUp;
         int2 side = ClampCell(source + int2(direction, 0), _GridSize);
         if (IsOpenCell(ReadMaterial(side))) return side;
-        return source;
-    }
-
-    if (net < -0.02 || settle > lift + 0.001)
-    {
-        int2 below = ClampCell(source + int2(0, -1), _GridSize);
-        if (IsOpenCell(ReadMaterial(below))) return below;
-        int2 diagonal = ClampCell(source + int2(direction, -1), _GridSize);
-        if (IsOpenCell(ReadMaterial(diagonal))) return diagonal;
         return source;
     }
 

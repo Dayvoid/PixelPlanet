@@ -128,7 +128,6 @@ namespace GeneSys.Tests
             Assert.That(algae.stableId, Is.EqualTo((int)MaterialIds.Algae));
             Assert.That(algae.category, Is.EqualTo(MaterialCategory.Biological));
             Assert.That(algae.density, Is.LessThan(1f));
-            Assert.That(algae.densityDisplaceable, Is.True);
             Assert.That(algae.rigidity, Is.GreaterThanOrEqualTo(0.9f));
             Assert.That(algae.caloricContent, Is.GreaterThan(0f));
 
@@ -137,7 +136,7 @@ namespace GeneSys.Tests
             Assert.That(registry.Get((int)MaterialIds.Algae), Is.Not.Null);
             MaterialGpuData[] gpu = registry.BuildGpuData();
             Assert.That(gpu[(int)MaterialIds.Algae].metadata.x, Is.EqualTo((float)MaterialCategory.Biological).Within(0.01f));
-            Assert.That(gpu[(int)MaterialIds.Algae].motion.x, Is.EqualTo(1f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Algae].motion.x, Is.EqualTo(algae.latentHeat).Within(0.01f));
         }
 
         [Test]

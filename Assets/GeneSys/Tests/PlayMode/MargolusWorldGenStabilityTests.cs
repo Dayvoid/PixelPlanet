@@ -142,7 +142,6 @@ namespace GeneSys.Tests
             host.Config.useOgWorldgen = false;
             host.Config.enableMaterialTransport = true;
             host.Config.margolusSubsteps = 1;
-            host.Config.margolusGravityBias = 1f;
             host.Config.margolusReposeFriction = 1f;
             host.Config.margolusMetricEnable = true;
             host.Config.margolusFluidEnable = true;

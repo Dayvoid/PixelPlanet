@@ -37,7 +37,7 @@ namespace GeneSys.Tests
             Assert.That(ash.gasPhaseId, Is.EqualTo((int)MaterialIds.Ash));
             Assert.That(ash.buoyancyBias, Is.GreaterThan(0.5f));
             Assert.That(ash.density, Is.LessThan(1f));
-            Assert.That(ash.densityDisplaceable, Is.False, "Ash uses AshTransport, not liquid density exchange.");
+            Assert.That(ash.category, Is.EqualTo(MaterialCategory.Granular), "Ash settles via Margolus and lifts via AshTransport.");
 
             MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
             Assert.That(registry, Is.Not.Null);
@@ -48,7 +48,7 @@ namespace GeneSys.Tests
             Assert.That(gpu[(int)MaterialIds.Ash].metadata.w, Is.EqualTo((float)MaterialIds.Ash).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Ash].metadata.x, Is.EqualTo((float)MaterialCategory.Granular).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Ash].biology.w, Is.GreaterThan(0.5f));
-            Assert.That(gpu[(int)MaterialIds.Ash].motion.x, Is.EqualTo(0f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Ash].motion.x, Is.EqualTo(ash.latentHeat).Within(0.01f));
         }
 
         [Test]
@@ -61,7 +61,6 @@ namespace GeneSys.Tests
             Assert.That(metal.solidPhaseId, Is.EqualTo((int)MaterialIds.Metal));
             Assert.That(metal.liquidPhaseId, Is.EqualTo((int)MaterialIds.Metal));
             Assert.That(metal.gasPhaseId, Is.EqualTo((int)MaterialIds.Vapor));
-            Assert.That(metal.densityDisplaceable, Is.True);
             Assert.That(metal.bioModifiable, Is.False);
             Assert.That(metal.thermalConductivity, Is.GreaterThan(7f));
             Assert.That(metal.electricalConductivity, Is.GreaterThan(7f));
@@ -75,11 +74,11 @@ namespace GeneSys.Tests
             Assert.That(gpu[(int)MaterialIds.Metal].metadata.w, Is.EqualTo((float)MaterialIds.Metal).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Metal].transport.x, Is.EqualTo(metal.thermalConductivity).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Metal].transport.z, Is.EqualTo(metal.electricalConductivity).Within(0.01f));
-            Assert.That(gpu[(int)MaterialIds.Metal].motion.x, Is.EqualTo(1f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Metal].motion.x, Is.EqualTo(metal.latentHeat).Within(0.01f));
         }
 
         [Test]
-        public void DensityDisplaceableMaterialsPackMotionFlagAndOrdering()
+        public void MaterialsPackLatentHeatAndDensityOrdering()
         {
             Assert.That(MaterialGpuData.Stride, Is.EqualTo(128));
 
@@ -92,31 +91,15 @@ namespace GeneSys.Tests
             MaterialDefinition water = registry.Get((int)MaterialIds.Water);
             MaterialDefinition ice = registry.Get((int)MaterialIds.Ice);
             MaterialDefinition core = registry.Get((int)MaterialIds.Core);
-            MaterialDefinition mantle = registry.Get((int)MaterialIds.Mantle);
-            MaterialDefinition ash = registry.Get((int)MaterialIds.Ash);
-
-            Assert.That(rock.densityDisplaceable, Is.True);
-            Assert.That(soil.densityDisplaceable, Is.True);
-            Assert.That(water.densityDisplaceable, Is.True);
-            Assert.That(ice.densityDisplaceable, Is.True);
-            Assert.That(registry.Get((int)MaterialIds.Basalt).densityDisplaceable, Is.True);
-            Assert.That(registry.Get((int)MaterialIds.Sediment).densityDisplaceable, Is.True);
-            Assert.That(registry.Get((int)MaterialIds.Magma).densityDisplaceable, Is.True);
-
-            Assert.That(core.densityDisplaceable, Is.False);
-            Assert.That(mantle.densityDisplaceable, Is.False);
-            Assert.That(ash.densityDisplaceable, Is.False);
-            Assert.That(registry.Get((int)MaterialIds.Void).densityDisplaceable, Is.False);
-            Assert.That(registry.Get((int)MaterialIds.Air).densityDisplaceable, Is.False);
 
             Assert.That(rock.density, Is.GreaterThan(water.density));
             Assert.That(soil.density, Is.GreaterThan(water.density));
             Assert.That(ice.density, Is.LessThan(water.density));
 
-            Assert.That(gpu[(int)MaterialIds.Rock].motion.x, Is.EqualTo(1f).Within(0.01f));
-            Assert.That(gpu[(int)MaterialIds.Water].motion.x, Is.EqualTo(1f).Within(0.01f));
-            Assert.That(gpu[(int)MaterialIds.Ice].motion.x, Is.EqualTo(1f).Within(0.01f));
-            Assert.That(gpu[(int)MaterialIds.Core].motion.x, Is.EqualTo(0f).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Rock].motion.x, Is.EqualTo(rock.latentHeat).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Water].motion.x, Is.EqualTo(water.latentHeat).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Ice].motion.x, Is.EqualTo(ice.latentHeat).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Core].motion.x, Is.EqualTo(core.latentHeat).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Rock].physical.x, Is.EqualTo(rock.density).Within(0.01f));
         }
 
@@ -147,7 +130,7 @@ namespace GeneSys.Tests
             Assert.That(registry.Get((int)MaterialIds.Limestone), Is.Not.Null);
             Assert.That(registry.Get((int)MaterialIds.Clay), Is.Not.Null);
             MaterialGpuData[] gpu = registry.BuildGpuData();
-            Assert.That(gpu[(int)MaterialIds.Granite].motion.y, Is.EqualTo(granite.latentHeat).Within(0.01f));
+            Assert.That(gpu[(int)MaterialIds.Granite].motion.x, Is.EqualTo(granite.latentHeat).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Limestone].transport.x, Is.EqualTo(limestone.thermalConductivity).Within(0.01f));
             Assert.That(gpu[(int)MaterialIds.Clay].transport.w, Is.EqualTo(clay.absorbency).Within(0.01f));
         }

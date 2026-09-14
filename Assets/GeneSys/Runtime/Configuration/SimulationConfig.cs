@@ -67,6 +67,7 @@ namespace GeneSys.Configuration
         [Range(0.001f, 0.06f)] public float iceCapHeight = 0.003f;
         [Range(0f, 0.5f)] public float iceCapRadiusVariation = 0.25f;
         [Range(0f, 0.5f)] public float iceCapHeightVariation = 0.3f;
+        [Range(-20f, 40f)] public float surfaceAirTemperature = 25f;
 
         [Header("Material mechanics")]
         [Range(0f, 5f)] public float gravityStrength = 1f;
@@ -75,8 +76,6 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float thermalPressureEffect = 0.6f;
         [Range(0f, 4f)] public float electricalRate = 0.3f;
         [Range(0f, 1f)] public float phaseHysteresis = 0.02f;
-        [Range(0f, 64f)] public float densityExchangeRate = 4f;
-        [Range(0.001f, 0.25f)] public float densityExchangeEpsilon = 0.02f;
 
         [Header("Geodynamics")]
         public bool geodynamicsLayerEnable = true;
@@ -113,7 +112,6 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float magmaViscosity = 0.5f;
         [Range(0.1f, 2f)] public float volcanicReleaseThreshold = 0.78f;
         [Range(0.05f, 0.25f)] public float volcanicReleaseFraction = 0.2f;
-        [Range(0f, 1f)] public float volcanicSurfaceCoupling = 0.22f;
 
         [Header("Eruption")]
         [FormerlySerializedAs("magmaEruption")]
@@ -129,8 +127,9 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float ashFertilityStrength = 1f;
 
         [Header("Hydrothermal")]
+        [FormerlySerializedAs("hydrothermalHeatTransferRate")]
         [FormerlySerializedAs("hydrothermalStrength")]
-        [Range(0f, 4f)] public float hydrothermalHeatTransferRate = 0.35f;
+        [Range(0f, 4f)] public float hydrothermalNutrientRate = 0.35f;
         [FormerlySerializedAs("ventChemicalRate")]
         [Range(0f, 4f)] public float hydrothermalNutrientYield = 0.12f;
         [Range(0.1f, 2f)] public float hydrothermalReleaseThreshold = 0.7f;
@@ -153,8 +152,10 @@ namespace GeneSys.Configuration
         public float volcanicCooling { get => volcanicCoolingRate; set => volcanicCoolingRate = value; }
         [System.Obsolete("Use eruptionDriveScale.")]
         public float magmaEruption { get => eruptionDriveScale; set => eruptionDriveScale = value; }
-        [System.Obsolete("Use hydrothermalHeatTransferRate.")]
-        public float hydrothermalStrength { get => hydrothermalHeatTransferRate; set => hydrothermalHeatTransferRate = value; }
+        [System.Obsolete("Use hydrothermalNutrientRate.")]
+        public float hydrothermalStrength { get => hydrothermalNutrientRate; set => hydrothermalNutrientRate = value; }
+        [System.Obsolete("Use hydrothermalNutrientRate.")]
+        public float hydrothermalHeatTransferRate { get => hydrothermalNutrientRate; set => hydrothermalNutrientRate = value; }
         [System.Obsolete("Use hydrothermalNutrientYield.")]
         public float ventChemicalRate { get => hydrothermalNutrientYield; set => hydrothermalNutrientYield = value; }
         [System.Obsolete("Use corePulsePeriodTicks.")]
@@ -184,11 +185,11 @@ namespace GeneSys.Configuration
         [Header("Material transport (Margolus CA)")]
         public bool enableMaterialTransport = true;
         [Range(1, 4)] public int margolusSubsteps = 1;
-        [Range(0f, 4f)] public float margolusGravityBias = 1f;
         [Range(0f, 4f)] public float margolusReposeFriction = 1f;
         public bool margolusMetricEnable = true;
         public bool margolusFluidEnable = true;
-        [Range(0f, 2f)] public float margolusFluidLevelingBias = 0.5f;
+        [FormerlySerializedAs("margolusFluidLevelingBias")]
+        [Range(0f, 2f)] public float margolusMagmaLevelingBias = 0.5f;
 
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
@@ -208,6 +209,7 @@ namespace GeneSys.Configuration
         [Range(-4f, 4f)] public float prevailingWind = 0f;
         [Range(0f, 4f)] public float evaporationRate = 0.5f;
         [Range(0f, 4f)] public float condensationRate = 0.0125f;
+        [Range(0f, 4f)] public float dewRate = 0.0125f;
         [Range(0f, 4f)] public float precipitationRate = 0.125f;
         [Range(0f, 4f)] public float vaporPressureScale = 0.25f;
         [Range(0f, 4f)] public float pressureRate = 0.4f;
@@ -232,7 +234,6 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float temperatureAdvectionRate = 0.8f;
         [Range(0f, 4f)] public float pressureCompressibility = 0.6f;
         [Range(0.05f, 1f)] public float atmosphericCflLimit = 0.4f;
-        [Range(-20f, 40f)] public float surfaceAirTemperature = 25f;
         [Range(0f, 40f)] public float atmosphericLapseRate = 10f;
 
         [Header("Climate")]
@@ -255,6 +256,7 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float climateRoughnessGain = 0.8f;
         [Range(0f, 4f)] public float climateBucketGain = 0.35f;
         [Range(0f, 1f)] public float climateBurnBucketPenalty = 0.25f;
+        [Range(0f, 4f)] public float climateSlabRadiativeCooling = 0.25f;
 
         [Header("Ecology - Mycology")]
         [Range(0f, 1f)] public float mycologyInitialSporeLoad = 0.08f;
@@ -646,6 +648,7 @@ namespace GeneSys.Configuration
             vaporDiffusionRate = Mathf.Max(0f, vaporDiffusionRate);
             atmosphericBuoyancy = Mathf.Max(0f, atmosphericBuoyancy);
             verticalBuoyancyStrength = Mathf.Max(0f, verticalBuoyancyStrength);
+            dewRate = Mathf.Max(0f, dewRate);
             vaporCapacityScale = Mathf.Max(0.001f, vaporCapacityScale);
             cloudRetainMass = Mathf.Max(0.01f, cloudRetainMass);
             waterPressureResponse = Mathf.Max(0f, waterPressureResponse);
@@ -672,6 +675,7 @@ namespace GeneSys.Configuration
             climateRoughnessGain = Mathf.Max(0f, climateRoughnessGain);
             climateBucketGain = Mathf.Max(0f, climateBucketGain);
             climateBurnBucketPenalty = Mathf.Clamp01(climateBurnBucketPenalty);
+            climateSlabRadiativeCooling = Mathf.Max(0f, climateSlabRadiativeCooling);
             hydrostaticIterations = Mathf.Clamp(hydrostaticIterations, 1, 64);
             mycologyInitialSporeLoad = Mathf.Max(0f, mycologyInitialSporeLoad);
             mycologyRareStrainChance = Mathf.Clamp01(mycologyRareStrainChance);
@@ -1067,9 +1071,8 @@ namespace GeneSys.Configuration
             volcanicCoolingRate = Mathf.Max(0f, volcanicCoolingRate);
             volcanicReleaseThreshold = Mathf.Max(0.1f, volcanicReleaseThreshold);
             volcanicReleaseFraction = Mathf.Clamp(volcanicReleaseFraction, 0.05f, 0.25f);
-            volcanicSurfaceCoupling = Mathf.Clamp01(volcanicSurfaceCoupling);
             eruptionDriveScale = Mathf.Clamp01(eruptionDriveScale);
-            hydrothermalHeatTransferRate = Mathf.Max(0f, hydrothermalHeatTransferRate);
+            hydrothermalNutrientRate = Mathf.Max(0f, hydrothermalNutrientRate);
             hydrothermalNutrientYield = Mathf.Max(0f, hydrothermalNutrientYield);
             hydrothermalReleaseThreshold = Mathf.Max(0.1f, hydrothermalReleaseThreshold);
             corePulsePeriodTicks = Mathf.Max(0, corePulsePeriodTicks);
@@ -1096,9 +1099,8 @@ namespace GeneSys.Configuration
             probeLifeSeedMaxCount = Mathf.Clamp(probeLifeSeedMaxCount, probeLifeSeedMinCount, 8);
             probeLifeSeedSporeLoad = Mathf.Clamp01(probeLifeSeedSporeLoad);
             margolusSubsteps = Mathf.Clamp(margolusSubsteps, 1, 4);
-            margolusGravityBias = Mathf.Max(0f, margolusGravityBias);
             margolusReposeFriction = Mathf.Max(0.1f, margolusReposeFriction);
-            margolusFluidLevelingBias = Mathf.Max(0f, margolusFluidLevelingBias);
+            margolusMagmaLevelingBias = Mathf.Max(0f, margolusMagmaLevelingBias);
         }
     }
 }

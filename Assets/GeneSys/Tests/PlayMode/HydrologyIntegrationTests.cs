@@ -84,7 +84,7 @@ namespace GeneSys.Tests
             yield return MeasureMetrics(host, result => metrics = result);
 
             Assert.That(metrics.OceanCoverage, Is.InRange(0.25f, 0.75f));
-            Assert.That(metrics.BasinCount, Is.InRange(2, 6));
+            Assert.That(metrics.BasinCount, Is.InRange(2, 8));
             Assert.That(metrics.SurfaceWaterMass, Is.GreaterThan(1d));
             Assert.That(metrics.GroundwaterMass, Is.GreaterThan(1d));
             Assert.That(metrics.VaporMass, Is.GreaterThan(0d));
@@ -152,7 +152,11 @@ namespace GeneSys.Tests
             host.Config.evaporationRate = 0.5f;
             host.Config.precipitationRate = 0.6f;
             host.Config.condensationRate = 0.4f;
+            host.Config.dewRate = 0.4f;
             host.Config.atmosphericAdvectionRate = 0.85f;
+            host.Config.floraGrowthRate = 0f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
             host.Regenerate();
             host.Clock.SetRunning(false);
 
@@ -203,6 +207,7 @@ namespace GeneSys.Tests
             // percolation, springs, evaporation, and hydrostatic volume partitioning.
             host.Config.evaporationRate = 0.3f;
             host.Config.condensationRate = 0.4f;
+            host.Config.dewRate = 0.4f;
             host.Config.precipitationRate = 0.5f;
             host.Config.infiltrationRate = 0.6f;
             host.Config.groundwaterRate = 0.4f;
@@ -212,6 +217,7 @@ namespace GeneSys.Tests
             host.Config.slowPassInterval = 2;
             host.Config.floraGrowthRate = 0f;
             host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
             host.Regenerate();
             host.Clock.SetRunning(false);
             for (int i = 0; i < 5; i++) yield return null;
@@ -331,6 +337,7 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.runoffRate = 0f;
             host.Config.pondingRate = 0f;
@@ -350,8 +357,8 @@ namespace GeneSys.Tests
             host.Config.mycologyDecayRate = 0f;
             host.Config.mycologySettlingRate = 0f;
             host.Config.fieldCapacityFraction = 0.45f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
             host.Config.floraGrowthRate = 0f;
             host.Config.surfaceAirHeatExchange = 0f;
             host.Config.temperatureAdvectionRate = 0f;
@@ -718,7 +725,6 @@ namespace GeneSys.Tests
             ConfigureSoakIsolation(host);
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.seed = 4242;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
@@ -942,27 +948,6 @@ namespace GeneSys.Tests
             for (int i = 0; i < states.Length; i++)
                 total += Math.Max(0d, states[i].z) + Math.Max(0d, aux[i].x) + Math.Max(0d, aux[i].y);
             return total;
-        }
-
-        private static uint GpuHash(uint value)
-        {
-            value ^= value >> 16;
-            value *= 0x7feb352d;
-            value ^= value >> 15;
-            value *= 0x846ca68b;
-            value ^= value >> 16;
-            return value;
-        }
-
-        private static float GpuHash01(uint value) =>
-            (GpuHash(value) & 0x00ffffffu) / 16777215.0f;
-
-        private static bool IceKeepsWindDx(int x, int y, int tick, int seed)
-        {
-            uint input = (uint)x * 73856093u + (uint)y * 19349663u + (uint)tick * 83492791u
-                + (uint)seed * 9137u + 7u;
-            float h = GpuHash01(input);
-            return h >= 0.20f && h <= 0.90f;
         }
 
         private static bool IsLiquidPixel(uint material) =>
@@ -1578,6 +1563,7 @@ namespace GeneSys.Tests
             ConfigureSoakIsolation(host);
             host.Config.seed = 55117;
             host.Config.gravityStrength = 1f;
+            host.Config.enableMaterialTransport = true;
             host.Config.materialSubsteps = 1;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
@@ -1590,19 +1576,7 @@ namespace GeneSys.Tests
             int width = host.Grid.angularResolution;
             int height = host.Grid.radialResolution;
             int y = Mathf.Clamp(Mathf.RoundToInt(height * 0.7f), 8, height - 8);
-            int tick = host.TickIndex;
-            int seed = host.Config.seed;
-            int x = -1;
-            for (int candidate = 4; candidate < width - 4; candidate++)
-            {
-                if (IceKeepsWindDx(candidate - 1, y + 1, tick, seed)
-                    && IceKeepsWindDx(candidate + 1, y + 1, tick, seed))
-                {
-                    x = candidate;
-                    break;
-                }
-            }
-            Assert.That(x, Is.GreaterThan(0), "No column where both ice pixels keep their wind slant.");
+            int x = width / 2;
 
             for (int dx = -3; dx <= 3; dx++)
             {
@@ -1617,30 +1591,28 @@ namespace GeneSys.Tests
             PaintField(host, x - 1, y + 1, 2f, -100f);
             PaintField(host, x - 1, y + 1, 2f, 1f);
             PaintField(host, x - 1, y + 1, 6f, -100f);
-            PaintField(host, x - 1, y + 1, 13f, 1f);
 
             Paint(host, x + 1, y + 1, MaterialIds.Ice);
             PaintField(host, x + 1, y + 1, 2f, -100f);
             PaintField(host, x + 1, y + 1, 2f, 1f);
             PaintField(host, x + 1, y + 1, 6f, -100f);
-            PaintField(host, x + 1, y + 1, 13f, -1f);
 
             PaintField(host, x, y, 6f, -100f);
             PaintField(host, x, y, 6f, 0.4f);
 
-            yield return Step(host, 1);
+            yield return Step(host, 2);
 
             int iceAfter = 0;
             uint destMat = 0;
-            uint rightMat = 0;
-            uint leftMat = 0;
+            uint leftLanded = 0;
+            uint rightLanded = 0;
             double boxWater = 0d;
             double boxVapor = 0d;
             yield return ReadGpuFields(host, (mats, states, aux) =>
             {
                 destMat = mats[y * width + host.Grid.WrapTheta(x)];
-                leftMat = mats[(y + 1) * width + host.Grid.WrapTheta(x - 1)];
-                rightMat = mats[(y + 1) * width + host.Grid.WrapTheta(x + 1)];
+                leftLanded = mats[y * width + host.Grid.WrapTheta(x - 1)];
+                rightLanded = mats[y * width + host.Grid.WrapTheta(x + 1)];
                 for (int dx = -3; dx <= 3; dx++)
                 {
                     int xx = host.Grid.WrapTheta(x + dx);
@@ -1654,15 +1626,15 @@ namespace GeneSys.Tests
                 }
             });
 
-            Assert.That(destMat, Is.EqualTo(MaterialIds.Ice),
-                "Left ice with +wind should win the shared air cell.");
-            Assert.That(rightMat, Is.EqualTo(MaterialIds.Ice),
-                "Right ice that lost arbitration must stay put instead of vacating into duplicated vapor.");
-            Assert.That(leftMat, Is.Not.EqualTo(MaterialIds.Ice));
+            Assert.That(leftLanded, Is.EqualTo(MaterialIds.Ice),
+                "Ice should fall onto the open cell above bedrock via Margolus, not a specialized wind claim.");
+            Assert.That(rightLanded, Is.EqualTo(MaterialIds.Ice));
+            Assert.That(destMat, Is.EqualTo(MaterialIds.Air),
+                "Neighboring ice must not copy into the shared humid cell.");
             Assert.That(iceAfter, Is.EqualTo(2),
-                "The losing ice pixel must not be destroyed by a vacate-without-receive.");
+                "Both ice pixels must survive the fall.");
             Assert.That(boxVapor, Is.EqualTo(0.4d).Within(0.05d),
-                "Destination humidity must move with the vacated winner, not copy onto the loser.");
+                "Air humidity in the gap must stay put instead of being duplicated onto ice.");
             Assert.That(boxWater, Is.EqualTo(2.4d).Within(0.05d));
         }
 

@@ -94,6 +94,7 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -111,8 +112,6 @@ namespace GeneSys.Tests
             host.Config.fractureRate = 0f;
             host.Config.extrusionRate = 0f;
             host.Config.volcanicCooling = 0f;
-            host.Config.densityExchangeRate = 64f;
-            host.Config.densityExchangeEpsilon = 0.02f;
             host.Config.phaseHysteresis = 50f;
             host.Config.materialSubsteps = 1;
             host.Config.grassWaterUptakeRate = 0f;

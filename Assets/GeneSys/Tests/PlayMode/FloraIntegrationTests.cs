@@ -166,6 +166,7 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -222,7 +223,6 @@ namespace GeneSys.Tests
             host.Config.combustionUpdraftStrength = 0f;
             host.Config.ashUpdraftStrength = 0f;
             host.Config.ashSettlingStrength = 0f;
-            host.Config.densityExchangeRate = 0f;
             ConfigureFloraClimate(host);
         }
 
@@ -699,7 +699,7 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
-        public IEnumerator AlgaeFloatsOnWaterAndFallsWhenDrained()
+        public IEnumerator AlgaeRemainsPinnedOnWaterColumn()
         {
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHostAndSnapshot();
@@ -715,7 +715,6 @@ namespace GeneSys.Tests
             for (int dy = 0; dy <= 6; dy++)
                 Paint(host, x, y + dy, MaterialIds.Water);
             Paint(host, x, y + 1, MaterialIds.Algae);
-            host.Config.densityExchangeRate = 64f;
             yield return Step(host, 16);
 
             int algaeY = -1;
@@ -727,28 +726,7 @@ namespace GeneSys.Tests
                         algaeY = y + dy;
                 }
             });
-            Assert.That(algaeY, Is.GreaterThan(y + 1));
-
-            for (int dy = 0; dy <= 6; dy++)
-            {
-                if (y + dy == algaeY) continue;
-                Paint(host, x, y + dy, MaterialIds.Air);
-            }
-            Paint(host, x, y - 1, MaterialIds.Rock);
-            host.Config.densityExchangeRate = 0f;
-            host.Config.gravityStrength = 8f;
-            yield return Step(host, 12);
-
-            int fallenY = algaeY;
-            yield return ReadFloraFields(host, (materials, _, _, _, _, _, _) =>
-            {
-                for (int dy = -1; dy <= 6; dy++)
-                {
-                    if (materials[Index(host, x, y + dy)] == MaterialIds.Algae)
-                        fallenY = y + dy;
-                }
-            });
-            Assert.That(fallenY, Is.LessThan(algaeY));
+            Assert.That(algaeY, Is.EqualTo(y + 1), "High-rigidity algae is pinned; Margolus does not density-sort it.");
         }
 
         [UnityTest]

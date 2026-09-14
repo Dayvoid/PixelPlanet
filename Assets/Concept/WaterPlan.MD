@@ -15,9 +15,9 @@ Every transfer subtracts from a source reservoir before adding to a destination.
 ## Rule set
 
 1. **Saturation.** One Magnus curve `VaporSaturation(T) * vaporCapacityScale` is used by evaporation, condensation, dew, worldgen humidity, and relative-humidity display. Pressure shifts boiling point only.
-2. **Evaporation.** `k * max(0, qsat(Tsurf) - qair) * (1 + wind) * availability`. Stops when the air is saturated. Exposed groundwater uses the same deficit, scaled by porosity.
+2. **Evaporation.** `EvaporateToAir` wraps the Magnus deficit. WaterCycle, detritus litter, and grass/tree transpiration all use it. Stops when the air is saturated. Exposed groundwater uses the same deficit, scaled by porosity. Flash steam and hydrothermal/pixel boil stay temperature-driven and pay latent heat separately.
 3. **Condensation.** Excess vapor over `qsat(Tair)` becomes cloud `state.z` and releases latent heat.
-4. **Dew / frost.** If an exposed surface is colder than the dew point of the Air above, vapor condenses onto `state.z` (ice when frozen).
+4. **Dew / frost.** If an exposed surface is colder than the dew point of the Air above, vapor condenses onto `state.z` (ice when frozen). Rate is `dewRate`, independent of in-air `condensationRate`.
 5. **Adiabatic lapse.** Radial wind cools rising air and warms sinking air in `AtmosphericTransport`. Orographic rain and rain shadows follow topography.
 6. **Virtual-temperature buoyancy.** `T * (1 + 0.61 * q)` versus the lapse reference. No separate humidity-buoyancy slider.
 7. **Solar.** `LightField` is rebuilt every tick (cloud, vapor, soot, water, canopy). `AtmosphericForcing` heats by `light / heatCapacity`. Night cooling is reduced by local cloud cover.
@@ -29,13 +29,15 @@ Every transfer subtracts from a source reservoir before adding to a destination.
 
 ## Tick order
 
-Material thermal/motion → PhaseChange (pixel phase + groundwater boil) → Combustion → LightAttenuation → AtmosphericForcing → Continuity → PressureDiffusion → Dynamics → AshTransport → Transport (advection + lapse) → WaterCycle (evap/condense/dew) → Precipitation → Storm → Groundwater (soak/percolate/seep) → Hydrostatic leveling → slow erosion/detritus → biology.
+Material thermal → PhaseChange (pixel Water/Ice/Magma phase only) → Margolus (gravity/repose; Water falls here) → Combustion → LightAttenuation → AtmosphericForcing → Continuity → PressureDiffusion → Dynamics → AshTransport (buoyant lift only) → Transport (advection + lapse) → WaterCycle (evap/condense/dew) → Precipitation → Storm → Groundwater (soak/percolate/seep; leftover Water-pixel mass returns to host film) → HydrothermalRelease (groundwater boil `aux.y` → `aux.x`) → Hydrostatic leveling (horizontal free-surface only) → slow erosion/detritus → biology.
+
+`springDischargeRate` still drives exposed-host weep. Capillary evaporation of `aux.y` still exists and uses the same Magnus deficit as surface evap, scaled by porosity (the old `capillaryEvaporationFraction` slider is gone).
 
 ## Config (after)
 
 Removed: `saturationCapacityScale` (renamed `vaporCapacityScale`), `humidityBuoyancy`, `capillaryEvaporationFraction`, `rimCoolingRadius`, `rimCoolingStrength`, `springHeadThreshold`, `geyserHeatThreshold`, `geyserDischargeRate`, `geyserCooldownSeconds`, `solarTerrainPenetration`, `terrainSolarHeating`, `atmosphereSolarHeating`, `convectiveBreakthroughTemp`, `windInertiaCoupling`, `cloudPrecipitationThreshold` (renamed `cloudRetainMass`).
 
-Added / merged: `solarIntensity`, `atmosphereAbsorption`, `vaporCapacityScale`, `cloudRetainMass`. `hydrostaticIterations` default is 32.
+Added / merged: `solarIntensity`, `atmosphereAbsorption`, `vaporCapacityScale`, `cloudRetainMass`, `dewRate` (defaults equal to `condensationRate`). `hydrostaticIterations` default is 32. `climateSlabRadiativeCooling` is the climate-slab LW knob and is independent of atmosphere longwave.
 
 ## Phase 0 baseline (shipping Standard, pre-realignment)
 

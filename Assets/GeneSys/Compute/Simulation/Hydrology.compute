@@ -55,8 +55,6 @@ float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMois
 float4 _TreeH; // seedAtWorldgen, cohesionBonus, canopyOpacity, exposureDamage
 float4 _DetritusA; // vaporAbsorb, evaporate, distribute, leach
 float4 _DetritusB; // decomposition, unused
-float4 _MargolusFlags;
-float4 _MargolusParams;
 float4 _WeatherI;
 float4 _PressureA;
 float4 _Hydrothermal;
@@ -164,14 +162,8 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
             float soak = InfiltrationAmount(state.z * WaterLiquidFraction(state.x, hysteresis), remaining, saturate(belowDef.transport.w),
                 saturate(belowDef.biology.z), infiltrationRate, _DeltaTime);
             state.z -= soak;
-            // Only a pixel that actually drained may give up its residue; otherwise a pixel
-            // resting on soil with infiltration disabled would still evaporate itself away.
-            if (soak > 0.0 && state.z < 0.05)
-            {
-                aux.x += state.z;
-                state.z = 0.0;
-                material = 1u;
-            }
+            // Residue stays on this Water pixel. Hydrostatic collapses sub-cell standing
+            // water to host film; Groundwater must not delete leftover mass or the ID.
         }
     }
 
@@ -293,6 +285,8 @@ void HydrothermalRelease(uint3 id : SV_DispatchThreadID)
     Write(cell, material, state, flow, aux, ecology, combustion);
 }
 
+// Identity change only. Converts stressed / karst / unsupported crust to Sediment (8).
+// Never relocates cells — Margolus owns gravity and repose settling of the resulting sediment.
 [numthreads(8, 8, 1)]
 void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
 {
@@ -473,7 +467,7 @@ void DetritusExchange(uint3 id : SV_DispatchThreadID)
             float room = max(0.0, 1.0 - moistureRead);
             float absorb = min(min(max(0.0, nAux.x), room), absorbRate * max(0.0, nAux.x) * _DeltaTime * 0.25);
             moistureDelta += absorb;
-            float evap = min(moistureRead, evapRate * moistureRead * _DeltaTime * 0.25);
+            float evap = EvaporateToAir(state.x, nAux.x, moistureRead, evapRate * 0.25, _DeltaTime, _WeatherE.x);
             moistureDelta -= evap;
         }
         else if (IsAtmosphereCell(cell, material) && IsDetritusMaterial(nMat))
@@ -481,7 +475,7 @@ void DetritusExchange(uint3 id : SV_DispatchThreadID)
             float room = max(0.0, 1.0 - nAux.y);
             float absorb = min(min(vaporRead, room), absorbRate * vaporRead * _DeltaTime * 0.25);
             vaporDelta -= absorb;
-            float evap = min(max(0.0, nAux.y), evapRate * max(0.0, nAux.y) * _DeltaTime * 0.25);
+            float evap = EvaporateToAir(S(neighbor).x, vaporRead, nAux.y, evapRate * 0.25, _DeltaTime, _WeatherE.x);
             vaporDelta += evap;
         }
 
@@ -641,7 +635,7 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             }
         }
         [loop]
-        for (int sy = bedY + 1; sy < min(newTop, _GridSize.y); sy++)
+        for (int sy = bedY + 1; sy <= min(max(oldTop, newTop), _GridSize.y - 1); sy++)
         {
             int2 scell = int2(x, sy);
             uint smat = M(scell);

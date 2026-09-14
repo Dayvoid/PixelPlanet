@@ -109,8 +109,6 @@ namespace GeneSys.Tests
             Assert.That(wood.stableId, Is.EqualTo((int)MaterialIds.Wood));
             Assert.That(leaf.category, Is.EqualTo(MaterialCategory.Biological));
             Assert.That(wood.category, Is.EqualTo(MaterialCategory.Solid));
-            Assert.That(leaf.densityDisplaceable, Is.False);
-            Assert.That(wood.densityDisplaceable, Is.False);
             Assert.That(leaf.caloricContent, Is.GreaterThan(wood.caloricContent));
             Assert.That(leaf.ignitionTemperature, Is.LessThan(wood.ignitionTemperature));
             Assert.That(wood.rigidity, Is.GreaterThan(0.7f));

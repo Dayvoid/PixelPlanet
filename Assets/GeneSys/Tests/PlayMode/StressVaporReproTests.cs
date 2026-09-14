@@ -71,6 +71,9 @@ namespace GeneSys.Tests
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             host.RestoreDefaultSettings();
             host.ApplyPreset(SimulationPreset.Stress);
+            host.Config.floraGrowthRate = 0f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
             for (int i = 0; i < 5; i++) yield return null;
 
             double surfaceWater0 = 0d;

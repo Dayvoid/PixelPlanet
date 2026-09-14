@@ -55,7 +55,36 @@ namespace GeneSys.Tests
             Assert.That(config.thermalPressureEffect, Is.GreaterThan(0f));
             Assert.That(config.combustionHeatYield, Is.EqualTo(3.8f).Within(0.01f));
             Assert.That(config.stormStrikeAirHeatFraction, Is.EqualTo(0.3f).Within(0.01f));
+            Assert.That(config.climateSlabRadiativeCooling, Is.EqualTo(config.atmosphereRadiativeCooling).Within(0.01f));
             Object.DestroyImmediate(config);
+        }
+
+        [Test]
+        public void PhaseChangeOwnsMagmaFreezeWithBasaltHysteresis()
+        {
+            string volcanism = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Geology.compute");
+            Assert.That(volcanism, Does.Contain("state.x -= _Volcanic.y"));
+            Assert.That(volcanism, Does.Not.Contain("material = 5u;"));
+            Assert.That(volcanism, Does.Not.Contain("state.x < 780"));
+
+            string phase = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute");
+            Assert.That(phase, Does.Contain("MaterialPhaseLatentDelta"));
+
+            var magma = UnityEditor.AssetDatabase.LoadAssetAtPath<GeneSys.Materials.MaterialDefinition>(
+                "Assets/GeneSys/Data/Materials/006_Magma.asset");
+            var basalt = UnityEditor.AssetDatabase.LoadAssetAtPath<GeneSys.Materials.MaterialDefinition>(
+                "Assets/GeneSys/Data/Materials/005_Basalt.asset");
+            Assert.That(magma, Is.Not.Null);
+            Assert.That(basalt, Is.Not.Null);
+            Assert.That(magma.solidPhaseId, Is.EqualTo(5));
+            Assert.That(basalt.liquidPhaseId, Is.EqualTo(6));
+            Assert.That(basalt.meltingTemperature, Is.GreaterThan(magma.meltingTemperature),
+                "Basalt 780 vs Magma 700 is intentional PhaseChange hysteresis.");
+
+            string weather = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Weather.compute");
+            Assert.That(weather, Does.Contain("ClimateInsolationScale(cell.x)"));
+            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
+            Assert.That(scheduler, Does.Contain("config.climateSlabRadiativeCooling"));
         }
     }
 }

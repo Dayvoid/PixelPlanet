@@ -39,6 +39,7 @@ int _Tick;
 int _Seed;
 float _DeltaTime;
 float _TicksPerSecond;
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _FloraC;
 float4 _FloraD;
 float4 _MycologyE;
@@ -54,6 +55,7 @@ float4 _TreeI; // leafLifeTicks, rotTicks, disconnectTicks, saplingBranchMin
 float4 _TreeJ; // saplingBranchMax, unused
 float4 _TreePaintCell;
 float4 _GrassI; // unused, unused, detritusNutrient, detritusMoisture
+float _TreeReceiptScale;
 
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
@@ -193,8 +195,8 @@ bool ParentMissing(int2 cell, uint4 topology)
 
 float2 RootReceipts(int2 cell, float4 phys)
 {
-    float demandW = max(0.0, 1.0 - saturate(phys.y)) * max(0.0, _TreeA.x) * _DeltaTime;
-    float demandN = max(0.0, 1.0 - saturate(phys.z)) * max(0.0, _TreeA.y) * _DeltaTime;
+    float demandW = max(0.0, 1.0 - saturate(phys.y)) * max(0.0, _TreeA.x) * _DeltaTime * max(0.0, _TreeReceiptScale);
+    float demandN = max(0.0, 1.0 - saturate(phys.z)) * max(0.0, _TreeA.y) * _DeltaTime * max(0.0, _TreeReceiptScale);
     int hosts = 0;
     int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
     [unroll]
@@ -414,7 +416,7 @@ void Physiology(uint3 id : SV_DispatchThreadID)
     float maint = max(0.0, _TreeB.y) * metabolic * _DeltaTime;
     if (light < 0.02) maint += max(0.0, _TreeB.z) * metabolic * _DeltaTime;
     phys.x = max(0.0, phys.x - maint);
-    float transpiration = min(phys.y, 0.12 * _DeltaTime);
+    float transpiration = EvaporateToAir(state.x, aux.x, phys.y, 0.12, _DeltaTime, _WeatherE.x);
     phys.y = max(0.0, phys.y - transpiration);
     aux.x += transpiration;
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);

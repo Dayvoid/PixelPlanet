@@ -188,10 +188,9 @@ namespace GeneSys.Tests
             host.Config.extrusionRate = 0.4f;
             host.Config.volcanicReleaseThreshold = 0.78f;
             host.Config.volcanicReleaseFraction = 0.2f;
-            host.Config.volcanicSurfaceCoupling = 0.22f;
-            host.Config.eruptionDriveScale = 0.55f;
+                        host.Config.eruptionDriveScale = 0.55f;
             host.Config.hydrothermalReleaseThreshold = 0.7f;
-            host.Config.hydrothermalHeatTransferRate = 0.35f;
+            host.Config.hydrothermalNutrientRate = 0.35f;
             host.Config.validationIntervalTicks = 1000;
             host.Config.slowPassInterval = 4;
             host.Config.thermalRate = 0.35f;
@@ -514,8 +513,9 @@ namespace GeneSys.Tests
             host.Config.springDischargeRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
-            host.Config.hydrothermalHeatTransferRate = 1f;
+            host.Config.hydrothermalNutrientRate = 1f;
             QuietSurface(host);
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;

@@ -102,6 +102,7 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -135,7 +136,6 @@ namespace GeneSys.Tests
             host.Config.grassMaintenanceRate = 0f;
             host.Config.grassNightDrain = 0f;
             host.Config.grassGrowthRate = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.detritusDecompositionRate = 0f;
         }
 

@@ -45,6 +45,7 @@ float _TicksPerDay;
 float _TicksPerSecond;
 float4 _WeatherA;
 float4 _WeatherC;
+float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _FloraC; // oxygenYield, exudation, reproductionThreshold, baseMutationRate
 float4 _FloraD; // toxinMutationScale, geneExpressionRange, ...
 float4 _MycologyE;
@@ -293,7 +294,7 @@ void PhotosynthesisLifecycle(uint3 id : SV_DispatchThreadID)
         float maint = max(0.0, _GrassB.y) * _DeltaTime;
         if (light < 0.02) maint += max(0.0, _GrassB.z) * _DeltaTime;
         life.y = max(0.0, life.y - maint);
-        float transpiration = min(life.z, 0.15 * _DeltaTime);
+        float transpiration = EvaporateToAir(state.x, aux.x, life.z, 0.15, _DeltaTime, _WeatherE.x);
         life.z = max(0.0, life.z - transpiration);
         aux.x += transpiration;
 

@@ -118,7 +118,7 @@ namespace GeneSys.Tests
             Assert.That(detritus.category, Is.EqualTo(MaterialCategory.Granular));
             Assert.That(detritus.porosity, Is.GreaterThan(0.05f));
             Assert.That(detritus.caloricContent, Is.GreaterThan(0f));
-            Assert.That(detritus.densityDisplaceable, Is.True);
+            Assert.That(detritus.category, Is.EqualTo(MaterialCategory.Granular));
 
             MaterialRegistry registry = AssetDatabase.LoadAssetAtPath<MaterialRegistry>("Assets/GeneSys/Data/MaterialRegistry.asset");
             Assert.That(registry.Validate(out string error), Is.True, error);

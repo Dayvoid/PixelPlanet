@@ -233,6 +233,9 @@ namespace GeneSys.Tests
             host.Config.climateRoughnessGain = 2f;
             host.Config.climateBucketGain = 1.5f;
             host.Config.climateIceAlbedo = 0.7f;
+            host.Config.floraGrowthRate = 0f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
@@ -357,7 +360,6 @@ namespace GeneSys.Tests
             host.Config.treeCanopyOpacity = 1f;
             host.Config.grassCanopyOpacity = 0f;
             host.Config.gravityStrength = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.thermalRate = 0f;
             host.Config.treeDecayRate = 0f;
             host.Config.faunaSeedAtWorldgen = false;

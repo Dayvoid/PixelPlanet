@@ -34,7 +34,7 @@ namespace GeneSys.Editor
         [MenuItem("Tools/GeneSys/Run Density PlayMode Tests")]
         public static void RunDensityPlayMode()
         {
-            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.DensityDisplacementIntegrationTests");
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.MargolusDensitySortTests");
         }
 
         [MenuItem("Tools/GeneSys/Run Hydrology PlayMode Tests")]

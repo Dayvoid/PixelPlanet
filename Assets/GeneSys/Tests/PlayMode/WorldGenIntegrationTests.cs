@@ -148,6 +148,7 @@ namespace GeneSys.Tests
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
             host.Config.ApplyPreset(SimulationPreset.Validation);
             host.Config.useOgWorldgen = false;
             host.Config.seed = 9090;

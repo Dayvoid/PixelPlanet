@@ -110,6 +110,7 @@ namespace GeneSys.Tests
             host.Config.atmosphereRadiativeCooling = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.infiltrationRate = 0f;

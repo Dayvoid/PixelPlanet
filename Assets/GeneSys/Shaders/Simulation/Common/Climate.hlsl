@@ -12,6 +12,7 @@ float4 _ClimateA; // binCount, couplePeriod, slabHeatCapacity, heatTransport
 float4 _ClimateB; // seasonLengthDays, seasonalAmplitude, thermalWindGain, iceAlbedo
 float4 _ClimateC; // canopyAlbedoDrop, roughnessGain, bucketGain, memoryRate
 float4 _ClimateD; // biomeFeedback, baseAlbedo, ashAlbedo, burnBucketPenalty
+float4 _ClimateE; // slabRadiativeCooling, unused, unused, unused
 
 #ifndef GENESYS_TICKS_PER_DAY_DECLARED
 #define GENESYS_TICKS_PER_DAY_DECLARED

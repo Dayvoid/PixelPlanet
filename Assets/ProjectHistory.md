@@ -26,6 +26,19 @@ Suggested entry template:
 
 ---
 
+## 2026-09-13 — Planetary systems realignment (ownership, dead scaffolding, docs)
+
+- **Systems:** Margolus transport, Geology (ash/magma), Hydrology / hydrostatic, Weather / Climate, PhaseChange thermal, config / snapshots / metrics / UI, grass–soil coupling.
+- **What changed:**
+  - Retired leftover MaCE / liquid-density-exchange surface: `_DensityExchange`, `densityDisplaceable`, dummy V14/V15 mobile-mass writes, `_MaceMobileDisplay` claims in docs.
+  - Hybrid cell-motion ownership: Margolus owns gravity/repose settling; `AshTransport` is buoyant lift only; `EruptionMotion` is pressure eruption only; hydrostatic is the only horizontal Water leveler; `ErosionAndCollapse` only changes identity.
+  - `PhaseChange` is the sole Magma↔Basalt freeze path (Volcanism keeps melt creation and cooling sink). AtmosphericForcing uses one insolation value for heat and night cooling. Climate slab has its own LW knob.
+  - One `EvaporateToAir` Magnus helper for WaterCycle / detritus / transpiration; Groundwater residue returns to host film instead of venting vapor. `dewRate` split from `condensationRate`.
+  - Grass slots ride Margolus soil swaps; tree root receipts share `transportPassInterval` with `SoilDebit`.
+  - Docs reset: `SituationReport.md`, `ClimatePlan.MD` (C0–C3 shipped), `WaterPlan.MD` (hydrothermal boil owner), MaCE plans archived.
+- **Why/impact:** Direction changes had stacked redundant movers and knobs on the same IDs/fields. Ownership plus dead-code removal stops passes from undoing each other and makes the live architecture match the docs/tests.
+- **Evidence:** `GpuPassScheduler.cs`, `MargolusCommon.hlsl`, `Geology.compute`, `Hydrology.compute`, `Weather.compute`, `Climate.compute`, `SimulationConfig.cs`, `WorldSnapshotService.cs`, `SituationReport.md`.
+
 ## 2026-09-13 — Transition from MaCE to MaCA (Affinity-Driven Margolus CA) material transport and surface interface rework
 
 - **Systems:** MaCA (Margolus Cellular Automata) discrete material transport, Legacy MaCE bridging, Hydrology / Geodynamics surface interface, World generation stability, Rendering / PlanetoidDisplay.
@@ -37,8 +50,8 @@ Suggested entry template:
   - Integrated stress-to-sediment detachment in `Hydrology.compute` (`aux.w > 1.0` detaches into mobile Sediment ID 8) and locked deep bedrock beneath standing liquid bodies.
   - Retuned world generation with pre-relaxed talus aprons, exposed crystalline granite cliff faces, and continental shelf marine sedimentation.
   - Recalibrated surface granular collapse envelopes (Soil, Clay, Sediment), preventing unnatural sheer vertical columns and needles from freezing on polar terrain.
-  - Resolved "ghost sediment" visual artifact by decoupling legacy continuous mobile mass rendering (`_MaceMobileDisplay` in `PlanetoidDisplay.shader` and `PlanetoidDisplayRenderer.cs`), ensuring discrete Air/Soil cells vacated by sediment do not retain brown continuous tinting.
-  - Added runtime legacy compatibility toggles (`useLegacyTransport`) in `SimulationConfig.cs` and `GpuPassScheduler.cs`, automatically clearing continuous mobile mass buffers when switching to MaCA and re-seeding when switching back.
+  - Removed continuous mobile-mass rendering (`_MaceMobileDisplay`) so discrete Air/Soil cells vacated by sediment do not retain brown tinting.
+  - MaCE / `useLegacyTransport` were transitional and have since been removed (see the realignment entry above).
   - Authored full test coverage: `MargolusContractTests` (EditMode), `MargolusPrototypeTests` (PlayMode), `MargolusMetricTests` (PlayMode), `MargolusGeoInterfaceTests` (PlayMode), and `MargolusWorldGenStabilityTests` (PlayMode).
 - **Why/impact:** Eliminates fractional mass dissipation, float rounding drift, and advective blur inherent in continuous Euler flux models. Guarantees exact, discrete pixel conservation ($N(t) \equiv N(0)$) while delivering natural granular talus slopes, dynamic slope collapse, and stable bedrock foundations.
 - **Evidence:** `Assets/GeneSys/Compute/Simulation/MargolusTransport.compute`, `Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl`, `Assets/GeneSys/Tests/EditMode/MargolusContractTests.cs`, `Assets/GeneSys/Tests/PlayMode/Margolus*.cs`, `Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs`, `Assets/GeneSys/Runtime/Rendering/PlanetoidDisplayRenderer.cs`, `Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader`.

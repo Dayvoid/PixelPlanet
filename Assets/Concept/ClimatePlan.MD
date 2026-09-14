@@ -2,8 +2,8 @@
 
 Bolster GeneSys weather by adding a slow, low-resolution **climate** layer that sets regimes, while the existing mass-conserving **pixel weather** stack remains the only place tracked water moves.
 
-**Status:** design — not implemented.
-**Related:** `Assets/OUTLINE.MD`, `Assets/WaterPlan.MD`, `Assets/MaCEPlan.MD`, `Assets/GrassPlan.MD`.
+**Status:** implemented — C0–C3 shipped (`Climate.compute`, `DispatchClimate`, injectors listed below).
+**Related:** `Assets/ORIGINAL OUTLINE-OUT OF DATE.MD`, `Assets/Concept/WaterPlan.MD`, `Assets/Concept/GrassPlan.MD`. Superceded MaCE notes live in `Assets/Concept/Archive/`.
 **Inspiration:** EMIC / PlaSim-style energy + land-surface feedbacks (e.g. SimBA albedo, roughness, soil bucket); not a full GCM port.
 
 ---
@@ -231,6 +231,16 @@ Prefer a **dedicated climate pass** over stuffing coarse state into the mega `Wr
 
 Feature flags: `climateLayerEnable`, `climateCouplePeriod`, `climatePrevailingInject`, `climateAlbedoFeedback`, `climateBiomeFeedback`.
 
+### Shipped injectors (C0–C3)
+
+| Injector | Fine consumer | Role |
+| --- | --- | --- |
+| `ClimateInsolationScale` | `LightAttenuation`, `AtmosphericForcing` | Seasonal / orbital insolation envelope |
+| `ClimateSurfaceAbsorb` | `AtmosphericForcing` | Albedo / ice / canopy absorption scale |
+| `ClimateWindBias` | `AtmosphericDynamics` | Prevailing / monsoon angular wind |
+| `ClimateBucketScale` | Hydrology weep / field capacity | Land-surface soil-water bucket |
+| `climateSlabRadiativeCooling` | `ClimateStep` LW term | Independent coarse slab cooling (not `atmosphereRadiativeCooling`) |
+
 ---
 
 ## 11. Validation culture
@@ -250,7 +260,7 @@ Feature flags: `climateLayerEnable`, `climateCouplePeriod`, `climatePrevailingIn
 | Hidden mass creation via RH nudge | Ban non-conservative vapor nudges until C4 zero-sum design |
 | Over-damping local weather | Prefer multipliers/biases over strong T nudging |
 | Double-counting albedo (LightField + coarse) | Define single absorption path; coarse sets envelope, fine applies local attenuation |
-| Fighting MaCE / hydro work | Climate injects forcings; MaCE owns mobile solids — little overlap |
+| Fighting Margolus / hydro work | Climate injects forcings; Margolus owns mobile solids — little overlap |
 | Scope creep into GCM | Stay on angular bins + energy/land until C3 proves value |
 
 ---
@@ -263,6 +273,7 @@ Feature flags: `climateLayerEnable`, `climateCouplePeriod`, `climatePrevailingIn
 | 2026-09-11 | No second water ledger; `WaterPlan.MD` remains mass authority |
 | 2026-09-11 | Start with diagnostics + prevailing/insolation before biome feedbacks |
 | 2026-09-11 | Orthogonal to MaCE sediment pilot; can proceed in parallel |
+| 2026-09-13 | C0–C3 implemented; MaCE archived; climate slab has its own LW knob |
 
 ---
 

@@ -43,7 +43,7 @@
 //   storm.z = ambient flash glow, diffused and decayed so a strike lights nearby sky
 //   storm.w = breakdown state in [-1, 1]; positive accumulates toward 1 (ready to fire),
 //             negative is post-strike cooldown climbing back to 0
-// Storm values do not follow cell-moving kernels (MaterialMotion, LiquidDensityExchange)
+// Storm values do not follow cell-moving kernels (Margolus CA)
 // because charge lives in non-moving Air and the channel/flash channels are transient.
 // Fauna (dedicated Tex2DArray RGBA32F, swapped like Storm, excluded from WriteCell):
 //   slice 0 vitals: calories, hydration, age ticks, reproduction/mate cooldown ticks
@@ -81,9 +81,14 @@
 //   Film soak and Water-pixel contact drain state.z into aux.y up to porosity capacity.
 //   Excess above field capacity percolates radially inward, then weeps from exposed hosts.
 //   Hosts hotter than the pressure-adjusted boil point convert aux.y to aux.x.
-// Material transport:
-//   Margolus Cellular Automata (MaCA) operates on discrete material cells (Sediment, Ash, Magma)
-//   conserving cell tokens without Eulerian smearing or dual-ledger ghost fields.
+// Material transport / cell-motion ownership:
+//   Margolus CA owns gravity and repose settling of movable IDs (granular + fluids).
+//   AshTransport owns buoyant ash lift only — ash falls via Margolus.
+//   EruptionMotion owns pressure-driven magma eruption only — magma settles via Margolus.
+//   Hydrostatic owns horizontal free-surface Water leveling — Water falls via Margolus.
+//   ErosionAndCollapse changes identity (stress / karst / unsupported → Sediment) and
+//   never relocates cells. PhaseChange owns every material ID phase flip, including
+//   Magma↔Basalt. Retired density-exchange / material-motion kernels do not exist.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 // Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
 // each writes only its own cell. So both sides must derive the transferred mass from the same
@@ -106,12 +111,6 @@
 //   same-altitude temperature/humidity anomalies plus a lapse-adjusted vertical comparison
 //   drives updrafts and downdrafts. Heat, vapor, and cloud condensate advect with flow under
 //   a CFL outbound-mass cap.
-// Liquid density exchange:
-//   LiquidDensityExchange swaps whole cells across liquid interfaces when both materials opt in
-//   via motion.x (densityDisplaceable). Density (physical.x) alone decides direction: a denser
-//   upper neighbor sinks / a lighter lower neighbor rises. buoyancyBias (biology.w) only scales
-//   exchange probability and cannot reverse float/sink. Equal densities within epsilon stay put.
-//   Foundational solids (Core/Mantle) and Ash remain opted out; Ash keeps AshTransport.
 // Surface hydrostatic leveling:
 //   After groundwater and precipitation, hydrology profiles each angular column's
 //   atmosphere-connected liquid (film plus contiguous Water pixels), then exchanges mass
@@ -128,7 +127,7 @@ struct MaterialGpuData
     float4 phase;      // melt point, boil point, thermal expansion, electric expansion
     float4 biology;    // toxicity, calories, porosity, buoyancy bias
     float4 metadata;   // category, packed phase IDs, bio-modifiable, stable ID
-    float4 motion;     // densityDisplaceable, latentHeat, reserved, reserved
+    float4 motion;     // latentHeat, reserved, reserved, reserved
     float4 combustion; // ignitionTemperature, flashPoint, oxygenDemand, smokeYield
 };
 
@@ -974,6 +973,15 @@ float DewPoint(float vapor, float scale)
 float EvaporationDeficit(float surfaceTemp, float airVapor, float scale)
 {
     return max(0.0, VaporSaturation(surfaceTemp, scale) - max(0.0, airVapor));
+}
+
+// Magnus-deficit evaporation. Never pushes air above VaporSaturation.
+// Flash steam (combustion/storm) and hydrothermal/pixel boil bypass this helper
+// and pay latent heat through WaterLatentHeatDelta instead.
+float EvaporateToAir(float surfaceT, float airVapor, float available, float rate, float dt, float scale)
+{
+    float deficit = EvaporationDeficit(surfaceT, airVapor, scale);
+    return min(max(0.0, available), max(0.0, rate) * deficit * max(0.0, dt));
 }
 
 float VirtualTemperature(float temperature, float vapor)

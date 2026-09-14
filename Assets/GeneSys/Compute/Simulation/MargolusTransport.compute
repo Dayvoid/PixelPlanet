@@ -1,28 +1,35 @@
 #pragma kernel MargolusPhaseEven
 #pragma kernel MargolusPhaseOdd
+#pragma kernel MargolusGrassEven GRASS_ONLY
+#pragma kernel MargolusGrassOdd GRASS_ONLY
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/MargolusCommon.hlsl"
 
 Texture2D<uint> _MaterialRead;
-RWTexture2D<uint> _MaterialWrite;
 Texture2D<float4> _StateRead;
-RWTexture2D<float4> _StateWrite;
 Texture2D<float2> _FlowRead;
-RWTexture2D<float2> _FlowWrite;
 Texture2D<float4> _AuxRead;
-RWTexture2D<float4> _AuxWrite;
 Texture2D<uint> _ShadeRead;
-RWTexture2D<uint> _ShadeWrite;
 Texture2D<float4> _EcologyRead;
-RWTexture2D<float4> _EcologyWrite;
 Texture2D<float4> _CombustionRead;
-RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
-RWTexture2DArray<float4> _LifeGenomeWrite;
 Texture2DArray<float4> _GrassRead;
 Texture2DArray<float4> _TreeRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+#ifndef GRASS_ONLY
+RWTexture2D<uint> _MaterialWrite;
+RWTexture2D<float4> _StateWrite;
+RWTexture2D<float2> _FlowWrite;
+RWTexture2D<float4> _AuxWrite;
+RWTexture2D<uint> _ShadeWrite;
+RWTexture2D<float4> _EcologyWrite;
+RWTexture2D<float4> _CombustionWrite;
+RWTexture2DArray<float4> _LifeGenomeWrite;
+#else
+RWTexture2DArray<float4> _GrassWrite;
+#endif
 
 int2 _GridSize;
 int _Tick;
@@ -31,8 +38,7 @@ float _DeltaTime;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _Mechanics;      // x = gravityStrength
-float4 _MargolusParams; // x = gravityBias, y = reposeFriction, z = metricEnable, w = fluidLevelingBias
-float4 _MargolusFlags;  // x = useMargolus, y = enableFluids, z = enableErosionDetachment, w = reserved
+float4 _MargolusParams; // x = gravityBias, y = reposeFriction, z = metricEnable, w = magmaLevelingBias
 float4 _GrassI;         // root cohesion
 float4 _TreeH;          // root cohesion
 
@@ -53,16 +59,34 @@ MargolusCell LoadMargolusCell(int2 cell)
     return c;
 }
 
-void WriteMargolusCell(int2 cell, MargolusCell c)
+void CommitSlot(int2 dst, MargolusCell c, int2 grassSrc)
 {
-    _MaterialWrite[cell] = c.material;
-    _StateWrite[cell] = SafeFinite4(c.state, float4(15, 0, 0, 0));
-    _FlowWrite[cell] = clamp(c.flow, -20.0, 20.0);
-    _AuxWrite[cell] = SafeFinite4(max(c.aux, 0.0), 0.0);
-    _ShadeWrite[cell] = c.shade;
-    _EcologyWrite[cell] = SanitizeEcology(c.ecology);
-    _CombustionWrite[cell] = SanitizeCombustion(c.combustion);
-    WriteLifeGenome(_LifeGenomeWrite, cell, c.life, c.genome);
+#ifndef GRASS_ONLY
+    _MaterialWrite[dst] = c.material;
+    _StateWrite[dst] = SafeFinite4(c.state, float4(15, 0, 0, 0));
+    _FlowWrite[dst] = clamp(c.flow, -20.0, 20.0);
+    _AuxWrite[dst] = SafeFinite4(max(c.aux, 0.0), 0.0);
+    _ShadeWrite[dst] = c.shade;
+    _EcologyWrite[dst] = SanitizeEcology(c.ecology);
+    _CombustionWrite[dst] = SanitizeCombustion(c.combustion);
+    WriteLifeGenome(_LifeGenomeWrite, dst, c.life, c.genome);
+#else
+    [unroll]
+    for (int i = 0; i < GRASS_SLICE_COUNT; i++)
+        _GrassWrite[uint3((uint2)dst, i)] = _GrassRead.Load(int4(grassSrc, i, 0));
+#endif
+}
+
+void PassthroughMargolus(int2 cell)
+{
+    CommitSlot(cell, LoadMargolusCell(cell), cell);
+}
+
+void SwapI2(inout int2 a, inout int2 b)
+{
+    int2 t = a;
+    a = b;
+    b = t;
 }
 
 float MargolusRootCohesion(int2 cell)
@@ -84,6 +108,10 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
     MargolusCell c1 = LoadMargolusCell(p1);
     MargolusCell c2 = LoadMargolusCell(p2);
     MargolusCell c3 = LoadMargolusCell(p3);
+    int2 g0 = p0;
+    int2 g1 = p1;
+    int2 g2 = p2;
+    int2 g3 = p3;
 
     MaterialGpuData d0 = Mat(c0.material);
     MaterialGpuData d1 = Mat(c1.material);
@@ -100,157 +128,173 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
     float rho2 = MargolusEffectiveDensity(c2, d2);
     float rho3 = MargolusEffectiveDensity(c3, d3);
 
-    float gravity = max(0.0, _Mechanics.x) * max(0.01, _MargolusParams.x);
-    if (gravity <= 1e-4)
+    float gravity = max(0.0, _Mechanics.x);
+    if (gravity > 1e-4)
     {
-        WriteMargolusCell(p0, c0);
-        WriteMargolusCell(p1, c1);
-        WriteMargolusCell(p2, c2);
-        WriteMargolusCell(p3, c3);
-        return;
-    }
+        bool leftDrop = !pin0 && !pin2 && (rho2 > rho0 + 0.05);
+        bool rightDrop = !pin1 && !pin3 && (rho3 > rho1 + 0.05);
 
-    // 1. Vertical drops (gravity)
-    bool leftDrop = !pin0 && !pin2 && (rho2 > rho0 + 0.05);
-    bool rightDrop = !pin1 && !pin3 && (rho3 > rho1 + 0.05);
-
-    if (leftDrop || rightDrop)
-    {
-        if (leftDrop) SwapCells(c0, c2);
-        if (rightDrop) SwapCells(c1, c3);
-    }
-    else
-    {
-        // 2. Diagonal slides (repose failure / talus slope)
-        float metric = _MargolusParams.z > 0.5 ? MargolusMetricRatio(p0.y, _GridSize) : 1.0;
-        float friction = max(0.1, _MargolusParams.y);
-
-        // Slide down-right: cell 2 into position 1
-        bool slideRight = false;
-        if (!pin1 && !pin2 && (rho2 > rho1 + 0.05))
+        if (leftDrop || rightDrop)
         {
-            bool supportedBelow = pin0 || (rho0 >= rho2 * 0.6);
-            if (supportedBelow)
+            if (leftDrop) { SwapCells(c0, c2); SwapI2(g0, g2); }
+            if (rightDrop) { SwapCells(c1, c3); SwapI2(g1, g3); }
+        }
+        else
+        {
+            float metric = _MargolusParams.z > 0.5 ? MargolusMetricRatio(p0.y, _GridSize) : 1.0;
+            float friction = max(0.1, _MargolusParams.y);
+
+            bool slideRight = false;
+            if (!pin1 && !pin2 && (rho2 > rho1 + 0.05))
             {
-                if (IsMargolusFluid(c2.material, d2))
+                bool supportedBelow = pin0 || (rho0 >= rho2 * 0.6);
+                if (supportedBelow)
                 {
-                    slideRight = true;
-                }
-                else if (IsMargolusGranular(c2.material, d2))
-                {
-                    float tanRepose = MargolusTanRepose(c2.material, d2) * friction;
-                    if (tanRepose * metric <= 2.5)
-                        slideRight = (MargolusRootCohesion(p2) < 0.35);
+                    if (IsMargolusFluid(c2.material, d2))
+                    {
+                        slideRight = true;
+                    }
+                    else if (IsMargolusGranular(c2.material, d2))
+                    {
+                        float tanRepose = MargolusTanRepose(c2.material, d2) * friction;
+                        if (tanRepose * metric <= 2.5)
+                            slideRight = (MargolusRootCohesion(p2) < 0.35);
+                    }
                 }
             }
-        }
 
-        // Slide down-left: cell 3 into position 0
-        bool slideLeft = false;
-        if (!pin0 && !pin3 && (rho3 > rho0 + 0.05))
-        {
-            bool supportedBelow = pin1 || (rho1 >= rho3 * 0.6);
-            if (supportedBelow)
+            bool slideLeft = false;
+            if (!pin0 && !pin3 && (rho3 > rho0 + 0.05))
             {
-                if (IsMargolusFluid(c3.material, d3))
+                bool supportedBelow = pin1 || (rho1 >= rho3 * 0.6);
+                if (supportedBelow)
                 {
-                    slideLeft = true;
-                }
-                else if (IsMargolusGranular(c3.material, d3))
-                {
-                    float tanRepose = MargolusTanRepose(c3.material, d3) * friction;
-                    if (tanRepose * metric <= 2.5)
-                        slideLeft = (MargolusRootCohesion(p3) < 0.35);
+                    if (IsMargolusFluid(c3.material, d3))
+                    {
+                        slideLeft = true;
+                    }
+                    else if (IsMargolusGranular(c3.material, d3))
+                    {
+                        float tanRepose = MargolusTanRepose(c3.material, d3) * friction;
+                        if (tanRepose * metric <= 2.5)
+                            slideLeft = (MargolusRootCohesion(p3) < 0.35);
+                    }
                 }
             }
-        }
 
-        if (slideRight && !slideLeft)
-        {
-            SwapCells(c1, c2);
-        }
-        else if (slideLeft && !slideRight)
-        {
-            SwapCells(c0, c3);
-        }
-        else if (slideRight && slideLeft)
-        {
-            // Symmetric tie-breaker: hash determines direction
-            uint hashVal = (uint)p0.x * 73856093u ^ (uint)p0.y * 19349663u ^ (uint)_Tick * 83492791u;
-            if (Hash01(hashVal) < 0.5)
+            if (slideRight && !slideLeft)
+            {
                 SwapCells(c1, c2);
-            else
+                SwapI2(g1, g2);
+            }
+            else if (slideLeft && !slideRight)
+            {
                 SwapCells(c0, c3);
-        }
-        else if (_MargolusParams.w > 0.0)
-        {
-            // 3. Fluid horizontal leveling / wind-driven surface flow
-            if (IsMargolusFluid(c0.material, d0) && c1.material == 1u && !pin1 && c0.flow.x > 0.45)
-                SwapCells(c0, c1);
-            else if (IsMargolusFluid(c1.material, d1) && c0.material == 1u && !pin0 && c1.flow.x < -0.45)
-                SwapCells(c0, c1);
+                SwapI2(g0, g3);
+            }
+            else if (slideRight && slideLeft)
+            {
+                uint hashVal = (uint)p0.x * 73856093u ^ (uint)p0.y * 19349663u ^ (uint)_Tick * 83492791u;
+                if (Hash01(hashVal) < 0.5)
+                {
+                    SwapCells(c1, c2);
+                    SwapI2(g1, g2);
+                }
+                else
+                {
+                    SwapCells(c0, c3);
+                    SwapI2(g0, g3);
+                }
+            }
+            else if (_MargolusParams.w > 0.0)
+            {
+                if (c0.material == 6u && c1.material == 1u && !pin1 && c0.flow.x > 0.45)
+                {
+                    SwapCells(c0, c1);
+                    SwapI2(g0, g1);
+                }
+                else if (c1.material == 6u && c0.material == 1u && !pin0 && c1.flow.x < -0.45)
+                {
+                    SwapCells(c0, c1);
+                    SwapI2(g0, g1);
+                }
+            }
         }
     }
 
-    WriteMargolusCell(p0, c0);
-    WriteMargolusCell(p1, c1);
-    WriteMargolusCell(p2, c2);
-    WriteMargolusCell(p3, c3);
+    CommitSlot(p0, c0, g0);
+    CommitSlot(p1, c1, g1);
+    CommitSlot(p2, c2, g2);
+    CommitSlot(p3, c3, g3);
 }
 
-[numthreads(8, 8, 1)]
-void MargolusPhaseEven(uint3 id : SV_DispatchThreadID)
+void DispatchEven(uint3 id)
 {
     int numBlocksX = _GridSize.x / 2;
     int numBlocksY = _GridSize.y / 2;
     if (id.x >= (uint)numBlocksX || id.y >= (uint)numBlocksY) return;
 
-    int bx = (int)id.x;
-    int by = (int)id.y;
-
-    int x0 = 2 * bx;
+    int x0 = 2 * (int)id.x;
     int x1 = (x0 + 1) % _GridSize.x;
-    int y0 = 2 * by;
+    int y0 = 2 * (int)id.y;
     int y1 = y0 + 1;
 
     if (y1 >= _GridSize.y)
     {
-        WriteMargolusCell(int2(x0, y0), LoadMargolusCell(int2(x0, y0)));
-        WriteMargolusCell(int2(x1, y0), LoadMargolusCell(int2(x1, y0)));
+        PassthroughMargolus(int2(x0, y0));
+        PassthroughMargolus(int2(x1, y0));
         return;
     }
 
     StepMargolusBlock(int2(x0, y0), int2(x1, y0), int2(x0, y1), int2(x1, y1));
 }
 
-[numthreads(8, 8, 1)]
-void MargolusPhaseOdd(uint3 id : SV_DispatchThreadID)
+void DispatchOdd(uint3 id)
 {
     int numBlocksX = _GridSize.x / 2;
     int numBlocksY = _GridSize.y / 2;
     if (id.x >= (uint)numBlocksX || id.y >= (uint)numBlocksY) return;
 
-    int bx = (int)id.x;
-    int by = (int)id.y;
-
     int maxOddBlocksY = (_GridSize.y - 2) / 2;
+    int x0 = (2 * (int)id.x + 1) % _GridSize.x;
+    int x1 = (2 * (int)id.x + 2) % _GridSize.x;
 
-    int x0 = (2 * bx + 1) % _GridSize.x;
-    int x1 = (2 * bx + 2) % _GridSize.x;
-
-    if (by < maxOddBlocksY)
+    if ((int)id.y < maxOddBlocksY)
     {
-        int y0 = 2 * by + 1;
+        int y0 = 2 * (int)id.y + 1;
         int y1 = y0 + 1;
         StepMargolusBlock(int2(x0, y0), int2(x1, y0), int2(x0, y1), int2(x1, y1));
     }
-    else if (by == maxOddBlocksY)
+    else if ((int)id.y == maxOddBlocksY)
     {
-        // Boundary passthrough for row 0 and row (Ny - 1)
-        WriteMargolusCell(int2(x0, 0), LoadMargolusCell(int2(x0, 0)));
-        WriteMargolusCell(int2(x1, 0), LoadMargolusCell(int2(x1, 0)));
+        PassthroughMargolus(int2(x0, 0));
+        PassthroughMargolus(int2(x1, 0));
         int topY = _GridSize.y - 1;
-        WriteMargolusCell(int2(x0, topY), LoadMargolusCell(int2(x0, topY)));
-        WriteMargolusCell(int2(x1, topY), LoadMargolusCell(int2(x1, topY)));
+        PassthroughMargolus(int2(x0, topY));
+        PassthroughMargolus(int2(x1, topY));
     }
+}
+
+[numthreads(8, 8, 1)]
+void MargolusPhaseEven(uint3 id : SV_DispatchThreadID)
+{
+    DispatchEven(id);
+}
+
+[numthreads(8, 8, 1)]
+void MargolusPhaseOdd(uint3 id : SV_DispatchThreadID)
+{
+    DispatchOdd(id);
+}
+
+[numthreads(8, 8, 1)]
+void MargolusGrassEven(uint3 id : SV_DispatchThreadID)
+{
+    DispatchEven(id);
+}
+
+[numthreads(8, 8, 1)]
+void MargolusGrassOdd(uint3 id : SV_DispatchThreadID)
+{
+    DispatchOdd(id);
 }

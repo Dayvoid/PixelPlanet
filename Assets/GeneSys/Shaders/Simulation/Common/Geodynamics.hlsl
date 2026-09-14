@@ -22,7 +22,7 @@ float4 _GeodynamicsK; // kinematicCoupling, upliftScale, convergenceScale, displ
 float4 _GeodynamicsL; // coseismicScale, unused
 #ifndef GENESYS_VOLCANIC_DECLARED
 #define GENESYS_VOLCANIC_DECLARED
-float4 _Volcanic; // extrusionRate, coolingRate, magmaViscosity, volcanicSurfaceCoupling
+float4 _Volcanic; // extrusionRate, coolingRate, magmaViscosity, unused
 #endif
 #ifndef GENESYS_HYDROTHERMAL_DECLARED
 #define GENESYS_HYDROTHERMAL_DECLARED

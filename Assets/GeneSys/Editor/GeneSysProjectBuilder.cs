@@ -45,28 +45,28 @@ namespace GeneSys.Editor
             var definitions = new List<MaterialDefinition>
             {
                 Define(0, "Void", MaterialCategory.Empty, new Color(0,0,0,0), 0, 0, 0, 1, 0, 0.01f, 0.01f, 0, 0, 0, -273, 10000, 0, 0, 0, 0, 0, false),
-                Define(1, "Air", MaterialCategory.Gas, new Color(0.07f,0.1f,0.16f,1), 0.001f, 0, 0, 1, 0.2f, 0.02f, 1f, 0.001f, 0, 1, -220, -190, 0.01f, 0, 1, 1, 1, false),
-                Define(2, "Core", MaterialCategory.Solid, new Color(0.9f,0.16f,0.03f,1), 8, 1, 80, 4, 0, 0.8f, 2f, 0.7f, 0, 0, 1200, 3000, 0.02f, 0.01f, 2, 3, 11, false, false, 0, 0, 10000f, 10000f, 0, 0, 100f),
-                Define(3, "Mantle", MaterialCategory.Solid, new Color(0.72f,0.08f,0.02f,1), 4.5f, 0.8f, 60, 3, 0, 0.5f, 1.8f, 0.3f, 0.02f, 0.05f, 850, 2600, 0.03f, 0.01f, 3, 6, 11, false, false, 0, 0, 10000f, 10000f, 0, 0, 90f),
-                Define(4, "Granite", MaterialCategory.Solid, new Color(0.24f,0.25f,0.28f,1), 3, 0.95f, 55, 2, 0, 0.25f, 1.5f, 0.15f, 0.08f, 0.08f, 900, 2400, 0.01f, 0.005f, 4, 6, 11, true, true, 0, 0, 10000f, 10000f, 0, 0, 80f),
-                Define(5, "Basalt", MaterialCategory.Solid, new Color(0.12f,0.11f,0.13f,1), 3.2f, 0.9f, 50, 1.5f, 0, 0.3f, 1.4f, 0.18f, 0.05f, 0.04f, 780, 2400, 0.01f, 0.005f, 5, 6, 11, true, true, 0, 0, 10000f, 10000f, 0, 0, 70f),
-                Define(6, "Magma", MaterialCategory.Magma, new Color(1f,0.22f,0.01f,1), 2.7f, 0.05f, 5, 1, 0.7f, 0.7f, 1.2f, 0.25f, 0, 0, 700, 2200, 0.08f, 0.02f, 5, 6, 11, false, true, 0, 0, 10000f, 10000f, 0, 0, 70f),
-                Define(7, "Soil", MaterialCategory.Granular, new Color(0.28f,0.14f,0.055f,1), 1.5f, 0.15f, 34, 0.8f, 0, 0.12f, 1.1f, 0.04f, 0.75f, 0.55f, 200, 900, 0.02f, 0, 7, 7, 11, true, true, 0.02f, 0.6f, 180f, 160f, 0.85f, 0.6f),
-                Define(8, "Sediment", MaterialCategory.Granular, new Color(0.46f,0.29f,0.13f,1), 1.3f, 0.05f, 25, 0.35f, 0, 0.1f, 1f, 0.03f, 0.65f, 0.65f, 160, 850, 0.02f, 0, 8, 8, 11, true, true, 0.01f, 0.4f, 170f, 150f, 0.8f, 0.5f),
-                Define(9, "Water", MaterialCategory.Liquid, new Color(0.02f,0.32f,0.9f,1), 1, 0, 0, 1, 0.5f, 0.55f, 4.2f, 0.05f, 1, 0, 0, 100, 0.02f, 0, 10, 9, 1, false, true, 0, 0, 10000f, 80f, 0, 0),
-                Define(10, "Ice", MaterialCategory.Solid, new Color(0.55f,0.88f,1f,1), 0.92f, 0.65f, 45, 1, 0.3f, 0.35f, 2.1f, 0.01f, 0.1f, 0.05f, 0, 100, 0.02f, 0, 10, 9, 1, true, true, 0, 0, 10000f, 80f, 0, 0),
-                Define(12, "Ash", MaterialCategory.Granular, new Color(0.45f,0.42f,0.38f,1), 0.55f, 0.03f, 22, 0.15f, 0.95f, 0.08f, 0.9f, 0.02f, 0.55f, 0.7f, 1100, 2600, 0.01f, 0, 12, 12, 12, true, false, 0.08f, 0.55f),
-                Define(13, "Metal", MaterialCategory.Solid, new Color(0.75f,0.78f,0.82f,1), 7.8f, 0.98f, 70, 1.5f, 0, 8f, 0.45f, 8f, 0, 0.01f, 1450, 2800, 0.008f, 0.015f, 13, 13, 11, false, true, 0, 0, 10000f, 10000f, 0, 0, 50f),
-                Define(14, "Limestone", MaterialCategory.Solid, new Color(0.78f,0.72f,0.58f,1), 2.5f, 0.75f, 40, 1.8f, 0, 0.10f, 1.7f, 0.04f, 0.35f, 0.40f, 825, 2200, 0.012f, 0.003f, 14, 6, 11, true, true, 0, 0, 10000f, 10000f, 0, 0, 60f),
-                Define(15, "Clay", MaterialCategory.Granular, new Color(0.62f,0.32f,0.18f,1), 1.8f, 0.22f, 28, 0.45f, 0, 0.35f, 1.35f, 0.06f, 0.9f, 0.45f, 950, 1800, 0.018f, 0, 15, 6, 11, true, true, 0, 0, 10000f, 10000f, 0, 0, 40f),
-                Define(128, "AlgaeMoss", MaterialCategory.Biological, new Color(0.18f,0.55f,0.22f,1), 0.45f, 0.95f, 40, 0.6f, 0.6f, 0.18f, 1.6f, 0.03f, 0.8f, 0.4f, 90, 180, 0.02f, 0, 128, 128, 11, true, true, 0, 0.85f, 220f, 180f, 0.7f, 0.5f),
-                Define(129, "Cricket", MaterialCategory.Biological, new Color(0.42f,0.28f,0.12f,1), 0.8f, 0.99f, 80, 0.5f, 0.1f, 0.12f, 1.4f, 0.02f, 0.3f, 0.2f, 90, 180, 0.02f, 0, 129, 129, 11, true, false, 0, 0.7f, 200f, 170f, 0.75f, 0.45f),
-                Define(130, "CricketEgg", MaterialCategory.Biological, new Color(0.78f,0.72f,0.48f,1), 0.9f, 0.99f, 80, 0.35f, 0.05f, 0.14f, 1.5f, 0.01f, 0.6f, 0.25f, 80, 160, 0.02f, 0, 130, 130, 11, true, false, 0, 0.5f, 180f, 150f, 0.65f, 0.4f),
-                Define(131, "Detritus", MaterialCategory.Granular, new Color(0.38f,0.28f,0.14f,1), 0.48f, 0.04f, 28, 0.4f, 0.85f, 0.1f, 1.2f, 0.02f, 0.7f, 0.72f, 280, 900, 0.02f, 0, 131, 131, 11, true, true, 0.02f, 0.55f, 220f, 180f, 0.65f, 0.45f),
-                Define(132, "Wasp", MaterialCategory.Biological, new Color(0.86f,0.68f,0.12f,1), 0.55f, 0.99f, 80, 0.4f, 0.2f, 0.11f, 1.3f, 0.02f, 0.25f, 0.18f, 90, 180, 0.02f, 0, 132, 132, 11, true, false, 0, 0.65f, 195f, 165f, 0.75f, 0.45f),
-                Define(133, "WaspEgg", MaterialCategory.Biological, new Color(0.88f,0.84f,0.6f,1), 0.85f, 0.99f, 80, 0.3f, 0.05f, 0.14f, 1.5f, 0.01f, 0.6f, 0.25f, 80, 160, 0.02f, 0, 133, 133, 11, true, false, 0, 0.45f, 180f, 150f, 0.65f, 0.4f),
-                Define(134, "Leaf", MaterialCategory.Biological, new Color(0.22f,0.58f,0.18f,1), 0.32f, 0.35f, 28, 0.45f, 0.7f, 0.12f, 1.4f, 0.02f, 0.55f, 0.4f, 90, 180, 0.02f, 0, 134, 134, 11, true, false, 0, 0.9f, 145f, 120f, 0.45f, 0.7f),
-                Define(135, "Wood", MaterialCategory.Solid, new Color(0.28f,0.16f,0.08f,1), 0.75f, 0.88f, 55, 1.1f, 0.15f, 0.08f, 1.7f, 0.01f, 0.35f, 0.18f, 380, 900, 0.01f, 0, 135, 135, 11, true, false, 0, 0.75f, 320f, 260f, 0.85f, 0.55f)
+                Define(1, "Air", MaterialCategory.Gas, new Color(0.07f,0.1f,0.16f,1), 0.0012f, 0, 0, 1, 0.2f, 0.02f, 1f, 0.001f, 0, 1, -220, -190, 0.01f, 0, 1, 1, 1, false),
+                Define(2, "Core", MaterialCategory.Solid, new Color(0.9f,0.16f,0.03f,1), 8, 1, 80, 4, 0, 0.8f, 2f, 0.7f, 0, 0, 1200, 3000, 0.02f, 0.01f, 2, 3, 11, false, 0, 0, 10000f, 10000f, 0, 0, 100f),
+                Define(3, "Mantle", MaterialCategory.Solid, new Color(0.72f,0.08f,0.02f,1), 4.5f, 0.8f, 60, 3, 0, 0.5f, 1.8f, 0.3f, 0.02f, 0.05f, 850, 2600, 0.03f, 0.01f, 3, 6, 11, false, 0, 0, 10000f, 10000f, 0, 0, 90f),
+                Define(4, "Granite", MaterialCategory.Solid, new Color(0.24f,0.25f,0.28f,1), 3, 0.95f, 55, 2, 0, 0.25f, 1.5f, 0.15f, 0.08f, 0.08f, 900, 2400, 0.01f, 0.005f, 4, 6, 11, true, 0, 0, 10000f, 10000f, 0, 0, 80f),
+                Define(5, "Basalt", MaterialCategory.Solid, new Color(0.12f,0.11f,0.13f,1), 3.2f, 0.9f, 50, 1.5f, 0, 0.3f, 1.4f, 0.18f, 0.05f, 0.04f, 780, 2400, 0.01f, 0.005f, 5, 6, 11, true, 0, 0, 10000f, 10000f, 0, 0, 70f),
+                Define(6, "Magma", MaterialCategory.Magma, new Color(1f,0.22f,0.01f,1), 2.7f, 0.05f, 5, 1, 0.7f, 0.7f, 1.2f, 0.25f, 0, 0, 700, 2200, 0.08f, 0.02f, 5, 6, 11, false, 0, 0, 10000f, 10000f, 0, 0, 70f),
+                Define(7, "Soil", MaterialCategory.Granular, new Color(0.28f,0.14f,0.055f,1), 1.5f, 0.15f, 34, 0.8f, 0, 0.12f, 1.1f, 0.04f, 0.75f, 0.55f, 200, 900, 0.02f, 0, 7, 7, 11, true, 0.02f, 0.6f, 180f, 160f, 0.85f, 0.6f),
+                Define(8, "Sediment", MaterialCategory.Granular, new Color(0.46f,0.29f,0.13f,1), 1.3f, 0.05f, 25, 0.35f, 0, 0.1f, 1f, 0.03f, 0.65f, 0.65f, 160, 850, 0.02f, 0, 8, 8, 11, true, 0.01f, 0.4f, 170f, 150f, 0.8f, 0.5f),
+                Define(9, "Water", MaterialCategory.Liquid, new Color(0.02f,0.32f,0.9f,1), 1, 0, 0, 1, 0.5f, 0.55f, 4.2f, 0.05f, 1, 0, 0, 100, 0.02f, 0, 10, 9, 1, false, 0, 0, 10000f, 80f, 0, 0),
+                Define(10, "Ice", MaterialCategory.Solid, new Color(0.55f,0.88f,1f,1), 0.92f, 0.65f, 45, 1, 0.3f, 0.35f, 2.1f, 0.01f, 0.1f, 0.05f, 0, 100, 0.02f, 0, 10, 9, 1, true, 0, 0, 10000f, 80f, 0, 0),
+                Define(12, "Ash", MaterialCategory.Granular, new Color(0.45f,0.42f,0.38f,1), 0.55f, 0.03f, 22, 0.15f, 0.95f, 0.08f, 0.9f, 0.02f, 0.55f, 0.7f, 1100, 2600, 0.01f, 0, 12, 12, 12, true, 0.08f, 0.55f),
+                Define(13, "Metal", MaterialCategory.Solid, new Color(0.75f,0.78f,0.82f,1), 7.8f, 0.98f, 70, 1.5f, 0, 8f, 0.45f, 8f, 0, 0.01f, 1450, 2800, 0.008f, 0.015f, 13, 13, 11, false, 0, 0, 10000f, 10000f, 0, 0, 50f),
+                Define(14, "Limestone", MaterialCategory.Solid, new Color(0.78f,0.72f,0.58f,1), 2.5f, 0.75f, 40, 1.8f, 0, 0.10f, 1.7f, 0.04f, 0.35f, 0.40f, 825, 2200, 0.012f, 0.003f, 14, 6, 11, true, 0, 0, 10000f, 10000f, 0, 0, 60f),
+                Define(15, "Clay", MaterialCategory.Granular, new Color(0.62f,0.32f,0.18f,1), 1.8f, 0.22f, 28, 0.45f, 0, 0.35f, 1.35f, 0.06f, 0.9f, 0.45f, 950, 1800, 0.018f, 0, 15, 6, 11, true, 0, 0, 10000f, 10000f, 0, 0, 40f),
+                Define(128, "AlgaeMoss", MaterialCategory.Biological, new Color(0.18f,0.55f,0.22f,1), 0.45f, 0.95f, 40, 0.6f, 0.6f, 0.18f, 1.6f, 0.03f, 0.8f, 0.4f, 90, 180, 0.02f, 0, 128, 128, 11, true, 0, 0.85f, 220f, 180f, 0.7f, 0.5f),
+                Define(129, "Cricket", MaterialCategory.Biological, new Color(0.42f,0.28f,0.12f,1), 0.8f, 0.99f, 80, 0.5f, 0.1f, 0.12f, 1.4f, 0.02f, 0.3f, 0.2f, 90, 180, 0.02f, 0, 129, 129, 11, true, 0, 0.7f, 200f, 170f, 0.75f, 0.45f),
+                Define(130, "CricketEgg", MaterialCategory.Biological, new Color(0.78f,0.72f,0.48f,1), 0.9f, 0.99f, 80, 0.35f, 0.05f, 0.14f, 1.5f, 0.01f, 0.6f, 0.25f, 80, 160, 0.02f, 0, 130, 130, 11, true, 0, 0.5f, 180f, 150f, 0.65f, 0.4f),
+                Define(131, "Detritus", MaterialCategory.Granular, new Color(0.38f,0.28f,0.14f,1), 0.48f, 0.04f, 28, 0.4f, 0.85f, 0.1f, 1.2f, 0.02f, 0.7f, 0.72f, 280, 900, 0.02f, 0, 131, 131, 11, true, 0.02f, 0.55f, 220f, 180f, 0.65f, 0.45f),
+                Define(132, "Wasp", MaterialCategory.Biological, new Color(0.86f,0.68f,0.12f,1), 0.55f, 0.99f, 80, 0.4f, 0.2f, 0.11f, 1.3f, 0.02f, 0.25f, 0.18f, 90, 180, 0.02f, 0, 132, 132, 11, true, 0, 0.65f, 195f, 165f, 0.75f, 0.45f),
+                Define(133, "WaspEgg", MaterialCategory.Biological, new Color(0.88f,0.84f,0.6f,1), 0.85f, 0.99f, 80, 0.3f, 0.05f, 0.14f, 1.5f, 0.01f, 0.6f, 0.25f, 80, 160, 0.02f, 0, 133, 133, 11, true, 0, 0.45f, 180f, 150f, 0.65f, 0.4f),
+                Define(134, "Leaf", MaterialCategory.Biological, new Color(0.22f,0.58f,0.18f,1), 0.32f, 0.35f, 28, 0.45f, 0.7f, 0.12f, 1.4f, 0.02f, 0.55f, 0.4f, 90, 180, 0.02f, 0, 134, 134, 11, true, 0, 0.9f, 145f, 120f, 0.45f, 0.7f),
+                Define(135, "Wood", MaterialCategory.Solid, new Color(0.28f,0.16f,0.08f,1), 0.75f, 0.88f, 55, 1.1f, 0.15f, 0.08f, 1.7f, 0.01f, 0.35f, 0.18f, 380, 900, 0.01f, 0, 135, 135, 11, true, 0, 0.75f, 320f, 260f, 0.85f, 0.55f)
             };
 
             MaterialRegistry registry = LoadOrCreate<MaterialRegistry>(DataRoot + "/MaterialRegistry.asset");
@@ -90,7 +90,7 @@ namespace GeneSys.Editor
             float density, float rigidity, float repose, float grain, float buoyancy,
             float thermal, float heatCapacity, float electrical, float absorbency, float porosity,
             float melt, float boil, float thermalExpansion, float electricalExpansion,
-            int solid, int liquid, int gas, bool bioModifiable, bool densityDisplaceable = false,
+            int solid, int liquid, int gas, bool bioModifiable,
             float toxicity = 0, float calories = 0,
             float ignitionTemperature = 10000f, float flashPoint = 10000f, float oxygenDemand = 0f, float smokeYield = 0f,
             float latentHeat = 0f)
@@ -99,7 +99,6 @@ namespace GeneSys.Editor
             MaterialDefinition asset = LoadOrCreate<MaterialDefinition>(path);
             asset.stableId = id; asset.displayName = name; asset.category = category; asset.displayColor = color;
             asset.density = density; asset.rigidity = rigidity; asset.angleOfRepose = repose; asset.grainSize = grain; asset.buoyancyBias = buoyancy;
-            asset.densityDisplaceable = densityDisplaceable;
             asset.thermalConductivity = thermal; asset.heatCapacity = heatCapacity; asset.electricalConductivity = electrical;
             asset.absorbency = absorbency; asset.porosity = porosity; asset.meltingTemperature = melt; asset.boilingTemperature = boil;
             asset.thermalExpansion = thermalExpansion; asset.electricalExpansion = electricalExpansion;

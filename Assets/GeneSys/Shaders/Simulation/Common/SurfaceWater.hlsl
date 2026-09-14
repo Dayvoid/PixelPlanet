@@ -50,7 +50,7 @@ bool IsAirborneLiquid(int2 cell, uint material)
 
 // Atmosphere-connected surface reservoir for one angular column. Ice lids and
 // enclosed cave water are excluded so only the free surface participates.
-// Falling precipitation is skipped (not absorbed) so MaterialMotion owns the fall.
+// Falling precipitation is skipped (not absorbed) so Margolus owns the fall.
 void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float temperature, out float head, out int waterTop, out bool hadPixels)
 {
     bedY = -1;
@@ -78,7 +78,7 @@ void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float tempe
         if (IsAtmosphereCell(cell, material) || (runTop >= 0 && IsOpenCarrier(material)))
         {
             // Open air under a liquid run means the entire clump is still falling, so
-            // MaterialMotion owns it and the free surface lies further down.
+            // Margolus owns the fall and the free surface lies further down.
             runTop = -1;
             y--;
             continue;

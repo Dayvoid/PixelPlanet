@@ -149,6 +149,7 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.windDamping = 0f;
@@ -192,6 +193,9 @@ namespace GeneSys.Tests
             host.Config.combustionMinFuel = 0.02f;
             host.Config.combustionMinOxygen = 0.05f;
             host.Config.combustionFlameDecay = 0.05f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
+            host.Config.floraGrowthRate = 0f;
         }
 
         private IEnumerator PrepareIsolatedWorld(SimulationHost host)

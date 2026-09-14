@@ -269,15 +269,18 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.thermalRate = 0f;
             host.Config.electricalRate = 0f;
             host.Config.pressureRate = 0f;
             host.Config.pressureDiffusionRate = 0f;
             host.Config.vaporPressureScale = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.coreHeatRate = 0f;
             host.Config.coreTemperature = 1500f;
+            host.Config.grassWaterUptakeRate = 0f;
+            host.Config.treeWaterUptakeRate = 0f;
+            host.Config.floraGrowthRate = 0f;
         }
 
         private static void RestoreStressIsolation(SimulationHost host)
@@ -306,13 +309,13 @@ namespace GeneSys.Tests
             host.Config.windStrength = 0.35f;
             host.Config.evaporationRate = 0.1f;
             host.Config.condensationRate = 0.12f;
+            host.Config.dewRate = 0.12f;
             host.Config.precipitationRate = 0.2f;
             host.Config.thermalRate = 0.35f;
             host.Config.electricalRate = 0.3f;
             host.Config.pressureRate = 0.4f;
             host.Config.pressureDiffusionRate = 0.5f;
             host.Config.vaporPressureScale = 0.25f;
-            host.Config.densityExchangeRate = 4f;
             host.Config.coreHeatRate = 0.15f;
             host.Config.coreTemperature = 1500f;
             host.Config.phaseHysteresis = 0.02f;
@@ -540,13 +543,16 @@ namespace GeneSys.Tests
             ConfigureEruptionDefaults(host);
             host.Config.magmaEruption = 0f;
             host.Config.ashUpdraftStrength = 0f;
-            host.Config.ashSettlingStrength = 4f;
+            host.Config.ashSettlingStrength = 0f;
+            host.Config.gravityStrength = 1f;
+            host.Config.enableMaterialTransport = true;
             host.Config.ashFertilityStrength = 0f;
             host.Config.slowPassInterval = 100000;
             host.Config.transportPassInterval = 100000;
             host.Config.thermalRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
@@ -1029,7 +1035,8 @@ namespace GeneSys.Tests
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
             ConfigureStressIsolation(host);
-            host.Config.evaporationRate = 2f;
+            host.Config.evaporationRate = 0f;
+            host.Config.vaporCapacityScale = 0.2f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.seed = 11111;
@@ -1044,6 +1051,7 @@ namespace GeneSys.Tests
             PaintGroundwater(host, x, y, 0.5f);
             PaintHeat(host, x, y, 80f);
             yield return Step(host, 1);
+            host.Config.evaporationRate = 2f;
 
             float groundBefore = -1f;
             yield return ReadMaterialsAndAux(host, (mats, aux) =>
@@ -1062,9 +1070,10 @@ namespace GeneSys.Tests
             float vapor = -1f;
             yield return ReadMaterialsAndAux(host, (mats, aux) =>
             {
-                int index = y * host.Grid.angularResolution + x;
+                int width = host.Grid.angularResolution;
+                int index = y * width + x;
                 groundAfter = aux[index].y;
-                vapor = aux[index].x;
+                vapor = aux[index].x + aux[(y + 1) * width + x].x;
             });
             Assert.That(groundAfter, Is.LessThan(groundBefore - 0.1f));
             Assert.That(vapor, Is.GreaterThan(0.05f));
@@ -1360,7 +1369,6 @@ namespace GeneSys.Tests
             host.Config.hydrothermalStrength = 0.8f;
             host.Config.volcanicCooling = 0f;
             host.Config.magmaEruption = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.materialSubsteps = substeps;
             host.Config.slowPassInterval = 1;
             host.Regenerate();

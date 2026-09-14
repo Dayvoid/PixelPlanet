@@ -145,6 +145,7 @@ namespace GeneSys.Tests
             host.Config.dissolutionRate = 0f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.windStrength = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -168,7 +169,6 @@ namespace GeneSys.Tests
             host.Config.treeSeedAtWorldgen = false;
             host.Config.combustionIgnitionAccumulationRate = 0f;
             host.Config.stormChargeSeparationRate = 0f;
-            host.Config.densityExchangeRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.grassGrowthTempMin = -50f;
             host.Config.grassGrowthTempMax = 80f;
@@ -360,6 +360,7 @@ namespace GeneSys.Tests
             host.Config.grassWaterUptakeRate = 0.8f;
             host.Config.evaporationRate = 0f;
             host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
             host.Config.precipitationRate = 0f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
@@ -728,6 +729,56 @@ namespace GeneSys.Tests
             yield return ReadGrassCell(host, x, y - 1, (_, _, _, _, _, _, load) => counts[4] = load.x);
             for (int i = 0; i < counts.Length; i++)
                 Assert.That(counts[i], Is.EqualTo(Mathf.Round(counts[i])).Within(1e-3f));
+        }
+
+        [UnityTest]
+        public IEnumerator GrassSurvivesAOneCellSoilSlide()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.grassRootCohesionBonus = 0f;
+            host.Config.enableMaterialTransport = true;
+            host.Config.margolusSubsteps = 1;
+
+            int x = 10;
+            int y = SurfaceY(host);
+            if ((y & 1) == 0) y++;
+            Paint(host, x, y - 2, MaterialIds.Rock);
+            Paint(host, x - 1, y - 2, MaterialIds.Rock);
+            Paint(host, x + 1, y - 2, MaterialIds.Rock);
+            Paint(host, x, y - 1, MaterialIds.Air);
+            Paint(host, x - 1, y - 1, MaterialIds.Rock);
+            Paint(host, x + 1, y - 1, MaterialIds.Rock);
+            Paint(host, x, y, MaterialIds.Soil);
+            Paint(host, x - 1, y, MaterialIds.Rock);
+            Paint(host, x + 1, y, MaterialIds.Rock);
+            Paint(host, x, y + 1, MaterialIds.Air);
+            yield return Step(host, 1);
+            host.QueueGrassSeed(new Vector2Int(host.Grid.WrapTheta(x), y), 0);
+            yield return Step(host, 1);
+
+            int livingBefore = 0;
+            yield return ReadGrassCell(host, x, y, (mat, _, _, _, genomes, _, __) =>
+            {
+                Assert.That(mat, Is.EqualTo(MaterialIds.Soil));
+                livingBefore = LivingCount(genomes);
+            });
+            Assert.That(livingBefore, Is.GreaterThan(0));
+
+            host.Config.gravityStrength = 2f;
+            yield return Step(host, 2);
+
+            int livingAfter = 0;
+            uint destMat = 0;
+            yield return ReadGrassCell(host, x, y - 1, (mat, _, _, _, genomes, _, __) =>
+            {
+                destMat = mat;
+                livingAfter = LivingCount(genomes);
+            });
+            Assert.That(destMat, Is.EqualTo(MaterialIds.Soil));
+            Assert.That(livingAfter, Is.GreaterThan(0), "Grass slots must ride the sliding soil cell.");
         }
 
         private sealed class SimulationConfigSnapshot

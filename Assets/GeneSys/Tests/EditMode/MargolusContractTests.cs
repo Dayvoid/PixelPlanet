@@ -17,6 +17,8 @@ namespace GeneSys.Tests
             Assert.That(shader, Is.Not.Null, "MargolusTransport.compute could not be loaded.");
             Assert.That(shader.FindKernel("MargolusPhaseEven"), Is.GreaterThanOrEqualTo(0));
             Assert.That(shader.FindKernel("MargolusPhaseOdd"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("MargolusGrassEven"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("MargolusGrassOdd"), Is.GreaterThanOrEqualTo(0));
         }
 
         [Test]
@@ -25,17 +27,14 @@ namespace GeneSys.Tests
             var config = ScriptableObject.CreateInstance<SimulationConfig>();
             Assert.That(config.enableMaterialTransport, Is.True);
             Assert.That(config.margolusSubsteps, Is.EqualTo(1));
-            Assert.That(config.margolusGravityBias, Is.EqualTo(1f));
             Assert.That(config.margolusReposeFriction, Is.EqualTo(1f));
             Assert.That(config.margolusMetricEnable, Is.True);
 
             config.margolusSubsteps = 10;
-            config.margolusGravityBias = -2f;
             config.margolusReposeFriction = 0f;
             typeof(SimulationConfig).GetMethod("OnValidate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.Invoke(config, null);
 
             Assert.That(config.margolusSubsteps, Is.EqualTo(4));
-            Assert.That(config.margolusGravityBias, Is.EqualTo(0f));
             Assert.That(config.margolusReposeFriction, Is.GreaterThanOrEqualTo(0.1f));
             Object.DestroyImmediate(config);
         }
@@ -66,6 +65,39 @@ namespace GeneSys.Tests
             Assert.That(scheduler, Does.Not.Contain("maceTransport"), "GpuPassScheduler.cs should not contain maceTransport");
             Assert.That(scheduler, Does.Not.Contain("_MaceFlags"), "GpuPassScheduler.cs should not declare _MaceFlags");
             Assert.That(scheduler, Does.Contain("config.enableMaterialTransport"), "GpuPassScheduler.cs should guard transport passes with enableMaterialTransport");
+        }
+
+        [Test]
+        public void MargolusContractExcludesRetiredDensityExchangeAndMotionKernels()
+        {
+            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
+            Assert.That(scheduler, Does.Not.Contain("_DensityExchange"), "GpuPassScheduler.cs should not set _DensityExchange");
+            Assert.That(scheduler, Does.Not.Contain("LiquidDensityExchange"));
+            Assert.That(scheduler, Does.Not.Contain("MaterialMotion"));
+
+            string structs = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SimulationStructs.hlsl");
+            Assert.That(structs, Does.Not.Contain("LiquidDensityExchange"));
+            Assert.That(structs, Does.Not.Contain("MaterialMotion"));
+            Assert.That(structs, Does.Not.Contain("densityDisplaceable"));
+
+            string materialSim = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute");
+            Assert.That(materialSim, Does.Not.Contain("LiquidDensityExchange"));
+            Assert.That(materialSim, Does.Not.Contain("#pragma kernel MaterialMotion"));
+
+            Assert.That(File.Exists("Assets/GeneSys/Compute/Simulation/MaceTransport.compute"), Is.False);
+        }
+
+        [Test]
+        public void MargolusSwapsGrassSlotsWithSoilCells()
+        {
+            string shader = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
+            Assert.That(shader, Does.Contain("_GrassWrite"));
+            Assert.That(shader, Does.Contain("MargolusGrassEven"));
+            Assert.That(shader, Does.Contain("SwapI2"));
+
+            string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
+            Assert.That(scheduler, Does.Contain("resources.SwapGrass()"));
+            Assert.That(scheduler, Does.Contain("_TreeReceiptScale"));
         }
     }
 }

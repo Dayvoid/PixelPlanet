@@ -22,7 +22,6 @@ MonoBehaviour:
   angleOfRepose: 40
   grainSize: 1.8
   buoyancyBias: 0
-  densityDisplaceable: 1
   thermalConductivity: 0.1
   heatCapacity: 1.7
   electricalConductivity: 0.04

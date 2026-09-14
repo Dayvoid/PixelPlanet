@@ -40,7 +40,7 @@ float4 _WeatherD; // advectionRate, vaporDiffusionRate, atmosphericBuoyancy, unu
 float4 _WeatherE; // vaporCapacityScale, cloudRetainMass, waterPressureResponse, latentHeatScale
 float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureCompressibility, atmosphericCflLimit
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, verticalBuoyancyStrength
-float4 _WeatherH; // atmosphereAbsorption, unused, unused, unused
+float4 _WeatherH; // atmosphereAbsorption, dewRate, unused, unused
 float4 _WeatherI; // coriolisStrength, velocityAdvectionRate, prevailingWind, unused
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, unused, unused
@@ -145,7 +145,7 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
     bool atmosphere = IsAtmosphereCell(cell, material);
 
     float theta01 = (cell.x + 0.5) / _GridSize.x;
-    float insolation = SolarInsolation(theta01, _WeatherC.y);
+    float insolation = SolarInsolation(theta01, _WeatherC.y) * ClimateInsolationScale(cell.x);
     float light = max(0.0, LightOf(cell));
     float heating = light / max(0.05, definition.transport.y);
     if (IsExposedSurface(cell, material))
@@ -517,7 +517,53 @@ float DewTransfer(int2 surface, int2 air)
         return 0.0;
     float available = max(0.0, airAux.x);
     float drive = max(0.0, dew - surfaceState.x);
-    return min(available, max(0.0, _WeatherB.z) * drive * 0.05 * _DeltaTime);
+    return min(available, max(0.0, _WeatherH.y) * drive * 0.05 * _DeltaTime);
+}
+
+// Both sides of WaterCycle must call this so ocean film leaves the pixel and lands in
+// the air column. Storing evap on Water/Ice aux.x lets Hydrostatic zero it later.
+float SurfaceEvaporation(int2 surface, int2 air)
+{
+    uint surfaceMat = M(surface);
+    uint airMat = M(air);
+    if (IsAtmosphereCell(surface, surfaceMat) || !IsExposedSurface(surface, surfaceMat))
+        return 0.0;
+    if (!IsAtmosphereCell(air, airMat) || !IsOpenCarrier(airMat))
+        return 0.0;
+    float4 surfaceState = S(surface);
+    if (surfaceState.x <= -20.0)
+        return 0.0;
+    float4 airAux = A(air);
+    float windMul = 1.0 + length(F(air));
+    float hysteresis = max(0.001, _WeatherC.z);
+    float liquidFrac = WaterLiquidFraction(surfaceState.x, hysteresis);
+    float evapScale = surfaceMat == 9u ? 0.75 : 1.0;
+    float phaseScale = liquidFrac + (1.0 - liquidFrac) * 0.15;
+    return EvaporateToAir(surfaceState.x, airAux.x, surfaceState.z,
+        max(0.0, _WeatherB.y) * windMul * evapScale * phaseScale, _DeltaTime, _WeatherE.x);
+}
+
+float CapillaryEvaporation(int2 surface, int2 air)
+{
+    uint surfaceMat = M(surface);
+    uint airMat = M(air);
+    if (IsAtmosphereCell(surface, surfaceMat) || !IsExposedSurface(surface, surfaceMat))
+        return 0.0;
+    if (!IsAtmosphereCell(air, airMat) || !IsOpenCarrier(airMat))
+        return 0.0;
+    MaterialGpuData definition = D(surfaceMat);
+    if (!IsGroundwaterHost(surfaceMat, definition))
+        return 0.0;
+    float4 surfaceState = S(surface);
+    float4 surfaceAux = A(surface);
+    float hysteresis = max(0.001, _WeatherC.z);
+    float liquidFrac = WaterLiquidFraction(surfaceState.x, hysteresis);
+    if (surfaceState.x <= -20.0 || surfaceAux.y <= 0.0 || liquidFrac <= 0.05)
+        return 0.0;
+    float windMul = 1.0 + length(F(air));
+    float porosity = saturate(definition.biology.z);
+    return EvaporateToAir(surfaceState.x, A(air).x, surfaceAux.y,
+        max(0.0, _WeatherB.y) * windMul * liquidFrac * porosity, _DeltaTime, _WeatherE.x);
 }
 
 [numthreads(8, 8, 1)]
@@ -533,44 +579,21 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float4 combustion = Comb(cell);
     bool atmosphere = IsAtmosphereCell(cell, material);
     bool exposed = IsExposedSurface(cell, material);
-    MaterialGpuData definition = D(material);
-    float hysteresis = max(0.001, _WeatherC.z);
-    float liquidFrac = WaterLiquidFraction(state.x, hysteresis);
-    float frozenFrac = 1.0 - liquidFrac;
 
-    float airVapor = aux.x;
-    float wind = length(flow);
     if (!atmosphere && exposed && cell.y < _GridSize.y - 1)
     {
-        int2 above = cell + int2(0, 1);
-        uint aboveMat = M(above);
-        if (IsAtmosphereCell(above, aboveMat))
-        {
-            airVapor = A(above).x;
-            wind = length(F(above));
-        }
-    }
-    float deficit = EvaporationDeficit(state.x, airVapor, _WeatherE.x);
-    float windMul = 1.0 + wind;
-    float evapRate = max(0.0, _WeatherB.y) * deficit * windMul * _DeltaTime;
-
-    if (state.x > -20.0 && !atmosphere && exposed)
-    {
-        float evapScale = material == 9u ? 0.75 : 1.0;
-        float phaseScale = liquidFrac + frozenFrac * 0.15;
-        float surfaceEvap = min(max(0.0, state.z), evapRate * evapScale * phaseScale);
+        float surfaceEvap = SurfaceEvaporation(cell, cell + int2(0, 1));
         state.z -= surfaceEvap;
-        aux.x += surfaceEvap;
         state.x -= WaterLatentHeatDelta(surfaceEvap, _WeatherE.w, 0.8);
 
-        if (IsGroundwaterHost(material, definition) && aux.y > 0.0 && liquidFrac > 0.05)
-        {
-            float porosity = saturate(definition.biology.z);
-            float capillary = min(aux.y, evapRate * liquidFrac * porosity);
-            aux.y -= capillary;
-            aux.x += capillary;
-            state.x -= WaterLatentHeatDelta(capillary, _WeatherE.w, 0.6);
-        }
+        float capillary = CapillaryEvaporation(cell, cell + int2(0, 1));
+        aux.y -= capillary;
+        state.x -= WaterLatentHeatDelta(capillary, _WeatherE.w, 0.6);
+    }
+    if (atmosphere && cell.y > 0)
+    {
+        aux.x += SurfaceEvaporation(cell + int2(0, -1), cell);
+        aux.x += CapillaryEvaporation(cell + int2(0, -1), cell);
     }
 
     if (atmosphere)

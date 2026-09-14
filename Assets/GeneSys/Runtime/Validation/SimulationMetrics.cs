@@ -151,7 +151,8 @@ namespace GeneSys.Validation
                             RequestField(combustionTex, fail, combustionRequest =>
                             {
                                 Vector4[] combustion = combustionRequest.GetData<Vector4>().ToArray();
-                                completed?.Invoke(ComputeMetrics(grid, materials, states, aux, flow, combustion));
+                                float vaporScale = host != null && host.Config != null ? host.Config.vaporCapacityScale : 0.01f;
+                                completed?.Invoke(ComputeMetrics(grid, materials, states, aux, flow, combustion, vaporScale));
                             });
                         });
                     });
@@ -280,13 +281,19 @@ namespace GeneSys.Validation
             }
         }
 
+        public const float WaterMagnusA = 17.27f;
+        public const float WaterMagnusB = 237.7f;
+
         public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux)
-            => ComputeMetrics(grid, materials, states, aux, null, null);
+            => ComputeMetrics(grid, materials, states, aux, null, null, 0.01f);
 
         public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux, Vector2[] flow)
-            => ComputeMetrics(grid, materials, states, aux, flow, null);
+            => ComputeMetrics(grid, materials, states, aux, flow, null, 0.01f);
 
         public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux, Vector2[] flow, Vector4[] combustion)
+            => ComputeMetrics(grid, materials, states, aux, flow, combustion, 0.01f);
+
+        public static WorldWaterMetrics ComputeMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states, Vector4[] aux, Vector2[] flow, Vector4[] combustion, float vaporCapacityScale)
         {
             int width = grid.angularResolution;
             int height = grid.radialResolution;
@@ -347,7 +354,7 @@ namespace GeneSys.Validation
                     {
                         atmosphereCells++;
                         if (state.z > 0.05f) cloudCells++;
-                        relativeHumiditySum += RelativeHumidity(auxValue.x, state.x, 0.01f);
+                        relativeHumiditySum += RelativeHumidity(auxValue.x, state.x, vaporCapacityScale);
                         humiditySampleCount++;
                         if (state.x > metrics.MaxAtmosphericTemperature)
                         {
@@ -429,7 +436,7 @@ namespace GeneSys.Validation
         public static float RelativeHumidity(float vapor, float temperature, float scale)
         {
             float t = Mathf.Clamp(temperature, -40f, 80f);
-            float es = Mathf.Exp(17.27f * t / Mathf.Max(1e-3f, 237.7f + t));
+            float es = Mathf.Exp(WaterMagnusA * t / Mathf.Max(1e-3f, WaterMagnusB + t));
             float saturation = Mathf.Max(1e-4f, Mathf.Max(0.001f, scale) * es);
             return Mathf.Clamp01(Mathf.Max(0f, vapor) / saturation);
         }
