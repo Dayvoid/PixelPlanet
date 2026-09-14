@@ -554,7 +554,7 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
     float windMul = 1.0 + wind;
     float evapRate = max(0.0, _WeatherB.y) * deficit * windMul * _DeltaTime;
 
-    if (state.x > -20.0 && !atmosphere)
+    if (state.x > -20.0 && !atmosphere && exposed)
     {
         float evapScale = material == 9u ? 0.75 : 1.0;
         float phaseScale = liquidFrac + frozenFrac * 0.15;
@@ -563,7 +563,7 @@ void WaterCycle(uint3 id : SV_DispatchThreadID)
         aux.x += surfaceEvap;
         state.x -= WaterLatentHeatDelta(surfaceEvap, _WeatherE.w, 0.8);
 
-        if (exposed && IsGroundwaterHost(material, definition) && aux.y > 0.0 && liquidFrac > 0.05)
+        if (IsGroundwaterHost(material, definition) && aux.y > 0.0 && liquidFrac > 0.05)
         {
             float porosity = saturate(definition.biology.z);
             float capillary = min(aux.y, evapRate * liquidFrac * porosity);

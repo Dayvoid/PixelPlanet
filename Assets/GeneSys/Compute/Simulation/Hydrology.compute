@@ -612,9 +612,47 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
     int newCells = spawnPixels ? expectedCells : 0;
     int newTop = spawnPixels ? bedY + newCells : bedY;
     int oldTop = hadPixels ? waterTop : bedY;
-    int rewriteMax = max(oldTop, newTop);
     bool idle = abs(net) <= 1e-8 && !mismatch;
     float hysteresis = max(0.001, _WeatherC.z);
+
+    // Evacuate any vapor or cloud from cells about to be inundated by rising water,
+    // plus any vapor trapped inside submerged liquid cells, so it vents to the air
+    // cell above newTop instead of being duplicated or trapped underwater.
+    float displacedVapor = 0.0;
+    float displacedCloud = 0.0;
+    if (!idle && bedY >= 0)
+    {
+        if (newTop > oldTop)
+        {
+            [loop]
+            for (int iy = max(bedY + 1, oldTop + 1); iy <= min(newTop, _GridSize.y - 1); iy++)
+            {
+                int2 icell = int2(x, iy);
+                uint imat = M(icell);
+                if (imat == 0u || imat == 1u)
+                {
+                    displacedVapor += max(0.0, A(icell).x);
+                    displacedCloud += max(0.0, S(icell).z);
+                }
+                else if (IsAirborneLiquid(icell, imat))
+                {
+                    displacedCloud += max(0.0, S(icell).z);
+                }
+            }
+        }
+        [loop]
+        for (int sy = bedY + 1; sy < min(newTop, _GridSize.y); sy++)
+        {
+            int2 scell = int2(x, sy);
+            uint smat = M(scell);
+            if (smat == 9u || smat == 10u)
+            {
+                displacedVapor += max(0.0, A(scell).x);
+            }
+        }
+    }
+
+    int rewriteMax = min(_GridSize.y - 1, max(oldTop, newTop) + ((displacedVapor > 1e-8 || displacedCloud > 1e-8) ? 1 : 0));
 
     [loop]
     for (int y = 0; y < _GridSize.y; y++)
@@ -636,7 +674,7 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             if ((material == 7u || material == 8u || material == 15u) && state.z > 0.05 && D(material).biology.z > 0.2)
                 flow *= saturate(1.0 - max(0.0, _HydrologyC.y) * 0.25 * _DeltaTime);
         }
-        else if (rewrite && y > bedY && IsRewritableCarrier(material))
+        else if (rewrite && y > bedY && y <= max(oldTop, newTop) && IsRewritableCarrier(material))
         {
             int slot = y - (bedY + 1);
             float slotMass = 0.0;
@@ -651,15 +689,10 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             }
             if (slotMass > 1e-6)
             {
-                float rescued = max(0.0, aux.x);
-                if (material == 0u || material == 1u)
-                    rescued += max(0.0, state.z);
-                else if (IsAirborneLiquid(cell, material))
-                    rescued += max(0.0, state.z); // The profile skipped this drop, so its mass is not in newVolume.
                 material = LiquidPixelId(newTemp, hysteresis);
                 state.z = slotMass;
                 state.x = newTemp;
-                aux.x = rescued;
+                aux.x = (y == newTop && oldTop == newTop) ? max(0.0, aux.x) : 0.0;
                 aux.y = 0.0;
                 flow.x += net * 0.35;
             }
@@ -667,8 +700,14 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             {
                 material = 1u;
                 state.z = 0.0;
+                aux.x = 0.0;
                 aux.y = 0.0;
             }
+        }
+        else if (rewrite && y == newTop + 1 && (material == 0u || material == 1u))
+        {
+            aux.x += displacedVapor;
+            state.z += displacedCloud;
         }
 
         Write(cell, material, state, flow, aux, ecology, combustion);
