@@ -60,12 +60,15 @@ namespace GeneSys.Rendering
         private int lastStarCount = -1;
         private int lastNebulaCount = -1;
         private Vector2 starSpawnExtents;
-        private float starfieldReferenceOrtho = -1f;
+        private Vector2 nebulaSpawnExtents;
+        private float lastSpawnAspect = -1f;
         private bool built;
 
-        // 0 = screen-locked backdrop, 1 = stars zoom 1:1 with the camera.
-        private const float StarfieldZoomFollow = 0.12f;
+        public const float DefaultStarfieldZoomFollow = 0.82f;
+        public const float DefaultNebulaZoomFollow = 0.38f;
         private const float StarfieldSpawnMargin = 2.75f;
+        private const float NebulaSpawnMargin = 0.55f;
+        private const float AspectRebuildThreshold = 0.1f;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer planetoidDisplay)
         {
@@ -75,6 +78,29 @@ namespace GeneSys.Rendering
                 targetCamera = display != null ? display.TargetCamera : Camera.main;
             EnsureBuilt();
             ApplySettings(forceRebuildParticles: true);
+        }
+
+        /// <summary>
+        /// Zoom scale for a camera-locked backdrop layer.
+        /// follow 0 = world-locked (grows with the planet); follow 1 = screen-locked / infinitely far.
+        /// </summary>
+        public static float BackdropLayerScale(float orthoSize, float referenceOrtho, float follow, float cover)
+        {
+            float ortho = Mathf.Max(1e-4f, orthoSize);
+            float reference = Mathf.Max(1e-4f, referenceOrtho);
+            float parallax = Mathf.Pow(ortho / reference, Mathf.Clamp01(follow));
+            return Mathf.Max(parallax, Mathf.Max(0f, cover));
+        }
+
+        public static bool BackdropCoversView(float spawnExtent, float zoomScale, float viewExtent, float epsilon = 0.001f)
+        {
+            return spawnExtent * Mathf.Max(0f, zoomScale) + epsilon >= viewExtent;
+        }
+
+        public static float BackdropCoverFloor(Vector2 spawnExtents, Vector2 viewExtents)
+        {
+            if (spawnExtents.x <= 1e-4f || spawnExtents.y <= 1e-4f) return 0f;
+            return Mathf.Max(viewExtents.x / spawnExtents.x, viewExtents.y / spawnExtents.y);
         }
 
         private void LateUpdate()
@@ -241,14 +267,19 @@ namespace GeneSys.Rendering
             bool glowEnabled = config.enableAtmosphereGlow != 0 && config.atmosphereGlowStrength > 0.001f;
             bool solarEnabled = config.enableSolarBody != 0 &&
                                 (config.solarBodyStrength > 0.001f || config.solarCoronaStrength > 0.001f);
+            float aspect = GetCameraAspect();
+            bool aspectChanged = lastSpawnAspect > 0f &&
+                                 Mathf.Abs(aspect - lastSpawnAspect) >= lastSpawnAspect * AspectRebuildThreshold;
+            bool rebuiltBackdrop = false;
 
             if (starSystem != null)
             {
                 starSystem.gameObject.SetActive(starsEnabled);
-                if (starsEnabled && (forceRebuildParticles || lastStarCount != config.starCount))
+                if (starsEnabled && (forceRebuildParticles || lastStarCount != config.starCount || aspectChanged))
                 {
                     RebuildStars(config.starCount);
                     lastStarCount = config.starCount;
+                    rebuiltBackdrop = true;
                 }
                 if (starMaterial != null)
                 {
@@ -260,14 +291,18 @@ namespace GeneSys.Rendering
             if (nebulaSystem != null)
             {
                 nebulaSystem.gameObject.SetActive(nebulaEnabled);
-                if (nebulaEnabled && (forceRebuildParticles || lastNebulaCount != config.nebulaCount))
+                if (nebulaEnabled && (forceRebuildParticles || lastNebulaCount != config.nebulaCount || aspectChanged))
                 {
                     RebuildNebula(config.nebulaCount);
                     lastNebulaCount = config.nebulaCount;
+                    rebuiltBackdrop = true;
                 }
                 if (nebulaMaterial != null)
                     nebulaMaterial.SetColor("_BaseColor", new Color(1f, 1f, 1f, Mathf.Clamp01(config.nebulaStrength)));
             }
+
+            if (rebuiltBackdrop)
+                lastSpawnAspect = aspect;
 
             if (atmosphereRenderer != null)
             {
@@ -354,10 +389,8 @@ namespace GeneSys.Rendering
         {
             count = Mathf.Clamp(count, 32, 512);
             var particles = new ParticleSystem.Particle[count];
-            Vector2 extents = GetViewExtents();
+            Vector2 extents = GetMaxViewExtents();
             starSpawnExtents = new Vector2(extents.x * (1f + StarfieldSpawnMargin), extents.y * (1f + StarfieldSpawnMargin));
-            if (targetCamera != null && targetCamera.orthographic)
-                starfieldReferenceOrtho = targetCamera.orthographicSize;
             customDataScratch.Clear();
             for (int i = 0; i < count; i++)
             {
@@ -381,19 +414,20 @@ namespace GeneSys.Rendering
                 customDataScratch.RemoveRange(alive, customDataScratch.Count - alive);
             starSystem.SetCustomParticleData(customDataScratch, ParticleSystemCustomData.Custom1);
             starSystem.Play(true);
-            UpdateStarfieldZoom();
+            UpdateBackdropZoom();
         }
 
         private void RebuildNebula(int count)
         {
             count = Mathf.Clamp(count, 4, 48);
             var particles = new ParticleSystem.Particle[count];
-            Vector2 extents = GetViewExtents();
+            Vector2 extents = GetMaxViewExtents();
+            nebulaSpawnExtents = new Vector2(extents.x * (1f + NebulaSpawnMargin), extents.y * (1f + NebulaSpawnMargin));
             for (int i = 0; i < count; i++)
             {
                 Color tint = NebulaPalette[i % NebulaPalette.Length];
                 float size = Random.Range(2.5f, 6.5f);
-                particles[i].position = RandomPointInView(extents, 0.55f);
+                particles[i].position = RandomPointInView(extents, NebulaSpawnMargin);
                 particles[i].startSize3D = new Vector3(size, size * Random.Range(0.65f, 1.2f), size);
                 particles[i].startColor = tint;
                 particles[i].remainingLifetime = float.PositiveInfinity;
@@ -406,6 +440,7 @@ namespace GeneSys.Rendering
             nebulaSystem.Clear(true);
             nebulaSystem.SetParticles(particles, count);
             nebulaSystem.Play(true);
+            UpdateBackdropZoom();
         }
 
         private void UpdateSolarPose()
@@ -442,42 +477,50 @@ namespace GeneSys.Rendering
             visualsRoot.position = new Vector3(cam.position.x, cam.position.y, backdropZ);
             visualsRoot.rotation = Quaternion.identity;
 
-            UpdateStarfieldZoom();
+            UpdateBackdropZoom();
             if (nebulaSystem != null && nebulaSystem.gameObject.activeSelf)
-                ClampParticlesToView(nebulaSystem, 0.65f);
+                ClampParticlesToSpawnField(nebulaSystem, nebulaSpawnExtents);
         }
 
-        private void UpdateStarfieldZoom()
+        private void UpdateBackdropZoom()
         {
-            if (starSystem == null || !starSystem.gameObject.activeSelf) return;
             if (targetCamera == null || !targetCamera.orthographic) return;
-            if (starSpawnExtents.y <= 0.001f) return;
-
+            SimulationConfig config = host != null ? host.Config : null;
+            float starFollow = config != null ? config.starfieldZoomFollow : DefaultStarfieldZoomFollow;
+            float nebulaFollow = config != null ? config.nebulaZoomFollow : DefaultNebulaZoomFollow;
             float ortho = targetCamera.orthographicSize;
-            if (starfieldReferenceOrtho <= 0.001f)
-                starfieldReferenceOrtho = ortho;
+            float reference = PlanetoidDisplayRenderer.MaxOrthographicSize;
+            Vector2 view = GetViewExtents();
 
-            float follow = Mathf.Pow(ortho / starfieldReferenceOrtho, StarfieldZoomFollow);
-            float cover = ortho / starSpawnExtents.y;
-            starSystem.transform.localScale = Vector3.one * Mathf.Max(follow, cover);
+            if (starSystem != null && starSystem.gameObject.activeSelf)
+            {
+                float cover = BackdropCoverFloor(starSpawnExtents, view);
+                starSystem.transform.localScale = Vector3.one * BackdropLayerScale(ortho, reference, starFollow, cover);
+            }
+
+            if (nebulaSystem != null && nebulaSystem.gameObject.activeSelf)
+            {
+                float cover = BackdropCoverFloor(nebulaSpawnExtents, view);
+                nebulaSystem.transform.localScale = Vector3.one * BackdropLayerScale(ortho, reference, nebulaFollow, cover);
+            }
         }
 
-        private void ClampParticlesToView(ParticleSystem system, float margin)
+        private void ClampParticlesToSpawnField(ParticleSystem system, Vector2 spawnExtents)
         {
+            if (spawnExtents.x <= 1e-4f || spawnExtents.y <= 1e-4f) return;
             int count = system.particleCount;
             if (count <= 0) return;
             var particles = new ParticleSystem.Particle[count];
             system.GetParticles(particles, count);
-            Vector2 extents = GetViewExtents();
             bool dirty = false;
             for (int i = 0; i < count; i++)
             {
                 Vector3 p = particles[i].position;
                 bool wrapped = false;
-                if (p.x < -extents.x - margin) { p.x = extents.x + margin; wrapped = true; }
-                else if (p.x > extents.x + margin) { p.x = -extents.x - margin; wrapped = true; }
-                if (p.y < -extents.y - margin) { p.y = extents.y + margin; wrapped = true; }
-                else if (p.y > extents.y + margin) { p.y = -extents.y - margin; wrapped = true; }
+                if (p.x < -spawnExtents.x) { p.x = spawnExtents.x; wrapped = true; }
+                else if (p.x > spawnExtents.x) { p.x = -spawnExtents.x; wrapped = true; }
+                if (p.y < -spawnExtents.y) { p.y = spawnExtents.y; wrapped = true; }
+                else if (p.y > spawnExtents.y) { p.y = -spawnExtents.y; wrapped = true; }
                 if (wrapped)
                 {
                     particles[i].position = p;
@@ -485,6 +528,20 @@ namespace GeneSys.Rendering
                 }
             }
             if (dirty) system.SetParticles(particles, count);
+        }
+
+        private Vector2 GetMaxViewExtents()
+        {
+            float height = PlanetoidDisplayRenderer.MaxOrthographicSize;
+            float width = height * GetCameraAspect();
+            return new Vector2(width, height);
+        }
+
+        private float GetCameraAspect()
+        {
+            if (targetCamera != null)
+                return Mathf.Max(0.1f, targetCamera.aspect);
+            return 16f / 9f;
         }
 
         private Vector2 GetViewExtents()
@@ -537,6 +594,11 @@ namespace GeneSys.Rendering
         public void Teardown()
         {
             built = false;
+            lastStarCount = -1;
+            lastNebulaCount = -1;
+            lastSpawnAspect = -1f;
+            starSpawnExtents = default;
+            nebulaSpawnExtents = default;
             SafeDestroy(starMaterial);
             SafeDestroy(nebulaMaterial);
             SafeDestroy(atmosphereMaterial);

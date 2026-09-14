@@ -427,9 +427,11 @@ MonoBehaviour:
   starCount: 300
   starfieldStrength: 0.1
   starTwinkleStrength: 0.65
+  starfieldZoomFollow: 0.82
   enableNebula: 1
   nebulaCount: 12
   nebulaStrength: 0.45
+  nebulaZoomFollow: 0.38
   enableAtmosphereGlow: 1
   atmosphereGlowStrength: 0.7
   atmosphereGlowPixelScale: 48
@@ -451,6 +453,8 @@ MonoBehaviour:
   probeOrbitRadius: 1.012
   probeSpriteScale: 0.025
   probeSpriteRotationOffset: 93
+  enableProbeThruster: 1
+  probeThrusterStrength: 1
   probeOrbitPeriodSeconds: 600
   probeVaporRate: 2
   probeWaterRate: 1

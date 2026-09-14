@@ -545,9 +545,11 @@ namespace GeneSys.Configuration
         [Range(32, 512)] public int starCount = 300;
         [Range(0f, 2f)] public float starfieldStrength = 0.1f;
         [Range(0f, 2f)] public float starTwinkleStrength = 0.65f;
+        [Range(0f, 1f)] public float starfieldZoomFollow = 0.82f;
         [Range(0, 1)] public int enableNebula = 1;
         [Range(4, 48)] public int nebulaCount = 12;
         [Range(0f, 2f)] public float nebulaStrength = 0.45f;
+        [Range(0f, 1f)] public float nebulaZoomFollow = 0.38f;
         [Range(0, 1)] public int enableAtmosphereGlow = 1;
         [Range(0f, 2f)] public float atmosphereGlowStrength = 0.7f;
         [Range(4f, 48f)] public float atmosphereGlowPixelScale = 48f;
@@ -574,6 +576,8 @@ namespace GeneSys.Configuration
         [Range(0.8f, 2f)] public float probeOrbitRadius = 1.012f;
         [Range(0.01f, 1f)] public float probeSpriteScale = 0.025f;
         [Range(-180f, 180f)] public float probeSpriteRotationOffset = 93f;
+        [Range(0, 1)] public int enableProbeThruster = 1;
+        [Range(0f, 2f)] public float probeThrusterStrength = 1f;
         [Min(1f)] public float probeOrbitPeriodSeconds = 600f;
         [Range(0f, 10f)] public float probeVaporRate = 2f;
         [Range(0f, 10f)] public float probeWaterRate = 1f;
@@ -1036,9 +1040,11 @@ namespace GeneSys.Configuration
             starCount = Mathf.Clamp(starCount, 32, 512);
             starfieldStrength = Mathf.Max(0f, starfieldStrength);
             starTwinkleStrength = Mathf.Max(0f, starTwinkleStrength);
+            starfieldZoomFollow = Mathf.Clamp01(starfieldZoomFollow);
             enableNebula = enableNebula != 0 ? 1 : 0;
             nebulaCount = Mathf.Clamp(nebulaCount, 4, 48);
             nebulaStrength = Mathf.Max(0f, nebulaStrength);
+            nebulaZoomFollow = Mathf.Clamp01(nebulaZoomFollow);
             enableAtmosphereGlow = enableAtmosphereGlow != 0 ? 1 : 0;
             atmosphereGlowStrength = Mathf.Max(0f, atmosphereGlowStrength);
             atmosphereGlowPixelScale = Mathf.Clamp(atmosphereGlowPixelScale, 4f, 48f);
@@ -1091,6 +1097,8 @@ namespace GeneSys.Configuration
             probeOrbitRadius = Mathf.Clamp(probeOrbitRadius, 0.8f, 2f);
             probeSpriteScale = Mathf.Clamp(probeSpriteScale, 0.01f, 1f);
             probeSpriteRotationOffset = Mathf.Clamp(probeSpriteRotationOffset, -180f, 180f);
+            enableProbeThruster = enableProbeThruster != 0 ? 1 : 0;
+            probeThrusterStrength = Mathf.Max(0f, probeThrusterStrength);
             probeOrbitPeriodSeconds = Mathf.Max(1f, probeOrbitPeriodSeconds);
             probeVaporRate = Mathf.Max(0f, probeVaporRate);
             probeWaterRate = Mathf.Max(0f, probeWaterRate);

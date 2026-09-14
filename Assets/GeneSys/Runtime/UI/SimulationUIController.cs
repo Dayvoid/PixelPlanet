@@ -61,6 +61,7 @@ namespace GeneSys.UI
             nameof(SimulationConfig.enableAtmosphereGlow),
             nameof(SimulationConfig.enableSolarBody),
             nameof(SimulationConfig.enableCoreVisual),
+            nameof(SimulationConfig.enableProbeThruster),
             nameof(SimulationConfig.enableMaterialTransport),
             nameof(SimulationConfig.margolusMetricEnable),
             nameof(SimulationConfig.margolusFluidEnable),

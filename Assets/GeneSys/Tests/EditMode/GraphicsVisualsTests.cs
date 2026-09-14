@@ -1,5 +1,6 @@
 using System.IO;
 using GeneSys.Rendering;
+using GeneSys.Simulation;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -81,6 +82,77 @@ namespace GeneSys.Tests
             Assert.That(config.coreHeatGlow, Is.EqualTo(1f).Within(0.001f));
             Assert.That(config.coreVisualScale, Is.EqualTo(1f).Within(0.001f));
             Object.DestroyImmediate(config);
+        }
+
+        [Test]
+        public void BackdropLayerScaleCoversViewAcrossZoomRange()
+        {
+            const float maxOrtho = PlanetoidDisplayRenderer.MaxOrthographicSize;
+            const float starMargin = 2.75f;
+            const float nebulaMargin = 0.55f;
+            float starSpawn = maxOrtho * (1f + starMargin);
+            float nebulaSpawn = maxOrtho * (1f + nebulaMargin);
+            float[] orthos = { PlanetoidDisplayRenderer.MinOrthographicSize, 2.5f, 5.5f, maxOrtho };
+            float[] follows =
+            {
+                TerrariumVisualController.DefaultStarfieldZoomFollow,
+                TerrariumVisualController.DefaultNebulaZoomFollow
+            };
+
+            foreach (float follow in follows)
+            {
+                foreach (float ortho in orthos)
+                {
+                    float starCover = ortho / starSpawn;
+                    float starScale = TerrariumVisualController.BackdropLayerScale(ortho, maxOrtho, follow, starCover);
+                    Assert.That(
+                        TerrariumVisualController.BackdropCoversView(starSpawn, starScale, ortho),
+                        Is.True,
+                        $"stars follow {follow} ortho {ortho}");
+
+                    float nebulaCover = ortho / nebulaSpawn;
+                    float nebulaScale = TerrariumVisualController.BackdropLayerScale(ortho, maxOrtho, follow, nebulaCover);
+                    Assert.That(
+                        TerrariumVisualController.BackdropCoversView(nebulaSpawn, nebulaScale, ortho),
+                        Is.True,
+                        $"nebula follow {follow} ortho {ortho}");
+                }
+            }
+        }
+
+        [Test]
+        public void DistantBackdropFollowChangesApparentSizeLessThanNear()
+        {
+            const float maxOrtho = PlanetoidDisplayRenderer.MaxOrthographicSize;
+            const float minOrtho = PlanetoidDisplayRenderer.MinOrthographicSize;
+            float farMin = ApparentSize(minOrtho, maxOrtho, TerrariumVisualController.DefaultStarfieldZoomFollow);
+            float farMax = ApparentSize(maxOrtho, maxOrtho, TerrariumVisualController.DefaultStarfieldZoomFollow);
+            float nearMin = ApparentSize(minOrtho, maxOrtho, TerrariumVisualController.DefaultNebulaZoomFollow);
+            float nearMax = ApparentSize(maxOrtho, maxOrtho, TerrariumVisualController.DefaultNebulaZoomFollow);
+            float farChange = farMin / farMax;
+            float nearChange = nearMin / nearMax;
+            Assert.That(farChange, Is.LessThan(nearChange));
+
+            float lockedMin = ApparentSize(minOrtho, maxOrtho, 1f);
+            float lockedMax = ApparentSize(maxOrtho, maxOrtho, 1f);
+            Assert.That(lockedMin, Is.EqualTo(lockedMax).Within(0.001f));
+        }
+
+        [Test]
+        public void ProbeThrusterDefaultsSitOnTheSpriteRear()
+        {
+            var config = ScriptableObject.CreateInstance<GeneSys.Configuration.SimulationConfig>();
+            Assert.That(config.enableProbeThruster, Is.EqualTo(1));
+            Assert.That(config.probeThrusterStrength, Is.EqualTo(1f).Within(0.001f));
+            Assert.That(config.starfieldZoomFollow, Is.EqualTo(TerrariumVisualController.DefaultStarfieldZoomFollow).Within(0.001f));
+            Assert.That(config.nebulaZoomFollow, Is.EqualTo(TerrariumVisualController.DefaultNebulaZoomFollow).Within(0.001f));
+            Assert.That(ProbeController.ThrusterLocalOffset.x, Is.LessThan(0f));
+            Object.DestroyImmediate(config);
+        }
+
+        private static float ApparentSize(float ortho, float reference, float follow)
+        {
+            return TerrariumVisualController.BackdropLayerScale(ortho, reference, follow, 0f) / ortho;
         }
 
         [Test]

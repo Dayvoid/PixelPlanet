@@ -3,6 +3,7 @@ using GeneSys.Materials;
 using GeneSys.Rendering;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace GeneSys.Simulation
 {
@@ -33,6 +34,11 @@ namespace GeneSys.Simulation
         public const int DefaultDepositRadius = 4;
         public const float FollowLockBearingDegrees = 90f;
         public const float DefaultEnergyMax = 100f;
+        public static readonly Vector3 ThrusterLocalOffset = new(-0.12f, 0f, 0.01f);
+
+        private const int ThrusterSortingOrder = 59;
+        private const float ThrusterFlightRate = 56f;
+        private const float ThrusterIdleRate = 8f;
 
         [SerializeField] private SimulationHost host;
         [SerializeField] private PlanetoidDisplayRenderer display;
@@ -40,6 +46,9 @@ namespace GeneSys.Simulation
 
         private Transform probeRoot;
         private SpriteRenderer probeRenderer;
+        private ParticleSystem thrusterSystem;
+        private Material thrusterMaterial;
+        private Texture2D thrusterTexture;
         private ProbeAction action;
         private ProbeFlightMode flightMode = ProbeFlightMode.Clockwise;
         private ProbeFlightMode lastTravelMode = ProbeFlightMode.Clockwise;
@@ -50,6 +59,7 @@ namespace GeneSys.Simulation
         private int pendingLifeSeeds;
         private int ticksUntilLifeBurst;
         private bool warnedMissingSprite;
+        private bool thrusterUnavailable;
 
         public ProbeAction ActiveAction => action;
         public ProbeFlightMode FlightMode => flightMode;
@@ -334,7 +344,11 @@ namespace GeneSys.Simulation
 
         private void EnsureBuilt()
         {
-            if (probeRenderer != null && probeRoot != null) return;
+            if (probeRenderer != null && probeRoot != null)
+            {
+                EnsureThrusterBuilt();
+                return;
+            }
             if (display == null) display = FindFirstObjectByType<PlanetoidDisplayRenderer>();
             if (display == null) return;
 
@@ -348,7 +362,7 @@ namespace GeneSys.Simulation
             probeRenderer = probeObject.AddComponent<SpriteRenderer>();
             probeRenderer.sprite = probeSprite;
             probeRenderer.sortingOrder = 60;
-            probeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            probeRenderer.shadowCastingMode = ShadowCastingMode.Off;
             probeRenderer.receiveShadows = false;
 
             if (probeSprite == null && !warnedMissingSprite)
@@ -356,6 +370,113 @@ namespace GeneSys.Simulation
                 warnedMissingSprite = true;
                 Debug.LogWarning("GeneSys probe: Probe-Sprite is not assigned.", this);
             }
+
+            EnsureThrusterBuilt();
+        }
+
+        private void EnsureThrusterBuilt()
+        {
+            if (thrusterSystem != null) return;
+            if (probeRenderer == null || thrusterUnavailable) return;
+
+            SafeDestroy(thrusterMaterial);
+            SafeDestroy(thrusterTexture);
+            thrusterMaterial = null;
+            thrusterTexture = null;
+
+            Shader shader = Shader.Find("GeneSys/Space Particle");
+            if (shader == null)
+            {
+                thrusterUnavailable = true;
+                Debug.LogWarning("GeneSys probe: Space Particle shader is missing; thruster disabled.", this);
+                return;
+            }
+
+            thrusterTexture = CreateSoftDiscTexture(64);
+            thrusterMaterial = new Material(shader)
+            {
+                name = "GeneSys Probe Thruster",
+                mainTexture = thrusterTexture,
+                enableInstancing = true,
+                hideFlags = HideFlags.DontSave
+            };
+            thrusterMaterial.SetFloat("_Mode", 0f);
+            thrusterMaterial.SetFloat("_Softness", 2.2f);
+            thrusterMaterial.SetFloat("_TwinkleStrength", 0.25f);
+            thrusterMaterial.SetColor("_BaseColor", Color.white);
+
+            var go = new GameObject("Probe Thruster") { hideFlags = HideFlags.DontSave };
+            go.transform.SetParent(probeRenderer.transform, false);
+            go.transform.localPosition = ThrusterLocalOffset;
+            go.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+            go.transform.localScale = Vector3.one;
+
+            thrusterSystem = go.AddComponent<ParticleSystem>();
+            var renderer = go.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = thrusterMaterial;
+            renderer.renderMode = ParticleSystemRenderMode.Billboard;
+            renderer.alignment = ParticleSystemRenderSpace.View;
+            renderer.allowRoll = true;
+            renderer.enableGPUInstancing = true;
+            renderer.sortingOrder = ThrusterSortingOrder;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.lightProbeUsage = LightProbeUsage.Off;
+            renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+
+            var main = thrusterSystem.main;
+            main.loop = true;
+            main.playOnAwake = false;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+            main.maxParticles = 96;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.16f, 0.28f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(1.2f, 2.1f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.045f, 0.09f);
+            main.startColor = new ParticleSystem.MinMaxGradient(Color.white);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            main.gravityModifier = 0f;
+            main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+            main.useUnscaledTime = true;
+
+            var emission = thrusterSystem.emission;
+            emission.enabled = true;
+            emission.rateOverTime = ThrusterFlightRate;
+
+            var shape = thrusterSystem.shape;
+            shape.enabled = true;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 14f;
+            shape.radius = 0.03f;
+            shape.radiusThickness = 1f;
+            shape.length = 0.02f;
+            shape.rotation = Vector3.zero;
+
+            var colorOverLifetime = thrusterSystem.colorOverLifetime;
+            colorOverLifetime.enabled = true;
+            var gradient = new Gradient();
+            gradient.SetKeys(
+                new[]
+                {
+                    new GradientColorKey(Color.white, 0f),
+                    new GradientColorKey(new Color(0.25f, 0.85f, 1f), 0.35f),
+                    new GradientColorKey(new Color(0.15f, 0.45f, 1f), 1f)
+                },
+                new[]
+                {
+                    new GradientAlphaKey(1f, 0f),
+                    new GradientAlphaKey(0.75f, 0.4f),
+                    new GradientAlphaKey(0f, 1f)
+                });
+            colorOverLifetime.color = new ParticleSystem.MinMaxGradient(gradient);
+
+            var sizeOverLifetime = thrusterSystem.sizeOverLifetime;
+            sizeOverLifetime.enabled = true;
+            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+                new Keyframe(0f, 1f),
+                new Keyframe(1f, 0.12f)));
+
+            thrusterSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         }
 
         private void UpdateProbePose()
@@ -377,6 +498,55 @@ namespace GeneSys.Simulation
             probeRenderer.transform.localScale = SpriteLocalScale(config.probeSpriteScale, reverseTravel);
             probeRenderer.transform.localRotation = Quaternion.Euler(0f, 0f,
                 SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset, reverseTravel));
+            UpdateThruster(config);
+        }
+
+        private void UpdateThruster(SimulationConfig config)
+        {
+            if (thrusterSystem == null) return;
+
+            bool enabled = config.enableProbeThruster != 0 &&
+                           config.probeThrusterStrength > 0.001f &&
+                           probeSprite != null;
+            thrusterSystem.gameObject.SetActive(enabled);
+            if (!enabled) return;
+
+            if (thrusterMaterial != null)
+            {
+                float alpha = Mathf.Clamp01(config.probeThrusterStrength);
+                thrusterMaterial.SetColor("_BaseColor", new Color(1f, 1f, 1f, alpha));
+            }
+
+            var emission = thrusterSystem.emission;
+            float rate = flightMode == ProbeFlightMode.Stopped ? ThrusterIdleRate : ThrusterFlightRate;
+            emission.rateOverTime = rate * Mathf.Max(0f, config.probeThrusterStrength);
+
+            if (!thrusterSystem.isPlaying)
+                thrusterSystem.Play(true);
+        }
+
+        private static Texture2D CreateSoftDiscTexture(int size)
+        {
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "GeneSys Probe Thruster Particle",
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            float inv = 1f / (size - 1);
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float nx = x * inv * 2f - 1f;
+                float ny = y * inv * 2f - 1f;
+                float r = Mathf.Sqrt(nx * nx + ny * ny);
+                float a = Mathf.Clamp01(1f - r);
+                a = a * a * (3f - 2f * a);
+                texture.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+            texture.Apply(false, true);
+            return texture;
         }
 
         private static uint HashTick(long tick, uint salt)
@@ -393,6 +563,13 @@ namespace GeneSys.Simulation
 
         public void Teardown()
         {
+            SafeDestroy(thrusterMaterial);
+            SafeDestroy(thrusterTexture);
+            thrusterMaterial = null;
+            thrusterTexture = null;
+            thrusterSystem = null;
+            thrusterUnavailable = false;
+
             if (probeRenderer != null)
             {
                 SafeDestroy(probeRenderer.gameObject);

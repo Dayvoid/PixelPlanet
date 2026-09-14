@@ -904,12 +904,16 @@ namespace GeneSys.UI
                 "Opacity of the starfield. Visual only; it does not change solar heating, weather, or ecology.",
             [nameof(SimulationConfig.starTwinkleStrength)] =
                 "How much stars scintillate. Visual only; simulation lighting and temperature still come from the weather pass.",
+            [nameof(SimulationConfig.starfieldZoomFollow)] =
+                "How much the starfield tracks camera zoom. 0 stays world-locked with the planetoid; 1 stays screen-locked like a distant sky. Visual only.",
             [nameof(SimulationConfig.enableNebula)] =
                 "Toggles nebula clouds behind the planetoid. Visual only.",
             [nameof(SimulationConfig.nebulaCount)] =
                 "Number of nebula particles. Draw cost only.",
             [nameof(SimulationConfig.nebulaStrength)] =
                 "Opacity of nebula color. Visual only; weather and hydrology are unaffected.",
+            [nameof(SimulationConfig.nebulaZoomFollow)] =
+                "How much nebula clouds track camera zoom. Lower than the starfield so they feel closer. 0 is world-locked; 1 is screen-locked. Visual only.",
             [nameof(SimulationConfig.enableAtmosphereGlow)] =
                 "Toggles the limb glow around the planetoid. Visual only; independent of atmospheric physics.",
             [nameof(SimulationConfig.atmosphereGlowStrength)] =
@@ -956,6 +960,10 @@ namespace GeneSys.UI
                 "Local scale of the probe sprite. Raise it to make the orbiter easier to see against the glow; lower it to keep the disc unobstructed.",
             [nameof(SimulationConfig.probeSpriteRotationOffset)] =
                 "Degrees added to the probe sprite's tangent facing. The same offset aligns the art for clockwise and counterclockwise travel.",
+            [nameof(SimulationConfig.enableProbeThruster)] =
+                "Toggles the cyan ion exhaust at the rear of the probe sprite. Visual only.",
+            [nameof(SimulationConfig.probeThrusterStrength)] =
+                "Brightness and emission rate of the probe thruster. Visual only; flight speed is unchanged.",
             [nameof(SimulationConfig.probeOrbitPeriodSeconds)] =
                 "Seconds of simulation time for one clockwise lap. Independent of Day Length Seconds, so the probe can cross the sun instead of locking to night-side.",
             [nameof(SimulationConfig.probeVaporRate)] =
