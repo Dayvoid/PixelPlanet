@@ -26,6 +26,13 @@ Suggested entry template:
 
 ---
 
+## 2026-09-14 — Precipitation cloud-base threshold is relative to retain mass
+
+- **Systems:** Weather / precipitation, water-phase tests, settings tooltips.
+- **What changed:** `PrecipitationCloudBase(retain)` now scales the in-cloud vs fringe gate with `cloudRetainMass` (floor `PRECIP_CLOUD_BASE`, fraction 0.5). `PrecipitationClearAirDest` and the Precipitation receiver branch both use that helper instead of comparing dest cloud against the absolute 0.05 floor.
+- **Why/impact:** The 2026-09-13 absolute cloud-base gate starved Water/Ice pixel formation under default decks (`cloudRetainMass` 0.9). Excess cloud sedimented to the lowest air cell and dripped straight into surface film, so rain/snow/hail pooled instantly instead of falling as pixels.
+- **Evidence:** `SimulationStructs.hlsl`, `Weather.compute`, `WaterPhaseTests.cs`, `WeatherIntegrationTests.cs`, `SimulationSettingTooltips.cs`.
+
 ## 2026-09-13 — Planetary systems realignment (ownership, dead scaffolding, docs)
 
 - **Systems:** Margolus transport, Geology (ash/magma), Hydrology / hydrostatic, Weather / Climate, PhaseChange thermal, config / snapshots / metrics / UI, grass–soil coupling.

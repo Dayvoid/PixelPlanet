@@ -680,7 +680,8 @@ bool PrecipitationAirReceiver(int2 dest, uint destMat)
 
 bool PrecipitationClearAirDest(int2 dest, uint destMat)
 {
-    return PrecipitationAirReceiver(dest, destMat) && max(0.0, S(dest).z) <= PRECIP_CLOUD_BASE;
+    float cloudBase = PrecipitationCloudBase(max(0.01, _WeatherE.y));
+    return PrecipitationAirReceiver(dest, destMat) && max(0.0, S(dest).z) <= cloudBase;
 }
 
 int2 CloudPrecipReceiver(int2 source)
@@ -798,7 +799,7 @@ void Precipitation(uint3 id : SV_DispatchThreadID)
             float srcMassHeat = incoming * waterCp;
             state.x = (state.x * destMassHeat + incomingHeat * waterCp) / max(1e-5, destMassHeat + srcMassHeat);
             state.z = incoming + residualCloud;
-            if (residualCloud <= PRECIP_CLOUD_BASE)
+            if (residualCloud <= PrecipitationCloudBase(max(0.01, _WeatherE.y)))
                 material = LiquidPixelId(state.x, hysteresis);
         }
         else

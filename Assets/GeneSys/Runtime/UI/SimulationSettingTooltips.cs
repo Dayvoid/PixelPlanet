@@ -311,7 +311,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.vaporCapacityScale)] =
                 "Scales the Magnus saturation curve. Higher capacity delays clouds in warm air; lower capacity rains out easily and dries the column.",
             [nameof(SimulationConfig.cloudRetainMass)] =
-                "Cloud condensate retained before autoconversion. Higher values keep thicker clouds; lower values let rain and snow form from thinner decks.",
+                "Cloud condensate retained before autoconversion. Higher values keep thicker clouds; lower values let rain and snow form from thinner decks. Drops form once the air below holds less than about half this value.",
             [nameof(SimulationConfig.waterPressureResponse)] =
                 "How strongly local pressure shifts boiling point and precipitation efficiency. Higher response makes highs hold vapor aloft; zero ignores pressure.",
             [nameof(SimulationConfig.latentHeatScale)] =

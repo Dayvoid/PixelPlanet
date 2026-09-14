@@ -72,7 +72,8 @@
 //   Air (ID 1) is the permanent atmospheric carrier. Legacy Vapor (ID 11) pixels
 //   migrate to Air while keeping vapor mass in aux.x. Clouds are atmospheric state.z.
 //   Precipitation sediments excess cloud downward through cloudy air, then
-//   materializes Water/Ice only in clear air or onto a surface.
+//   materializes Water/Ice at the deck fringe (cloud below PrecipitationCloudBase)
+//   or onto a surface.
 // Moisture-aware soil erosion:
 //   Exposed soil only. Local moisture (state.z + aux.y) raises cohesion and suppresses
 //   erosion-stress gain; dryness enables wind/runoff erosion but never converts alone.
@@ -1033,11 +1034,21 @@ float WaterLatentHeatDelta(float mass, float latentScale, float strength)
 #define PRECIP_MIN_DROP 0.45
 #endif
 
-// Dest air with more cloud than this is still in-cloud. Precipitation only
-// materializes a Water/Ice pixel once the drop reaches clear air or the surface.
+// Floor for "under the deck". Dest air with more cloud than
+// PrecipitationCloudBase(retain) is still in-cloud; drops form at the fringe.
 #ifndef PRECIP_CLOUD_BASE
 #define PRECIP_CLOUD_BASE 0.05
 #endif
+
+// Fraction of cloudRetainMass below which dest air counts as "under the deck".
+#ifndef PRECIP_CLOUD_BASE_FRACTION
+#define PRECIP_CLOUD_BASE_FRACTION 0.5
+#endif
+
+float PrecipitationCloudBase(float retain)
+{
+    return max(PRECIP_CLOUD_BASE, max(0.01, retain) * PRECIP_CLOUD_BASE_FRACTION);
+}
 
 float PrecipitationMass(float cloud, float retain, float temperature, float pressure, float equilibrium, float radialFlow, float precipitationRate, float pressureResponse, float dt)
 {

@@ -65,6 +65,8 @@ namespace GeneSys.Tests
             Assert.That(structs, Does.Contain("GroundwaterBoilMass"));
             Assert.That(structs, Does.Contain("WaterLatentHeatDelta"));
             Assert.That(structs, Does.Contain("PRECIP_CLOUD_BASE"));
+            Assert.That(structs, Does.Contain("PRECIP_CLOUD_BASE_FRACTION"));
+            Assert.That(structs, Does.Contain("PrecipitationCloudBase"));
             Assert.That(structs, Does.Contain("MaterialPhaseLatentDelta"));
             Assert.That(structs, Does.Contain("EffectiveCellHeatCapacity"));
             string phase = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute");
@@ -76,8 +78,9 @@ namespace GeneSys.Tests
             Assert.That(weather, Does.Contain("EvaporateToAir"));
             Assert.That(weather, Does.Contain("_WeatherH.y"));
             Assert.That(weather, Does.Contain("PrecipitationClearAirDest"));
-            Assert.That(weather, Does.Contain("PRECIP_CLOUD_BASE"));
+            Assert.That(weather, Does.Contain("PrecipitationCloudBase"));
             Assert.That(weather, Does.Not.Contain("S(dest).z) > retain"));
+            Assert.That(weather, Does.Not.Contain("<= PRECIP_CLOUD_BASE"));
             string hydrologySrc = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
             Assert.That(hydrologySrc, Does.Contain("EvaporateToAir"));
             Assert.That(hydrologySrc, Does.Contain("Residue stays on this Water pixel"));

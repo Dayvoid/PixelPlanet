@@ -1498,6 +1498,102 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator DefaultRetainDeckRainsPixelsAtCloudBaseNotSurfaceFilm()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
+            host.Config.cloudRetainMass = 0.9f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.runoffRate = 0f;
+            host.Config.pondingRate = 1f;
+            host.Config.gravityStrength = 0f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = SurfaceY(host);
+            const int fringeHeight = 4;
+            const int deckCells = 3;
+            int fringeY = bedY + fringeHeight;
+            int deckBottom = fringeY + 1;
+            int deckTop = deckBottom + deckCells - 1;
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, bedY, MaterialIds.Rock);
+                for (int y = bedY + 1; y <= deckTop + 1; y++)
+                    Paint(host, xx, y, MaterialIds.Air);
+            }
+            yield return Step(host, 1);
+            yield return ReadFields(host, (_, states, aux, __) =>
+            {
+                for (int dx = -3; dx <= 3; dx++)
+                {
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    for (int y = bedY + 1; y <= deckTop + 1; y++)
+                    {
+                        if (aux[y * width + xx].x > 0f) PaintField(host, xx, y, 6f, -aux[y * width + xx].x);
+                        if (states[y * width + xx].z > 0f) PaintField(host, xx, y, 2f, -states[y * width + xx].z);
+                    }
+                }
+            });
+            yield return Step(host, 1);
+            for (int y = deckBottom; y <= deckTop; y++)
+            {
+                PaintField(host, x, y, 1f, 12f);
+                PaintField(host, x, y, 2f, 1.4f);
+            }
+            PaintField(host, x, fringeY, 1f, 12f);
+            PaintField(host, x, fringeY, 2f, 0.3f);
+            yield return Step(host, 1);
+
+            host.Config.precipitationRate = 2f;
+            int formedY = -1;
+            for (int i = 0; i < 12 && formedY < 0; i++)
+            {
+                yield return Step(host, 1);
+                yield return ReadFields(host, (mats, states, _, __) =>
+                {
+                    for (int y = deckBottom; y <= deckTop; y++)
+                    {
+                        uint id = mats[y * width + x];
+                        Assert.That(id, Is.EqualTo(MaterialIds.Air),
+                            "Deck interior must stay Air; cloud should not freeze in place.");
+                    }
+                    Assert.That(states[bedY * width + x].z, Is.LessThan(0.05f),
+                        "Surface film must stay empty until a rain pixel lands.");
+                    for (int y = bedY + 1; y <= fringeY; y++)
+                    {
+                        uint id = mats[y * width + x];
+                        if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                        {
+                            formedY = y;
+                            break;
+                        }
+                    }
+                });
+            }
+            Assert.That(formedY, Is.GreaterThan(bedY),
+                "Default-retain deck should materialize a Water/Ice pixel at the cloud-base fringe, not drip as surface film.");
+            Assert.That(formedY, Is.LessThan(deckBottom),
+                "The drop must form under the deck, not inside it.");
+        }
+
+        [UnityTest]
         public IEnumerator SameSeedProducesIdenticalWeatherStateAfterNTicks()
         {
             SceneManager.LoadScene("Terrarium");
