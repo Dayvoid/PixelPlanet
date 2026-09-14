@@ -152,6 +152,11 @@
     max-height: none;
 }
 
+.status-scroll {
+    flex-grow: 1;
+    min-height: 0;
+}
+
 .history-drawer {
     flex-grow: 1;
     flex-shrink: 1;
@@ -198,7 +203,8 @@
     border-width: 1px;
     border-color: rgb(40, 90, 140);
     border-radius: 6px;
-    min-height: 120px;
+    min-height: 80px;
+    font-size: 11px;
 }
 
 .drawer-header {

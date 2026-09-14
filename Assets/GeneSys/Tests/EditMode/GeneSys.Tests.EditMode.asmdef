@@ -2,7 +2,9 @@
     "name": "GeneSys.Tests.EditMode",
     "rootNamespace": "GeneSys.Tests",
     "references": [
-        "GeneSys.Runtime"
+        "GeneSys.Runtime",
+        "UnityEditor.TestRunner",
+        "UnityEngine.TestRunner"
     ],
     "includePlatforms": [
         "Editor"
@@ -14,7 +16,7 @@
         "nunit.framework.dll",
         "Newtonsoft.Json.dll"
     ],
-    "autoReferenced": false,
+    "autoReferenced": true,
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],

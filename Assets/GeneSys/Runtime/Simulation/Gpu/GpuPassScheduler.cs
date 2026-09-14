@@ -888,6 +888,8 @@ namespace GeneSys.Simulation.Gpu
             }
             if (shader == flora || shader == hydrology)
             {
+                if (shader == flora && resources.FloraRead != null)
+                    shader.SetTexture(kernel, "_FloraRead", resources.FloraRead);
                 shader.SetTexture(kernel, "_GrassRead", resources.GrassRead);
                 shader.SetTexture(kernel, "_TreeRead", resources.TreeRead);
             }

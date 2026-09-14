@@ -7,6 +7,7 @@ using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Unity.Collections;
 
 namespace GeneSys.Validation
 {
@@ -125,8 +126,508 @@ namespace GeneSys.Validation
         public bool HasNonFinite;
     }
 
+    public struct SimulationStatusSnapshot
+    {
+        public int AngularResolution;
+        public int RadialResolution;
+
+        public float OceanCoverage;
+        public int BasinCount;
+        public double SurfaceWaterMass;
+        public double GroundwaterMass;
+        public double VaporMass;
+        public double TotalTrackedWaterMass;
+
+        public float MeanTemperature;
+        public float MeanPressure;
+        public float MeanMoisture;
+        public float MeanRelativeHumidity;
+        public float CloudCover;
+        public float MeanWindSpeed;
+        public int BurningCellCount;
+        public float TotalFireIntensity;
+        public float MeanOxygen;
+        public double SootMass;
+
+        public float MeanStrain;
+        public float MaxStrain;
+        public float MeanOverpressure;
+        public float MaxOverpressure;
+        public float MeanFaultWeakness;
+        public int ActiveGeoEvents;
+        public float ReleasedGeoEnergy;
+        public float AffectedGeoArcFraction;
+
+        public int TotalOrganisms;
+        public int AlgaeCount;
+        public int CricketAdults;
+        public int CricketEggs;
+        public int WaspAdults;
+        public int WaspEggs;
+        public int TreeAnchors;
+        public int TreeTotalPixels;
+
+        public string Format()
+        {
+            return
+                $"Grid {AngularResolution}×{RadialResolution} | Ocean {OceanCoverage * 100f:F1}% ({BasinCount} basins)\n" +
+                $"Water  surf {SurfaceWaterMass:F1}  ground {GroundwaterMass:F1}  vapor {VaporMass:F1}  total {TotalTrackedWaterMass:F1}\n" +
+                $"Geo  strain {MeanStrain:F3} (peak {MaxStrain:F3})  melt P {MeanOverpressure:F3} (peak {MaxOverpressure:F3})  events {ActiveGeoEvents} (E: {ReleasedGeoEnergy:F1})\n" +
+                $"Atmo  T {MeanTemperature:F1}°  P {MeanPressure:F3}  RH {MeanRelativeHumidity * 100f:F0}%  cloud {CloudCover * 100f:F0}%  wind {MeanWindSpeed:F3}  fire {BurningCellCount} (O2 {MeanOxygen:F2})\n" +
+                $"Life  algae {AlgaeCount}  cricket {CricketAdults} ({CricketEggs} egg)  wasp {WaspAdults} ({WaspEggs} egg)  trees {TreeAnchors} ({TreeTotalPixels} px)";
+        }
+    }
+
     public static class SimulationMetrics
     {
+        public const int DefaultStatusSampleStride = 4;
+
+        public static void MeasureStatusSampledAsync(SimulationHost host, Action<SimulationStatusSnapshot> completed, int sampleStride = DefaultStatusSampleStride)
+        {
+            if (host == null || !host.IsReady || host.Resources == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+
+            PolarGridDefinition grid = host.Grid;
+            int width = grid.angularResolution;
+            int height = grid.radialResolution;
+            if (width <= 0 || height <= 0)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+
+            RenderTexture materialTex = host.Resources.MaterialRead;
+            RenderTexture stateTex = host.Resources.StateRead;
+            RenderTexture auxTex = host.Resources.AuxRead;
+            RenderTexture flowTex = host.Resources.FlowRead;
+            RenderTexture combustionTex = host.Resources.CombustionRead;
+            RenderTexture treeTex = host.Resources.TreeRead;
+            ComputeBuffer geoState = host.Resources.GeodynamicsStateRead;
+            ComputeBuffer geoEvents = host.Resources.GeodynamicsEvents;
+
+            if (materialTex == null || stateTex == null || auxTex == null || flowTex == null || combustionTex == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+
+            sampleStride = Mathf.Clamp(sampleStride, 1, 16);
+            float vaporScale = host.Config != null ? host.Config.vaporCapacityScale : 0.01f;
+
+            var snapshot = new SimulationStatusSnapshot
+            {
+                AngularResolution = width,
+                RadialResolution = height
+            };
+
+            int pendingRequests = 5; // material, state, aux, flow, combustion
+            bool hasTreeTopo = treeTex != null && treeTex.volumeDepth >= FloraGenome.SliceCount;
+            if (hasTreeTopo) pendingRequests++;
+            bool hasGeoState = geoState != null && (host.Config == null || host.Config.geodynamicsLayerEnable);
+            if (hasGeoState) pendingRequests++;
+            bool hasGeoEvents = geoEvents != null && (host.Config == null || host.Config.geodynamicsLayerEnable);
+            if (hasGeoEvents) pendingRequests++;
+
+            bool failed = false;
+
+            void CheckDone()
+            {
+                if (failed) return;
+                pendingRequests--;
+                if (pendingRequests <= 0)
+                {
+                    snapshot.TotalTrackedWaterMass = snapshot.SurfaceWaterMass + snapshot.GroundwaterMass + snapshot.VaporMass;
+                    snapshot.TotalOrganisms = snapshot.AlgaeCount + snapshot.CricketAdults + snapshot.CricketEggs + snapshot.WaspAdults + snapshot.WaspEggs + snapshot.TreeTotalPixels;
+                    try
+                    {
+                        completed?.Invoke(snapshot);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogException(ex);
+                    }
+                }
+            }
+
+            void OnFailed()
+            {
+                if (failed) return;
+                failed = true;
+                try
+                {
+                    completed?.Invoke(default);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+            }
+
+            // 1. Material (surface ocean & exact organism counts)
+            try
+            {
+                AsyncGPUReadback.Request(materialTex, 0, req =>
+                {
+                    if (req.hasError || failed) { OnFailed(); return; }
+                    NativeArray<uint> materials = req.GetData<uint>();
+                    int cellCount = materials.Length;
+
+                    int sampledCols = Mathf.Max(1, width / sampleStride);
+                    bool[] oceanCols = new bool[sampledCols];
+                    int oceanColIndex = 0;
+                    for (int x = 0; x < width; x += sampleStride)
+                    {
+                        for (int y = height - 1; y >= 0; y--)
+                        {
+                            int idx = y * width + x;
+                            if (idx >= cellCount) break;
+                            uint m = materials[idx];
+                            if (m == MaterialIds.Air || m == MaterialIds.Void) continue;
+                            if (m == MaterialIds.Water || m == MaterialIds.Ice)
+                                oceanCols[oceanColIndex] = true;
+                            break;
+                        }
+                        oceanColIndex++;
+                        if (oceanColIndex >= sampledCols) break;
+                    }
+                    int oceanCount = 0;
+                    for (int i = 0; i < sampledCols; i++)
+                        if (oceanCols[i]) oceanCount++;
+                    snapshot.OceanCoverage = oceanCount / (float)sampledCols;
+                    snapshot.BasinCount = CountOceanAngleBasins(oceanCols);
+
+                    int algae = 0, crickets = 0, cricketEggs = 0, wasps = 0, waspEggs = 0, treePx = 0;
+                    for (int i = 0; i < cellCount; i++)
+                    {
+                        uint m = materials[i];
+                        if (m == MaterialIds.Algae) algae++;
+                        else if (m == MaterialIds.Cricket) crickets++;
+                        else if (m == MaterialIds.CricketEgg) cricketEggs++;
+                        else if (m == MaterialIds.Wasp) wasps++;
+                        else if (m == MaterialIds.WaspEgg) waspEggs++;
+                        else if (m == MaterialIds.Wood || m == MaterialIds.Leaf) treePx++;
+                    }
+                    snapshot.AlgaeCount = algae;
+                    snapshot.CricketAdults = crickets;
+                    snapshot.CricketEggs = cricketEggs;
+                    snapshot.WaspAdults = wasps;
+                    snapshot.WaspEggs = waspEggs;
+                    snapshot.TreeTotalPixels = treePx;
+
+                    CheckDone();
+                });
+            }
+            catch { OnFailed(); }
+
+            // 2. State (sampled temperature, pressure, moisture, surface water, cloud)
+            try
+            {
+                AsyncGPUReadback.Request(stateTex, 0, req =>
+                {
+                    if (req.hasError || failed) { OnFailed(); return; }
+                    NativeArray<Vector4> states = req.GetData<Vector4>();
+                    int cellCount = states.Length;
+                    int areaFactor = sampleStride * sampleStride;
+                    double tempSum = 0d;
+                    double presSum = 0d;
+                    double moistureSum = 0d;
+                    double surfWaterSum = 0d;
+                    int atmoCells = 0;
+                    int cloudCells = 0;
+                    int sampledCount = 0;
+
+                    float atmoStart = grid.atmosphereStartRadius;
+                    for (int y = 0; y < height; y += sampleStride)
+                    {
+                        float r = grid.Radius01(y);
+                        bool isAtmo = r >= atmoStart;
+                        for (int x = 0; x < width; x += sampleStride)
+                        {
+                            int idx = y * width + x;
+                            if (idx >= cellCount) continue;
+                            Vector4 s = states[idx];
+                            tempSum += s.x;
+                            presSum += s.y;
+                            moistureSum += Math.Max(0f, s.z);
+                            surfWaterSum += Math.Max(0d, s.z);
+                            sampledCount++;
+
+                            if (isAtmo)
+                            {
+                                atmoCells++;
+                                if (s.z > 0.05f) cloudCells++;
+                            }
+                        }
+                    }
+
+                    if (sampledCount > 0)
+                    {
+                        snapshot.MeanTemperature = (float)(tempSum / sampledCount);
+                        snapshot.MeanPressure = (float)(presSum / sampledCount);
+                        snapshot.MeanMoisture = (float)(moistureSum / sampledCount);
+                    }
+                    snapshot.SurfaceWaterMass = surfWaterSum * areaFactor;
+                    snapshot.CloudCover = atmoCells > 0 ? (float)cloudCells / atmoCells : 0f;
+
+                    CheckDone();
+                });
+            }
+            catch { OnFailed(); }
+
+            // 3. Aux (sampled groundwater, vapor, relative humidity)
+            try
+            {
+                AsyncGPUReadback.Request(auxTex, 0, req =>
+                {
+                    if (req.hasError || failed) { OnFailed(); return; }
+                    NativeArray<Vector4> aux = req.GetData<Vector4>();
+                    int cellCount = aux.Length;
+                    int areaFactor = sampleStride * sampleStride;
+                    double vaporSum = 0d;
+                    double groundSum = 0d;
+                    double atmoVaporSum = 0d;
+                    int atmoCells = 0;
+
+                    float atmoStart = grid.atmosphereStartRadius;
+                    for (int y = 0; y < height; y += sampleStride)
+                    {
+                        float r = grid.Radius01(y);
+                        bool isAtmo = r >= atmoStart;
+                        for (int x = 0; x < width; x += sampleStride)
+                        {
+                            int idx = y * width + x;
+                            if (idx >= cellCount) continue;
+                            Vector4 a = aux[idx];
+                            vaporSum += Math.Max(0d, a.x);
+                            groundSum += Math.Max(0d, a.y);
+
+                            if (isAtmo)
+                            {
+                                atmoVaporSum += Math.Max(0f, a.x);
+                                atmoCells++;
+                            }
+                        }
+                    }
+
+                    snapshot.GroundwaterMass = groundSum * areaFactor;
+                    snapshot.VaporMass = vaporSum * areaFactor;
+                    float meanVapor = atmoCells > 0 ? (float)(atmoVaporSum / atmoCells) : 0f;
+                    snapshot.MeanRelativeHumidity = RelativeHumidity(meanVapor, snapshot.MeanTemperature, vaporScale);
+
+                    CheckDone();
+                });
+            }
+            catch { OnFailed(); }
+
+            // 4. Flow (sampled wind speed)
+            try
+            {
+                AsyncGPUReadback.Request(flowTex, 0, req =>
+                {
+                    if (req.hasError || failed) { OnFailed(); return; }
+                    NativeArray<Vector2> flow = req.GetData<Vector2>();
+                    int cellCount = flow.Length;
+                    double windSpeedSum = 0d;
+                    int atmoCells = 0;
+
+                    float atmoStart = grid.atmosphereStartRadius;
+                    for (int y = 0; y < height; y += sampleStride)
+                    {
+                        float r = grid.Radius01(y);
+                        if (r < atmoStart) continue;
+                        for (int x = 0; x < width; x += sampleStride)
+                        {
+                            int idx = y * width + x;
+                            if (idx >= cellCount) continue;
+                            Vector2 f = flow[idx];
+                            windSpeedSum += Math.Sqrt(f.x * f.x + f.y * f.y);
+                            atmoCells++;
+                        }
+                    }
+
+                    if (atmoCells > 0)
+                        snapshot.MeanWindSpeed = (float)(windSpeedSum / atmoCells);
+
+                    CheckDone();
+                });
+            }
+            catch { OnFailed(); }
+
+            // 5. Combustion (sampled fire, oxygen, soot)
+            try
+            {
+                AsyncGPUReadback.Request(combustionTex, 0, req =>
+                {
+                    if (req.hasError || failed) { OnFailed(); return; }
+                    NativeArray<Vector4> combustion = req.GetData<Vector4>();
+                    int cellCount = combustion.Length;
+                    int areaFactor = sampleStride * sampleStride;
+                    int burningCount = 0;
+                    double fireIntensitySum = 0d;
+                    double sootSum = 0d;
+                    double o2Sum = 0d;
+                    int sampledCount = 0;
+
+                    for (int y = 0; y < height; y += sampleStride)
+                    {
+                        for (int x = 0; x < width; x += sampleStride)
+                        {
+                            int idx = y * width + x;
+                            if (idx >= cellCount) continue;
+                            Vector4 c = combustion[idx];
+                            if (c.y > 0.02f)
+                            {
+                                burningCount++;
+                                fireIntensitySum += c.y;
+                            }
+                            sootSum += Math.Max(0d, c.z);
+                            o2Sum += Math.Max(0f, c.x);
+                            sampledCount++;
+                        }
+                    }
+
+                    snapshot.BurningCellCount = burningCount * areaFactor;
+                    snapshot.TotalFireIntensity = (float)(fireIntensitySum * areaFactor);
+                    snapshot.SootMass = sootSum * areaFactor;
+                    if (sampledCount > 0)
+                        snapshot.MeanOxygen = (float)(o2Sum / sampledCount);
+
+                    CheckDone();
+                });
+            }
+            catch { OnFailed(); }
+
+            // 6. Tree Topology (anchor count)
+            if (hasTreeTopo)
+            {
+                try
+                {
+                    int topoSlice = FloraGenome.TopologySlice;
+                    AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, topoSlice, 1, req =>
+                    {
+                        if (req.hasError || failed) { OnFailed(); return; }
+                        NativeArray<Vector4> topoBits = req.GetData<Vector4>();
+                        int count = topoBits.Length;
+                        int anchors = 0;
+                        for (int i = 0; i < count; i++)
+                        {
+                            TreeGenome.Packed topo = TreeGenome.FromFloatBits(topoBits[i]);
+                            if (topo.X != 0 && (TreeGenome.Flags(topo.Z) & TreeGenome.FlagAnchor) != 0)
+                                anchors++;
+                        }
+                        snapshot.TreeAnchors = anchors;
+                        CheckDone();
+                    });
+                }
+                catch { OnFailed(); }
+            }
+
+            // 7. Geodynamics State (strain, overpressure, fault weakness)
+            if (hasGeoState)
+            {
+                try
+                {
+                    AsyncGPUReadback.Request(geoState, stateReq =>
+                    {
+                        try
+                        {
+                            if (stateReq.hasError || failed) { OnFailed(); return; }
+                            NativeArray<Vector4> stateValues = stateReq.GetData<Vector4>();
+                            int angBins = host.Config != null ? host.Config.geodynamicsAngularBins : 64;
+                            int radBins = host.Config != null ? host.Config.geodynamicsRadialBins : 16;
+                            angBins = Mathf.Clamp(angBins, 16, 128);
+                            radBins = Mathf.Clamp(radBins, 8, 32);
+                            int counted = 0;
+                            float meanStrain = 0f, maxStrain = 0f, meanOverpressure = 0f, maxOverpressure = 0f, meanWeakness = 0f;
+                            for (int a = 0; a < angBins; a++)
+                            {
+                                for (int r = 0; r < radBins; r++)
+                                {
+                                    int stateIndex = ((a * radBins) + r) * 2;
+                                    if (stateIndex + 1 >= stateValues.Length) continue;
+                                    Vector4 reservoir = stateValues[stateIndex];
+                                    Vector4 kinematics = stateValues[stateIndex + 1];
+                                    meanStrain += Mathf.Max(0f, reservoir.z);
+                                    maxStrain = Mathf.Max(maxStrain, reservoir.z);
+                                    meanOverpressure += Mathf.Max(0f, reservoir.y);
+                                    maxOverpressure = Mathf.Max(maxOverpressure, reservoir.y);
+                                    meanWeakness += Mathf.Max(0f, kinematics.z);
+                                    counted++;
+                                }
+                            }
+                            if (counted > 0)
+                            {
+                                snapshot.MeanStrain = meanStrain / counted;
+                                snapshot.MaxStrain = maxStrain;
+                                snapshot.MeanOverpressure = meanOverpressure / counted;
+                                snapshot.MaxOverpressure = maxOverpressure;
+                                snapshot.MeanFaultWeakness = meanWeakness / counted;
+                            }
+                            CheckDone();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"[MeasureStatusSampledAsync] GeodynamicsState error: {ex}");
+                            OnFailed();
+                        }
+                    });
+                }
+                catch { OnFailed(); }
+            }
+
+            // 8. Geodynamics Events (active events, energy release, affected arc fraction)
+            if (hasGeoEvents)
+            {
+                try
+                {
+                    AsyncGPUReadback.Request(geoEvents, eventReq =>
+                    {
+                        try
+                        {
+                            if (eventReq.hasError || failed) { OnFailed(); return; }
+                            NativeArray<Vector4> eventValues = eventReq.GetData<Vector4>();
+                            int angBins = host.Config != null ? host.Config.geodynamicsAngularBins : 64;
+                            int radBins = host.Config != null ? host.Config.geodynamicsRadialBins : 16;
+                            angBins = Mathf.Clamp(angBins, 16, 128);
+                            radBins = Mathf.Clamp(radBins, 8, 32);
+                            var activeAngles = new bool[angBins];
+                            int activeEvents = 0;
+                            float releasedEnergy = 0f;
+                            for (int a = 0; a < angBins; a++)
+                            {
+                                for (int r = 0; r < radBins; r++)
+                                {
+                                    int eventIndex = a * radBins + r;
+                                    if (eventIndex < eventValues.Length && eventValues[eventIndex].y > 0.05f)
+                                    {
+                                        activeEvents++;
+                                        releasedEnergy += Mathf.Max(0f, eventValues[eventIndex].w);
+                                        activeAngles[a] = true;
+                                    }
+                                }
+                            }
+                            snapshot.ActiveGeoEvents = activeEvents;
+                            snapshot.ReleasedGeoEnergy = releasedEnergy;
+                            int active = 0;
+                            for (int i = 0; i < activeAngles.Length; i++)
+                                if (activeAngles[i]) active++;
+                            snapshot.AffectedGeoArcFraction = active / (float)Mathf.Max(1, angBins);
+                            CheckDone();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"[MeasureStatusSampledAsync] GeodynamicsEvents error: {ex}");
+                            OnFailed();
+                        }
+                    });
+                }
+                catch { OnFailed(); }
+            }
+        }
+
         public static void MeasureAsync(SimulationHost host, Action<WorldWaterMetrics> completed)
         {
             if (!TryCaptureFields(host, out PolarGridDefinition grid, out RenderTexture materialTex, out RenderTexture stateTex, out RenderTexture auxTex, out RenderTexture flowTex, out RenderTexture combustionTex))
@@ -871,7 +1372,7 @@ namespace GeneSys.Validation
             }
         }
 
-        private static WorldGeodynamicsMetrics ComputeGeodynamicsMetrics(Vector4[] state, Vector4[] events, int angularBins, int radialBins)
+        public static WorldGeodynamicsMetrics ComputeGeodynamicsMetrics(NativeArray<Vector4> state, NativeArray<Vector4> events, int angularBins, int radialBins)
         {
             var metrics = new WorldGeodynamicsMetrics();
             angularBins = Mathf.Clamp(angularBins, 16, 128);
@@ -915,6 +1416,21 @@ namespace GeneSys.Validation
                 if (activeAngles[i]) active++;
             metrics.AffectedAngularFraction = active / (float)Mathf.Max(1, angularBins);
             return metrics;
+        }
+
+        private static WorldGeodynamicsMetrics ComputeGeodynamicsMetrics(Vector4[] state, Vector4[] events, int angularBins, int radialBins)
+        {
+            var stateNative = new NativeArray<Vector4>(state, Allocator.Temp);
+            var eventsNative = new NativeArray<Vector4>(events, Allocator.Temp);
+            try
+            {
+                return ComputeGeodynamicsMetrics(stateNative, eventsNative, angularBins, radialBins);
+            }
+            finally
+            {
+                stateNative.Dispose();
+                eventsNative.Dispose();
+            }
         }
 
         private static bool Finite(Vector4 value) =>

@@ -1915,44 +1915,32 @@ namespace GeneSys.UI
         {
             if (host == null || !host.IsReady) return;
             if (!force && (statusBody == null || statusBody.ClassListContains("collapsed"))) return;
-            if (metricsReadbackPending) return;
+            if (metricsReadbackPending)
+            {
+                // Safety watchdog: recover if a GPU readback was dropped or failed without callback
+                if (metricsRefreshTimer < -5f)
+                    metricsReadbackPending = false;
+                else
+                    return;
+            }
 
             metricsReadbackPending = true;
             metricsRefreshTimer = MetricsRefreshIntervalSeconds();
-            SimulationMetrics.MeasureAsync(host, metrics =>
+            SimulationMetrics.MeasureStatusSampledAsync(host, snapshot =>
             {
-                SimulationMetrics.MeasureFaunaAsync(host, fauna =>
+                metricsReadbackPending = false;
+                if (snapshot.AngularResolution <= 0) return;
+
+                if (worldMetricsLabel != null)
                 {
-                    SimulationMetrics.MeasureWaspAsync(host, wasp =>
-                    {
-                        SimulationMetrics.MeasureTreeAsync(host, tree =>
-                        {
-                        metricsReadbackPending = false;
-                        if (worldMetricsLabel != null)
-                        {
-                            worldMetricsLabel.text =
-                                $"Ocean coverage {metrics.OceanCoverage:P1} | Basins {metrics.BasinCount}\n" +
-                                $"Surface {metrics.SurfaceWaterMass:F1} | Ground {metrics.GroundwaterMass:F1} | Vapor {metrics.VaporMass:F1}";
-                        }
-                        if (simulationStatusLabel != null)
-                        {
-                            simulationStatusLabel.text =
-                                $"Grid {metrics.AngularResolution}×{metrics.RadialResolution}\n" +
-                                $"Ocean {metrics.OceanCoverage:P1}  |  Basins {metrics.BasinCount}\n" +
-                                $"Water  surface {metrics.SurfaceWaterMass:F1}  ground {metrics.GroundwaterMass:F1}  vapor {metrics.VaporMass:F1}\n" +
-                                $"Total tracked water {metrics.TotalTrackedWaterMass:F1}\n" +
-                                $"Mean T {metrics.MeanTemperature:F2}  P {metrics.MeanPressure:F3}  moisture {metrics.MeanMoisture:F3}\n" +
-                                $"Mean wind speed {metrics.MeanWindSpeed:F3}\n" +
-                                $"Fire cells {metrics.BurningCellCount}  intensity {metrics.TotalFireIntensity:F2}  O2 {metrics.MeanOxygen:F2}  soot {metrics.SootMass:F2}\n" +
-                                $"Organisms {metrics.OrganismCount}  cricket {fauna.AdultCount}  nymph {fauna.JuvenileCount}  eggs {fauna.EggCount}\n" +
-                                $"Fauna cal {fauna.TotalCalories:F2}  hyd {fauna.TotalHydration:F2}\n" +
-                                $"Wasps {wasp.AdultCount}  larvae {wasp.JuvenileCount}  eggs {wasp.EggCount}  carrying {wasp.PollenCarrierCount} ({wasp.PollenSampleCount} pollen)\n" +
-                                $"Wasp cal {wasp.TotalCalories:F2}  hyd {wasp.TotalHydration:F2}  gen {wasp.MeanGeneration:F1}\n" +
-                                $"Trees {tree.AnchorCount}  pixels {tree.PixelCount}  sprout {tree.SproutCount}  sapling {tree.SaplingCount}  mature {tree.TreeCount}  dead {tree.DeadCount}";
-                        }
-                        });
-                    });
-                });
+                    worldMetricsLabel.text =
+                        $"Ocean coverage {snapshot.OceanCoverage * 100f:F1}% | Basins {snapshot.BasinCount}\n" +
+                        $"Surface {snapshot.SurfaceWaterMass:F1} | Ground {snapshot.GroundwaterMass:F1} | Vapor {snapshot.VaporMass:F1}";
+                }
+                if (simulationStatusLabel != null)
+                {
+                    simulationStatusLabel.text = snapshot.Format();
+                }
             });
         }
 

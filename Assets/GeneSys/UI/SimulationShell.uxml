@@ -39,7 +39,9 @@
             <ui:VisualElement name="status-drawer" class="drawer status-drawer collapsed">
                 <ui:Button name="status-header" text="Simulation Status ▸" class="drawer-header" />
                 <ui:VisualElement name="status-body" class="drawer-body collapsed">
-                    <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
+                    <ui:ScrollView name="status-scroll" class="status-scroll">
+                        <ui:Label name="simulation-status" text="Gathering world stats..." class="status-stats" />
+                    </ui:ScrollView>
                 </ui:VisualElement>
             </ui:VisualElement>
 
