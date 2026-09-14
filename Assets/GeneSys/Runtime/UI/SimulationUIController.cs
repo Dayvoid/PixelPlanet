@@ -389,7 +389,7 @@ namespace GeneSys.UI
 
         private static readonly int[] OverlayModes =
         {
-            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32
+            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 23, 28, 29, 30, 31, 32
         };
 
         private static int OverlayModeFromChoice(int index) =>
@@ -405,7 +405,7 @@ namespace GeneSys.UI
                     "Material", "Temperature", "Pressure", "Composite Water", "Relative Humidity", "Cloud",
                     "Charge", "Wind", "Nutrient/Soil Quality", "Surface Failure Stress", "Toxicity/Calories",
                     "Vertical Velocity", "Pressure Anomaly", "Mycology",
-                    "Fire", "Oxygen", "Storm Charge", "Flora", "Light", "Genome", "Fauna", "Acoustic", "Grass", "Tree",
+                    "Fire", "Oxygen", "Storm Charge", "Flora", "Fauna",
                     "Climate",
                     "Interior Heat/Flow", "Overpressure/Melt", "Tectonic Strain", "Interior Releases"
                 };

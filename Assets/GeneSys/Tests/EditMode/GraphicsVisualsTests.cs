@@ -99,5 +99,42 @@ namespace GeneSys.Tests
             Assert.That(shader.Contains("float _Speed;"));
             Assert.That(shader.Contains("max(0.001, _Speed)"));
         }
+
+        [Test]
+        public void UnifiedFloraAndFaunaOverlaysAreWiredThroughShader()
+        {
+            string shader = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");
+            Assert.That(shader.Contains("Texture2DArray<float4> _FloraTex;"));
+            Assert.That(shader.Contains("_OverlayMode == 20"));
+            Assert.That(shader.Contains("_OverlayMode == 23"));
+            Assert.That(shader.Contains("ALGAE: Vibrant Cyan / Emerald Teal"));
+            Assert.That(shader.Contains("GRASS: Spring Green & Magenta Flower blooms"));
+            Assert.That(shader.Contains("TREES: Warm Amber Wood & Deep Forest Leaf"));
+            Assert.That(shader.Contains("WASP: Electric Crimson & Pollen Gold"));
+            Assert.That(shader.Contains("CRICKET: Warm Golden Amber / Tawny Bronze"));
+        }
+
+        [Test]
+        public void SpeciesColorPalettesAreDistinct()
+        {
+            // Flora species colors must be distinct
+            Assert.That(FloraVisuals.Algae, Is.Not.EqualTo(FloraVisuals.Grass));
+            Assert.That(FloraVisuals.Grass, Is.Not.EqualTo(FloraVisuals.TreeWood));
+            Assert.That(FloraVisuals.Algae, Is.Not.EqualTo(FloraVisuals.TreeWood));
+
+            Color algae = FloraVisuals.SpeciesColor(1);
+            Color grass = FloraVisuals.SpeciesColor(2);
+            Color tree = FloraVisuals.SpeciesColor(3, 4); // trunk
+            Assert.That(algae, Is.EqualTo(FloraVisuals.Algae));
+            Assert.That(grass, Is.EqualTo(FloraVisuals.Grass));
+            Assert.That(tree, Is.EqualTo(FloraVisuals.TreeWood));
+
+            // Fauna species colors must be distinct
+            Assert.That(FaunaVisuals.CricketAdult, Is.Not.EqualTo(FaunaVisuals.WaspAdult));
+            Color cricket = FaunaVisuals.SpeciesColor(1, 3);
+            Color wasp = FaunaVisuals.SpeciesColor(2, 3);
+            Assert.That(cricket, Is.EqualTo(FaunaVisuals.CricketAdult));
+            Assert.That(wasp, Is.EqualTo(FaunaVisuals.WaspAdult));
+        }
     }
 }

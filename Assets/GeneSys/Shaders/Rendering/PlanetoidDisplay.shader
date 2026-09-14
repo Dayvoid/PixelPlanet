@@ -51,6 +51,7 @@ Shader "GeneSys/Planetoid Display"
             Texture2D<float4> _StormTex;
             Texture2DArray<float4> _LifeGenomeTex;
             Texture2DArray<float4> _FaunaTex;
+            Texture2DArray<float4> _FloraTex;
             Texture2DArray<float4> _GrassTex;
             Texture2DArray<float4> _WaspTex;
             Texture2DArray<float4> _TreeTex;
@@ -515,17 +516,72 @@ Shader "GeneSys/Planetoid Display"
                 }
                 else if (_OverlayMode == 20)
                 {
-                    float spores = saturate(life.x);
-                    float biomass = saturate(life.y);
-                    uint stage = genome.w & 255u;
-                    color = lerp(float3(0.04, 0.05, 0.03), float3(0.18, 0.72, 0.28), biomass);
-                    if (stage == 2u)
-                        color = lerp(color, float3(0.32, 0.42, 0.2), 0.55);
-                    if (stage == 3u)
-                        color = lerp(color, float3(0.55, 0.35, 0.12), 0.7);
-                    color = lerp(color, float3(0.82, 0.88, 0.35), spores * 0.55);
-                    if (material == 128u)
-                        color = lerp(color, float3(0.12, 0.85, 0.32), 0.25);
+                    // Unified Flora Species Overlay:
+                    // Algae = Vibrant Cyan / Emerald Teal
+                    // Grass = Spring Green with Magenta Flower blooms & Gold Pollen
+                    // Trees = Warm Amber Wood & Deep Forest Leaf
+                    float4 floraPhys = _FloraTex.Load(int4(cell, 0, 0));
+                    uint4 floraIdent = asuint(_FloraTex.Load(int4(cell, 1, 0)));
+                    uint4 floraTopo = asuint(_FloraTex.Load(int4(cell, 2, 0)));
+                    float4 floraProp = _FloraTex.Load(int4(cell, 4, 0));
+
+                    uint archetype = floraIdent.x;
+                    uint stage = floraIdent.y;
+                    uint role = floraTopo.z;
+                    float biomass = saturate(floraPhys.x);
+                    float hydration = saturate(floraPhys.z);
+
+                    // Infer archetype from material if slice 1 is unpopulated
+                    if (archetype == 0u)
+                    {
+                        if (material == 128u) archetype = 1u;
+                        else if (material == 134u || material == 135u) archetype = 3u;
+                    }
+
+                    // Background: muted bedrock / terrain
+                    float3 bg = lerp(float3(0.02, 0.03, 0.04), baseColor.rgb * 0.15, 0.35);
+                    color = bg;
+
+                    if (archetype == 1u) // ALGAE: Vibrant Cyan / Emerald Teal
+                    {
+                        float3 algaeColor = stage == 2u ? float3(0.12, 0.48, 0.42)
+                                          : stage == 3u ? float3(0.35, 0.45, 0.32)
+                                          : float3(0.08, 0.85, 0.55);
+                        float intensity = lerp(0.45, 1.0, biomass);
+                        color = algaeColor * intensity;
+                        float spores = saturate(floraProp.x);
+                        if (spores > 0.01)
+                            color = lerp(color, float3(0.75, 0.95, 0.35), spores * 0.7);
+                    }
+                    else if (archetype == 2u) // GRASS: Spring Green & Magenta Flower blooms
+                    {
+                        bool isFlowering = (floraTopo.w & 2u) != 0u || (stage == 3u && hydration > 0.4);
+                        float3 grassColor = role == 3u ? float3(0.55, 0.68, 0.15)
+                                          : (isFlowering ? float3(0.98, 0.25, 0.58) : float3(0.35, 0.92, 0.18));
+                        float intensity = lerp(0.50, 1.0, biomass);
+                        color = grassColor * intensity;
+                        float pollen = saturate(floraProp.y);
+                        float seeds = saturate(floraProp.z);
+                        if (pollen > 0.01)
+                            color = lerp(color, float3(1.0, 0.85, 0.25), pollen * 0.65);
+                        else if (seeds > 0.01)
+                            color = lerp(color, float3(0.85, 0.60, 0.25), seeds * 0.65);
+                    }
+                    else if (archetype == 3u) // TREES: Warm Amber Wood & Deep Forest Leaf
+                    {
+                        bool isWood = role == 4u || role == 5u || role == 6u || material == 135u;
+                        bool isRoot = role == 3u;
+                        float3 treeColor = isWood ? float3(0.88, 0.48, 0.14)
+                                         : (isRoot ? float3(0.52, 0.28, 0.10) : float3(0.12, 0.65, 0.22));
+                        if (stage == 4u)
+                            treeColor = lerp(treeColor, float3(0.3, 0.2, 0.12), 0.7);
+                        float intensity = lerp(0.55, 1.0, biomass);
+                        color = treeColor * intensity;
+                    }
+                    else if (material == 131u) // Detritus
+                    {
+                        color = float3(0.28, 0.18, 0.12);
+                    }
                 }
                 else if (_OverlayMode == 21)
                 {
@@ -542,15 +598,57 @@ Shader "GeneSys/Planetoid Display"
                 }
                 else if (_OverlayMode == 23)
                 {
-                    uint stage = faunaGenome.w & 255u;
-                    color = lerp(float3(0.05, 0.04, 0.03), float3(0.55, 0.32, 0.1), saturate(faunaVitals.x));
-                    if (material == 130u || stage == 1u)
-                        color = lerp(color, float3(0.82, 0.74, 0.48), 0.7);
-                    else if (stage == 2u)
-                        color = lerp(color, float3(0.55, 0.38, 0.16), 0.45);
-                    color = lerp(color, float3(0.2, 0.55, 0.9), saturate(faunaVitals.y) * 0.35);
-                    if (material == 129u)
-                        color = lerp(color, float3(0.45, 0.28, 0.12), 0.25);
+                    // Unified Fauna Species Overlay:
+                    // Cricket = Warm Golden Amber / Tawny Bronze & Ivory Eggs
+                    // Wasp = Electric Crimson / Ruby & Golden Pollen Cargo
+                    float4 cricketV = _FaunaTex.Load(int4(cell, 0, 0));
+                    uint4 cricketG = asuint(_FaunaTex.Load(int4(cell, 2, 0)));
+                    uint cricketStage = cricketG.w & 255u;
+                    float cricketCal = saturate(cricketV.x);
+
+                    float4 waspV = _FaunaTex.Load(int4(cell, 4, 0));
+                    uint4 waspG = asuint(_FaunaTex.Load(int4(cell, 6, 0)));
+                    uint waspStage = waspG.w & 255u;
+                    float waspCal = saturate(waspV.x);
+
+                    bool waspHasPollen = false;
+                    [unroll]
+                    for (int slot = 0; slot < 3; slot++)
+                        if ((asuint(_FaunaTex.Load(int4(cell, 8 + slot, 0))).w & 1u) != 0u) waspHasPollen = true;
+
+                    bool hasCricket = material == 129u || material == 130u || cricketStage != 0u;
+                    bool hasWasp = material == 132u || material == 133u || waspStage != 0u;
+
+                    // Base backdrop: dark indigo/slate terrarium space with acoustic chirp waves
+                    float3 bg = lerp(float3(0.02, 0.02, 0.05), baseColor.rgb * 0.15, 0.35);
+                    float feedChirp = clamp(acoustic.x, -1.0, 1.0);
+                    float mateChirp = clamp(acoustic.y, -1.0, 1.0);
+                    if (abs(feedChirp) > 0.02 || abs(mateChirp) > 0.02)
+                    {
+                        float3 chirpColor = feedChirp > 0.0 ? float3(0.12, 0.45, 0.22) : float3(0.45, 0.28, 0.08);
+                        chirpColor += mateChirp > 0.0 ? float3(0.45, 0.25, 0.08) : float3(0.15, 0.08, 0.25);
+                        bg = lerp(bg, chirpColor, 0.35);
+                    }
+                    color = bg;
+
+                    if (hasWasp) // WASP: Electric Crimson & Pollen Gold
+                    {
+                        float3 waspColor = (material == 133u || waspStage == 1u) ? float3(0.85, 0.65, 0.95)
+                                         : (waspHasPollen ? float3(1.0, 0.82, 0.12) : float3(1.0, 0.15, 0.25));
+                        float vitality = 0.5 + 0.5 * waspCal;
+                        color = waspColor * vitality;
+                    }
+                    else if (hasCricket) // CRICKET: Warm Golden Amber / Tawny Bronze
+                    {
+                        float3 cricketColor = (material == 130u || cricketStage == 1u) ? float3(0.95, 0.90, 0.65)
+                                            : (cricketStage == 2u ? float3(0.72, 0.48, 0.16) : float3(0.92, 0.65, 0.15));
+                        float vitality = 0.5 + 0.5 * cricketCal;
+                        color = cricketColor * vitality;
+                    }
+                    else if (material == 131u) // Carcass / Detritus
+                    {
+                        color = float3(0.28, 0.18, 0.22);
+                    }
                 }
                 else if (_OverlayMode == 24)
                 {
