@@ -235,6 +235,10 @@ namespace GeneSys.Configuration
         [Range(0f, 4f)] public float pressureCompressibility = 0.6f;
         [Range(0.05f, 1f)] public float atmosphericCflLimit = 0.4f;
         [Range(0f, 40f)] public float atmosphericLapseRate = 10f;
+        [Range(0f, 4f)] public float frontalLiftStrength = 1f;
+        [Range(0f, 4f)] public float frontalCollisionPressure = 0.5f;
+        [Range(0f, 4f)] public float frontalDensityDrive = 0.5f;
+        [Range(0f, 4f)] public float frontalSubsidenceScale = 0.35f;
 
         [Header("Climate")]
         public bool climateLayerEnable = true;
@@ -660,6 +664,10 @@ namespace GeneSys.Configuration
             pressureCompressibility = Mathf.Max(0f, pressureCompressibility);
             atmosphericCflLimit = Mathf.Clamp(atmosphericCflLimit, 0.05f, 1f);
             atmosphericLapseRate = Mathf.Max(0f, atmosphericLapseRate);
+            frontalLiftStrength = Mathf.Max(0f, frontalLiftStrength);
+            frontalCollisionPressure = Mathf.Max(0f, frontalCollisionPressure);
+            frontalDensityDrive = Mathf.Max(0f, frontalDensityDrive);
+            frontalSubsidenceScale = Mathf.Max(0f, frontalSubsidenceScale);
             climateBinCount = Mathf.Clamp(climateBinCount, 8, 128);
             climateCouplePeriod = Mathf.Clamp(climateCouplePeriod, 1, 256);
             climateSlabHeatCapacity = Mathf.Clamp(climateSlabHeatCapacity, 1f, 256f);

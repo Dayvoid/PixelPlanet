@@ -74,6 +74,10 @@ namespace GeneSys.Tests
             host.Config.atmosphericCflLimit = 0.4f;
             host.Config.surfaceAirTemperature = 18f;
             host.Config.atmosphericLapseRate = 12f;
+            host.Config.frontalLiftStrength = 0f;
+            host.Config.frontalCollisionPressure = 0f;
+            host.Config.frontalDensityDrive = 0f;
+            host.Config.frontalSubsidenceScale = 0f;
             host.Config.pressureRate = 0.4f;
             host.Config.pressureDiffusionRate = 0.5f;
             host.Config.slowPassInterval = 4;
@@ -187,6 +191,10 @@ namespace GeneSys.Tests
             host.Config.coriolisStrength = 0f;
             host.Config.velocityAdvectionRate = 0f;
             host.Config.prevailingWind = 0f;
+            host.Config.frontalLiftStrength = 0f;
+            host.Config.frontalCollisionPressure = 0f;
+            host.Config.frontalDensityDrive = 0f;
+            host.Config.frontalSubsidenceScale = 0f;
             host.Config.infiltrationRate = 0f;
             host.Config.groundwaterRate = 0f;
             host.Config.runoffRate = 0f;
@@ -2345,6 +2353,230 @@ namespace GeneSys.Tests
                 int downstreamX = (x + 1) % width;
                 Assert.That(flow[y * width + downstreamX].x, Is.GreaterThan(0.05f),
                     "Downstream cell must gain eastward velocity via momentum advection.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator OpposingWindsProduceUpdraftAtConvergence()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.frontalLiftStrength = 2f;
+            host.Config.frontalCollisionPressure = 0f;
+            host.Config.frontalDensityDrive = 0f;
+            host.Config.frontalSubsidenceScale = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+            for (int dx = -2; dx <= 2; dx++)
+                Paint(host, x + dx, y, MaterialIds.Air);
+            yield return Step(host, 1);
+            PaintField(host, x, y, 13f, 0f);
+            for (int dx = -2; dx <= -1; dx++)
+                PaintField(host, x + dx, y, 13f, 2.0f);
+            for (int dx = 1; dx <= 2; dx++)
+                PaintField(host, x + dx, y, 13f, -2.0f);
+            yield return Step(host, 6);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                float lift = flow[y * width + x].y;
+                float far = flow[y * width + ((x + 8) % width)].y;
+                Assert.That(lift, Is.GreaterThan(0.05f),
+                    "Convergence of opposing angular winds must produce an updraft.");
+                Assert.That(lift, Is.GreaterThan(far + 0.04f),
+                    "Lift must concentrate at the meeting column, not far from the front.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator HeadOnCollisionBuildsStagnationPressure()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.pressureCompressibility = 0f;
+            host.Config.frontalLiftStrength = 0f;
+            host.Config.frontalCollisionPressure = 0f;
+            host.Config.frontalDensityDrive = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = AtmosphereY(host);
+
+            void SeedCollision()
+            {
+                for (int dx = -2; dx <= 2; dx++)
+                    Paint(host, x + dx, y, MaterialIds.Air);
+                PaintField(host, x, y, 13f, 0f);
+                for (int dx = -2; dx <= -1; dx++)
+                    PaintField(host, x + dx, y, 13f, 2.5f);
+                for (int dx = 1; dx <= 2; dx++)
+                    PaintField(host, x + dx, y, 13f, -2.5f);
+            }
+
+            SeedCollision();
+            yield return Step(host, 6);
+            float baseline = 0f;
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                baseline = states[y * width + x].y;
+            });
+
+            host.Config.frontalCollisionPressure = 2f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+            SeedCollision();
+            yield return Step(host, 6);
+
+            yield return ReadFields(host, (_, states, __, ___) =>
+            {
+                Assert.That(states[y * width + x].y, Is.GreaterThan(baseline + 0.02f),
+                    "Head-on collision pressure must raise the meeting-column pressure above a control with the knob off.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator ColdAirUndercutsWarmAir()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.frontalLiftStrength = 0f;
+            host.Config.frontalCollisionPressure = 0f;
+            host.Config.frontalDensityDrive = 2f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int surfaceY = Mathf.Clamp(Mathf.CeilToInt(host.Grid.atmosphereStartRadius * height - 0.5f), 1, height - 5);
+            int aloftY = Mathf.Clamp(height - 3, surfaceY + 2, height - 2);
+
+            for (int y = surfaceY; y <= aloftY; y++)
+            {
+                for (int dx = -4; dx <= 4; dx++)
+                    Paint(host, x + dx, y, MaterialIds.Air);
+            }
+            yield return Step(host, 1);
+            for (int y = surfaceY; y <= aloftY; y++)
+            {
+                for (int dx = -4; dx <= -1; dx++)
+                    PaintField(host, x + dx, y, 1f, -40f);
+                for (int dx = 1; dx <= 4; dx++)
+                    PaintField(host, x + dx, y, 1f, 40f);
+                for (int dx = -4; dx <= 4; dx++)
+                    PaintField(host, x + dx, y, 13f, 0f);
+            }
+            yield return Step(host, 6);
+
+            yield return ReadFields(host, (_, __, ___, flow) =>
+            {
+                Assert.That(flow[surfaceY * width + x].x, Is.GreaterThan(0.02f),
+                    "Cold air must undercut toward the warm column near the surface.");
+                Assert.That(flow[aloftY * width + x].x, Is.LessThan(-0.02f),
+                    "Warm air must return over the cold column aloft.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator FrontalCollisionConservesVapor()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 2f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.vaporCapacityScale = 2f;
+            host.Config.atmosphericCflLimit = 0.5f;
+            host.Config.frontalLiftStrength = 1.5f;
+            host.Config.frontalCollisionPressure = 1f;
+            host.Config.frontalDensityDrive = 1f;
+            host.Config.frontalSubsidenceScale = 0.35f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int y = AtmosphereY(host);
+            int x0 = width / 2;
+            PaintAirChamber(host, x0 - 12, x0 + 12, y - 1, y + 1);
+            yield return Step(host, 1);
+
+            yield return ReadFields(host, (_, states, aux, ___) =>
+            {
+                for (int dx = -12; dx <= 12; dx++)
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int xx = ((x0 + dx) % width + width) % width;
+                        float vapor = aux[(y + dy) * width + xx].x;
+                        float cloud = states[(y + dy) * width + xx].z;
+                        if (vapor > 0f)
+                            PaintField(host, xx, y + dy, 6f, -vapor);
+                        if (cloud > 0f)
+                            PaintField(host, xx, y + dy, 2f, -cloud);
+                    }
+                }
+            });
+            yield return Step(host, 1);
+
+            PaintField(host, x0 - 3, y, 6f, 0.6f);
+            PaintField(host, x0 + 3, y, 6f, 0.6f);
+            for (int dx = -4; dx <= -1; dx++)
+                PaintField(host, x0 + dx, y, 13f, 1.8f);
+            for (int dx = 1; dx <= 4; dx++)
+                PaintField(host, x0 + dx, y, 13f, -1.8f);
+            yield return Step(host, 1);
+
+            float massBefore = 0f;
+            yield return ReadFields(host, (_, states, aux, ___) =>
+            {
+                massBefore = SumWaterBox(states, aux, width, x0 - 12, x0 + 12, y - 1, y + 1);
+            });
+            Assert.That(massBefore, Is.GreaterThan(0.8f));
+
+            yield return Step(host, 20);
+
+            yield return ReadFields(host, (_, states, aux, __) =>
+            {
+                float massAfter = SumWaterBox(states, aux, width, x0 - 12, x0 + 12, y - 1, y + 1);
+                Assert.That(massAfter, Is.EqualTo(massBefore).Within(0.05f));
             });
         }
 

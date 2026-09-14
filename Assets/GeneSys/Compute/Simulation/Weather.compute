@@ -42,6 +42,7 @@ float4 _WeatherF; // surfaceAirHeatExchange, temperatureAdvectionRate, pressureC
 float4 _WeatherG; // surfaceAirTemperature, atmosphericLapseRate, terrainRadiativeCooling, verticalBuoyancyStrength
 float4 _WeatherH; // atmosphereAbsorption, dewRate, unused, unused
 float4 _WeatherI; // coriolisStrength, velocityAdvectionRate, prevailingWind, unused
+float4 _WeatherJ; // frontalLiftStrength, frontalCollisionPressure, frontalDensityDrive, frontalSubsidenceScale
 float4 _PressureA; // diffusionRate, equilibriumGradient, equilibriumMaximum, unused
 float4 _MoistureErosion; // dryMoistureThreshold, moistureCohesionStrength, unused, unused
 float4 _CombustionA; // ambientOxygen, oxygenReplenish, oxygenDiffusion, unused
@@ -209,6 +210,26 @@ void AtmosphericContinuity(uint3 id : SV_DispatchThreadID)
         float compress = max(0.0, _WeatherF.z);
         float dp = clamp(-divergence * compress * _DeltaTime, -2.0, 2.0);
         state.y = max(0.0, state.y + dp);
+
+        // Horizontal convergence becomes vertical motion instead of stalling in place.
+        float conv = -angularDiv;
+        float lift = max(0.0, _WeatherJ.x) * conv;
+        if (conv < 0.0)
+            lift *= max(0.0, _WeatherJ.w);
+        flow.y += clamp(lift * _DeltaTime, -2.0, 2.0);
+
+        // Head-on angular collision: both neighbors rush in, or this cell meets an opposing neighbor.
+        float incomingL = max(0.0, fL.x) * faces.x;
+        float incomingR = max(0.0, -fR.x) * faces.y;
+        float collideRight = (flow.x > 1e-6 && fR.x < -1e-6 && faces.y > 0.5)
+            ? (flow.x + max(0.0, -fR.x)) : 0.0;
+        float collideLeft = (flow.x < -1e-6 && fL.x > 1e-6 && faces.x > 0.5)
+            ? (-flow.x + max(0.0, fL.x)) : 0.0;
+        float closing = (incomingL > 1e-6 && incomingR > 1e-6)
+            ? (incomingL + incomingR)
+            : max(collideLeft, collideRight);
+        state.y += min(2.0, max(0.0, _WeatherJ.y) * closing * closing * _DeltaTime);
+
         // No-flux solids: reflect/damp the normal so one wall impact is not reintegrated
         // as compression on every later tick.
         if (faces.z < 0.5)
@@ -321,13 +342,26 @@ void AtmosphericDynamics(uint3 id : SV_DispatchThreadID)
             flow.x += prevailing * _DeltaTime;
         }
 
+        float radius = Radius01(cell.y, _GridSize.y);
+
+        // Density-driven frontal circulation: cold air undercuts near the surface,
+        // warm air returns aloft. Virtual temperature is the density proxy.
+        if (faces.x > 0.5 && faces.y > 0.5)
+        {
+            float tvL = VirtualTemperature(S(cell + int2(-1, 0)).x, A(cell + int2(-1, 0)).x);
+            float tvR = VirtualTemperature(S(cell + int2(1, 0)).x, A(cell + int2(1, 0)).x);
+            float dTv = (tvR - tvL) * 0.5 * tanW;
+            float h = saturate((radius - _AtmosphereStartRadius) / max(1e-4, 1.0 - _AtmosphereStartRadius));
+            float profile = 1.0 - 2.0 * h;
+            flow.x += clamp(max(0.0, _WeatherJ.z) * dTv * profile * _DeltaTime, -2.0, 2.0);
+        }
+
         // Top boundary: suppress outward radial wind. Surface no-flux is enforced
         // in transport face masks; downdraft momentum remains for continuity/pressure.
         if (cell.y >= _GridSize.y - 1)
             flow.y = min(0.0, flow.y);
 
         float roughness = 1.0;
-        float radius = Radius01(cell.y, _GridSize.y);
         if (radius < _AtmosphereStartRadius + 4.0 / max(1.0, (float)_GridSize.y))
             roughness = ClimateRoughness(cell.x);
         flow *= saturate(1.0 - _WeatherB.x * roughness * _DeltaTime);

@@ -264,6 +264,14 @@ namespace GeneSys.UI
                 "Planetary rotation forcing. Deflects vertical updrafts into horizontal winds and vice-versa, breaking diurnal symmetry to generate prevailing trade winds and jet streams. Set to 0 to disable.",
             [nameof(SimulationConfig.velocityAdvectionRate)] =
                 "How strongly moving air carries its own momentum across cells. Allows high-speed wind jets to carry forward across weather fronts instead of halting locally. Set to 0 to disable.",
+            [nameof(SimulationConfig.frontalLiftStrength)] =
+                "Turns horizontal wind convergence into updraft. Opposing fronts lift instead of stalling in a thin band; the rising air feeds lapse cooling, condensation, and lightning. Set to 0 to disable.",
+            [nameof(SimulationConfig.frontalCollisionPressure)] =
+                "Extra pressure generated where winds collide head-on. Stronger values make fast collisions rebound and let the heavier air mass displace the lighter one. Set to 0 to disable.",
+            [nameof(SimulationConfig.frontalDensityDrive)] =
+                "Density-driven frontal circulation. Cold dense air undercuts near the surface while warmer air returns aloft, so air masses slide past each other instead of mixing in place. Set to 0 to disable.",
+            [nameof(SimulationConfig.frontalSubsidenceScale)] =
+                "How strongly divergence sinks relative to convergence lift. Lower values keep frontal updrafts from being cancelled by matching downdrafts. Only applies when frontal lift is enabled.",
             [nameof(SimulationConfig.prevailingWind)] =
                 "Direct background zonal wind bias across the atmosphere. Pushes air eastward (positive) or westward (negative) to establish a global prevailing drift. Set to 0 to disable.",
             [nameof(SimulationConfig.evaporationRate)] =

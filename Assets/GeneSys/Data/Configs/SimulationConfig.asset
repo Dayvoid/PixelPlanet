@@ -159,6 +159,10 @@ MonoBehaviour:
   atmosphericCflLimit: 0.4
   surfaceAirTemperature: 25
   atmosphericLapseRate: 10
+  frontalLiftStrength: 1
+  frontalCollisionPressure: 0.5
+  frontalDensityDrive: 0.5
+  frontalSubsidenceScale: 0.35
   mycologyInitialSporeLoad: 0.08
   mycologyRareStrainChance: 0.04
   mycologyAirTransportRate: 0.55
