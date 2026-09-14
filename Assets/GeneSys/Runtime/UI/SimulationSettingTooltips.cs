@@ -225,7 +225,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.hydrostaticIterations)] =
                 "How many times surface water re-levels against its neighbours each tick. One pass moves water a single column, so low counts leave ocean slopes and rain mounds standing; higher counts settle wide basins quickly at a small solver cost.",
             [nameof(SimulationConfig.pondingRate)] =
-                "How strongly shallow surface film resists hydrostatic flow. Higher ponding keeps rain in local puddles instead of sheeting across dry ground; standing water columns still level by head.",
+                "How strongly shallow rain resists hydrostatic flow. Higher ponding keeps film and landed rain pixels in local puddles instead of sheeting across dry ground; water deeper than one cell still levels by head.",
             [nameof(SimulationConfig.springDischargeRate)] =
                 "How quickly saturated aquifers above field capacity weep to the surface. Stronger seeps feed streams, wet soil, and can flood low terrain.",
 

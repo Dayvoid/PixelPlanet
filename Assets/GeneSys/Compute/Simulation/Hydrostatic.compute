@@ -79,13 +79,15 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     int recvBed = leftDonates ? bedR : bedL;
     float donorBedTop = leftDonates ? bedTopL : bedTopR;
     float donorTemp = leftDonates ? leftCol.z : rightCol.z;
-    float bedTemp = leftDonates ? S(int2(left, bedL)).x : S(int2(right, bedR)).x;
     if (donorHead <= saddle + 1e-5 || donorVol <= 1e-6)
     {
         _WaterFaceFlux[left] = 0;
         return;
     }
-    if (min(donorTemp, bedTemp) <= WATER_MELT_TEMP)
+    // Freeze from the liquid column, not the rock/ice bed. Film lives on the bed cell so
+    // frozen ground still holds (column T is the film T). Landed rain and meltwater keep
+    // their own temperature; using the bed blocked every warm drop on a cold shelf.
+    if (donorTemp <= WATER_MELT_TEMP)
     {
         _WaterFaceFlux[left] = 0;
         return;
@@ -95,13 +97,15 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     float pond = max(0.0, _HydrologyC.y);
     float retention = donorDepth < 0.999 ? saturate(pond * 0.15) : 0.0;
     float mobility = max(0.0, _HydrologyC.x) * (1.0 - retention);
-    // Shallow rain film sheets across a dry shelf in one 32-iteration tick unless
-    // ponding holds it. Standing columns (depth >= 1) still level by head.
-    if (pond > 1e-6 && donorDepth < 1.0)
+    // A landed rain pixel is depth 1. Pond it on dry ground and into other shallow
+    // puddles; only merge at full runoff once the receiver is already a standing body.
+    bool rainScale = donorDepth <= 1.0 + 1e-4;
+    bool shallowRecv = recvVol < 1.0 - 1e-4;
+    if (pond > 1e-6 && rainScale)
     {
         if (recvVol < 0.12)
             mobility *= lerp(0.012, 0.08, saturate(donorDepth));
-        else
+        else if (donorDepth < 0.999 || shallowRecv)
             mobility *= lerp(0.22, 0.65, saturate(pond * 0.25));
     }
     // A face may move at most half the head difference; beyond that the pair overshoots and
@@ -110,6 +114,8 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
     float amount = abs(delta) * 0.5 * min(0.9, mobility * _DeltaTime * 8.0);
     amount = min(amount, donorVol * 0.35);
     amount = min(amount, abs(delta) * 0.5);
+    if (pond > 1e-6 && rainScale && shallowRecv)
+        amount = min(amount, max(0.0, donorVol - PRECIP_MIN_DROP) * 0.5);
     float sky = max(0.0, (float)(_GridSize.y - recvBed - 1) - recvVol);
     amount = min(amount, sky);
     if (amount <= 1e-8)

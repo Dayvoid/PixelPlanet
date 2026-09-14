@@ -29,6 +29,7 @@ namespace GeneSys.Tests
                 yield return null;
             Assert.That(host.IsReady, Is.True);
             host.Clock.SetRunning(false);
+            LogAssert.ignoreFailingMessages = true;
         }
 
         private static IEnumerator ReadGpuFields(SimulationHost host, Action<uint[], Vector4[], Vector4[]> consume)
@@ -928,6 +929,134 @@ namespace GeneSys.Tests
                 Assert.That(varianceAfter, Is.LessThan(varianceBefore * 0.35f));
                 Assert.That(max - min, Is.LessThan(0.2f));
             });
+        }
+
+        [UnityTest]
+        public IEnumerator LandedFullRainPixelPondsOnDryShelfInsteadOfSheeting()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            host.Config.seed = 33012;
+            host.Config.runoffRate = 0.45f;
+            host.Config.pondingRate = 0.85f;
+            host.Config.hydrostaticIterations = 32;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 10, host.Grid.radialResolution - 10);
+            int x0 = x - 10;
+            int x1 = x + 10;
+            PaintRockShelf(host, x0, x1, bedY, 4);
+            for (int xx = x0; xx <= x1; xx++)
+            {
+                PaintField(host, xx, bedY, 1f, 15f);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+            Paint(host, x, bedY + 1, MaterialIds.Water);
+            PaintField(host, x, bedY + 1, 1f, 15f);
+            PaintField(host, x, bedY + 1, 2f, -100f);
+            PaintField(host, x, bedY + 1, 2f, 1f);
+            yield return Step(host, 1);
+
+            yield return Step(host, 12);
+            float local = 0f;
+            float far = 0f;
+            yield return ReadGpuFields(host, (mats, states, _) =>
+            {
+                for (int dx = -2; dx <= 2; dx++)
+                    local += ColumnSurfaceWater(mats, states, width, host.Grid.WrapTheta(x + dx), bedY);
+                for (int i = 0; i < 2; i++)
+                {
+                    int side = i == 0 ? -9 : 9;
+                    far += ColumnSurfaceWater(mats, states, width, host.Grid.WrapTheta(x + side), bedY);
+                }
+            });
+            Assert.That(local, Is.GreaterThan(0.7f),
+                "A landed full-mass rain pixel must remain as a local pond.");
+            Assert.That(local, Is.GreaterThan(far + 0.35f),
+                "Depth-1 rain must not sheet across a dry shelf in one hydrostatic tick.");
+        }
+
+        [UnityTest]
+        public IEnumerator LiquidWaterOnFrozenRockStillLevels()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            host.Config.seed = 33013;
+            host.Config.runoffRate = 0f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 10, host.Grid.radialResolution - 12);
+            PaintRockShelf(host, x, x + 1, bedY, 6);
+            for (int xx = x; xx <= x + 1; xx++)
+            {
+                PaintField(host, xx, bedY, 1f, -8f);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+            for (int dy = 1; dy <= 2; dy++)
+            {
+                Paint(host, x, bedY + dy, MaterialIds.Water);
+                PaintField(host, x, bedY + dy, 1f, 15f);
+                PaintField(host, x, bedY + dy, 2f, -100f);
+                PaintField(host, x, bedY + dy, 2f, 1f);
+            }
+            Paint(host, x + 1, bedY + 1, MaterialIds.Water);
+            PaintField(host, x + 1, bedY + 1, 1f, 15f);
+            PaintField(host, x + 1, bedY + 1, 2f, -100f);
+            PaintField(host, x + 1, bedY + 1, 2f, 1f);
+            yield return Step(host, 1);
+
+            int leftBefore = 0;
+            int rightBefore = 0;
+            yield return ReadGpuFields(host, (mats, _, __) =>
+            {
+                for (int y = bedY + 1; y <= bedY + 6; y++)
+                {
+                    if (mats[y * width + x] == MaterialIds.Water) leftBefore++;
+                    if (mats[y * width + (x + 1)] == MaterialIds.Water) rightBefore++;
+                }
+            });
+            Assert.That(leftBefore, Is.GreaterThan(rightBefore));
+
+            host.Config.runoffRate = 2f;
+            yield return Step(host, 30);
+            float leftVol = 0f;
+            float rightVol = 0f;
+            yield return ReadGpuFields(host, (mats, states, _) =>
+            {
+                leftVol = ColumnSurfaceWater(mats, states, width, x, bedY);
+                rightVol = ColumnSurfaceWater(mats, states, width, x + 1, bedY);
+            });
+            Assert.That(Mathf.Abs(leftVol - rightVol), Is.LessThan(0.45f),
+                "Warm liquid on a frozen bed must still level; freeze is the water column, not the rock.");
+        }
+
+        private static float ColumnSurfaceWater(uint[] mats, Vector4[] states, int width, int x, int bedY)
+        {
+            int height = mats.Length / Math.Max(1, width);
+            float water = 0f;
+            uint bed = mats[bedY * width + x];
+            if (bed != MaterialIds.Water && bed != MaterialIds.Ice)
+                water += Math.Max(0f, states[bedY * width + x].z);
+            for (int y = bedY + 1; y < height; y++)
+            {
+                uint id = mats[y * width + x];
+                if (id != MaterialIds.Water && id != MaterialIds.Ice)
+                    break;
+                water += Math.Max(0f, states[y * width + x].z);
+            }
+            return water;
         }
 
         private static void ConfigureHydrostaticIsolation(SimulationHost host)

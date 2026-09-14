@@ -86,6 +86,11 @@ namespace GeneSys.Tests
             Assert.That(hydrologySrc, Does.Contain("Residue stays on this Water pixel"));
             Assert.That(hydrologySrc, Does.Not.Contain("aux.x += leftover"));
             Assert.That(hydrologySrc, Does.Not.Contain("aux.x += state.z;"));
+            string hydrostaticSrc = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrostatic.compute");
+            Assert.That(hydrostaticSrc, Does.Contain("bool rainScale = donorDepth <= 1.0 + 1e-4;"));
+            Assert.That(hydrostaticSrc, Does.Contain("donorVol - PRECIP_MIN_DROP"));
+            Assert.That(hydrostaticSrc, Does.Contain("if (donorTemp <= WATER_MELT_TEMP)"));
+            Assert.That(hydrostaticSrc, Does.Not.Contain("min(donorTemp, bedTemp)"));
             ComputeShader weatherShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Weather.compute");
             Assert.That(weatherShader.FindKernel("Precipitation"), Is.GreaterThanOrEqualTo(0));
             Assert.That(weatherShader.FindKernel("WaterCycle"), Is.GreaterThanOrEqualTo(0));

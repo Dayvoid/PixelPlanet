@@ -50,6 +50,8 @@ bool IsAirborneLiquid(int2 cell, uint material)
 
 // Atmosphere-connected surface reservoir for one angular column. Ice lids and
 // enclosed cave water are excluded so only the free surface participates.
+// Landed Ice on rock is that lid (volume 0) until PhaseChange thaws it to Water;
+// hydrostatic never levels Ice, which is why hail/snow sits while rain should pond.
 // Falling precipitation is skipped (not absorbed) so Margolus owns the fall.
 void ProfileSurfaceColumn(int x, out int bedY, out float volume, out float temperature, out float head, out int waterTop, out bool hadPixels)
 {
