@@ -25,6 +25,12 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.WeatherIntegrationTests");
         }
 
+        [MenuItem("Tools/GeneSys/Run Brush PlayMode Tests")]
+        public static void RunBrushPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.BrushIntegrationTests");
+        }
+
         [MenuItem("Tools/GeneSys/Run IceCappedWater PlayMode Tests")]
         public static void RunIceCappedWaterPlayMode()
         {
@@ -106,6 +112,11 @@ namespace GeneSys.Editor
         public static void RunPlayModeGroup(string groupName)
         {
             GeneSysTestObserver.Run(TestMode.PlayMode, groupName);
+        }
+
+        public static void RunEditModeGroup(string groupName)
+        {
+            GeneSysTestObserver.Run(TestMode.EditMode, groupName);
         }
 
         public static void RunPlayModeTests(params string[] testNames)

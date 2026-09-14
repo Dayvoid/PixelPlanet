@@ -65,7 +65,10 @@ namespace GeneSys.Tools
 
             if (Mode != BrushMode.Off && Mouse.current.leftButton.isPressed && display.TryScreenToCell(pointer, out Vector2Int cell))
             {
-                if (TryBuildBrushCommand(Mode, SelectedMaterialId, cell, Mathf.Max(1, Radius), Strength, out var command, out bool grassSeed))
+                int effectiveRadius = (Mode == BrushMode.Life && SelectedMaterialId != BrushSelectionIds.MycoSpores && Strength <= 1f)
+                    ? 0
+                    : Mathf.Max(1, Radius);
+                if (TryBuildBrushCommand(Mode, SelectedMaterialId, cell, effectiveRadius, Strength, out var command, out bool grassSeed))
                 {
                     if (SelectedMaterialId == BrushSelectionIds.TreeSprouts) host.QueueTreeSprout(command.center, command.radius);
                     else if (grassSeed) host.QueueGrassSeed(command.center, command.radius);
@@ -103,7 +106,9 @@ namespace GeneSys.Tools
             if (mode == BrushMode.Off) return false;
 
             command.center = cell;
-            command.radius = radius;
+            command.radius = (mode == BrushMode.Life && selectedMaterialId != BrushSelectionIds.MycoSpores)
+                ? (strength <= 1f ? 0 : Mathf.Max(1, radius))
+                : radius;
             command.materialId = selectedMaterialId;
             if (mode == BrushMode.Life && selectedMaterialId == BrushSelectionIds.GrassSeeds)
             {
@@ -255,7 +260,45 @@ namespace GeneSys.Tools
             inspection.grassTiming = new Vector4[GrassGenome.SlotCount];
             inspection.grassGenomes = new GrassGenome.Packed[GrassGenome.SlotCount];
             inspection.grassDonors = new GrassGenome.Packed[GrassGenome.SlotCount];
-            if (host.Resources.GrassRead == null || host.Resources.GrassRead.volumeDepth < GrassGenome.GrassSliceCount)
+            if (host.Resources.GrassRead == null)
+            {
+                ReadWaspSlices(host, cell, inspection);
+                return;
+            }
+
+            if (host.Resources.GrassRead.volumeDepth >= FloraGenome.SliceCount && host.Resources.GrassRead.volumeDepth < GrassGenome.GrassSliceCount)
+            {
+                int remainingUnified = 2;
+                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, FloraGenome.PhysiologySlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0) inspection.grassLife[0] = data[0];
+                    }
+                    CompleteGrassUnified();
+                });
+                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, FloraGenome.GenomeSlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0)
+                            inspection.grassGenomes[0] = GrassGenome.Sanitize(GrassGenome.FromFloatBits(data[0]));
+                    }
+                    CompleteGrassUnified();
+                });
+
+                void CompleteGrassUnified()
+                {
+                    remainingUnified--;
+                    if (remainingUnified > 0) return;
+                    ReadWaspSlices(host, cell, inspection);
+                }
+                return;
+            }
+
+            if (host.Resources.GrassRead.volumeDepth < GrassGenome.GrassSliceCount)
             {
                 ReadWaspSlices(host, cell, inspection);
                 return;

@@ -77,14 +77,17 @@ namespace GeneSys.Tests
 
             Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, MaterialIds.Cricket, cell, 1, 1f, out var cricket, out grass), Is.True);
             Assert.That(cricket.materialId, Is.EqualTo(MaterialIds.Cricket));
+            Assert.That(cricket.radius, Is.EqualTo(0));
             Assert.That(cricket.values, Is.EqualTo(Vector4.zero));
 
             Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, MaterialIds.CricketEgg, cell, 1, 1f, out var egg, out grass), Is.True);
             Assert.That(egg.materialId, Is.EqualTo(MaterialIds.CricketEgg));
+            Assert.That(egg.radius, Is.EqualTo(0));
             Assert.That(egg.values, Is.EqualTo(Vector4.zero));
 
             Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, BrushSelectionIds.MycoSpores, cell, 2, 0.8f, out var myco, out grass), Is.True);
             Assert.That(grass, Is.False);
+            Assert.That(myco.radius, Is.EqualTo(2));
             Assert.That(myco.values.x, Is.EqualTo(7f));
             Assert.That(myco.values.y, Is.EqualTo(0.8f));
             Assert.That(myco.values.w, Is.EqualTo(BrushSelectionIds.MycoRandomTraitSentinel));
@@ -92,14 +95,20 @@ namespace GeneSys.Tests
             Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, BrushSelectionIds.GrassSeeds, cell, 2, 1f, out var grassCommand, out grass), Is.True);
             Assert.That(grass, Is.True);
             Assert.That(grassCommand.center, Is.EqualTo(cell));
-            Assert.That(grassCommand.radius, Is.EqualTo(2));
+            Assert.That(grassCommand.radius, Is.EqualTo(0));
             Assert.That(grassCommand.materialId, Is.EqualTo(MaterialIds.Soil));
+
+            Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, BrushSelectionIds.GrassSeeds, cell, 2, 2f, out var grassMulti, out _), Is.True);
+            Assert.That(grassMulti.radius, Is.EqualTo(2));
 
             Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, BrushSelectionIds.TreeSprouts, cell, 3, 1f, out var treeCommand, out grass), Is.True);
             Assert.That(grass, Is.False);
             Assert.That(treeCommand.center, Is.EqualTo(cell));
-            Assert.That(treeCommand.radius, Is.EqualTo(3));
+            Assert.That(treeCommand.radius, Is.EqualTo(0));
             Assert.That(treeCommand.materialId, Is.EqualTo(MaterialIds.Soil));
+
+            Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, BrushSelectionIds.TreeSprouts, cell, 3, 2f, out var treeMulti, out _), Is.True);
+            Assert.That(treeMulti.radius, Is.EqualTo(3));
         }
 
         [Test]

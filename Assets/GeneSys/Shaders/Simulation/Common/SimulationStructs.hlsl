@@ -595,12 +595,12 @@ float4 SampleFloraPhysiology(Texture2DArray<float4> tex, int2 cell)
 
 uint4 SampleFloraIdentity(Texture2DArray<float4> tex, int2 cell)
 {
-    return asuint(tex.Load(int4(cell, FLORA_IDENTITY_SLICE, 0)));
+    return (uint4)round(tex.Load(int4(cell, FLORA_IDENTITY_SLICE, 0)));
 }
 
 uint4 SampleFloraTopology(Texture2DArray<float4> tex, int2 cell)
 {
-    return asuint(tex.Load(int4(cell, FLORA_TOPOLOGY_SLICE, 0)));
+    return (uint4)round(tex.Load(int4(cell, FLORA_TOPOLOGY_SLICE, 0)));
 }
 
 uint4 SampleFloraGenome(Texture2DArray<float4> tex, int2 cell)
@@ -616,8 +616,8 @@ float4 SampleFloraPropagule(Texture2DArray<float4> tex, int2 cell)
 void WriteFlora(RWTexture2DArray<float4> tex, int2 cell, float4 phys, uint4 identity, uint4 topo, uint4 genome, float4 prop)
 {
     tex[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
-    tex[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = asfloat(identity);
-    tex[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = asfloat(topo);
+    tex[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
+    tex[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = float4(topo);
     tex[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
     tex[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = prop;
 }
@@ -2039,6 +2039,8 @@ uint4 SampleTreeTopology(Texture2DArray<float4> tex, int2 cell)
     uint width, height, elements;
     tex.GetDimensions(width, height, elements);
     int slice = (elements == FLORA_SLICE_COUNT) ? FLORA_TOPOLOGY_SLICE : TREE_TOPOLOGY_SLICE;
+    if (elements == FLORA_SLICE_COUNT)
+        return (uint4)round(tex.Load(int4(cell, slice, 0)));
     return asuint(tex.Load(int4(cell, slice, 0)));
 }
 

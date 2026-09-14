@@ -521,8 +521,8 @@ Shader "GeneSys/Planetoid Display"
                     // Grass = Spring Green with Magenta Flower blooms & Gold Pollen
                     // Trees = Warm Amber Wood & Deep Forest Leaf
                     float4 floraPhys = _FloraTex.Load(int4(cell, 0, 0));
-                    uint4 floraIdent = asuint(_FloraTex.Load(int4(cell, 1, 0)));
-                    uint4 floraTopo = asuint(_FloraTex.Load(int4(cell, 2, 0)));
+                    uint4 floraIdent = (uint4)round(_FloraTex.Load(int4(cell, 1, 0)));
+                    uint4 floraTopo = (uint4)round(_FloraTex.Load(int4(cell, 2, 0)));
                     float4 floraProp = _FloraTex.Load(int4(cell, 4, 0));
 
                     uint archetype = floraIdent.x;
@@ -678,18 +678,30 @@ Shader "GeneSys/Planetoid Display"
                 }
                 else if (_OverlayMode == 26)
                 {
+                    uint tW, tH, tElements;
+                    _TreeTex.GetDimensions(tW, tH, tElements);
+                    int topoSlice = tElements >= 5 ? 2 : 1;
+                    int genomeSlice = tElements >= 5 ? 3 : 2;
                     float4 phys = _TreeTex.Load(int4(cell, 0, 0));
-                    uint4 topology = asuint(_TreeTex.Load(int4(cell, 1, 0)));
-                    uint4 treeGenome = asuint(_TreeTex.Load(int4(cell, 2, 0)));
+                    uint4 topology = tElements >= 5 ? (uint4)round(_TreeTex.Load(int4(cell, topoSlice, 0))) : asuint(_TreeTex.Load(int4(cell, topoSlice, 0)));
+                    uint4 treeGenome = asuint(_TreeTex.Load(int4(cell, genomeSlice, 0)));
                     uint stage = treeGenome.w & 255u;
                     uint role = (topology.z >> 8) & 255u;
-                    color = float3(0.05, 0.04, 0.03);
-                    if (topology.x != 0u)
+                    bool isTree = topology.x != 0u;
+                    if (tElements >= 5)
                     {
-                        if (role == 1u) color = float3(0.28, 0.16, 0.08);
-                        else if (role == 2u) color = float3(0.32, 0.7, 0.22);
-                        else if (role == 3u) color = float3(0.34, 0.2, 0.1);
-                        else if (role == 4u) color = float3(0.42, 0.26, 0.12);
+                        uint4 identity = (uint4)round(_TreeTex.Load(int4(cell, 1, 0)));
+                        isTree = identity.x == 3u && identity.z != 0u;
+                        role = identity.z;
+                        stage = identity.y;
+                    }
+                    color = float3(0.05, 0.04, 0.03);
+                    if (isTree)
+                    {
+                        if (role == 1u || (tElements >= 5 && role == 3u)) color = float3(0.28, 0.16, 0.08);
+                        else if (role == 2u || (tElements >= 5 && role == 6u)) color = float3(0.32, 0.7, 0.22);
+                        else if (role == 3u || (tElements >= 5 && role == 4u)) color = float3(0.34, 0.2, 0.1);
+                        else if (role == 4u || (tElements >= 5 && role == 5u)) color = float3(0.42, 0.26, 0.12);
                         else if (role == 5u) color = float3(0.48, 0.32, 0.14);
                         else color = float3(0.22, 0.62, 0.18);
                         if (stage == 4u) color = lerp(color, float3(0.18, 0.12, 0.08), 0.65);

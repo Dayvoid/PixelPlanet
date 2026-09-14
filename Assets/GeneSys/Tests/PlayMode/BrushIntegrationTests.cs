@@ -175,7 +175,9 @@ namespace GeneSys.Tests
         {
             bool done = false;
             bool failed = false;
-            int slice = GrassGenome.Slice(slot, GrassGenome.GenomeOffset);
+            int slice = host.Resources.GrassRead != null && host.Resources.GrassRead.volumeDepth >= FloraGenome.SliceCount && host.Resources.GrassRead.volumeDepth < GrassGenome.GrassSliceCount
+                ? FloraGenome.GenomeSlice
+                : GrassGenome.Slice(slot, GrassGenome.GenomeOffset);
             AsyncGPUReadback.Request(host.Resources.GrassRead, 0, host.Grid.WrapTheta(x), 1, y, 1, slice, 1, request =>
             {
                 if (request.hasError) { failed = true; done = true; return; }
@@ -298,7 +300,10 @@ namespace GeneSys.Tests
             {
                 stage = GrassGenome.Stage(genome);
             });
-            Assert.That(stage, Is.EqualTo(GrassGenome.StageAdult));
+            uint expectedStage = host.Resources.GrassRead != null && host.Resources.GrassRead.volumeDepth >= FloraGenome.SliceCount
+                ? FloraGenome.StageMature
+                : GrassGenome.StageAdult;
+            Assert.That(stage, Is.EqualTo(expectedStage));
         }
 
         [UnityTest]
@@ -328,7 +333,10 @@ namespace GeneSys.Tests
             yield return ReadMaterialsAndEcology(host, (materials, _) => material = materials[Index(host, x, y)]);
             bool done = false;
             bool failed = false;
-            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, host.Grid.WrapTheta(x), 1, y, 1, TreeGenome.GenomeSlice, 1, request =>
+            int genomeSlice = host.Resources.TreeRead != null && host.Resources.TreeRead.volumeDepth >= FloraGenome.SliceCount
+                ? FloraGenome.GenomeSlice
+                : TreeGenome.GenomeSlice;
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, host.Grid.WrapTheta(x), 1, y, 1, genomeSlice, 1, request =>
             {
                 if (request.hasError) { failed = true; done = true; return; }
                 var data = request.GetData<Vector4>();
@@ -341,6 +349,77 @@ namespace GeneSys.Tests
             Assert.That(failed, Is.False);
             Assert.That(material, Is.EqualTo(MaterialIds.Wood));
             Assert.That(stage, Is.EqualTo(TreeGenome.StageSprout));
+        }
+
+        [UnityTest]
+        public IEnumerator LifeBrushAlgaePaintsActiveFilm()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = DayX(host);
+            int y = SurfaceY(host);
+            Paint(host, x, y, MaterialIds.Water);
+            yield return Step(host, 1);
+
+            Assert.That(SimulationTools.TryBuildBrushCommand(
+                BrushMode.Life, MaterialIds.Algae, new Vector2Int(x, y), 0, 1f, out var command, out bool grassSeed), Is.True);
+            Assert.That(grassSeed, Is.False);
+            Assert.That(command.radius, Is.EqualTo(0));
+            host.QueueFloraPaint(command.center, command.radius, FloraGenome.ArchetypeAlgae);
+            yield return Step(host, 1);
+
+            uint material = 0;
+            yield return ReadMaterialsAndEcology(host, (materials, _) => material = materials[Index(host, x, y)]);
+            Vector4 idSlice = Vector4.zero;
+            bool readDone = false;
+            AsyncGPUReadback.Request(host.Resources.FloraRead, 0, host.Grid.WrapTheta(x), 1, y, 1, FloraGenome.IdentitySlice, 1, req =>
+            {
+                if (!req.hasError && req.GetData<Vector4>().Length > 0)
+                    idSlice = req.GetData<Vector4>()[0];
+                readDone = true;
+            });
+            for (int i = 0; i < 120 && !readDone; i++) yield return null;
+            uint archetype = (uint)Mathf.RoundToInt(idSlice.x);
+            uint stage = (uint)Mathf.RoundToInt(idSlice.y);
+            Assert.That(archetype, Is.EqualTo(FloraGenome.ArchetypeAlgae));
+            Assert.That(stage, Is.EqualTo(FloraGenome.StageActive));
+            Assert.That(material, Is.EqualTo(MaterialIds.Algae));
+        }
+
+        [UnityTest]
+        public IEnumerator LifeBrushSingleCellAtStrengthOne()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = DayX(host);
+            int y = SurfaceY(host);
+
+            // Paint air everywhere around target
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dy = -2; dy <= 2; dy++)
+                    Paint(host, x + dx, y + dy, MaterialIds.Air);
+            yield return Step(host, 1);
+
+            // Life brush with Cricket, strength 1 and radius 5: command.radius must be 0
+            Assert.That(SimulationTools.TryBuildBrushCommand(
+                BrushMode.Life, MaterialIds.Cricket, new Vector2Int(x, y), 5, 1f, out var command, out _), Is.True);
+            Assert.That(command.radius, Is.EqualTo(0));
+            host.QueueBrush(command);
+            yield return Step(host, 1);
+
+            int cricketCount = 0;
+            yield return ReadMaterialsAndEcology(host, (materials, _) =>
+            {
+                for (int dx = -2; dx <= 2; dx++)
+                    for (int dy = -2; dy <= 2; dy++)
+                        if (materials[Index(host, x + dx, y + dy)] == MaterialIds.Cricket)
+                            cricketCount++;
+            });
+            Assert.That(cricketCount, Is.EqualTo(1));
         }
 
         private sealed class SimulationConfigSnapshot

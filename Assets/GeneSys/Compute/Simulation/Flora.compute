@@ -285,8 +285,8 @@ void RootUptake(uint3 id : SV_DispatchThreadID)
     _StateWrite[cell] = SafeFinite4(state, float4(15, 0, 0, 0));
 
     _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
-    _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = asfloat(identity);
-    _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = asfloat(topo);
+    _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
+    _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = float4(topo);
     _FloraWrite[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
     _FloraWrite[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = prop;
 }
@@ -409,8 +409,8 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
     }
 
     _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
-    _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = asfloat(identity);
-    _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = asfloat(topo);
+    _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
+    _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = float4(topo);
     _FloraWrite[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
     _FloraWrite[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = prop;
 
@@ -558,7 +558,7 @@ void ApplyFloraWorld(uint3 id : SV_DispatchThreadID)
         }
         else
         {
-            if (identity.z == FLORA_ROLE_TREE_TRUNK || identity.z == FLORA_ROLE_TREE_BRANCH)
+            if (identity.z == FLORA_ROLE_TREE_TRUNK || identity.z == FLORA_ROLE_TREE_BRANCH || identity.z == FLORA_ROLE_TREE_ROOT)
                 material = TREE_WOOD_ID;
             else if (identity.z == FLORA_ROLE_TREE_LEAF)
                 material = TREE_LEAF_ID;
@@ -572,11 +572,17 @@ void ApplyFloraWorld(uint3 id : SV_DispatchThreadID)
             {
                 material = MATERIAL_DETRITUS;
                 aux = SeedDetritusAux(aux);
+                life = 0.0;
+                genome = 0u;
             }
         }
         else
         {
             material = FLORA_ALGAE_ID;
+            float4 phys = SampleFloraPhysiology(_FloraRead, cell);
+            life = float4(phys.x, max(phys.x, phys.y), phys.z, phys.w);
+            genome = SampleFloraGenome(_FloraRead, cell);
+            genome.w = PackFloraMeta(identity.y, identity.z, FloraLineage(genome), identity.w);
         }
     }
     else if (identity.x == FLORA_ARCHETYPE_GRASS)
@@ -650,8 +656,8 @@ void ApplyFloraState(uint3 id : SV_DispatchThreadID)
     }
 
     _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
-    _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = asfloat(identity);
-    _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = asfloat(topo);
+    _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
+    _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = float4(topo);
     _FloraWrite[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
     _FloraWrite[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = prop;
 }
@@ -760,7 +766,7 @@ void PropaguleGerminate(uint3 id : SV_DispatchThreadID)
             uint4 genome = propGenome.x != 0u ? propGenome : RandomFloraGenome((uint2)cell, _Seed, _Tick);
 
             _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
-            _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = asfloat(identity);
+            _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
             _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = 0.0;
             _FloraWrite[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
             _FloraWrite[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = 0.0;
@@ -776,7 +782,7 @@ void PropaguleGerminate(uint3 id : SV_DispatchThreadID)
             uint4 genome = propGenome.x != 0u ? propGenome : RandomFloraGenome((uint2)cell, _Seed, _Tick);
 
             _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
-            _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = asfloat(identity);
+            _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
             _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = 0.0;
             _FloraWrite[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
             _FloraWrite[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = 0.0;
@@ -831,7 +837,7 @@ void PaintFlora(uint3 id : SV_DispatchThreadID)
         _FloraWrite[uint3((uint2)cell, s)] = _FloraRead[uint3((uint2)cell, s)];
 
     int2 center = int2(round(_FloraPaintCell.x), round(_FloraPaintCell.y));
-    int radius = max(1, (int)round(_FloraPaintCell.z));
+    int radius = max(0, (int)round(_FloraPaintCell.z));
     uint archetype = (uint)round(_FloraPaintCell.w);
 
     int dx = abs(cell.x - center.x);
@@ -845,20 +851,25 @@ void PaintFlora(uint3 id : SV_DispatchThreadID)
         {
             uint4 identity = uint4(FLORA_ARCHETYPE_ALGAE, FLORA_STAGE_ACTIVE, FLORA_ROLE_ALGAE_FILM, 0u);
             float4 phys = float4(0.5, 0.6, 0.8, 0.2);
+            genome.w = PackFloraMeta(FLORA_STAGE_ACTIVE, 0u, FloraLineage(genome), 0u);
             WriteFlora(_FloraWrite, cell, phys, identity, 0.0, genome, 0.0);
         }
-        else if (archetype == FLORA_ARCHETYPE_GRASS && IsGrassSoilAnchor(M(cell)))
+        else if (archetype == FLORA_ARCHETYPE_GRASS && (IsGrassSoilAnchor(M(cell)) || IsTreeHabitat(M(cell))))
         {
             uint4 identity = uint4(FLORA_ARCHETYPE_GRASS, FLORA_STAGE_MATURE, FLORA_ROLE_GRASS_TURF, FLORA_FLAG_ANCHOR);
             float4 phys = float4(0.5, 0.6, 0.7, 0.3);
             uint4 topo = uint4(0u, 0u, 7u, 0u);
+            genome.w = PackFloraMeta(FLORA_STAGE_MATURE, 0u, FloraLineage(genome), 0u);
             WriteFlora(_FloraWrite, cell, phys, identity, topo, genome, 0.0);
         }
-        else if (archetype == FLORA_ARCHETYPE_TREE && IsOpenHabitat(M(cell)))
+        else if (archetype == FLORA_ARCHETYPE_TREE && (IsTreeHabitat(M(cell)) || IsOpenHabitat(M(cell))))
         {
-            uint4 identity = uint4(FLORA_ARCHETYPE_TREE, FLORA_STAGE_SPROUT, FLORA_ROLE_TREE_TRUNK, FLORA_FLAG_ANCHOR);
+            bool onSoil = IsTreeHabitat(M(cell));
+            uint role = onSoil ? FLORA_ROLE_TREE_ROOT : FLORA_ROLE_TREE_TRUNK;
+            uint4 identity = uint4(FLORA_ARCHETYPE_TREE, FLORA_STAGE_SPROUT, role, FLORA_FLAG_ANCHOR);
             float4 phys = float4(0.5, 0.6, 0.7, 1.0);
-            uint4 topo = uint4(0u, PackFaunaCell(cell, _GridSize), 0u, 0u);
+            uint4 topo = uint4(PackFaunaCell(cell, _GridSize), PackFaunaCell(cell, _GridSize), onSoil ? 7u : 0u, 0u);
+            genome.w = PackFloraMeta(FLORA_STAGE_SPROUT, 0u, FloraLineage(genome), 0u);
             WriteFlora(_FloraWrite, cell, phys, identity, topo, genome, 0.0);
         }
     }
