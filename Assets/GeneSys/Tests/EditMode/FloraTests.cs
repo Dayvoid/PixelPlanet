@@ -1,3 +1,4 @@
+using System.IO;
 using System.Reflection;
 using GeneSys.Configuration;
 using GeneSys.Materials;
@@ -87,6 +88,19 @@ namespace GeneSys.Tests
             Assert.That(FloraGenome.Stage(genome), Is.EqualTo(FloraGenome.StageSpore));
             Assert.That(FloraGenome.IsValidStage(99u), Is.False);
             Assert.That(FloraGenome.DescribeStage(FloraGenome.StageDormant), Does.Contain("Dormant"));
+        }
+
+        [Test]
+        public void FloraComputeHasMigrationKernels()
+        {
+            ComputeShader shader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Flora.compute");
+            Assert.That(shader, Is.Not.Null);
+            Assert.That(shader.FindKernel("FloraMigration"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("FloraMigrationFollow"), Is.GreaterThanOrEqualTo(0));
+            string source = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Flora.compute");
+            Assert.That(source, Does.Contain("FloraDriftDestination"));
+            Assert.That(source, Does.Contain("FloraDriftWins"));
+            Assert.That(source, Does.Contain("FloraShearUrge"));
         }
 
         [Test]

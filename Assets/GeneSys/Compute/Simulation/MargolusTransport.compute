@@ -72,7 +72,7 @@ void CommitSlot(int2 dst, MargolusCell c, int2 grassSrc)
     WriteLifeGenome(_LifeGenomeWrite, dst, c.life, c.genome);
 #else
     [unroll]
-    for (int i = 0; i < GRASS_SLICE_COUNT; i++)
+    for (int i = 0; i < FLORA_SLICE_COUNT; i++)
         _GrassWrite[uint3((uint2)dst, i)] = _GrassRead.Load(int4(grassSrc, i, 0));
 #endif
 }

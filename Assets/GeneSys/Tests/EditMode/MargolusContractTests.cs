@@ -99,5 +99,17 @@ namespace GeneSys.Tests
             Assert.That(scheduler, Does.Contain("resources.SwapGrass()"));
             Assert.That(scheduler, Does.Contain("_TreeReceiptScale"));
         }
+
+        [Test]
+        public void MargolusUnpinsAlgaeAndCopiesUnifiedFloraSlices()
+        {
+            string common = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");
+            Assert.That(common, Does.Contain("FLORA_ALGAE_ID) return false"));
+            Assert.That(common, Does.Contain("material == FLORA_ALGAE_ID"));
+
+            string shader = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
+            Assert.That(shader, Does.Contain("for (int i = 0; i < FLORA_SLICE_COUNT; i++)"));
+            Assert.That(shader, Does.Not.Contain("for (int i = 0; i < GRASS_SLICE_COUNT; i++)"));
+        }
     }
 }

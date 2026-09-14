@@ -332,6 +332,8 @@ namespace GeneSys.Tests
             staging.Apply(false, false);
             Graphics.CopyTexture(staging, 0, 0, host.Resources.LifeGenomeRead, 1, 0);
             Graphics.CopyTexture(staging, 0, 0, host.Resources.LifeGenomeWrite, 1, 0);
+            Graphics.CopyTexture(staging, 0, 0, host.Resources.FloraRead, FloraGenome.GenomeSlice, 0);
+            Graphics.CopyTexture(staging, 0, 0, host.Resources.FloraWrite, FloraGenome.GenomeSlice, 0);
             UnityEngine.Object.Destroy(staging);
         }
 
@@ -883,6 +885,75 @@ namespace GeneSys.Tests
             Assert.That(SignedThetaDelta(x, algaeX, host.Grid.angularResolution), Is.GreaterThan(0f));
             Assert.That(biomassAfter, Is.LessThan(biomassBefore - 0.02f));
             Assert.That(sporeLoad, Is.GreaterThan(0.01f));
+        }
+
+        [UnityTest]
+        public IEnumerator AirborneAlgaeFallsUnderGravity()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            int x = DayX(host);
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.55f), 12, host.Grid.radialResolution - 24);
+            int spawnY = y + 4;
+            for (int dx = -1; dx <= 2; dx++)
+            {
+                Paint(host, x + dx, y, MaterialIds.Rock);
+                for (int dy = 1; dy <= 16; dy++)
+                    Paint(host, x + dx, y + dy, MaterialIds.Air);
+            }
+            Paint(host, x, spawnY, MaterialIds.Algae);
+            Paint(host, x + 1, spawnY, MaterialIds.Algae);
+            yield return Step(host, 2);
+
+            int minBefore = host.Grid.radialResolution;
+            int countBefore = 0;
+            uint below = 0;
+            yield return ReadFloraFields(host, (materials, _, _, _, _, _, _) =>
+            {
+                countBefore = CountAlgae(materials);
+                for (int iy = 0; iy < host.Grid.radialResolution; iy++)
+                {
+                    if (materials[Index(host, x, iy)] != MaterialIds.Algae
+                        && materials[Index(host, x + 1, iy)] != MaterialIds.Algae)
+                        continue;
+                    if (iy < minBefore) minBefore = iy;
+                }
+                if (minBefore > 0 && minBefore < host.Grid.radialResolution)
+                    below = materials[Index(host, x, minBefore - 1)];
+            });
+            Assert.That(countBefore, Is.EqualTo(2));
+            Assert.That(minBefore, Is.EqualTo(spawnY));
+            Assert.That(below, Is.EqualTo(MaterialIds.Air).Or.EqualTo(MaterialIds.Void));
+
+            host.Config.enableMaterialTransport = true;
+            host.Config.margolusSubsteps = 1;
+            host.Config.gravityStrength = 2f;
+            host.Config.slowPassInterval = 1000;
+            host.Config.floraPoleDriftRate = 0f;
+            host.Config.floraWindShearRate = 0f;
+            host.Config.floraRainShearRate = 0f;
+            yield return Step(host, 16);
+
+            int minAfter = host.Grid.radialResolution;
+            int countAfter = 0;
+            bool stillAtSpawn = false;
+            yield return ReadFloraFields(host, (materials, _, _, _, _, _, _) =>
+            {
+                countAfter = CountAlgae(materials);
+                for (int iy = 0; iy < host.Grid.radialResolution; iy++)
+                {
+                    bool here = materials[Index(host, x, iy)] == MaterialIds.Algae
+                        || materials[Index(host, x + 1, iy)] == MaterialIds.Algae;
+                    if (!here) continue;
+                    if (iy < minAfter) minAfter = iy;
+                    if (iy == spawnY) stillAtSpawn = true;
+                }
+            });
+            Assert.That(countAfter, Is.EqualTo(countBefore));
+            Assert.That(stillAtSpawn, Is.False);
+            Assert.That(minAfter, Is.LessThan(minBefore));
         }
 
         [UnityTest]

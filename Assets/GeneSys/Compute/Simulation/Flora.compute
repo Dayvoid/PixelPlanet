@@ -9,6 +9,8 @@
 #pragma kernel PropaguleGerminate
 #pragma kernel SeedFlora
 #pragma kernel PaintFlora
+#pragma kernel FloraMigration
+#pragma kernel FloraMigrationFollow
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
@@ -151,6 +153,186 @@ void WriteWorld(int2 cell, uint material, float4 state, float2 flow, float4 aux,
     _EcologyWrite[cell] = SanitizeEcology(ecology);
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
     WriteLifeGenome(_LifeGenomeWrite, cell, life, genome);
+}
+
+void CopyWorld(int2 cell, out uint material, out float4 state, out float2 flow, out float4 aux, out float4 ecology, out float4 combustion, out float4 life, out uint4 genome)
+{
+    cell = C(cell);
+    material = M(cell);
+    state = S(cell);
+    flow = F(cell);
+    aux = A(cell);
+    ecology = Eco(cell);
+    combustion = Comb(cell);
+    life = SampleLife(_LifeGenomeRead, cell);
+    genome = SampleGenome(_LifeGenomeRead, cell);
+}
+
+bool IsFloraCarrier(uint material)
+{
+    return material == 0u || IsSporeCarrier(material);
+}
+
+int CountCarrierNeighbors(int2 cell)
+{
+    int count = 0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = cell + offsets[i];
+        if (neighbor.y < 0 || neighbor.y >= _GridSize.y) continue;
+        if (IsFloraCarrier(M(neighbor))) count++;
+    }
+    return count;
+}
+
+uint4 DriftGenome(int2 cell)
+{
+    uint4 identity = SampleFloraIdentity(_FloraRead, cell);
+    if (identity.x == FLORA_ARCHETYPE_ALGAE)
+        return SampleFloraGenome(_FloraRead, cell);
+    return SampleGenome(_LifeGenomeRead, cell);
+}
+
+float AlgaeBiomass(int2 cell)
+{
+    float4 life = SampleLife(_LifeGenomeRead, cell);
+    uint4 identity = SampleFloraIdentity(_FloraRead, cell);
+    if (identity.x == FLORA_ARCHETYPE_ALGAE)
+        return saturate(max(life.y, SampleFloraPhysiology(_FloraRead, cell).x));
+    return saturate(life.y);
+}
+
+float FloraRainImpact(int2 cell)
+{
+    int2 up = cell + int2(0, 1);
+    if (up.y >= _GridSize.y) return 0.0;
+    uint upMat = M(up);
+    if (upMat == 9u || upMat == 10u) return 1.0;
+    if (IsFloraCarrier(upMat))
+        return max(0.0, S(up).z - _WeatherE.y);
+    return 0.0;
+}
+
+void SampleShear(int2 cell, out float wind, out float rain)
+{
+    wind = 0.0;
+    rain = FloraRainImpact(cell);
+    float best = 0.0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = cell + offsets[i];
+        if (neighbor.y < 0 || neighbor.y >= _GridSize.y) continue;
+        neighbor = C(neighbor);
+        if (!IsFloraCarrier(M(neighbor))) continue;
+        float fx = F(neighbor).x;
+        if (abs(fx) > best)
+        {
+            best = abs(fx);
+            wind = fx;
+        }
+    }
+}
+
+bool IsAlgaeCrest(int2 cell)
+{
+    return cell.y >= _GridSize.y - 1 || M(cell + int2(0, 1)) != FLORA_ALGAE_ID;
+}
+
+float FloraShearUrge(int2 cell)
+{
+    if (!IsFloraMaterial(M(cell)) || !IsAlgaeCrest(cell))
+        return 0.0;
+    float wind;
+    float rain;
+    SampleShear(cell, wind, rain);
+    float raw = abs(wind) * max(0.0, _FloraI.y) + rain * max(0.0, _FloraI.z);
+    return max(0.0, raw - saturate(AlgaeBiomass(cell)) * max(0.0, _FloraH.y));
+}
+
+float FloraFragmentAmount(int2 cell)
+{
+    return FloraShearUrge(cell) * saturate(_FloraI.w) * _DeltaTime;
+}
+
+void HydrateAlgae(int2 cell, inout float4 phys, inout uint4 identity, inout uint4 genome)
+{
+    if (identity.x != FLORA_ARCHETYPE_NONE || M(cell) != FLORA_ALGAE_ID)
+        return;
+    float4 life = SampleLife(_LifeGenomeRead, cell);
+    if (life.y <= 1e-6)
+        return;
+    identity = uint4(FLORA_ARCHETYPE_ALGAE, FLORA_STAGE_ACTIVE, FLORA_ROLE_ALGAE_FILM, 0u);
+    genome = SampleGenome(_LifeGenomeRead, cell);
+    genome.w = PackFloraMeta(FLORA_STAGE_ACTIVE, FloraGeneration(genome), FloraLineage(genome), FloraToxinDose(genome));
+    phys = float4(saturate(max(life.y, 0.35)), saturate(max(life.z, life.y)), saturate(max(life.z, 0.1)), saturate(life.w));
+}
+
+int2 FloraDriftDestination(int2 cell)
+{
+    if (!IsFloraMaterial(M(cell)))
+        return cell;
+
+    int step = 0;
+    bool stacked = cell.y > 0 && M(cell + int2(0, -1)) == FLORA_ALGAE_ID;
+    if (stacked)
+    {
+        float urge = FloraPoleDrift(DriftGenome(cell)) * max(0.0, _FloraI.x);
+        step = NearestPoleStep(cell.x, _GridSize.x, _Seed);
+        if (step == 0 || HashCell(cell, 71u) >= saturate(urge * _DeltaTime))
+            step = 0;
+    }
+
+    if (step == 0)
+    {
+        float shear = FloraShearUrge(cell);
+        if (shear > 1e-8 && HashCell(cell, 83u) < saturate(shear * _DeltaTime))
+        {
+            float wind;
+            float rain;
+            SampleShear(cell, wind, rain);
+            if (abs(wind) < 1e-5)
+                step = HashCell(cell, 97u) < 0.5 ? -1 : 1;
+            else
+                step = wind > 0.0 ? 1 : -1;
+        }
+    }
+
+    if (step == 0)
+        return cell;
+    int2 dest = C(cell + int2(step, 0));
+    if (IsFloraMaterial(M(dest)) || !IsFloraGerminationTarget(M(dest)))
+        return cell;
+    return dest;
+}
+
+bool FloraDriftWins(int2 source, int2 target)
+{
+    int2 left = C(target + int2(-1, 0));
+    int2 right = C(target + int2(1, 0));
+    if (all(FloraDriftDestination(left) == target)) return all(source == left);
+    if (all(FloraDriftDestination(right) == target)) return all(source == right);
+    return false;
+}
+
+int2 FloraMigrationSource(int2 cell)
+{
+    if (IsFloraMaterial(M(cell)))
+    {
+        int2 dest = FloraDriftDestination(cell);
+        if (!all(dest == cell) && FloraDriftWins(cell, dest))
+            return dest;
+        return cell;
+    }
+
+    int2 left = C(cell + int2(-1, 0));
+    int2 right = C(cell + int2(1, 0));
+    if (FloraDriftWins(left, cell)) return left;
+    if (FloraDriftWins(right, cell)) return right;
+    return cell;
 }
 
 float4 SeedDetritusAux(float4 aux)
@@ -311,7 +493,9 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
     float4 state = S(cell);
     float4 aux = A(cell);
     float4 combustion = Comb(cell);
+    float4 life = SampleLife(_LifeGenomeRead, cell);
     float light = max(0.0, LightOf(cell));
+    HydrateAlgae(cell, phys, identity, genome);
 
     if (identity.x != FLORA_ARCHETYPE_NONE && identity.y != FLORA_STAGE_EMPTY && identity.y != FLORA_STAGE_DEAD)
     {
@@ -406,6 +590,9 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
         {
             phys.x = saturate(phys.x + _FloraB.y * phys.y * _DeltaTime);
         }
+
+        if (identity.x == FLORA_ARCHETYPE_ALGAE)
+            phys.x = saturate(phys.x - FloraFragmentAmount(cell));
     }
 
     _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
@@ -417,11 +604,35 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
     _CombustionWrite[cell] = SanitizeCombustion(combustion);
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
 
-    // Mirror Algae to LifeGenome for legacy Margolus cellular transport:
+    float incoming = 0.0;
+    if (IsFloraCarrier(material))
+    {
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 neighbor = cell + offsets[i];
+            if (neighbor.y < 0 || neighbor.y >= _GridSize.y) continue;
+            neighbor = C(neighbor);
+            float frag = FloraFragmentAmount(neighbor);
+            if (frag <= 1e-8) continue;
+            incoming += frag / (float)max(1, CountCarrierNeighbors(neighbor));
+        }
+    }
+    life.x = max(0.0, life.x + incoming);
+    prop.x = max(0.0, prop.x + incoming);
+    _FloraWrite[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = prop;
+
+    float4 propLoad = _PropaguleRead.Load(int4(cell, PROPAGULE_LOAD_SLICE, 0));
+    uint4 propGenome = asuint(_PropaguleRead.Load(int4(cell, PROPAGULE_GENOME_SLICE, 0)));
+    propLoad.x = max(0.0, propLoad.x + incoming);
+    _PropaguleWrite[uint3((uint2)cell, PROPAGULE_LOAD_SLICE)] = propLoad;
+    _PropaguleWrite[uint3((uint2)cell, PROPAGULE_GENOME_SLICE)] = asfloat(propGenome);
+
     if (identity.x == FLORA_ARCHETYPE_ALGAE)
-        WriteLifeGenome(_LifeGenomeWrite, cell, phys, genome);
+        WriteLifeGenome(_LifeGenomeWrite, cell, float4(life.x, saturate(phys.x), phys.z, phys.w), genome);
     else
-        WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
+        WriteLifeGenome(_LifeGenomeWrite, cell, life, SampleGenome(_LifeGenomeRead, cell));
 }
 
 // -------------------------------------------------------------------------
@@ -518,8 +729,9 @@ void ApplyFloraWorld(uint3 id : SV_DispatchThreadID)
     float4 combustion = Comb(cell);
     float4 life = SampleLife(_LifeGenomeRead, cell);
     uint4 genome = SampleGenome(_LifeGenomeRead, cell);
-
+    float4 phys = SampleFloraPhysiology(_FloraRead, cell);
     uint4 identity = SampleFloraIdentity(_FloraRead, cell);
+    HydrateAlgae(cell, phys, identity, genome);
     uint claim = _FloraClaims.Load(int3(cell, 0));
 
     // Handle growth claim winning at this cell:
@@ -579,9 +791,7 @@ void ApplyFloraWorld(uint3 id : SV_DispatchThreadID)
         else
         {
             material = FLORA_ALGAE_ID;
-            float4 phys = SampleFloraPhysiology(_FloraRead, cell);
-            life = float4(phys.x, max(phys.x, phys.y), phys.z, phys.w);
-            genome = SampleFloraGenome(_FloraRead, cell);
+            life = float4(life.x, saturate(phys.x), phys.z, phys.w);
             genome.w = PackFloraMeta(identity.y, identity.z, FloraLineage(genome), identity.w);
         }
     }
@@ -608,6 +818,7 @@ void ApplyFloraState(uint3 id : SV_DispatchThreadID)
     uint4 topo = SampleFloraTopology(_FloraRead, cell);
     uint4 genome = SampleFloraGenome(_FloraRead, cell);
     float4 prop = SampleFloraPropagule(_FloraRead, cell);
+    HydrateAlgae(cell, phys, identity, genome);
 
     uint claim = _FloraClaims.Load(int3(cell, 0));
 
@@ -873,4 +1084,41 @@ void PaintFlora(uint3 id : SV_DispatchThreadID)
             WriteFlora(_FloraWrite, cell, phys, identity, topo, genome, 0.0);
         }
     }
+}
+
+// -------------------------------------------------------------------------
+// 11. FLORA MIGRATION
+// Dual-pull pole drift and wind/rain shear. World+LifeGenome first (8 UAVs),
+// then Flora slices follow from the same source cells.
+// -------------------------------------------------------------------------
+[numthreads(8, 8, 1)]
+void FloraMigration(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material;
+    float4 state;
+    float2 flow;
+    float4 aux;
+    float4 ecology;
+    float4 combustion;
+    float4 life;
+    uint4 genome;
+    CopyWorld(FloraMigrationSource(cell), material, state, flow, aux, ecology, combustion, life, genome);
+    WriteWorld(cell, material, state, flow, aux, ecology, combustion, life, genome);
+}
+
+[numthreads(8, 8, 1)]
+void FloraMigrationFollow(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    int2 source = FloraMigrationSource(cell);
+    float4 phys = SampleFloraPhysiology(_FloraRead, source);
+    uint4 identity = SampleFloraIdentity(_FloraRead, source);
+    uint4 topo = SampleFloraTopology(_FloraRead, source);
+    uint4 genome = SampleFloraGenome(_FloraRead, source);
+    float4 prop = SampleFloraPropagule(_FloraRead, source);
+    HydrateAlgae(source, phys, identity, genome);
+    WriteFlora(_FloraWrite, cell, phys, identity, topo, genome, prop);
 }

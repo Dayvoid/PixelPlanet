@@ -1087,12 +1087,15 @@ namespace GeneSys.Simulation.Gpu
                     flora.SetTexture(photo, "_LightRead", resources.LightField);
                     flora.SetTexture(photo, "_FloraRead", resources.FloraRead);
                     flora.SetTexture(photo, "_FloraWrite", resources.FloraWrite);
+                    flora.SetTexture(photo, "_PropaguleRead", resources.PropaguleRead);
+                    flora.SetTexture(photo, "_PropaguleWrite", resources.PropaguleWrite);
                     BindOrganismHistory(flora, photo);
                     Dispatch(flora, photo);
                     Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
                     Graphics.CopyTexture(resources.CombustionWrite, resources.CombustionRead);
                     Graphics.CopyTexture(resources.LifeGenomeWrite, resources.LifeGenomeRead);
                     resources.SwapFlora();
+                    resources.SwapPropagule();
                 }
 
                 if (propTransport >= 0)
@@ -1147,6 +1150,9 @@ namespace GeneSys.Simulation.Gpu
                     CommitFloraWorld();
                 }
             }
+
+            if (!paintedThisTick)
+                DispatchFloraMigration(deltaTime);
 
             if (floraPaintCommands.Count > 0)
             {
@@ -1203,6 +1209,33 @@ namespace GeneSys.Simulation.Gpu
             flora.SetTexture(applyState, "_FloraClaims", resources.FloraClaims);
             BindOrganismHistory(flora, applyState);
             Dispatch(flora, applyState);
+            resources.SwapFlora();
+        }
+
+        private void DispatchFloraMigration(float deltaTime)
+        {
+            if (config.floraPoleDriftRate <= 1e-8f
+                && config.floraWindShearRate <= 1e-8f
+                && config.floraRainShearRate <= 1e-8f)
+                return;
+
+            int migrate = flora.FindKernel("FloraMigration");
+            int follow = flora.FindKernel("FloraMigrationFollow");
+            if (migrate < 0 || follow < 0) return;
+
+            SetCommon(flora, migrate, deltaTime);
+            flora.SetBuffer(migrate, "_MaterialDefinitions", materialBuffer);
+            BindPassTextures(flora, migrate);
+            Dispatch(flora, migrate);
+
+            SetCommon(flora, follow, deltaTime);
+            flora.SetBuffer(follow, "_MaterialDefinitions", materialBuffer);
+            BindFloraWorldReads(follow);
+            flora.SetTexture(follow, "_FloraRead", resources.FloraRead);
+            flora.SetTexture(follow, "_FloraWrite", resources.FloraWrite);
+            Dispatch(flora, follow);
+
+            resources.Swap();
             resources.SwapFlora();
         }
 

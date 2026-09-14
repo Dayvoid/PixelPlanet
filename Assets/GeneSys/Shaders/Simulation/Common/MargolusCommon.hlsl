@@ -38,6 +38,9 @@ bool IsMargolusPinned(MargolusCell c, MaterialGpuData def)
     if (IsTreeMaterial(c.material) || IsWaspMaterial(c.material)) return true;
     if (c.material == 2u || c.material == 3u) return true;
 
+    // Algae films settle with Margolus even though the asset rigidity is solid-ish.
+    if (c.material == FLORA_ALGAE_ID) return false;
+
     // Rigid solids (category Solid or high rigidity) stay put.
     if (def.physical.y >= 0.75) return true;
     if (def.metadata.x == 4.0 && (c.material == 4u || c.material == 5u || c.material == 13u || c.material == 14u))
@@ -56,7 +59,7 @@ bool IsMargolusFluid(uint material, MaterialGpuData def)
 bool IsMargolusGranular(uint material, MaterialGpuData def)
 {
     if (def.metadata.x == 3.0) return true;
-    return material == 8u || material == 7u || material == 15u || material == 12u;
+    return material == 8u || material == 7u || material == 15u || material == 12u || material == FLORA_ALGAE_ID;
 }
 
 float MargolusEffectiveDensity(MargolusCell c, MaterialGpuData def)
