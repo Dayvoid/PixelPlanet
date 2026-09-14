@@ -195,6 +195,7 @@ namespace GeneSys.Rendering
             displayMaterial.SetTexture("_StormTex", resources.StormRead);
             displayMaterial.SetTexture("_LifeGenomeTex", resources.LifeGenomeRead);
             displayMaterial.SetTexture("_FaunaTex", resources.FaunaRead);
+            displayMaterial.SetTexture("_FloraTex", resources.FloraRead);
             displayMaterial.SetTexture("_GrassTex", resources.GrassRead);
             displayMaterial.SetTexture("_WaspTex", resources.WaspRead);
             displayMaterial.SetTexture("_TreeTex", resources.TreeRead);
@@ -441,17 +442,24 @@ namespace GeneSys.Rendering
             DestroyRuntimeAssets();
         }
 
+        private static void SafeDestroy(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying) UnityEngine.Object.Destroy(obj);
+            else UnityEngine.Object.DestroyImmediate(obj);
+        }
+
         private void DestroyRuntimeAssets()
         {
-            if (displayMaterial != null) Destroy(displayMaterial);
-            if (palette != null) Destroy(palette);
-            if (properties != null) Destroy(properties);
-            if (categories != null) Destroy(categories);
-            if (visionCamera != null) Destroy(visionCamera.gameObject);
+            SafeDestroy(displayMaterial);
+            SafeDestroy(palette);
+            SafeDestroy(properties);
+            SafeDestroy(categories);
+            if (visionCamera != null) SafeDestroy(visionCamera.gameObject);
             if (visionTarget != null)
             {
                 visionTarget.Release();
-                Destroy(visionTarget);
+                SafeDestroy(visionTarget);
             }
             displayMaterial = null;
             palette = null;

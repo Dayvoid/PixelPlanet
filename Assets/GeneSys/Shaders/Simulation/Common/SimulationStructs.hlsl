@@ -490,23 +490,23 @@ float4 SanitizeLife(float4 life)
 
 // Life and genome share one Tex2DArray UAV (slice 0 = life, slice 1 = asfloat(genome))
 // so WriteCell stays at the DX11 8-UAV cap. Genome bits ride float channels for AsyncGPUReadback.
-#define FLORA_LIFE_SLICE 0
-#define FLORA_GENOME_SLICE 1
+#define LIFE_GENOME_LIFE_SLICE 0
+#define LIFE_GENOME_GENOME_SLICE 1
 
 float4 SampleLife(Texture2DArray<float4> tex, int2 cell)
 {
-    return tex.Load(int4(cell, FLORA_LIFE_SLICE, 0));
+    return tex.Load(int4(cell, LIFE_GENOME_LIFE_SLICE, 0));
 }
 
 uint4 SampleGenome(Texture2DArray<float4> tex, int2 cell)
 {
-    return asuint(tex.Load(int4(cell, FLORA_GENOME_SLICE, 0)));
+    return asuint(tex.Load(int4(cell, LIFE_GENOME_GENOME_SLICE, 0)));
 }
 
 void WriteLifeGenome(RWTexture2DArray<float4> tex, int2 cell, float4 life, uint4 genome)
 {
-    tex[uint3((uint2)cell, FLORA_LIFE_SLICE)] = SanitizeLife(life);
-    tex[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(SanitizeGenome(genome));
+    tex[uint3((uint2)cell, LIFE_GENOME_LIFE_SLICE)] = SanitizeLife(life);
+    tex[uint3((uint2)cell, LIFE_GENOME_GENOME_SLICE)] = asfloat(SanitizeGenome(genome));
 }
 
 float FloraExpressFactor(uint gene, float range)
@@ -533,6 +533,108 @@ float FloraFuel(uint material, float4 life, uint stage)
     if (stage == FLORA_STAGE_SPORE || stage == FLORA_STAGE_DEAD)
         return 0.0;
     return saturate(life.y);
+}
+
+// =========================================================================
+// UNIFIED FLORA CONTRACT
+// Archetypes:
+//   1 = Algae (micro-flora, aquatic / wet substrate film, cellular division, spore dispersal)
+//   2 = Grass (turf cover on soil/sediment, root water/nutrient uptake, flowering, nectar, pollen & seeds)
+//   3 = Tree  (macroscopic structural flora, roots in soil, wood trunk/branches, photosynthetic canopy leaves)
+// =========================================================================
+#define FLORA_ARCHETYPE_NONE 0u
+#define FLORA_ARCHETYPE_ALGAE 1u
+#define FLORA_ARCHETYPE_GRASS 2u
+#define FLORA_ARCHETYPE_TREE 3u
+
+#define FLORA_STAGE_EMPTY 0u
+#define FLORA_STAGE_SPORE_SPROUT 1u
+#define FLORA_STAGE_SPROUT 1u
+#define FLORA_STAGE_VEGETATIVE 2u
+#define FLORA_STAGE_JUVENILE 2u
+#define FLORA_STAGE_MATURE 3u
+#define FLORA_STAGE_DEAD 4u
+
+#define FLORA_TOTAL_SLICES 5
+
+#define FLORA_ROLE_NONE 0u
+#define FLORA_ROLE_ALGAE_FILM 1u
+#define FLORA_ROLE_GRASS_TURF 2u
+#define FLORA_ROLE_TREE_ROOT 3u
+#define FLORA_ROLE_TREE_TRUNK 4u
+#define FLORA_ROLE_TREE_BRANCH 5u
+#define FLORA_ROLE_TREE_STEM 6u
+#define FLORA_ROLE_TREE_LEAF 7u
+
+#define FLORA_FLAG_ANCHOR (1u << 0)
+#define FLORA_FLAG_FLOWERING (1u << 1)
+#define FLORA_FLAG_POLLINATED (1u << 2)
+#define FLORA_FLAG_SHED (1u << 3)
+#define FLORA_FLAG_EXPOSED (1u << 4)
+#define FLORA_FLAG_CONVERT_WOOD (1u << 5)
+#define FLORA_FLAG_CONVERT_DETRITUS (1u << 6)
+#define FLORA_FLAG_CONVERT_ASH (1u << 7)
+
+#define FLORA_PHYSIOLOGY_SLICE 0
+#define FLORA_IDENTITY_SLICE 1
+#define FLORA_TOPOLOGY_SLICE 2
+#define FLORA_GENOME_SLICE 3
+#define FLORA_PROPAGULE_SLICE 4
+#define FLORA_SLICE_COUNT 5
+
+#define PROPAGULE_LOAD_SLICE 0
+#define PROPAGULE_GENOME_SLICE 1
+#define PROPAGULE_SLICE_COUNT 2
+
+#define FLORA_CLAIM_EMPTY 0xffffffffu
+
+float4 SampleFloraPhysiology(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, FLORA_PHYSIOLOGY_SLICE, 0));
+}
+
+uint4 SampleFloraIdentity(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, FLORA_IDENTITY_SLICE, 0)));
+}
+
+uint4 SampleFloraTopology(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, FLORA_TOPOLOGY_SLICE, 0)));
+}
+
+uint4 SampleFloraGenome(Texture2DArray<float4> tex, int2 cell)
+{
+    return asuint(tex.Load(int4(cell, FLORA_GENOME_SLICE, 0)));
+}
+
+float4 SampleFloraPropagule(Texture2DArray<float4> tex, int2 cell)
+{
+    return tex.Load(int4(cell, FLORA_PROPAGULE_SLICE, 0));
+}
+
+void WriteFlora(RWTexture2DArray<float4> tex, int2 cell, float4 phys, uint4 identity, uint4 topo, uint4 genome, float4 prop)
+{
+    tex[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
+    tex[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = asfloat(identity);
+    tex[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = asfloat(topo);
+    tex[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
+    tex[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = prop;
+}
+
+void ClearFlora(RWTexture2DArray<float4> tex, int2 cell)
+{
+    WriteFlora(tex, cell, 0.0, uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u), 0.0);
+}
+
+void CopyFlora(Texture2DArray<float4> src, RWTexture2DArray<float4> dst, int2 cell)
+{
+    WriteFlora(dst, cell,
+        SampleFloraPhysiology(src, cell),
+        SampleFloraIdentity(src, cell),
+        SampleFloraTopology(src, cell),
+        SampleFloraGenome(src, cell),
+        SampleFloraPropagule(src, cell));
 }
 
 #define FAUNA_CRICKET_ID 129u
@@ -564,14 +666,30 @@ float FloraFuel(uint material, float4 life, uint stage)
 #define FAUNA_GENE_THREAT_RESPONSE 9u
 #define FAUNA_GENE_FERTILITY 10u
 #define FAUNA_GENE_MUTATION 11u
+
+// Unified Fauna slices:
 #define FAUNA_VITALS_SLICE 0
 #define FAUNA_MOTION_SLICE 1
 #define FAUNA_GENOME_SLICE 2
 #define FAUNA_PARTNER_SLICE 3
+#define FAUNA_CRICKET_VITALS_SLICE 0
+#define FAUNA_CRICKET_MOTION_SLICE 1
+#define FAUNA_CRICKET_GENOME_SLICE 2
+#define FAUNA_CRICKET_PARTNER_SLICE 3
+#define FAUNA_WASP_VITALS_SLICE 4
+#define FAUNA_WASP_MOTION_SLICE 5
+#define FAUNA_WASP_GENOME_SLICE 6
+#define FAUNA_WASP_PARTNER_SLICE 7
+#define FAUNA_WASP_CARGO_SLICE 8
+#define FAUNA_WASP_CARGO_SLOTS 3u
+#define FAUNA_SLICE_COUNT 11
+
 #define FAUNA_CLAIM_MOVE 0
 #define FAUNA_CLAIM_FEED 1
 #define FAUNA_CLAIM_MATE 2
 #define FAUNA_CLAIM_EGG 3
+#define FAUNA_CLAIM_FLOWER 4
+#define FAUNA_CLAIM_COUNT 5
 #define FAUNA_CLAIM_EMPTY 0xffffffffu
 
 bool IsCricketMaterial(uint material)
@@ -1204,21 +1322,34 @@ int GrassSliceIndex(uint slot, uint field)
 
 float4 SampleGrassLife(Texture2DArray<float4> tex, int2 cell, uint slot)
 {
-    return tex.Load(int4(cell, GrassSliceIndex(slot, GRASS_LIFE_OFFSET), 0));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FLORA_SLICE_COUNT) ? FLORA_PHYSIOLOGY_SLICE : GrassSliceIndex(slot, GRASS_LIFE_OFFSET);
+    return tex.Load(int4(cell, slice, 0));
 }
 
 uint4 SampleGrassGenome(Texture2DArray<float4> tex, int2 cell, uint slot)
 {
-    return asuint(tex.Load(int4(cell, GrassSliceIndex(slot, GRASS_GENOME_OFFSET), 0)));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FLORA_SLICE_COUNT) ? FLORA_GENOME_SLICE : GrassSliceIndex(slot, GRASS_GENOME_OFFSET);
+    return asuint(tex.Load(int4(cell, slice, 0)));
 }
 
 float4 SampleGrassTiming(Texture2DArray<float4> tex, int2 cell, uint slot)
 {
-    return tex.Load(int4(cell, GrassSliceIndex(slot, GRASS_TIMING_OFFSET), 0));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FLORA_SLICE_COUNT) ? FLORA_TOPOLOGY_SLICE : GrassSliceIndex(slot, GRASS_TIMING_OFFSET);
+    return tex.Load(int4(cell, slice, 0));
 }
 
 uint4 SampleGrassDonor(Texture2DArray<float4> tex, int2 cell, uint slot)
 {
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    if (elements == FLORA_SLICE_COUNT)
+        return asuint(tex.Load(int4(cell, FLORA_PROPAGULE_SLICE, 0)));
     return asuint(tex.Load(int4(cell, GrassSliceIndex(slot, GRASS_DONOR_OFFSET), 0)));
 }
 
@@ -1426,6 +1557,29 @@ float DetritusFuel(uint material, float4 aux, MaterialGpuData definition)
 
 uint CountGrassRootTapsOnCell(Texture2DArray<float4> grass, int2 cell, int2 gridSize)
 {
+    uint width, height, elements;
+    grass.GetDimensions(width, height, elements);
+    if (elements == FLORA_SLICE_COUNT)
+    {
+        uint taps = 0u;
+        [unroll]
+        for (uint bit = 0u; bit < 3u; bit++)
+        {
+            int2 parent = GrassTapParent(cell, bit, gridSize);
+            if (parent.y >= gridSize.y)
+                continue;
+            uint expectedBit = GrassTapBitForParent(bit);
+            uint4 identity = SampleFloraIdentity(grass, parent);
+            if (identity.x == FLORA_ARCHETYPE_GRASS && identity.y != FLORA_STAGE_EMPTY && identity.y != FLORA_STAGE_DEAD)
+            {
+                uint mask = (uint)round(SampleFloraTopology(grass, parent).z) & GRASS_ROOT_MASK;
+                if ((mask & (1u << expectedBit)) != 0u)
+                    taps++;
+            }
+        }
+        return taps;
+    }
+
     uint taps = 0u;
     [unroll]
     for (uint bit = 0u; bit < 3u; bit++)
@@ -1614,44 +1768,80 @@ float WaspExpressFactor(uint gene, float range)
 
 float4 SampleWaspVitals(Texture2DArray<float4> tex, int2 cell)
 {
-    return tex.Load(int4(cell, WASP_VITALS_SLICE, 0));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FAUNA_SLICE_COUNT) ? FAUNA_WASP_VITALS_SLICE : WASP_VITALS_SLICE;
+    return tex.Load(int4(cell, slice, 0));
 }
 
 float4 SampleWaspMotion(Texture2DArray<float4> tex, int2 cell)
 {
-    return tex.Load(int4(cell, WASP_MOTION_SLICE, 0));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FAUNA_SLICE_COUNT) ? FAUNA_WASP_MOTION_SLICE : WASP_MOTION_SLICE;
+    return tex.Load(int4(cell, slice, 0));
 }
 
 uint4 SampleWaspGenome(Texture2DArray<float4> tex, int2 cell)
 {
-    return asuint(tex.Load(int4(cell, WASP_GENOME_SLICE, 0)));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FAUNA_SLICE_COUNT) ? FAUNA_WASP_GENOME_SLICE : WASP_GENOME_SLICE;
+    return asuint(tex.Load(int4(cell, slice, 0)));
 }
 
 uint4 SampleWaspPartner(Texture2DArray<float4> tex, int2 cell)
 {
-    return asuint(tex.Load(int4(cell, WASP_PARTNER_SLICE, 0)));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FAUNA_SLICE_COUNT) ? FAUNA_WASP_PARTNER_SLICE : WASP_PARTNER_SLICE;
+    return asuint(tex.Load(int4(cell, slice, 0)));
 }
 
 uint4 SampleWaspCargo(Texture2DArray<float4> tex, int2 cell, uint slot)
 {
-    return asuint(tex.Load(int4(cell, WASP_CARGO_SLICE + (int)min(slot, WASP_CARGO_SLOTS - 1u), 0)));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FAUNA_SLICE_COUNT)
+        ? (FAUNA_WASP_CARGO_SLICE + (int)min(slot, FAUNA_WASP_CARGO_SLOTS - 1u))
+        : (WASP_CARGO_SLICE + (int)min(slot, WASP_CARGO_SLOTS - 1u));
+    return asuint(tex.Load(int4(cell, slice, 0)));
 }
 
 void WriteWaspState(RWTexture2DArray<float4> tex, int2 cell, float4 vitals, float4 motion, uint4 genome, uint4 partner, uint4 cargo0, uint4 cargo1, uint4 cargo2)
 {
-    tex[uint3((uint2)cell, WASP_VITALS_SLICE)] = SanitizeFaunaVitals(vitals);
-    tex[uint3((uint2)cell, WASP_MOTION_SLICE)] = SanitizeFaunaMotion(motion);
-    tex[uint3((uint2)cell, WASP_GENOME_SLICE)] = asfloat(SanitizeWaspGenome(genome));
-    tex[uint3((uint2)cell, WASP_PARTNER_SLICE)] = asfloat(partner);
-    tex[uint3((uint2)cell, WASP_CARGO_SLICE + 0)] = asfloat(cargo0);
-    tex[uint3((uint2)cell, WASP_CARGO_SLICE + 1)] = asfloat(cargo1);
-    tex[uint3((uint2)cell, WASP_CARGO_SLICE + 2)] = asfloat(cargo2);
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int vSlice = elements >= FAUNA_SLICE_COUNT ? FAUNA_WASP_VITALS_SLICE : WASP_VITALS_SLICE;
+    int mSlice = elements >= FAUNA_SLICE_COUNT ? FAUNA_WASP_MOTION_SLICE : WASP_MOTION_SLICE;
+    int gSlice = elements >= FAUNA_SLICE_COUNT ? FAUNA_WASP_GENOME_SLICE : WASP_GENOME_SLICE;
+    int pSlice = elements >= FAUNA_SLICE_COUNT ? FAUNA_WASP_PARTNER_SLICE : WASP_PARTNER_SLICE;
+    int cSlice = elements >= FAUNA_SLICE_COUNT ? FAUNA_WASP_CARGO_SLICE : WASP_CARGO_SLICE;
+
+    tex[uint3((uint2)cell, vSlice)] = SanitizeFaunaVitals(vitals);
+    tex[uint3((uint2)cell, mSlice)] = SanitizeFaunaMotion(motion);
+    tex[uint3((uint2)cell, gSlice)] = asfloat(SanitizeWaspGenome(genome));
+    tex[uint3((uint2)cell, pSlice)] = asfloat(partner);
+    tex[uint3((uint2)cell, cSlice + 0)] = asfloat(cargo0);
+    tex[uint3((uint2)cell, cSlice + 1)] = asfloat(cargo1);
+    tex[uint3((uint2)cell, cSlice + 2)] = asfloat(cargo2);
 }
 
 void ClearWaspState(RWTexture2DArray<float4> tex, int2 cell)
 {
     uint4 zero = uint4(0u, 0u, 0u, 0u);
     WriteWaspState(tex, cell, 0.0, 0.0, zero, zero, zero, zero, zero);
+}
+
+void ClearAllFaunaState(RWTexture2DArray<float4> tex, int2 cell)
+{
+    ClearFaunaState(tex, cell);
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    if (elements >= FAUNA_SLICE_COUNT)
+    {
+        ClearWaspState(tex, cell);
+    }
 }
 
 bool WaspHasPartner(uint4 partner)
@@ -1838,17 +2028,26 @@ bool IsTreeOpen(uint material)
 
 float4 SampleTreePhysiology(Texture2DArray<float4> tex, int2 cell)
 {
-    return tex.Load(int4(cell, TREE_PHYSIOLOGY_SLICE, 0));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FLORA_SLICE_COUNT) ? FLORA_PHYSIOLOGY_SLICE : TREE_PHYSIOLOGY_SLICE;
+    return tex.Load(int4(cell, slice, 0));
 }
 
 uint4 SampleTreeTopology(Texture2DArray<float4> tex, int2 cell)
 {
-    return asuint(tex.Load(int4(cell, TREE_TOPOLOGY_SLICE, 0)));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FLORA_SLICE_COUNT) ? FLORA_TOPOLOGY_SLICE : TREE_TOPOLOGY_SLICE;
+    return asuint(tex.Load(int4(cell, slice, 0)));
 }
 
 uint4 SampleTreeGenome(Texture2DArray<float4> tex, int2 cell)
 {
-    return asuint(tex.Load(int4(cell, TREE_GENOME_SLICE, 0)));
+    uint width, height, elements;
+    tex.GetDimensions(width, height, elements);
+    int slice = (elements == FLORA_SLICE_COUNT) ? FLORA_GENOME_SLICE : TREE_GENOME_SLICE;
+    return asuint(tex.Load(int4(cell, slice, 0)));
 }
 
 uint TreeStage(uint4 genome)

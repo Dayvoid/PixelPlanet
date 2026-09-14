@@ -119,13 +119,12 @@ namespace GeneSys.Tests
         {
             using var resources = new SimulationResources(PolarGridDefinition.Validation);
             Assert.That(resources.WaspRead.dimension, Is.EqualTo(UnityEngine.Rendering.TextureDimension.Tex2DArray));
-            Assert.That(resources.WaspRead.volumeDepth, Is.EqualTo(WaspGenome.SliceCount));
-            Assert.That(resources.WaspWrite.volumeDepth, Is.EqualTo(WaspGenome.SliceCount));
+            Assert.That(resources.WaspRead.volumeDepth, Is.EqualTo(FaunaGenome.SliceCount));
+            Assert.That(resources.WaspWrite.volumeDepth, Is.EqualTo(FaunaGenome.SliceCount));
             Assert.That(resources.WaspRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
-            Assert.That(resources.WaspClaims.volumeDepth, Is.EqualTo(SimulationResources.WaspClaimCount));
+            Assert.That(resources.WaspClaims.volumeDepth, Is.EqualTo(FaunaGenome.ClaimSliceCount));
             Assert.That(resources.WaspClaims.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_UInt));
-            Assert.That(resources.GrassVisit.volumeDepth, Is.EqualTo(SimulationResources.GrassVisitSliceCount));
-            Assert.That(resources.GrassVisit.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
+            Assert.That(resources.GrassVisit, Is.Null);
         }
 
         [Test]

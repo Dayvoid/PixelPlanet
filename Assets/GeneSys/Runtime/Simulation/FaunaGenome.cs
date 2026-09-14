@@ -13,6 +13,32 @@ namespace GeneSys.Simulation
         public const int GeneCount = 12;
         public const uint CricketId = 129;
         public const uint EggId = 130;
+        public const uint WaspId = 132;
+        public const uint WaspEggId = 133;
+
+        public const uint ArchetypeNone = 0;
+        public const uint ArchetypeCricket = 1;
+        public const uint ArchetypeWasp = 2;
+
+        public const int VitalsSlice = 0;
+        public const int MotionSlice = 1;
+        public const int GenomeSlice = 2;
+        public const int PartnerSlice = 3;
+
+        public const int CricketVitalsSlice = 0;
+        public const int CricketMotionSlice = 1;
+        public const int CricketGenomeSlice = 2;
+        public const int CricketPartnerSlice = 3;
+
+        public const int WaspVitalsSlice = 4;
+        public const int WaspMotionSlice = 5;
+        public const int WaspGenomeSlice = 6;
+        public const int WaspPartnerSlice = 7;
+        public const int WaspCargoSlice = 8;
+        public const int WaspCargoSlots = 3;
+        public const int FaunaSliceCount = 11;
+        public const int SliceCount = 11;
+        public const int ClaimSliceCount = 5;
 
         public const uint StageEmpty = 0;
         public const uint StageEgg = 1;

@@ -488,14 +488,17 @@ namespace GeneSys.Validation
                 completed?.Invoke(default);
                 return;
             }
+            int vitalsSlice = waspTex.volumeDepth >= FaunaGenome.FaunaSliceCount ? FaunaGenome.WaspVitalsSlice : 0;
+            int genomeSlice = waspTex.volumeDepth >= FaunaGenome.FaunaSliceCount ? FaunaGenome.WaspGenomeSlice : 2;
+
             Action fail = () => completed?.Invoke(default);
             RequestField(materialTex, fail, materialRequest =>
             {
                 uint[] materials = materialRequest.GetData<uint>().ToArray();
-                RequestFieldSlice(waspTex, 0, fail, vitalsRequest =>
+                RequestFieldSlice(waspTex, vitalsSlice, fail, vitalsRequest =>
                 {
                     Vector4[] vitals = vitalsRequest.GetData<Vector4>().ToArray();
-                    RequestFieldSlice(waspTex, 2, fail, genomeRequest =>
+                    RequestFieldSlice(waspTex, genomeSlice, fail, genomeRequest =>
                     {
                         Vector4[] genomeBits = genomeRequest.GetData<Vector4>().ToArray();
                         var genomes = new FaunaGenome.Packed[genomeBits.Length];
@@ -510,13 +513,14 @@ namespace GeneSys.Validation
         private static void ReadCargo(RenderTexture waspTex, Action fail, uint[] materials, Vector4[] vitals,
             FaunaGenome.Packed[] genomes, Action<WaspMetrics> completed)
         {
-            RequestFieldSlice(waspTex, 4, fail, first =>
+            int cargoBase = waspTex.volumeDepth >= FaunaGenome.FaunaSliceCount ? FaunaGenome.WaspCargoSlice : 4;
+            RequestFieldSlice(waspTex, cargoBase, fail, first =>
             {
                 Vector4[] cargo0 = first.GetData<Vector4>().ToArray();
-                RequestFieldSlice(waspTex, 5, fail, second =>
+                RequestFieldSlice(waspTex, cargoBase + 1, fail, second =>
                 {
                     Vector4[] cargo1 = second.GetData<Vector4>().ToArray();
-                    RequestFieldSlice(waspTex, 6, fail, third =>
+                    RequestFieldSlice(waspTex, cargoBase + 2, fail, third =>
                     {
                         Vector4[] cargo2 = third.GetData<Vector4>().ToArray();
                         completed?.Invoke(ComputeWaspMetrics(materials, vitals, genomes, cargo0, cargo1, cargo2));
@@ -576,6 +580,9 @@ namespace GeneSys.Validation
                 completed?.Invoke(default);
                 return;
             }
+            int topoSlice = treeTex.volumeDepth >= FloraGenome.SliceCount ? FloraGenome.TopologySlice : TreeGenome.TopologySlice;
+            int genSlice = treeTex.volumeDepth >= FloraGenome.SliceCount ? FloraGenome.GenomeSlice : TreeGenome.GenomeSlice;
+
             Action fail = () => completed?.Invoke(default);
             RequestField(materialTex, fail, materialRequest =>
             {
@@ -583,10 +590,10 @@ namespace GeneSys.Validation
                 RequestFieldSlice(treeTex, TreeGenome.PhysiologySlice, fail, physRequest =>
                 {
                     Vector4[] phys = physRequest.GetData<Vector4>().ToArray();
-                    RequestFieldSlice(treeTex, TreeGenome.TopologySlice, fail, topoRequest =>
+                    RequestFieldSlice(treeTex, topoSlice, fail, topoRequest =>
                     {
                         Vector4[] topologyBits = topoRequest.GetData<Vector4>().ToArray();
-                        RequestFieldSlice(treeTex, TreeGenome.GenomeSlice, fail, genomeRequest =>
+                        RequestFieldSlice(treeTex, genSlice, fail, genomeRequest =>
                         {
                             Vector4[] genomeBits = genomeRequest.GetData<Vector4>().ToArray();
                             var topology = new TreeGenome.Packed[topologyBits.Length];

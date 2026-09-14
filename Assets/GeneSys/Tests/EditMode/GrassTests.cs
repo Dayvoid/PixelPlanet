@@ -101,10 +101,10 @@ namespace GeneSys.Tests
             Assert.That(GrassGenome.Slice(2, GrassGenome.DonorOffset), Is.EqualTo(11));
             Assert.That(GrassGenome.GrassSliceCount, Is.EqualTo(12));
             using var resources = new SimulationResources(PolarGridDefinition.Validation);
-            Assert.That(resources.GrassRead.volumeDepth, Is.EqualTo(12));
-            Assert.That(resources.PropaguleRead.volumeDepth, Is.EqualTo(3));
+            Assert.That(resources.GrassRead.volumeDepth, Is.EqualTo(FloraGenome.SliceCount));
+            Assert.That(resources.PropaguleRead.volumeDepth, Is.EqualTo(FloraGenome.PropaguleSliceCount));
             Assert.That(resources.GrassRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
-            Assert.That(resources.GrassRootFlux.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
+            Assert.That(resources.GrassRootFlux, Is.Null);
             Assert.That(resources.GrassDropClaims.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_UInt));
         }
 
@@ -134,15 +134,14 @@ namespace GeneSys.Tests
             Assert.That(GrassGenome.SlicesPerSlot, Is.EqualTo(4));
             Assert.That(GrassGenome.GeneBladeHeight, Is.EqualTo(5));
             Assert.That(GrassGenome.GeneMutation, Is.EqualTo(11));
-            ComputeShader shader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Grass.compute");
+            ComputeShader shader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Flora.compute");
             Assert.That(shader, Is.Not.Null);
-            Assert.That(shader.FindKernel("PhotosynthesisLifecycle"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("PollenTransport"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("SeedTransport"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("Germination"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("PaintGrass"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("ClaimFlowerDrop"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(shader.FindKernel("ApplyFlowerDrop"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("Photosynthesis"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("PropaguleTransport"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("PropaguleGerminate"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("PaintFlora"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("ClaimGrowth"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(shader.FindKernel("ApplyFloraWorld"), Is.GreaterThanOrEqualTo(0));
             ComputeShader hydrology = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
             Assert.That(hydrology.FindKernel("ApplyFlowerDrop"), Is.GreaterThanOrEqualTo(0));
             Assert.That(hydrology.FindKernel("DetritusExchange"), Is.GreaterThanOrEqualTo(0));

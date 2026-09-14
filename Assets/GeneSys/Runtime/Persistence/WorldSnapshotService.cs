@@ -164,7 +164,7 @@ namespace GeneSys.Persistence
                 for (int slice = 0; slice < 12; slice++)
                 {
                     int index = 16 + slice;
-                    int capture = slice;
+                    int capture = Math.Min(slice, grass.volumeDepth - 1);
                     AsyncGPUReadback.Request(grass, 0, 0, grass.width, 0, grass.height, capture, 1,
                         request => CompletePayload(index, request));
                 }
@@ -172,7 +172,7 @@ namespace GeneSys.Persistence
                 for (int slice = 0; slice < 3; slice++)
                 {
                     int index = 28 + slice;
-                    int capture = slice;
+                    int capture = Math.Min(slice, propagule.volumeDepth - 1);
                     AsyncGPUReadback.Request(propagule, 0, 0, propagule.width, 0, propagule.height, capture, 1,
                         request => CompletePayload(index, request));
                 }
@@ -184,7 +184,7 @@ namespace GeneSys.Persistence
                 for (int slice = 0; slice < SimulationResources.WaspSliceCount; slice++)
                 {
                     int index = PayloadCountV10 + slice;
-                    int capture = slice;
+                    int capture = Math.Min(slice, wasp.volumeDepth - 1);
                     AsyncGPUReadback.Request(wasp, 0, 0, wasp.width, 0, wasp.height, capture, 1,
                         request => CompletePayload(index, request));
                 }
@@ -196,7 +196,7 @@ namespace GeneSys.Persistence
                 for (int slice = 0; slice < SimulationResources.TreeSliceCount; slice++)
                 {
                     int index = PayloadCountV11 + slice;
-                    int capture = slice;
+                    int capture = Math.Min(slice, tree.volumeDepth - 1);
                     AsyncGPUReadback.Request(tree, 0, 0, tree.width, 0, tree.height, capture, 1,
                         request => CompletePayload(index, request));
                 }
@@ -475,7 +475,8 @@ namespace GeneSys.Persistence
                     Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
                     staging.LoadRawTextureData(payload);
                     staging.Apply(false, false);
-                    Graphics.CopyTexture(staging, 0, 0, host.Resources.GrassRead, slice, 0);
+                    if (slice < host.Resources.GrassRead.volumeDepth)
+                        Graphics.CopyTexture(staging, 0, 0, host.Resources.GrassRead, slice, 0);
                     UnityEngine.Object.Destroy(staging);
                 }
 
@@ -487,7 +488,8 @@ namespace GeneSys.Persistence
                     Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
                     staging.LoadRawTextureData(payload);
                     staging.Apply(false, false);
-                    Graphics.CopyTexture(staging, 0, 0, host.Resources.PropaguleRead, slice, 0);
+                    if (slice < host.Resources.PropaguleRead.volumeDepth)
+                        Graphics.CopyTexture(staging, 0, 0, host.Resources.PropaguleRead, slice, 0);
                     UnityEngine.Object.Destroy(staging);
                 }
             }
@@ -506,7 +508,8 @@ namespace GeneSys.Persistence
                     Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
                     staging.LoadRawTextureData(payload);
                     staging.Apply(false, false);
-                    Graphics.CopyTexture(staging, 0, 0, host.Resources.WaspRead, slice, 0);
+                    if (slice < host.Resources.WaspRead.volumeDepth)
+                        Graphics.CopyTexture(staging, 0, 0, host.Resources.WaspRead, slice, 0);
                     UnityEngine.Object.Destroy(staging);
                 }
             }
@@ -525,7 +528,8 @@ namespace GeneSys.Persistence
                     Texture2D staging = CreateStagingTexture(width, height, GraphicsFormat.R32G32B32A32_SFloat);
                     staging.LoadRawTextureData(payload);
                     staging.Apply(false, false);
-                    Graphics.CopyTexture(staging, 0, 0, host.Resources.TreeRead, slice, 0);
+                    if (slice < host.Resources.TreeRead.volumeDepth)
+                        Graphics.CopyTexture(staging, 0, 0, host.Resources.TreeRead, slice, 0);
                     UnityEngine.Object.Destroy(staging);
                 }
             }

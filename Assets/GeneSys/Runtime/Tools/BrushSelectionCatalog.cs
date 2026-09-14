@@ -49,7 +49,8 @@ namespace GeneSys.Tools
                 {
                     if (definition == null) continue;
                     uint id = (uint)definition.stableId;
-                    if (id == MaterialIds.Algae || id == MaterialIds.Cricket || id == MaterialIds.CricketEgg)
+                    if (id == MaterialIds.Algae || id == MaterialIds.Cricket || id == MaterialIds.CricketEgg
+                        || id == MaterialIds.Wasp || id == MaterialIds.WaspEgg)
                         choices.Add(new BrushSelection(id, FormatRegistry(definition)));
                 }
                 choices.Add(new BrushSelection(BrushSelectionIds.MycoSpores, "Myco Spores"));

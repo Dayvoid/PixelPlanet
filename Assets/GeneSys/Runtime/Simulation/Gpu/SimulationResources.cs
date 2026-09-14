@@ -10,10 +10,17 @@ namespace GeneSys.Simulation.Gpu
 {
     public sealed class SimulationResources : IDisposable
     {
-        public const int WaspSliceCount = 7;
+        public const int FloraSliceCount = 5;
+        public const int FaunaSliceCount = 11;
+        public const int FloraClaimsCount = 1;
+        public const int FaunaClaimsCount = 5;
+        public const int PropaguleSliceCount = 2;
+
+        // Backward compatibility constants:
+        public const int WaspSliceCount = 11;
         public const int WaspClaimCount = 5;
         public const int GrassVisitSliceCount = 2;
-        public const int TreeSliceCount = 3;
+        public const int TreeSliceCount = 5;
 
         public RenderTexture MaterialRead { get; private set; }
         public RenderTexture MaterialWrite { get; private set; }
@@ -38,26 +45,36 @@ namespace GeneSys.Simulation.Gpu
         public RenderTexture GenomeRead => LifeGenomeRead;
         public RenderTexture GenomeWrite => LifeGenomeWrite;
         public RenderTexture LightField { get; private set; }
+
+        // Unified Flora (depth 5: 0 physiology, 1 identity, 2 topology, 3 genome, 4 propagule):
+        public RenderTexture FloraRead { get; private set; }
+        public RenderTexture FloraWrite { get; private set; }
+        public RenderTexture FloraClaims { get; private set; }
+        public RenderTexture PropaguleRead { get; private set; }
+        public RenderTexture PropaguleWrite { get; private set; }
+
+        // Unified Fauna (depth 11: 0-3 cricket, 4-10 wasp):
         public RenderTexture FaunaRead { get; private set; }
         public RenderTexture FaunaWrite { get; private set; }
         public RenderTexture AcousticRead { get; private set; }
         public RenderTexture AcousticWrite { get; private set; }
         public RenderTexture AcousticPrev { get; private set; }
         public RenderTexture FaunaClaims { get; private set; }
-        public RenderTexture GrassRead { get; private set; }
-        public RenderTexture GrassWrite { get; private set; }
-        public RenderTexture PropaguleRead { get; private set; }
-        public RenderTexture PropaguleWrite { get; private set; }
-        public RenderTexture GrassRootFlux { get; private set; }
-        public RenderTexture GrassDropClaims { get; private set; }
-        public RenderTexture WaspRead { get; private set; }
-        public RenderTexture WaspWrite { get; private set; }
-        public RenderTexture WaspClaims { get; private set; }
-        public RenderTexture GrassVisit { get; private set; }
-        public RenderTexture TreeRead { get; private set; }
-        public RenderTexture TreeWrite { get; private set; }
-        public RenderTexture TreeGrowthClaims { get; private set; }
-        public RenderTexture PlantRootFlux => GrassRootFlux;
+
+        // Backward-compatible aliases:
+        public RenderTexture GrassRead => FloraRead;
+        public RenderTexture GrassWrite => FloraWrite;
+        public RenderTexture TreeRead => FloraRead;
+        public RenderTexture TreeWrite => FloraWrite;
+        public RenderTexture WaspRead => FaunaRead;
+        public RenderTexture WaspWrite => FaunaWrite;
+        public RenderTexture TreeGrowthClaims => FloraClaims;
+        public RenderTexture GrassDropClaims => FloraClaims;
+        public RenderTexture WaspClaims => FaunaClaims;
+        public RenderTexture GrassVisit => null;
+        public RenderTexture GrassRootFlux => null;
+        public RenderTexture PlantRootFlux => null;
+
         public ComputeBuffer WaterColumn { get; private set; }
         public ComputeBuffer WaterFaceFlux { get; private set; }
         public ComputeBuffer ClimateColumns { get; private set; }
@@ -97,25 +114,22 @@ namespace GeneSys.Simulation.Gpu
             LifeGenomeRead = CreateTextureArray("GeneSys LifeGenome A", GraphicsFormat.R32G32B32A32_SFloat, 2);
             LifeGenomeWrite = CreateTextureArray("GeneSys LifeGenome B", GraphicsFormat.R32G32B32A32_SFloat, 2);
             LightField = CreateTexture("GeneSys Light", GraphicsFormat.R32_SFloat);
-            FaunaRead = CreateTextureArray("GeneSys Fauna A", GraphicsFormat.R32G32B32A32_SFloat, 4);
-            FaunaWrite = CreateTextureArray("GeneSys Fauna B", GraphicsFormat.R32G32B32A32_SFloat, 4);
+
+            // Unified Flora:
+            FloraRead = CreateTextureArray("GeneSys Flora A", GraphicsFormat.R32G32B32A32_SFloat, FloraSliceCount);
+            FloraWrite = CreateTextureArray("GeneSys Flora B", GraphicsFormat.R32G32B32A32_SFloat, FloraSliceCount);
+            FloraClaims = CreateTexture("GeneSys Flora Claims", GraphicsFormat.R32_UInt);
+            PropaguleRead = CreateTextureArray("GeneSys Propagule A", GraphicsFormat.R32G32B32A32_SFloat, PropaguleSliceCount);
+            PropaguleWrite = CreateTextureArray("GeneSys Propagule B", GraphicsFormat.R32G32B32A32_SFloat, PropaguleSliceCount);
+
+            // Unified Fauna:
+            FaunaRead = CreateTextureArray("GeneSys Fauna A", GraphicsFormat.R32G32B32A32_SFloat, FaunaSliceCount);
+            FaunaWrite = CreateTextureArray("GeneSys Fauna B", GraphicsFormat.R32G32B32A32_SFloat, FaunaSliceCount);
             AcousticRead = CreateTexture("GeneSys Acoustic A", GraphicsFormat.R32G32_SFloat);
             AcousticWrite = CreateTexture("GeneSys Acoustic B", GraphicsFormat.R32G32_SFloat);
             AcousticPrev = CreateTexture("GeneSys Acoustic Prev", GraphicsFormat.R32G32_SFloat);
-            FaunaClaims = CreateTextureArray("GeneSys Fauna Claims", GraphicsFormat.R32_UInt, 4);
-            GrassRead = CreateTextureArray("GeneSys Grass A", GraphicsFormat.R32G32B32A32_SFloat, 12);
-            GrassWrite = CreateTextureArray("GeneSys Grass B", GraphicsFormat.R32G32B32A32_SFloat, 12);
-            PropaguleRead = CreateTextureArray("GeneSys Propagule A", GraphicsFormat.R32G32B32A32_SFloat, 3);
-            PropaguleWrite = CreateTextureArray("GeneSys Propagule B", GraphicsFormat.R32G32B32A32_SFloat, 3);
-            GrassRootFlux = CreateTexture("GeneSys Grass Root Flux", GraphicsFormat.R32G32B32A32_SFloat);
-            GrassDropClaims = CreateTexture("GeneSys Grass Drop Claims", GraphicsFormat.R32_UInt);
-            WaspRead = CreateTextureArray("GeneSys Wasp A", GraphicsFormat.R32G32B32A32_SFloat, WaspSliceCount);
-            WaspWrite = CreateTextureArray("GeneSys Wasp B", GraphicsFormat.R32G32B32A32_SFloat, WaspSliceCount);
-            WaspClaims = CreateTextureArray("GeneSys Wasp Claims", GraphicsFormat.R32_UInt, WaspClaimCount);
-            GrassVisit = CreateTextureArray("GeneSys Grass Visit", GraphicsFormat.R32G32B32A32_SFloat, GrassVisitSliceCount);
-            TreeRead = CreateTextureArray("GeneSys Tree A", GraphicsFormat.R32G32B32A32_SFloat, TreeSliceCount);
-            TreeWrite = CreateTextureArray("GeneSys Tree B", GraphicsFormat.R32G32B32A32_SFloat, TreeSliceCount);
-            TreeGrowthClaims = CreateTexture("GeneSys Tree Growth Claims", GraphicsFormat.R32_UInt);
+            FaunaClaims = CreateTextureArray("GeneSys Fauna Claims", GraphicsFormat.R32_UInt, FaunaClaimsCount);
+
             WaterColumn = CreateColumnBuffer();
             WaterFaceFlux = CreateColumnBuffer();
             ClimateColumns = CreateStructuredBuffer(ClimateGrid.ColumnBufferCount(Grid.angularResolution));
@@ -125,10 +139,9 @@ namespace GeneSys.Simulation.Gpu
             GeodynamicsStateWrite = CreateStructuredBuffer(GeodynamicsGrid.StateBufferCount());
             GeodynamicsEvents = CreateStructuredBuffer(GeodynamicsGrid.EventBufferCount());
             GeodynamicsEventCounter = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Structured);
+
+            ClearFlora();
             ClearFaunaAndAcoustic();
-            ClearGrass();
-            ClearWasp();
-            ClearTree();
             ClearWaterColumns();
             ClearClimate();
             ClearGeodynamics();
@@ -176,30 +189,18 @@ namespace GeneSys.Simulation.Gpu
             GeodynamicsStateWrite.SetData(values);
         }
 
-        public void ClearGrass()
+        public void ClearFlora()
         {
-            ClearRenderTarget(GrassRead);
-            ClearRenderTarget(GrassWrite);
+            ClearRenderTarget(FloraRead);
+            ClearRenderTarget(FloraWrite);
+            ClearRenderTarget(FloraClaims);
             ClearRenderTarget(PropaguleRead);
             ClearRenderTarget(PropaguleWrite);
-            ClearRenderTarget(GrassRootFlux);
-            ClearRenderTarget(GrassDropClaims);
         }
 
-        public void ClearWasp()
-        {
-            ClearRenderTarget(WaspRead);
-            ClearRenderTarget(WaspWrite);
-            ClearRenderTarget(WaspClaims);
-            ClearRenderTarget(GrassVisit);
-        }
-
-        public void ClearTree()
-        {
-            ClearRenderTarget(TreeRead);
-            ClearRenderTarget(TreeWrite);
-            ClearRenderTarget(TreeGrowthClaims);
-        }
+        public void ClearGrass() => ClearFlora();
+        public void ClearTree() => ClearFlora();
+        public void ClearWasp() => ClearFaunaAndAcoustic();
 
         public void ClearFaunaAndAcoustic()
         {
@@ -296,9 +297,6 @@ namespace GeneSys.Simulation.Gpu
             (EcologyRead, EcologyWrite) = (EcologyWrite, EcologyRead);
             (CombustionRead, CombustionWrite) = (CombustionWrite, CombustionRead);
             (LifeGenomeRead, LifeGenomeWrite) = (LifeGenomeWrite, LifeGenomeRead);
-            // Storm, Light, Fauna, Acoustic, Claims, Grass, Propagule, Wasp, grass visit, root flux,
-            // and hydrostatic column scratch are excluded: other kernels do not
-            // copy them through WriteCell. Geodynamics lattice buffers are also excluded.
         }
 
         public void SwapStorm()
@@ -306,29 +304,23 @@ namespace GeneSys.Simulation.Gpu
             (StormRead, StormWrite) = (StormWrite, StormRead);
         }
 
+        public void SwapFlora()
+        {
+            (FloraRead, FloraWrite) = (FloraWrite, FloraRead);
+        }
+
         public void SwapFauna()
         {
             (FaunaRead, FaunaWrite) = (FaunaWrite, FaunaRead);
         }
 
-        public void SwapWasp()
-        {
-            (WaspRead, WaspWrite) = (WaspWrite, WaspRead);
-        }
-
-        public void SwapGrass()
-        {
-            (GrassRead, GrassWrite) = (GrassWrite, GrassRead);
-        }
+        public void SwapGrass() => SwapFlora();
+        public void SwapTree() => SwapFlora();
+        public void SwapWasp() => SwapFauna();
 
         public void SwapPropagule()
         {
             (PropaguleRead, PropaguleWrite) = (PropaguleWrite, PropaguleRead);
-        }
-
-        public void SwapTree()
-        {
-            (TreeRead, TreeWrite) = (TreeWrite, TreeRead);
         }
 
         public void SwapAcoustic()
@@ -350,12 +342,10 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(CombustionRead, CombustionWrite);
             Graphics.CopyTexture(StormRead, StormWrite);
             Graphics.CopyTexture(LifeGenomeRead, LifeGenomeWrite);
+            Graphics.CopyTexture(FloraRead, FloraWrite);
             Graphics.CopyTexture(FaunaRead, FaunaWrite);
             Graphics.CopyTexture(AcousticRead, AcousticWrite);
-            Graphics.CopyTexture(GrassRead, GrassWrite);
             Graphics.CopyTexture(PropaguleRead, PropaguleWrite);
-            Graphics.CopyTexture(WaspRead, WaspWrite);
-            Graphics.CopyTexture(TreeRead, TreeWrite);
         }
 
         public void Dispose()
@@ -370,18 +360,12 @@ namespace GeneSys.Simulation.Gpu
             Release(StormRead); Release(StormWrite);
             Release(LifeGenomeRead); Release(LifeGenomeWrite);
             Release(LightField);
+            Release(FloraRead); Release(FloraWrite);
+            Release(FloraClaims);
+            Release(PropaguleRead); Release(PropaguleWrite);
             Release(FaunaRead); Release(FaunaWrite);
             Release(AcousticRead); Release(AcousticWrite); Release(AcousticPrev);
             Release(FaunaClaims);
-            Release(GrassRead); Release(GrassWrite);
-            Release(PropaguleRead); Release(PropaguleWrite);
-            Release(GrassRootFlux);
-            Release(GrassDropClaims);
-            Release(WaspRead); Release(WaspWrite);
-            Release(WaspClaims);
-            Release(GrassVisit);
-            Release(TreeRead); Release(TreeWrite);
-            Release(TreeGrowthClaims);
             WaterColumn?.Release();
             WaterFaceFlux?.Release();
             ClimateColumns?.Release();
@@ -399,18 +383,12 @@ namespace GeneSys.Simulation.Gpu
             StormRead = StormWrite = null;
             LifeGenomeRead = LifeGenomeWrite = null;
             LightField = null;
+            FloraRead = FloraWrite = null;
+            FloraClaims = null;
+            PropaguleRead = PropaguleWrite = null;
             FaunaRead = FaunaWrite = null;
             AcousticRead = AcousticWrite = AcousticPrev = null;
             FaunaClaims = null;
-            GrassRead = GrassWrite = null;
-            PropaguleRead = PropaguleWrite = null;
-            GrassRootFlux = null;
-            GrassDropClaims = null;
-            WaspRead = WaspWrite = null;
-            WaspClaims = null;
-            GrassVisit = null;
-            TreeRead = TreeWrite = null;
-            TreeGrowthClaims = null;
             WaterColumn = null;
             WaterFaceFlux = null;
             ClimateColumns = null;

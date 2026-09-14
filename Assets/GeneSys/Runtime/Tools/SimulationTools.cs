@@ -64,6 +64,7 @@ namespace GeneSys.Tools
                 {
                     if (SelectedMaterialId == BrushSelectionIds.TreeSprouts) host.QueueTreeSprout(command.center, command.radius);
                     else if (grassSeed) host.QueueGrassSeed(command.center, command.radius);
+                    else if (SelectedMaterialId == MaterialIds.Algae) host.QueueFloraPaint(command.center, command.radius, FloraGenome.ArchetypeAlgae);
                     else host.QueueBrush(command);
                 }
             }
@@ -120,7 +121,8 @@ namespace GeneSys.Tools
                 BrushMode.Pressure => new Vector4(3f, strength, 0f, 0f),
                 BrushMode.Humidity => new Vector4(6f, strength, 0f, 0f),
                 BrushMode.Ignite => new Vector4(9f, strength, 0f, 0f),
-                BrushMode.Life when selectedMaterialId == MaterialIds.Cricket || selectedMaterialId == MaterialIds.CricketEgg => Vector4.zero,
+                BrushMode.Life when selectedMaterialId == MaterialIds.Cricket || selectedMaterialId == MaterialIds.CricketEgg
+                    || selectedMaterialId == MaterialIds.Wasp || selectedMaterialId == MaterialIds.WaspEgg => Vector4.zero,
                 BrushMode.Life when selectedMaterialId == BrushSelectionIds.MycoSpores =>
                     new Vector4(7f, strength, 0f, BrushSelectionIds.MycoRandomTraitSentinel),
                 BrushMode.Life => new Vector4(14f, strength, 0f, 0f),
@@ -320,7 +322,16 @@ namespace GeneSys.Tools
             }
 
             int remaining = 3 + WaspGenome.CargoSlots;
-            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, 0, 1, request =>
+            int vitalsSlice = host.Resources.FaunaRead != null && host.Resources.FaunaRead.volumeDepth >= FaunaGenome.FaunaSliceCount
+                ? FaunaGenome.WaspVitalsSlice : 0;
+            int motionSlice = host.Resources.FaunaRead != null && host.Resources.FaunaRead.volumeDepth >= FaunaGenome.FaunaSliceCount
+                ? FaunaGenome.WaspMotionSlice : 1;
+            int genomeSlice = host.Resources.FaunaRead != null && host.Resources.FaunaRead.volumeDepth >= FaunaGenome.FaunaSliceCount
+                ? FaunaGenome.WaspGenomeSlice : 2;
+            int cargoBaseSlice = host.Resources.FaunaRead != null && host.Resources.FaunaRead.volumeDepth >= FaunaGenome.FaunaSliceCount
+                ? FaunaGenome.WaspCargoSlice : WaspGenome.CargoSlice;
+
+            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, vitalsSlice, 1, request =>
             {
                 if (!request.hasError)
                 {
@@ -329,7 +340,7 @@ namespace GeneSys.Tools
                 }
                 CompleteWasp();
             });
-            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, 1, 1, request =>
+            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, motionSlice, 1, request =>
             {
                 if (!request.hasError)
                 {
@@ -338,7 +349,7 @@ namespace GeneSys.Tools
                 }
                 CompleteWasp();
             });
-            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, 2, 1, request =>
+            AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, genomeSlice, 1, request =>
             {
                 if (!request.hasError)
                 {
@@ -351,7 +362,7 @@ namespace GeneSys.Tools
             for (int slot = 0; slot < WaspGenome.CargoSlots; slot++)
             {
                 int capture = slot;
-                int slice = WaspGenome.CargoSlice + capture;
+                int slice = cargoBaseSlice + capture;
                 AsyncGPUReadback.Request(host.Resources.WaspRead, 0, cell.x, 1, cell.y, 1, slice, 1, request =>
                 {
                     if (!request.hasError)
@@ -379,8 +390,13 @@ namespace GeneSys.Tools
                 return;
             }
 
+            int topoSlice = host.Resources.FloraRead != null && host.Resources.FloraRead.volumeDepth >= FloraGenome.SliceCount
+                ? FloraGenome.TopologySlice : TreeGenome.TopologySlice;
+            int genSlice = host.Resources.FloraRead != null && host.Resources.FloraRead.volumeDepth >= FloraGenome.SliceCount
+                ? FloraGenome.GenomeSlice : TreeGenome.GenomeSlice;
+
             int remaining = 3;
-            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, TreeGenome.PhysiologySlice, 1, request =>
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, FloraGenome.PhysiologySlice, 1, request =>
             {
                 if (!request.hasError)
                 {
@@ -389,7 +405,7 @@ namespace GeneSys.Tools
                 }
                 CompleteTree();
             });
-            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, TreeGenome.TopologySlice, 1, request =>
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, topoSlice, 1, request =>
             {
                 if (!request.hasError)
                 {
@@ -398,7 +414,7 @@ namespace GeneSys.Tools
                 }
                 CompleteTree();
             });
-            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, TreeGenome.GenomeSlice, 1, request =>
+            AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, genSlice, 1, request =>
             {
                 if (!request.hasError)
                 {

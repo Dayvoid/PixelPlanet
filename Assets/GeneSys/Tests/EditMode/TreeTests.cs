@@ -123,26 +123,22 @@ namespace GeneSys.Tests
         public void ResourcesAndKernelsMatchSidecarLayout()
         {
             using var resources = new SimulationResources(PolarGridDefinition.Validation);
-            Assert.That(resources.TreeRead.volumeDepth, Is.EqualTo(TreeGenome.SliceCount));
+            Assert.That(resources.TreeRead.volumeDepth, Is.EqualTo(FloraGenome.SliceCount));
             Assert.That(resources.TreeWrite.volumeDepth, Is.EqualTo(SimulationResources.TreeSliceCount));
             Assert.That(resources.TreeRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.TreeGrowthClaims.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_UInt));
             Assert.That(resources.PlantRootFlux, Is.SameAs(resources.GrassRootFlux));
 
-            ComputeShader tree = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Tree.compute");
-            Assert.That(tree, Is.Not.Null);
-            Assert.That(tree.FindKernel("Physiology"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(tree.FindKernel("ClearGrowthClaims"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(tree.FindKernel("ClaimGrowth"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(tree.FindKernel("ApplyWorld"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(tree.FindKernel("ApplyState"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(tree.FindKernel("SeedTree"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(tree.FindKernel("PaintTree"), Is.GreaterThanOrEqualTo(0));
-
-            ComputeShader plants = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/PlantResources.compute");
-            Assert.That(plants, Is.Not.Null);
-            Assert.That(plants.FindKernel("RootDemand"), Is.GreaterThanOrEqualTo(0));
-            Assert.That(plants.FindKernel("SoilDebit"), Is.GreaterThanOrEqualTo(0));
+            ComputeShader flora = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Flora.compute");
+            Assert.That(flora, Is.Not.Null);
+            Assert.That(flora.FindKernel("RootUptake"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.FindKernel("Photosynthesis"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.FindKernel("ClearFloraClaims"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.FindKernel("ClaimGrowth"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.FindKernel("ApplyFloraWorld"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.FindKernel("ApplyFloraState"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.FindKernel("SeedFlora"), Is.GreaterThanOrEqualTo(0));
+            Assert.That(flora.FindKernel("PaintFlora"), Is.GreaterThanOrEqualTo(0));
         }
 
         [Test]
@@ -156,8 +152,8 @@ namespace GeneSys.Tests
             string motion = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");
             Assert.That(motion.Contains("IsTreeMaterial(c.material)"));
             string builder = File.ReadAllText("Assets/GeneSys/Editor/GeneSysProjectBuilder.cs");
-            Assert.That(builder.Contains("PlantResources.compute"));
-            Assert.That(builder.Contains("Tree.compute"));
+            Assert.That(builder.Contains("Flora.compute"));
+            Assert.That(builder.Contains("Fauna.compute"));
             Assert.That(builder.Contains("Define(134, \"Leaf\""));
             Assert.That(builder.Contains("Define(135, \"Wood\""));
             string display = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");

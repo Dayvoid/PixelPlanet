@@ -11,6 +11,7 @@
 #define GENESYS_DISABLE_ORGANISM_HISTORY_UAV
 #include "../../Shaders/Simulation/Common/OrganismHistory.hlsl"
 
+// Core Cellular Grid Textures:
 Texture2D<uint> _MaterialRead;
 RWTexture2D<uint> _MaterialWrite;
 Texture2D<float4> _StateRead;
@@ -27,11 +28,21 @@ Texture2D<float4> _CombustionRead;
 RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
+
+// Unified Organism State Textures:
+// _FaunaRead/Write has 11 slices: 0-3 Cricket (vitals, motion, genome, partner), 4-10 Wasp (vitals, motion, genome, partner, cargo0, 1, 2)
 Texture2DArray<float4> _FaunaRead;
 RWTexture2DArray<float4> _FaunaWrite;
+
+// Unified Flora read for herbivory and nectar foraging (5 slices: physiology, identity, topology, genome, propagule)
+Texture2DArray<float4> _FloraRead;
+
+// Acoustic Wave Field:
 Texture2D<float2> _AcousticRead;
 Texture2D<float2> _AcousticPrev;
 RWTexture2D<float2> _AcousticWrite;
+
+// Action Claims: 5 slices: 0 Move, 1 Feed/Prey, 2 Mate, 3 Egg, 4 Flower
 Texture2DArray<uint> _FaunaClaims;
 RWTexture2DArray<uint> _FaunaClaimsWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
@@ -43,6 +54,8 @@ float _DeltaTime;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _Mechanics;
+
+// Cricket Parameters:
 float4 _FaunaA; // initialCalories, initialHydration, maturityTicks, decisionInterval
 float4 _FaunaB; // maintenance, hydrationDrain, calorieCapacity, fullThreshold
 float4 _FaunaC; // hungerThreshold, reproductionCalorie, hopImpulse, hopCost
@@ -55,6 +68,22 @@ float4 _FaunaI; // hatchMin, hatchMax, eggDesiccationMoisture, eggHeatDeath
 float4 _FaunaJ; // eggDisplacement, wanderRate, survivalTempMin, survivalTempMax
 float4 _FaunaK; // seedAtWorldgen, unused, unused, unused
 
+// Wasp Parameters:
+float4 _WaspA; // initialCalories, initialHydration, maturityTicks, decisionInterval
+float4 _WaspB; // maintenanceRate, flightDrain, hydrationDrain, calorieCapacity
+float4 _WaspC; // fullThreshold, hungerThreshold, starvationThreshold, reproductionCalorieThreshold
+float4 _WaspD; // cruiseAltitude, altitudeGain, liftPower, surfaceScanRange
+float4 _WaspE; // bodyMass, drag, windCoupling, updraftCoupling
+float4 _WaspF; // swoopImpulse, senseRadius, preyCalorieConversion, preyHydrationTransfer
+float4 _WaspG; // nectarDraw, nectarCalories, nectarHydration, pollenCapacity
+float4 _WaspH; // geneExpressionRange, baseMutationRate, mateCooldown, reproduceCooldown
+float4 _WaspI; // clutchMin, clutchMax, hatchMin, hatchMax
+float4 _WaspJ; // eggDesiccationMoisture, eggHeatDeath, survivalTempMin, survivalTempMax
+float4 _WaspK; // threatTemperature, seedAtWorldgen, unused, unused
+
+// -------------------------------------------------------------------------
+// Helper Accessors
+// -------------------------------------------------------------------------
 int2 C(int2 value) { return ClampCell(value, _GridSize); }
 uint M(int2 value) { return _MaterialRead.Load(int3(C(value), 0)); }
 float4 S(int2 value) { return _StateRead.Load(int3(C(value), 0)); }
@@ -64,10 +93,20 @@ float4 Eco(int2 value) { return _EcologyRead.Load(int3(C(value), 0)); }
 float4 Comb(int2 value) { return _CombustionRead.Load(int3(C(value), 0)); }
 float4 L(int2 value) { return SampleLife(_LifeGenomeRead, C(value)); }
 uint4 G(int2 value) { return SampleGenome(_LifeGenomeRead, C(value)); }
-float4 VitalsOf(int2 value) { return SampleFaunaVitals(_FaunaRead, C(value)); }
-float4 MotionOf(int2 value) { return SampleFaunaMotion(_FaunaRead, C(value)); }
-uint4 FaunaG(int2 value) { return SampleFaunaGenome(_FaunaRead, C(value)); }
-uint4 PartnerOf(int2 value) { return SampleFaunaPartner(_FaunaRead, C(value)); }
+
+// Cricket reads:
+float4 CricketVitalsOf(int2 value) { return SampleFaunaVitals(_FaunaRead, C(value)); }
+float4 CricketMotionOf(int2 value) { return SampleFaunaMotion(_FaunaRead, C(value)); }
+uint4 CricketGenomeOf(int2 value) { return SampleFaunaGenome(_FaunaRead, C(value)); }
+uint4 CricketPartnerOf(int2 value) { return SampleFaunaPartner(_FaunaRead, C(value)); }
+
+// Wasp reads:
+float4 WaspVitalsOf(int2 value) { return SampleWaspVitals(_FaunaRead, C(value)); }
+float4 WaspMotionOf(int2 value) { return SampleWaspMotion(_FaunaRead, C(value)); }
+uint4 WaspGenomeOf(int2 value) { return SampleWaspGenome(_FaunaRead, C(value)); }
+uint4 WaspPartnerOf(int2 value) { return SampleWaspPartner(_FaunaRead, C(value)); }
+uint4 WaspCargoOf(int2 value, uint slot) { return SampleWaspCargo(_FaunaRead, C(value), slot); }
+
 float2 AcousticOf(int2 value) { return _AcousticRead.Load(int3(C(value), 0)); }
 float2 AcousticPrevOf(int2 value) { return _AcousticPrev.Load(int3(C(value), 0)); }
 MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255u)]; }
@@ -75,6 +114,14 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 uint ClaimAt(int2 cell, uint slice)
 {
     return _FaunaClaims.Load(int4(C(cell), (int)slice, 0));
+}
+
+void Claim(int2 dest, uint slice, int2 source)
+{
+    dest = C(dest);
+    uint packed = PackFaunaCell(source, _GridSize);
+    uint original;
+    InterlockedMin(_FaunaClaimsWrite[uint3((uint2)dest, slice)], packed, original);
 }
 
 void WriteWorld(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion, float4 life, uint4 genome)
@@ -110,6 +157,28 @@ bool CanOccupy(int2 cell)
     return IsFaunaOpenHabitat(material) && HasLandingSupport(cell);
 }
 
+bool WaspCanOccupy(int2 cell)
+{
+    return IsFaunaOpenHabitat(M(cell));
+}
+
+bool WaspEggCanOccupy(int2 cell)
+{
+    return IsFaunaOpenHabitat(M(cell)) && HasLandingSupport(cell);
+}
+
+float SurfaceDistance(int2 cell)
+{
+    int maxScan = clamp((int)round(_WaspD.w), 1, 24);
+    [loop]
+    for (int i = 1; i <= maxScan; i++)
+    {
+        int y = cell.y - i;
+        if (y < 0) return (float)i;
+        if (IsFaunaSupport(M(int2(cell.x, y)))) return (float)i;
+    }
+    return (float)(maxScan + 1);
+}
 
 float WetnessAt(int2 cell)
 {
@@ -128,6 +197,9 @@ float SupportFactor(int2 cell)
     return saturate(0.35 + rigidity * max(0.0, _FaunaE.y) - wet * max(0.0, _FaunaE.z));
 }
 
+// -------------------------------------------------------------------------
+// Cricket Specific Kinematics & Biology
+// -------------------------------------------------------------------------
 float EffectiveMass(uint4 genome, float4 vitals)
 {
     float range = _FaunaE.w;
@@ -156,9 +228,17 @@ int ClutchSizeOf(uint4 genome)
 
 float NutrientCue(int2 cell)
 {
-    return saturate(L(cell).w) * 1.4 + saturate(L(cell).y) * 1.1 + saturate(A(cell).z) * 0.35
-        + (IsFloraMaterial(M(cell)) ? 2.0 : 0.0)
-        + (IsLeafMaterial(M(cell)) ? 2.2 : 0.0);
+    uint mat = M(cell);
+    float cue = saturate(A(cell).z) * 0.35;
+    if (mat == FLORA_ALGAE_ID || IsFloraMaterial(mat)) cue += 2.0;
+    if (IsLeafMaterial(mat)) cue += 2.2;
+    if (IsGrassSoilAnchor(mat))
+    {
+        uint4 identity = SampleFloraIdentity(_FloraRead, cell);
+        if (identity.x == FLORA_ARCHETYPE_GRASS && identity.y != FLORA_STAGE_EMPTY && identity.y != FLORA_STAGE_DEAD)
+            cue += 1.8;
+    }
+    return cue;
 }
 
 float2 SenseGradient(int2 cell, uint mode, uint4 genome)
@@ -191,7 +271,7 @@ float2 SenseGradient(int2 cell, uint mode, uint4 genome)
     return grad * sense * hearing;
 }
 
-float2 ThreatDir(int2 cell, uint4 genome)
+float2 CricketThreatDir(int2 cell, uint4 genome)
 {
     float threatTemp = max(20.0, _FaunaF.w);
     float2 dir = 0.0;
@@ -203,12 +283,14 @@ float2 ThreatDir(int2 cell, uint4 genome)
         float heat = S(neighbor).x;
         float flame = Comb(neighbor).y;
         float danger = max(0.0, heat - threatTemp) * 0.02 + flame;
+        // Wasps are also perceived as danger:
+        if (IsWaspMaterial(M(neighbor))) danger += 0.5;
         dir -= float2(offsets[i]) * danger;
     }
     return dir * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_THREAT_RESPONSE), _FaunaE.w);
 }
 
-int2 NeighborAlgae(int2 cell)
+int2 NeighborFlora(int2 cell)
 {
     int2 best = cell;
     float bestScore = -1.0;
@@ -218,8 +300,227 @@ int2 NeighborAlgae(int2 cell)
     {
         int2 neighbor = C(cell + offsets[i]);
         uint mat = M(neighbor);
-        if (!IsFloraMaterial(mat) && !IsLeafMaterial(mat)) continue;
-        float score = (IsLeafMaterial(mat) ? 0.85 : saturate(L(neighbor).y)) + 0.05 * CellHash(neighbor, 19u);
+        float score = 0.0;
+        if (mat == FLORA_ALGAE_ID || IsFloraMaterial(mat))
+        {
+            float4 phys = SampleFloraPhysiology(_FloraRead, neighbor);
+            score = 0.5 + saturate(phys.x) * 0.5;
+        }
+        else if (IsLeafMaterial(mat))
+        {
+            score = 0.85;
+        }
+        else if (IsGrassSoilAnchor(mat))
+        {
+            uint4 identity = SampleFloraIdentity(_FloraRead, neighbor);
+            if (identity.x == FLORA_ARCHETYPE_GRASS && identity.y != FLORA_STAGE_EMPTY && identity.y != FLORA_STAGE_DEAD)
+            {
+                float4 phys = SampleFloraPhysiology(_FloraRead, neighbor);
+                score = 0.6 + saturate(phys.x) * 0.4;
+            }
+        }
+        if (score > 0.0)
+        {
+            score += 0.05 * CellHash(neighbor, 19u);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = neighbor;
+            }
+        }
+    }
+    return best;
+}
+
+int2 AdjacentEligibleAdultCricket(int2 cell)
+{
+    int2 n0 = C(cell + int2(-1, 0));
+    if (IsCricketMaterial(M(n0)) && FaunaStage(CricketGenomeOf(n0)) == FAUNA_STAGE_ADULT && CricketVitalsOf(n0).w <= 0.5)
+        return n0;
+    int2 n1 = C(cell + int2(1, 0));
+    if (IsCricketMaterial(M(n1)) && FaunaStage(CricketGenomeOf(n1)) == FAUNA_STAGE_ADULT && CricketVitalsOf(n1).w <= 0.5)
+        return n1;
+    int2 n2 = C(cell + int2(-2, 0));
+    if (IsCricketMaterial(M(n2)) && FaunaStage(CricketGenomeOf(n2)) == FAUNA_STAGE_ADULT && CricketVitalsOf(n2).w <= 0.5)
+        return n2;
+    int2 n3 = C(cell + int2(2, 0));
+    if (IsCricketMaterial(M(n3)) && FaunaStage(CricketGenomeOf(n3)) == FAUNA_STAGE_ADULT && CricketVitalsOf(n3).w <= 0.5)
+        return n3;
+    return cell;
+}
+
+bool CricketEggReadyToHatch(uint4 genome, float4 vitals)
+{
+    if (FaunaStage(genome) != FAUNA_STAGE_EGG) return false;
+    float hatchAt = max(1.0, vitals.w);
+    return vitals.z >= hatchAt;
+}
+
+// -------------------------------------------------------------------------
+// Wasp Specific Kinematics & Biology
+// -------------------------------------------------------------------------
+float WaspMass(uint4 genome, float4 vitals)
+{
+    float range = _WaspH.x;
+    float body = max(0.05, _WaspE.x) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_BODY_MASS), range);
+    return max(0.08, body + saturate(vitals.x) * 0.15);
+}
+
+float WaspCalorieCap(uint4 genome)
+{
+    return saturate(max(0.05, _WaspB.w) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_CALORIE_CAPACITY), _WaspH.x));
+}
+
+float CruiseAltitudeOf(uint4 genome)
+{
+    float target = max(1.0, _WaspD.x) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_CRUISE_ALTITUDE), _WaspH.x);
+    return clamp(target, 1.0, max(1.0, _WaspD.w));
+}
+
+int WaspClutchSizeOf(uint4 genome)
+{
+    int lo = clamp((int)round(_WaspI.x), 1, 8);
+    int hi = max(lo, clamp((int)round(_WaspI.y), 1, 8));
+    float range = _WaspH.x;
+    float factor = WaspExpressFactor(DecodeGene(genome, WASP_GENE_FERTILITY), range);
+    float span = max(1e-4, 2.0 * max(0.05, range));
+    float t = saturate((factor - (1.0 - range)) / span);
+    return clamp(lo + (int)round(t * (float)(hi - lo)), lo, hi);
+}
+
+bool IsPreyMaterial(uint material, bool starving)
+{
+    if (IsCricketMaterial(material)) return true;
+    return starving && IsWaspMaterial(material);
+}
+
+bool WinsCannibalDuel(int2 self, int2 other)
+{
+    float mine = WaspVitalsOf(self).x;
+    float theirs = WaspVitalsOf(other).x;
+    if (abs(mine - theirs) > 1e-5) return mine > theirs;
+    uint a = (uint)self.y * (uint)_GridSize.x + (uint)self.x;
+    uint b = (uint)other.y * (uint)_GridSize.x + (uint)other.x;
+    return a < b;
+}
+
+bool BestFlower(int2 cell, out float bestNectar, out uint4 bestGenome)
+{
+    bestNectar = 0.0;
+    bestGenome = uint4(0u, 0u, 0u, 0u);
+    bool found = false;
+    uint mat = M(cell);
+    if (IsGrassSoilAnchor(mat))
+    {
+        uint4 identity = SampleFloraIdentity(_FloraRead, cell);
+        if (identity.x == FLORA_ARCHETYPE_GRASS && identity.y != FLORA_STAGE_EMPTY && identity.y != FLORA_STAGE_DEAD)
+        {
+            float4 phys = SampleFloraPhysiology(_FloraRead, cell);
+            if ((identity.w & FLORA_FLAG_FLOWERING) != 0u || phys.w > 0.01)
+            {
+                bestNectar = saturate(phys.w);
+                bestGenome = SampleFloraGenome(_FloraRead, cell);
+                found = (bestNectar > 1e-4);
+            }
+        }
+    }
+    else if (IsLeafMaterial(mat))
+    {
+        float4 phys = SampleFloraPhysiology(_FloraRead, cell);
+        if (phys.w > 0.01)
+        {
+            bestNectar = saturate(phys.w);
+            bestGenome = SampleFloraGenome(_FloraRead, cell);
+            found = (bestNectar > 1e-4);
+        }
+    }
+    return found;
+}
+
+float2 WaspThreatDir(int2 cell, uint4 genome)
+{
+    float threatTemp = max(20.0, _WaspK.x);
+    float2 dir = 0.0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        float danger = max(0.0, S(neighbor).x - threatTemp) * 0.02 + Comb(neighbor).y;
+        dir -= float2(offsets[i]) * danger;
+    }
+    return dir / max(0.2, WaspExpressFactor(DecodeGene(genome, WASP_GENE_AGGRESSION), _WaspH.x));
+}
+
+void SenseTargets(int2 cell, uint4 genome, bool starving,
+    out float2 preyDir, out float preyScore, out float2 flowerDir, out float flowerScore)
+{
+    preyDir = 0.0;
+    preyScore = 0.0;
+    flowerDir = 0.0;
+    flowerScore = 0.0;
+
+    float range = _WaspH.x;
+    float senseGene = WaspExpressFactor(DecodeGene(genome, WASP_GENE_PREY_SENSE), range);
+    float hearing = WaspExpressFactor(DecodeGene(genome, WASP_GENE_HEARING), range);
+    int radius = clamp((int)round(max(1.0, _WaspF.y) * senseGene), 1, 6);
+
+    [loop]
+    for (int dy = -radius; dy <= radius; dy++)
+    {
+        [loop]
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            if (dx == 0 && dy == 0) continue;
+            int2 neighbor = C(cell + int2(dx, dy));
+            float weight = 1.0 / max(1.0, (float)(abs(dx) + abs(dy)));
+            float2 offset = float2((float)dx, (float)dy);
+            uint material = M(neighbor);
+
+            // Wasps hear crickets chirping and see their physical bodies:
+            float prey = (AcousticOf(neighbor).x + AcousticOf(neighbor).y) * hearing;
+            if (IsPreyMaterial(material, starving) && !all(neighbor == cell))
+            {
+                float4 victimVitals = IsCricketMaterial(material) ? CricketVitalsOf(neighbor) : WaspVitalsOf(neighbor);
+                prey += (1.5 + saturate(victimVitals.x)) * senseGene;
+            }
+            if (prey > 0.0)
+            {
+                preyDir += offset * prey * weight;
+                preyScore += prey * weight;
+            }
+
+            float nectar;
+            uint4 flowerGenome;
+            if (BestFlower(neighbor, nectar, flowerGenome))
+            {
+                flowerDir += offset * nectar * weight;
+                flowerScore += nectar * weight;
+            }
+        }
+    }
+}
+
+int2 AdjacentPrey(int2 cell, bool starving)
+{
+    int2 best = cell;
+    float bestScore = -1.0;
+    int2 offsets[8] =
+    {
+        int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1),
+        int2(-1, -1), int2(1, -1), int2(-1, 1), int2(1, 1)
+    };
+    [unroll]
+    for (int i = 0; i < 8; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        uint material = M(neighbor);
+        if (!IsPreyMaterial(material, starving)) continue;
+        bool cannibal = IsWaspMaterial(material);
+        if (cannibal && WaspStage(WaspGenomeOf(neighbor)) != WASP_STAGE_ADULT) continue;
+        if (cannibal && !WinsCannibalDuel(cell, neighbor)) continue;
+        float meal = cannibal ? WaspVitalsOf(neighbor).x : CricketVitalsOf(neighbor).x;
+        float score = 1.0 + saturate(meal) + 0.05 * CellHash(neighbor, 23u);
         if (score > bestScore)
         {
             bestScore = score;
@@ -229,82 +530,134 @@ int2 NeighborAlgae(int2 cell)
     return best;
 }
 
-int2 AdjacentEligibleAdult(int2 cell)
+int2 AdjacentEligibleAdultWasp(int2 cell)
 {
-    int2 n0 = C(cell + int2(-1, 0));
-    if (IsCricketMaterial(M(n0)) && FaunaStage(FaunaG(n0)) == FAUNA_STAGE_ADULT && VitalsOf(n0).w <= 0.5)
-        return n0;
-    int2 n1 = C(cell + int2(1, 0));
-    if (IsCricketMaterial(M(n1)) && FaunaStage(FaunaG(n1)) == FAUNA_STAGE_ADULT && VitalsOf(n1).w <= 0.5)
-        return n1;
-    int2 n2 = C(cell + int2(-2, 0));
-    if (IsCricketMaterial(M(n2)) && FaunaStage(FaunaG(n2)) == FAUNA_STAGE_ADULT && VitalsOf(n2).w <= 0.5)
-        return n2;
-    int2 n3 = C(cell + int2(2, 0));
-    if (IsCricketMaterial(M(n3)) && FaunaStage(FaunaG(n3)) == FAUNA_STAGE_ADULT && VitalsOf(n3).w <= 0.5)
-        return n3;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        if (IsWaspMaterial(M(neighbor)) && WaspStage(WaspGenomeOf(neighbor)) == WASP_STAGE_ADULT && WaspVitalsOf(neighbor).w <= 0.5)
+            return neighbor;
+    }
     return cell;
 }
 
-bool EggReadyToHatch(uint4 genome, float4 vitals)
+int2 AdjacentFlower(int2 cell)
 {
-    if (FaunaStage(genome) != FAUNA_STAGE_EGG) return false;
-    float hatchAt = max(1.0, vitals.w);
-    return vitals.z >= hatchAt;
+    int2 offsets[5] = { int2(0, -1), int2(-1, -1), int2(1, -1), int2(-1, 0), int2(1, 0) };
+    [unroll]
+    for (int i = 0; i < 5; i++)
+    {
+        int2 neighbor = C(cell + offsets[i]);
+        float nectar;
+        uint4 genome;
+        if (BestFlower(neighbor, nectar, genome))
+            return neighbor;
+    }
+    return cell;
 }
 
-void Claim(int2 dest, uint slice, int2 source)
+bool WaspEggReadyToHatch(uint4 genome, float4 vitals)
 {
-    dest = C(dest);
-    uint packed = PackFaunaCell(source, _GridSize);
-    uint original;
-    InterlockedMin(_FaunaClaimsWrite[uint3((uint2)dest, slice)], packed, original);
+    if (WaspStage(genome) != WASP_STAGE_EGG) return false;
+    return vitals.z >= max(1.0, vitals.w);
 }
 
+bool ReadyToLayWasp(uint4 genome, float4 vitals)
+{
+    return WaspStage(genome) == WASP_STAGE_ADULT
+        && vitals.z >= max(1.0, _WaspA.z)
+        && vitals.x >= _WaspC.w
+        && vitals.w <= 0.5;
+}
+
+// -------------------------------------------------------------------------
+// 1. SEED FAUNA
+// -------------------------------------------------------------------------
 [numthreads(8, 8, 1)]
 void SeedFauna(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
     uint material = M(cell);
-    float4 vitals = VitalsOf(cell);
-    float4 motion = MotionOf(cell);
-    uint4 genome = FaunaG(cell);
-    uint4 partner = PartnerOf(cell);
 
-    if (!IsFaunaMaterial(material))
+    if (IsCricketMaterial(material) || IsFaunaEggMaterial(material))
     {
-        ClearFaunaState(_FaunaWrite, cell);
+        float4 vitals = CricketVitalsOf(cell);
+        float4 motion = CricketMotionOf(cell);
+        uint4 genome = CricketGenomeOf(cell);
+        uint4 partner = CricketPartnerOf(cell);
+
+        uint stage = FaunaStage(genome);
+        if (stage == FAUNA_STAGE_EMPTY)
+        {
+            genome = RandomFaunaGenome((uint2)cell, _Seed, _Tick);
+            if (IsFaunaEggMaterial(material))
+            {
+                float hatchT = CellHash(cell, 41u);
+                float hatch = lerp(max(1.0, _FaunaI.x), max(_FaunaI.x, _FaunaI.y), hatchT);
+                vitals = float4(saturate(_FaunaA.x * 0.6), saturate(_FaunaA.y), 0.0, hatch);
+                motion = 0.0;
+                genome.w = PackFaunaMeta(FAUNA_STAGE_EGG, FAUNA_BEHAVIOR_IDLE, 0u, FaunaLineage(genome));
+                partner = 0;
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
+            }
+            else
+            {
+                vitals = float4(saturate(_FaunaA.x), saturate(_FaunaA.y), max(0.0, _FaunaA.z), 0.0);
+                motion = 0.0;
+                partner = 0;
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
+            }
+        }
+        WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
         return;
     }
 
-    uint stage = FaunaStage(genome);
-    if (stage == FAUNA_STAGE_EMPTY)
+    if (IsWaspMaterial(material) || IsWaspEggMaterial(material))
     {
-        if (IsFaunaEggMaterial(material))
+        float4 vitals = WaspVitalsOf(cell);
+        float4 motion = WaspMotionOf(cell);
+        uint4 genome = WaspGenomeOf(cell);
+        uint4 partner = WaspPartnerOf(cell);
+        uint4 cargo0 = WaspCargoOf(cell, 0u);
+        uint4 cargo1 = WaspCargoOf(cell, 1u);
+        uint4 cargo2 = WaspCargoOf(cell, 2u);
+
+        if (WaspStage(genome) == WASP_STAGE_EMPTY)
         {
-            genome = RandomFaunaGenome((uint2)cell, _Seed, _Tick);
-            float hatchT = CellHash(cell, 41u);
-            float hatch = lerp(max(1.0, _FaunaI.x), max(_FaunaI.x, _FaunaI.y), hatchT);
-            vitals = float4(saturate(_FaunaA.x * 0.6), saturate(_FaunaA.y), 0.0, hatch);
+            genome = RandomWaspGenome((uint2)cell, _Seed, _Tick);
+            uint4 zero = uint4(0u, 0u, 0u, 0u);
+            cargo0 = zero;
+            cargo1 = zero;
+            cargo2 = zero;
+            partner = zero;
             motion = 0.0;
-            genome.w = PackFaunaMeta(FAUNA_STAGE_EGG, FAUNA_BEHAVIOR_IDLE, 0u, FaunaLineage(genome));
-            partner = 0;
-            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
+            if (IsWaspEggMaterial(material))
+            {
+                float hatch = lerp(max(1.0, _WaspI.z), max(_WaspI.z, _WaspI.w), CellHash(cell, 61u));
+                vitals = float4(saturate(_WaspA.x * 0.4), saturate(_WaspA.y), 0.0, hatch);
+                genome.w = PackWaspMeta(WASP_STAGE_EGG, WASP_BEHAVIOR_IDLE, 0u, WaspLineage(genome));
+            }
+            else
+            {
+                vitals = float4(saturate(_WaspA.x), saturate(_WaspA.y), max(0.0, _WaspA.z), 0.0);
+                genome.w = PackWaspMeta(WASP_STAGE_ADULT, WASP_BEHAVIOR_CRUISE, 0u, WaspLineage(genome));
+            }
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, WaspLineage(genome), ORGANISM_CAUSE_PAINTED);
         }
-        else
-        {
-            genome = RandomFaunaGenome((uint2)cell, _Seed, _Tick);
-            vitals = float4(saturate(_FaunaA.x), saturate(_FaunaA.y), max(0.0, _FaunaA.z), 0.0);
-            motion = 0.0;
-            partner = 0;
-            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, 0u, FaunaLineage(genome), ORGANISM_CAUSE_PAINTED);
-        }
+        WriteWaspState(_FaunaWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+        return;
     }
 
-    WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+    ClearAllFaunaState(_FaunaWrite, cell);
 }
 
+// -------------------------------------------------------------------------
+// 2. ACOUSTIC PROPAGATE
+// Wave equation propagation for cricket chirps and wasp hearing cues.
+// -------------------------------------------------------------------------
 [numthreads(8, 8, 1)]
 void AcousticPropagate(uint3 id : SV_DispatchThreadID)
 {
@@ -313,7 +666,7 @@ void AcousticPropagate(uint3 id : SV_DispatchThreadID)
     uint material = M(cell);
     float2 u = AcousticOf(cell);
     float2 prev = AcousticPrevOf(cell);
-    bool conducts = IsFaunaOpenHabitat(material) || IsFaunaMaterial(material);
+    bool conducts = IsFaunaOpenHabitat(material) || IsAnyFaunaMaterial(material);
     if (!conducts)
     {
         _AcousticWrite[cell] = 0.0;
@@ -332,7 +685,7 @@ void AcousticPropagate(uint3 id : SV_DispatchThreadID)
             continue;
         neighbor = C(neighbor);
         uint nm = M(neighbor);
-        if (!IsFaunaOpenHabitat(nm) && !IsFaunaMaterial(nm))
+        if (!IsFaunaOpenHabitat(nm) && !IsAnyFaunaMaterial(nm))
             continue;
         float w = offsets[i].x != 0 ? TangentialEdgeWeight(cell.y, _GridSize.y) : 1.0;
         lap += (AcousticOf(neighbor) - u) * w;
@@ -342,18 +695,19 @@ void AcousticPropagate(uint3 id : SV_DispatchThreadID)
     next -= damp * u;
     next = clamp(next / (1.0 + abs(next)), -1.0, 1.0);
 
+    // Cricket acoustic broadcast:
     if (IsCricketMaterial(material))
     {
-        uint4 genome = FaunaG(cell);
+        uint4 genome = CricketGenomeOf(cell);
         uint behavior = FaunaBehavior(genome);
         uint stage = FaunaStage(genome);
-        float4 vitals = VitalsOf(cell);
+        float4 vitals = CricketVitalsOf(cell);
         if (stage == FAUNA_STAGE_ADULT || stage == FAUNA_STAGE_JUVENILE)
         {
             if (vitals.x < _FaunaC.x)
-                next.x += max(0.0, _FaunaG.z);
+                next.x += max(0.0, _FaunaG.z); // Feeding chirp
             if (behavior == FAUNA_BEHAVIOR_MATE_SEEK && stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5)
-                next.y += max(0.0, _FaunaG.w);
+                next.y += max(0.0, _FaunaG.w); // Mating song
         }
         next = clamp(next, -1.0, 1.0);
     }
@@ -361,245 +715,471 @@ void AcousticPropagate(uint3 id : SV_DispatchThreadID)
     _AcousticWrite[cell] = next;
 }
 
+// -------------------------------------------------------------------------
+// 3. FAUNA METABOLISM
+// Vitals, kinematics, and behavioral AI for Crickets and Wasps.
+// -------------------------------------------------------------------------
 [numthreads(8, 8, 1)]
 void FaunaMetabolism(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
     uint material = M(cell);
-    float4 vitals = VitalsOf(cell);
-    float4 motion = MotionOf(cell);
-    uint4 genome = FaunaG(cell);
-    uint4 partner = PartnerOf(cell);
-
-    if (!IsFaunaMaterial(material))
-    {
-        ClearFaunaState(_FaunaWrite, cell);
-        return;
-    }
-
-    uint stage = FaunaStage(genome);
-    uint behavior = FaunaBehavior(genome);
     float dt = max(1e-4, _DeltaTime);
-    float range = _FaunaE.w;
     float temp = S(cell).x;
     float flame = Comb(cell).y;
 
-    if (stage == FAUNA_STAGE_EGG)
+    // ---------------------------------------------------------------------
+    // CRICKET METABOLISM & KINEMATICS
+    // ---------------------------------------------------------------------
+    if (IsCricketMaterial(material) || IsFaunaEggMaterial(material))
     {
+        float4 vitals = CricketVitalsOf(cell);
+        float4 motion = CricketMotionOf(cell);
+        uint4 genome = CricketGenomeOf(cell);
+        uint4 partner = CricketPartnerOf(cell);
+
+        uint stage = FaunaStage(genome);
+        uint behavior = FaunaBehavior(genome);
+        float range = _FaunaE.w;
+
+        if (stage == FAUNA_STAGE_EGG)
+        {
+            float retention = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_HYDRATION_RETENTION), range);
+            float envMoist = WetnessAt(cell);
+            float exchange = (envMoist - vitals.y) * 0.15 * dt;
+            vitals.y = saturate(vitals.y + exchange * retention);
+            vitals.x = saturate(vitals.x - 0.002 * dt);
+            vitals.z += 1.0;
+            if (flame > 0.05 || temp >= _FaunaI.w)
+            {
+                genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_FIRE);
+            }
+            else if (vitals.y < _FaunaI.z)
+            {
+                genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_DESICCATION);
+            }
+            WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+            return;
+        }
+
+        if (stage != FAUNA_STAGE_JUVENILE && stage != FAUNA_STAGE_ADULT)
+        {
+            ClearFaunaState(_FaunaWrite, cell);
+            return;
+        }
+
+        float metabolic = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_METABOLISM), range);
         float retention = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_HYDRATION_RETENTION), range);
-        float envMoist = WetnessAt(cell);
-        float exchange = (envMoist - vitals.y) * 0.15 * dt;
-        vitals.y = saturate(vitals.y + exchange * retention);
-        vitals.x = saturate(vitals.x - 0.002 * dt);
+        float cap = CalorieCap(genome);
+        vitals.x = saturate(min(cap, vitals.x) - max(0.0, _FaunaB.x) * metabolic * dt);
+        vitals.y = saturate(vitals.y - max(0.0, _FaunaB.y) * dt / max(0.25, retention));
         vitals.z += 1.0;
-        if (flame > 0.05 || temp >= _FaunaI.w)
+        vitals.w = max(0.0, vitals.w - 1.0);
+
+        if (stage == FAUNA_STAGE_JUVENILE && vitals.z >= max(1.0, _FaunaA.z))
+            stage = FAUNA_STAGE_ADULT;
+
+        uint cause = ORGANISM_CAUSE_NONE;
+        if (flame > 0.08) cause = ORGANISM_CAUSE_FIRE;
+        else if (temp < _FaunaJ.z || temp > _FaunaJ.w) cause = ORGANISM_CAUSE_FIRE;
+        else if (vitals.x <= 1e-4) cause = ORGANISM_CAUSE_STARVATION;
+        else if (vitals.y <= 1e-4) cause = ORGANISM_CAUSE_DEHYDRATION;
+
+        if (cause != ORGANISM_CAUSE_NONE)
         {
             genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
-            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_FIRE);
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), cause);
+            WriteFaunaState(_FaunaWrite, cell, vitals, 0.0, genome, partner);
+            return;
         }
-        else if (vitals.y < _FaunaI.z)
+
+        if (behavior == FAUNA_BEHAVIOR_AIRBORNE)
         {
-            genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
-            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_DESICCATION);
+            float drag = max(0.0, _FaunaD.z) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_DRAG), range);
+            float wind = F(cell).x * max(0.0, _FaunaD.w) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_DRAG), range);
+            float mass = EffectiveMass(genome, vitals);
+            motion.x += (wind - motion.x * drag) * dt / mass;
+            motion.y -= max(0.0, _Mechanics.x) * dt;
+            motion.x = clamp(motion.x, -4.0, 4.0);
+            motion.y = clamp(motion.y, -4.0, 4.0);
+            genome.w = PackFaunaMeta(stage, FAUNA_BEHAVIOR_AIRBORNE, FaunaGeneration(genome), FaunaLineage(genome));
+            WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+            return;
         }
+
+        float2 threat = CricketThreatDir(cell, genome);
+        float2 food = SenseGradient(cell, 0u, genome);
+        float2 feedWave = SenseGradient(cell, 1u, genome);
+        float2 mateWave = SenseGradient(cell, 2u, genome);
+        bool hungry = vitals.x < _FaunaC.x;
+        bool full = vitals.x >= _FaunaB.w;
+        bool canMate = stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5;
+        int2 flora = NeighborFlora(cell);
+
+        if (length(threat) > 0.05)
+            behavior = FAUNA_BEHAVIOR_FLEE;
+        else if (!full && (hungry || any(abs(feedWave) > 0.02) || !all(flora == cell) || any(abs(food) > 0.02)))
+            behavior = FAUNA_BEHAVIOR_FORAGE;
+        else if (canMate && any(abs(mateWave) > 0.02))
+            behavior = FAUNA_BEHAVIOR_MATE_SEEK;
+        else if (CellHash(cell, 7u) < saturate(_FaunaJ.y) * dt * 8.0)
+            behavior = FAUNA_BEHAVIOR_WANDER;
+        else
+            behavior = FAUNA_BEHAVIOR_IDLE;
+
+        if (full && behavior == FAUNA_BEHAVIOR_FORAGE && all(flora == cell))
+            behavior = canMate && any(abs(mateWave) > 0.02) ? FAUNA_BEHAVIOR_MATE_SEEK : FAUNA_BEHAVIOR_IDLE;
+
+        float2 launchDir = 0.0;
+        if (behavior == FAUNA_BEHAVIOR_FLEE) launchDir = threat;
+        else if (behavior == FAUNA_BEHAVIOR_FORAGE) launchDir = length(feedWave) > 0.02 && !full ? feedWave : food;
+        else if (behavior == FAUNA_BEHAVIOR_MATE_SEEK) launchDir = mateWave;
+        else if (behavior == FAUNA_BEHAVIOR_WANDER)
+        {
+            float ang = CellHash(cell, 29u) * 6.2831853;
+            launchDir = float2(cos(ang), sin(ang) * 0.25);
+        }
+
+        bool decisionDue = ((uint)_Tick % (uint)max(1, (int)round(_FaunaA.w))) == 0u;
+        if (decisionDue && length(launchDir) > 1e-4 && behavior != FAUNA_BEHAVIOR_IDLE && all(flora == cell))
+        {
+            float mass = EffectiveMass(genome, vitals);
+            float strength = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_JUMP_STRENGTH), range);
+            float impulse = max(0.0, _FaunaC.z) * strength * SupportFactor(cell) / mass;
+            if (impulse > 1e-4)
+            {
+                float2 ndir = launchDir / max(length(launchDir), 1e-4);
+                motion.x = ndir.x * impulse;
+                motion.y = ndir.y * impulse * 0.35 + impulse * 0.15;
+                vitals.x = saturate(vitals.x - max(0.0, _FaunaC.w) * mass);
+                behavior = FAUNA_BEHAVIOR_AIRBORNE;
+            }
+        }
+
+        genome.w = PackFaunaMeta(stage, behavior, FaunaGeneration(genome), FaunaLineage(genome));
         WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
         return;
     }
 
-    if (stage != FAUNA_STAGE_JUVENILE && stage != FAUNA_STAGE_ADULT)
+    // ---------------------------------------------------------------------
+    // WASP METABOLISM & FLIGHT AERODYNAMICS
+    // ---------------------------------------------------------------------
+    if (IsWaspMaterial(material) || IsWaspEggMaterial(material))
     {
-        ClearFaunaState(_FaunaWrite, cell);
-        return;
-    }
+        float4 vitals = WaspVitalsOf(cell);
+        float4 motion = WaspMotionOf(cell);
+        uint4 genome = WaspGenomeOf(cell);
+        uint4 partner = WaspPartnerOf(cell);
+        uint4 cargo0 = WaspCargoOf(cell, 0u);
+        uint4 cargo1 = WaspCargoOf(cell, 1u);
+        uint4 cargo2 = WaspCargoOf(cell, 2u);
 
-    float metabolic = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_METABOLISM), range);
-    float retention = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_HYDRATION_RETENTION), range);
-    float cap = CalorieCap(genome);
-    vitals.x = saturate(min(cap, vitals.x) - max(0.0, _FaunaB.x) * metabolic * dt);
-    vitals.y = saturate(vitals.y - max(0.0, _FaunaB.y) * dt / max(0.25, retention));
-    vitals.z += 1.0;
-    vitals.w = max(0.0, vitals.w - 1.0);
+        uint stage = WaspStage(genome);
+        uint behavior = WaspBehavior(genome);
+        float range = _WaspH.x;
 
-    if (stage == FAUNA_STAGE_JUVENILE && vitals.z >= max(1.0, _FaunaA.z))
-        stage = FAUNA_STAGE_ADULT;
-
-    uint cause = ORGANISM_CAUSE_NONE;
-    if (flame > 0.08)
-        cause = ORGANISM_CAUSE_FIRE;
-    else if (temp < _FaunaJ.z || temp > _FaunaJ.w)
-        cause = ORGANISM_CAUSE_FIRE;
-    else if (vitals.x <= 1e-4)
-        cause = ORGANISM_CAUSE_STARVATION;
-    else if (vitals.y <= 1e-4)
-        cause = ORGANISM_CAUSE_DEHYDRATION;
-
-    if (cause != ORGANISM_CAUSE_NONE)
-    {
-        genome.w = PackFaunaMeta(FAUNA_STAGE_DEAD, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
-        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), cause);
-        WriteFaunaState(_FaunaWrite, cell, vitals, 0.0, genome, partner);
-        return;
-    }
-
-    if (behavior == FAUNA_BEHAVIOR_AIRBORNE)
-    {
-        float drag = max(0.0, _FaunaD.z) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_DRAG), range);
-        float wind = F(cell).x * max(0.0, _FaunaD.w) * FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_DRAG), range);
-        float mass = EffectiveMass(genome, vitals);
-        motion.x += (wind - motion.x * drag) * dt / mass;
-        motion.y -= max(0.0, _Mechanics.x) * dt;
-        motion.x = clamp(motion.x, -4.0, 4.0);
-        motion.y = clamp(motion.y, -4.0, 4.0);
-        genome.w = PackFaunaMeta(stage, FAUNA_BEHAVIOR_AIRBORNE, FaunaGeneration(genome), FaunaLineage(genome));
-        WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
-        return;
-    }
-
-    float2 threat = ThreatDir(cell, genome);
-    float2 food = SenseGradient(cell, 0u, genome);
-    float2 feedWave = SenseGradient(cell, 1u, genome);
-    float2 mateWave = SenseGradient(cell, 2u, genome);
-    bool hungry = vitals.x < _FaunaC.x;
-    bool full = vitals.x >= _FaunaB.w;
-    bool canMate = stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5;
-    int2 algae = NeighborAlgae(cell);
-
-    if (length(threat) > 0.05)
-        behavior = FAUNA_BEHAVIOR_FLEE;
-    else if (!full && (hungry || any(abs(feedWave) > 0.02) || !all(algae == cell) || any(abs(food) > 0.02)))
-        behavior = FAUNA_BEHAVIOR_FORAGE;
-    else if (canMate && any(abs(mateWave) > 0.02))
-        behavior = FAUNA_BEHAVIOR_MATE_SEEK;
-    else if (CellHash(cell, 7u) < saturate(_FaunaJ.y) * dt * 8.0)
-        behavior = FAUNA_BEHAVIOR_WANDER;
-    else
-        behavior = FAUNA_BEHAVIOR_IDLE;
-
-    if (full && behavior == FAUNA_BEHAVIOR_FORAGE && all(algae == cell))
-        behavior = canMate && any(abs(mateWave) > 0.02) ? FAUNA_BEHAVIOR_MATE_SEEK : FAUNA_BEHAVIOR_IDLE;
-
-    float2 launchDir = 0.0;
-    if (behavior == FAUNA_BEHAVIOR_FLEE)
-        launchDir = threat;
-    else if (behavior == FAUNA_BEHAVIOR_FORAGE)
-        launchDir = length(feedWave) > 0.02 && !full ? feedWave : food;
-    else if (behavior == FAUNA_BEHAVIOR_MATE_SEEK)
-        launchDir = mateWave;
-    else if (behavior == FAUNA_BEHAVIOR_WANDER)
-    {
-        float ang = CellHash(cell, 29u) * 6.2831853;
-        launchDir = float2(cos(ang), sin(ang) * 0.25);
-    }
-
-    bool decisionDue = ((uint)_Tick % (uint)max(1, (int)round(_FaunaA.w))) == 0u;
-    if (decisionDue && length(launchDir) > 1e-4 && behavior != FAUNA_BEHAVIOR_IDLE && all(algae == cell))
-    {
-        float mass = EffectiveMass(genome, vitals);
-        float strength = FaunaExpressFactor(DecodeGene(genome, FAUNA_GENE_JUMP_STRENGTH), range);
-        float impulse = max(0.0, _FaunaC.z) * strength * SupportFactor(cell) / mass;
-        if (impulse > 1e-4)
+        if (stage == WASP_STAGE_EGG)
         {
-            float2 ndir = launchDir / max(length(launchDir), 1e-4);
-            motion.x = ndir.x * impulse;
-            motion.y = ndir.y * impulse * 0.35 + impulse * 0.15;
-            vitals.x = saturate(vitals.x - max(0.0, _FaunaC.w) * mass);
-            behavior = FAUNA_BEHAVIOR_AIRBORNE;
+            float retention = WaspExpressFactor(DecodeGene(genome, WASP_GENE_HYDRATION_RETENTION), range);
+            float envMoist = saturate(max(S(cell).z, cell.y > 0 ? S(cell + int2(0, -1)).z + A(cell + int2(0, -1)).y : 0.0));
+            vitals.y = saturate(vitals.y + (envMoist - vitals.y) * 0.15 * dt * retention);
+            vitals.x = saturate(vitals.x - 0.002 * dt);
+            vitals.z += 1.0;
+            if (flame > 0.05 || temp >= _WaspJ.y)
+            {
+                genome.w = PackWaspMeta(WASP_STAGE_DEAD, WASP_BEHAVIOR_IDLE, WaspGeneration(genome), WaspLineage(genome));
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_FIRE);
+            }
+            else if (vitals.y < _WaspJ.x)
+            {
+                genome.w = PackWaspMeta(WASP_STAGE_DEAD, WASP_BEHAVIOR_IDLE, WaspGeneration(genome), WaspLineage(genome));
+                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_DESICCATION);
+            }
+            WriteWaspState(_FaunaWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+            return;
         }
+
+        if (stage != WASP_STAGE_JUVENILE && stage != WASP_STAGE_ADULT)
+        {
+            ClearWaspState(_FaunaWrite, cell);
+            return;
+        }
+
+        float metabolic = WaspExpressFactor(DecodeGene(genome, WASP_GENE_METABOLISM), range);
+        float retention = WaspExpressFactor(DecodeGene(genome, WASP_GENE_HYDRATION_RETENTION), range);
+        float mass = WaspMass(genome, vitals);
+        float gravity = max(1e-3, _Mechanics.x);
+
+        // Vertical wind offsets the lift the wasp must produce (thermals assist):
+        float assist = F(cell).y * max(0.0, _WaspE.w);
+        float effort = saturate((gravity - assist) / gravity);
+        vitals.x = saturate(min(WaspCalorieCap(genome), vitals.x)
+            - (max(0.0, _WaspB.x) * metabolic + max(0.0, _WaspB.y) * mass * effort) * dt);
+        vitals.y = saturate(vitals.y - max(0.0, _WaspB.z) * dt / max(0.25, retention));
+        vitals.z += 1.0;
+        vitals.w = max(0.0, vitals.w - 1.0);
+
+        if (stage == WASP_STAGE_JUVENILE && vitals.z >= max(1.0, _WaspA.z))
+            stage = WASP_STAGE_ADULT;
+
+        uint cause = ORGANISM_CAUSE_NONE;
+        if (flame > 0.08) cause = ORGANISM_CAUSE_FIRE;
+        else if (temp < _WaspJ.z || temp > _WaspJ.w) cause = ORGANISM_CAUSE_FIRE;
+        else if (vitals.x <= 1e-4) cause = ORGANISM_CAUSE_STARVATION;
+        else if (vitals.y <= 1e-4) cause = ORGANISM_CAUSE_DEHYDRATION;
+
+        if (cause != ORGANISM_CAUSE_NONE)
+        {
+            genome.w = PackWaspMeta(WASP_STAGE_DEAD, WASP_BEHAVIOR_IDLE, WaspGeneration(genome), WaspLineage(genome));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, WaspGeneration(genome), WaspLineage(genome), cause);
+            WriteWaspState(_FaunaWrite, cell, vitals, 0.0, genome, partner, cargo0, cargo1, cargo2);
+            return;
+        }
+
+        bool starving = vitals.x < _WaspC.z;
+        bool hungry = vitals.x < _WaspC.y;
+        bool full = vitals.x >= _WaspC.x;
+        bool thirsty = vitals.y < 0.6;
+        uint capacity = WaspPollenCapacity(_WaspG.w);
+        bool wantsPollen = WaspCargoCount(cargo0, cargo1, cargo2) < capacity;
+
+        float2 threat = WaspThreatDir(cell, genome);
+        float2 preyDir;
+        float preyScore;
+        float2 flowerDir;
+        float flowerScore;
+        SenseTargets(cell, genome, starving, preyDir, preyScore, flowerDir, flowerScore);
+
+        bool decisionDue = ((uint)_Tick % (uint)max(1, (int)round(_WaspA.w))) == 0u;
+        if (decisionDue)
+        {
+            if (length(threat) > 0.05)
+                behavior = WASP_BEHAVIOR_FLEE;
+            else if (ReadyToLayWasp(genome, vitals))
+                behavior = WASP_BEHAVIOR_SWOOP;
+            else if (!full && (hungry || preyScore > 0.05))
+                behavior = WASP_BEHAVIOR_HUNT;
+            else if ((thirsty || wantsPollen) && flowerScore > 1e-3)
+                behavior = WASP_BEHAVIOR_NECTAR;
+            else
+                behavior = WASP_BEHAVIOR_CRUISE;
+        }
+
+        // Altitude controller: hold cruise clearance, drop when swooping/laying:
+        float measured = SurfaceDistance(cell);
+        float target = behavior == WASP_BEHAVIOR_SWOOP ? 1.0 : CruiseAltitudeOf(genome);
+        float lift = max(0.0, _WaspD.z) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_FLIGHT_POWER), range) / mass;
+        float command = clamp((target - measured) * max(0.0, _WaspD.y), -2.0, 2.0);
+        motion.y += (command * lift - gravity) * dt;
+        if (behavior == WASP_BEHAVIOR_SWOOP && measured > 1.5)
+            motion.y -= max(0.0, _WaspF.x) * dt;
+
+        float drag = max(0.0, _WaspE.y) * WaspExpressFactor(DecodeGene(genome, WASP_GENE_DRAG), range);
+        float2 wind = float2(F(cell).x * max(0.0, _WaspE.z), F(cell).y * max(0.0, _WaspE.w));
+        motion.xy += (wind - motion.xy * drag) * dt / mass;
+
+        float2 steer = 0.0;
+        if (behavior == WASP_BEHAVIOR_FLEE) steer = threat;
+        else if (behavior == WASP_BEHAVIOR_HUNT) steer = preyDir;
+        else if (behavior == WASP_BEHAVIOR_NECTAR) steer = flowerDir;
+        else if (behavior == WASP_BEHAVIOR_CRUISE)
+        {
+            float angle = CellHash(cell, 29u) * 6.2831853;
+            steer = float2(cos(angle), 0.0) * abs(sin(angle));
+        }
+        if (length(steer) > 1e-4)
+        {
+            float2 direction = steer / max(length(steer), 1e-4);
+            float thrust = lift * 0.35;
+            motion.x += direction.x * thrust * dt;
+            motion.y += direction.y * thrust * dt * 0.5;
+        }
+
+        motion.xy = clamp(motion.xy, -4.0, 4.0);
+        genome.w = PackWaspMeta(stage, behavior, WaspGeneration(genome), WaspLineage(genome));
+        WriteWaspState(_FaunaWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+        return;
     }
 
-    genome.w = PackFaunaMeta(stage, behavior, FaunaGeneration(genome), FaunaLineage(genome));
-    WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+    ClearAllFaunaState(_FaunaWrite, cell);
 }
 
+// -------------------------------------------------------------------------
+// 4. CLEAR FAUNA CLAIMS
+// Clears all 5 action claim slices: Move (0), Feed/Prey (1), Mate (2), Egg (3), Flower (4).
+// -------------------------------------------------------------------------
 [numthreads(8, 8, 1)]
 void ClearFaunaClaims(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     uint2 cell = id.xy;
     [unroll]
-    for (uint slice = 0u; slice < 4u; slice++)
+    for (uint slice = 0u; slice < (uint)FAUNA_CLAIM_COUNT; slice++)
         _FaunaClaimsWrite[uint3(cell, slice)] = FAUNA_CLAIM_EMPTY;
 }
 
+// -------------------------------------------------------------------------
+// 5. CLAIM FAUNA ACTIONS
+// Crickets and Wasps claim destinations, feeding targets, mating partners, and eggs.
+// -------------------------------------------------------------------------
 [numthreads(8, 8, 1)]
 void ClaimFaunaActions(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
     uint material = M(cell);
-    uint4 genome = FaunaG(cell);
-    uint stage = FaunaStage(genome);
-    uint behavior = FaunaBehavior(genome);
-    float4 vitals = VitalsOf(cell);
-    float4 motion = MotionOf(cell);
 
-    if (IsFaunaEggMaterial(material) && stage == FAUNA_STAGE_EGG)
+    // ---------------------------------------------------------------------
+    // CRICKET CLAIMS
+    // ---------------------------------------------------------------------
+    if (IsCricketMaterial(material) || IsFaunaEggMaterial(material))
     {
-        float wind = abs(F(cell).x) + abs(F(cell).y) * 0.35;
-        if (wind * max(0.0, _FaunaJ.x) * _DeltaTime > 0.08)
+        uint4 genome = CricketGenomeOf(cell);
+        uint stage = FaunaStage(genome);
+        uint behavior = FaunaBehavior(genome);
+        float4 vitals = CricketVitalsOf(cell);
+        float4 motion = CricketMotionOf(cell);
+
+        if (IsFaunaEggMaterial(material) && stage == FAUNA_STAGE_EGG)
         {
-            int dir = F(cell).x >= 0.0 ? 1 : -1;
-            int2 dest = C(cell + int2(dir, 0));
-            if (CanOccupy(dest))
-                Claim(dest, FAUNA_CLAIM_MOVE, cell);
+            float wind = abs(F(cell).x) + abs(F(cell).y) * 0.35;
+            if (wind * max(0.0, _FaunaJ.x) * _DeltaTime > 0.08)
+            {
+                int dir = F(cell).x >= 0.0 ? 1 : -1;
+                int2 dest = C(cell + int2(dir, 0));
+                if (CanOccupy(dest))
+                    Claim(dest, FAUNA_CLAIM_MOVE, cell);
+            }
+            return;
+        }
+
+        if (!IsCricketMaterial(material) || (stage != FAUNA_STAGE_JUVENILE && stage != FAUNA_STAGE_ADULT))
+            return;
+
+        int2 flora = NeighborFlora(cell);
+        if (behavior == FAUNA_BEHAVIOR_FORAGE && !all(flora == cell) && vitals.x < _FaunaB.w)
+            Claim(flora, FAUNA_CLAIM_FEED, cell);
+
+        if (stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5)
+        {
+            int2 mate = AdjacentEligibleAdultCricket(cell);
+            if (!all(mate == cell))
+                Claim(mate, FAUNA_CLAIM_MATE, cell);
+        }
+
+        bool canLay = stage == FAUNA_STAGE_ADULT && vitals.z >= max(1.0, _FaunaA.z)
+            && vitals.x >= _FaunaC.y && vitals.w <= 0.5;
+        if (canLay)
+        {
+            int clutch = ClutchSizeOf(genome);
+            int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+            int laid = 0;
+            [unroll]
+            for (int i = 0; i < 4; i++)
+            {
+                if (laid >= clutch) break;
+                int2 dest = C(cell + offsets[i]);
+                if (!CanOccupy(dest)) continue;
+                Claim(dest, FAUNA_CLAIM_EGG, cell);
+                laid++;
+            }
+        }
+
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        if (behavior == FAUNA_BEHAVIOR_AIRBORNE && any(step != int2(0, 0)))
+        {
+            int2 dest = C(cell + step);
+            if (CanOccupy(dest) || (step.y < 0 && IsFaunaSupport(M(dest))))
+            {
+                if (!IsFaunaOpenHabitat(M(dest)) && step.y < 0) dest = cell;
+                else Claim(dest, FAUNA_CLAIM_MOVE, cell);
+            }
+            else if (CanOccupy(C(cell + int2(step.x, 0))))
+                Claim(C(cell + int2(step.x, 0)), FAUNA_CLAIM_MOVE, cell);
         }
         return;
     }
 
-    if (!IsCricketMaterial(material) || (stage != FAUNA_STAGE_JUVENILE && stage != FAUNA_STAGE_ADULT))
-        return;
-
-    int2 algae = NeighborAlgae(cell);
-    if (behavior == FAUNA_BEHAVIOR_FORAGE && !all(algae == cell) && vitals.x < _FaunaB.w)
-        Claim(algae, FAUNA_CLAIM_FEED, cell);
-
-    if (stage == FAUNA_STAGE_ADULT && vitals.w <= 0.5)
+    // ---------------------------------------------------------------------
+    // WASP CLAIMS
+    // ---------------------------------------------------------------------
+    if (IsWaspMaterial(material))
     {
-        int2 mate = AdjacentEligibleAdult(cell);
-        if (!all(mate == cell))
-            Claim(mate, FAUNA_CLAIM_MATE, cell);
-    }
+        uint4 genome = WaspGenomeOf(cell);
+        uint stage = WaspStage(genome);
+        if (stage != WASP_STAGE_JUVENILE && stage != WASP_STAGE_ADULT) return;
 
-    bool canLay = stage == FAUNA_STAGE_ADULT && vitals.z >= max(1.0, _FaunaA.z)
-        && vitals.x >= _FaunaC.y && vitals.w <= 0.5;
-    if (canLay)
-    {
-        int clutch = ClutchSizeOf(genome);
-        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
-        int laid = 0;
-        [unroll]
-        for (int i = 0; i < 4; i++)
+        uint behavior = WaspBehavior(genome);
+        float4 vitals = WaspVitalsOf(cell);
+        float4 motion = WaspMotionOf(cell);
+        bool starving = vitals.x < _WaspC.z;
+
+        if (behavior == WASP_BEHAVIOR_HUNT || starving)
         {
-            if (laid >= clutch) break;
-            int2 dest = C(cell + offsets[i]);
-            if (!CanOccupy(dest)) continue;
-            Claim(dest, FAUNA_CLAIM_EGG, cell);
-            laid++;
+            int2 prey = AdjacentPrey(cell, starving);
+            if (!all(prey == cell) && vitals.x < _WaspC.x)
+                Claim(prey, FAUNA_CLAIM_FEED, cell); // Slices 1 unifies cricket feed & wasp prey
         }
-    }
 
-    float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
-    int2 step = int2(0, 0);
-    if (abs(nextFrac.x) >= 0.5)
-        step.x = nextFrac.x > 0.0 ? 1 : -1;
-    else if (abs(nextFrac.y) >= 0.5)
-        step.y = nextFrac.y > 0.0 ? 1 : -1;
-    if (behavior == FAUNA_BEHAVIOR_AIRBORNE && any(step != int2(0, 0)))
-    {
-        int2 dest = C(cell + step);
-        if (CanOccupy(dest) || (step.y < 0 && IsFaunaSupport(M(dest))))
+        uint capacity = WaspPollenCapacity(_WaspG.w);
+        bool wantsFlower = behavior == WASP_BEHAVIOR_NECTAR
+            || vitals.y < 0.6
+            || WaspCargoCount(WaspCargoOf(cell, 0u), WaspCargoOf(cell, 1u), WaspCargoOf(cell, 2u)) < capacity;
+        if (wantsFlower)
         {
-            if (!IsFaunaOpenHabitat(M(dest)) && step.y < 0)
-                dest = cell;
-            else
+            int2 flower = AdjacentFlower(cell);
+            if (!all(flower == cell))
+                Claim(flower, FAUNA_CLAIM_FLOWER, cell);
+        }
+
+        if (stage == WASP_STAGE_ADULT && vitals.w <= 0.5)
+        {
+            int2 mate = AdjacentEligibleAdultWasp(cell);
+            if (!all(mate == cell))
+                Claim(mate, FAUNA_CLAIM_MATE, cell);
+        }
+
+        if (ReadyToLayWasp(genome, vitals) && SurfaceDistance(cell) <= 1.5)
+        {
+            int clutch = WaspClutchSizeOf(genome);
+            int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+            int laid = 0;
+            [unroll]
+            for (int i = 0; i < 4; i++)
+            {
+                if (laid >= clutch) break;
+                int2 dest = C(cell + offsets[i]);
+                if (!WaspEggCanOccupy(dest)) continue;
+                Claim(dest, FAUNA_CLAIM_EGG, cell);
+                laid++;
+            }
+        }
+
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        if (any(step != int2(0, 0)))
+        {
+            int2 dest = C(cell + step);
+            if (WaspCanOccupy(dest))
                 Claim(dest, FAUNA_CLAIM_MOVE, cell);
+            else if (WaspCanOccupy(C(cell + int2(step.x, 0))))
+                Claim(C(cell + int2(step.x, 0)), FAUNA_CLAIM_MOVE, cell);
         }
-        else if (CanOccupy(C(cell + int2(step.x, 0))))
-            Claim(C(cell + int2(step.x, 0)), FAUNA_CLAIM_MOVE, cell);
     }
 }
 
+// -------------------------------------------------------------------------
+// 6. APPLY FAUNA WORLD
+// Material transitions, herbivory consumption, wasp predation, movement, and egg laying.
+// -------------------------------------------------------------------------
 [numthreads(8, 8, 1)]
 void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
 {
@@ -613,37 +1193,62 @@ void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
     float4 combustion = Comb(cell);
     float4 life = L(cell);
     uint4 genome = G(cell);
-    uint4 faunaGenome = FaunaG(cell);
     uint packedSelf = PackFaunaCell(cell, _GridSize);
 
+    // 1. FEED / PREY CLAIM RESOLUTION:
     uint feedWinner = ClaimAt(cell, FAUNA_CLAIM_FEED);
-    if (feedWinner != FAUNA_CLAIM_EMPTY && (IsFloraMaterial(material) || IsLeafMaterial(material)))
+    bool consumed = false;
+    if (feedWinner != FAUNA_CLAIM_EMPTY)
     {
-        if (IsFloraMaterial(material))
-            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FloraGeneration(genome), FloraLineage(genome), ORGANISM_CAUSE_CONSUMED);
-        else
+        // Case A: Flora herbivory (by cricket):
+        if (IsFloraMaterial(material) || IsLeafMaterial(material) || material == FLORA_ALGAE_ID)
+        {
             LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, 0u, 0u, ORGANISM_CAUSE_CONSUMED);
-        float taken = min(max(0.0, state.z), saturate(state.z + life.y * 0.25));
-        state.z = max(0.0, state.z - taken);
-        material = 1u;
-        life = float4(0.0, 0.0, 0.0, life.w * 0.15);
-        genome = uint4(0u, 0u, 0u, PackFloraMeta(FLORA_STAGE_DEAD, 0u, 0u, 0u));
-        aux.z += 0.04;
+            float taken = min(max(0.0, state.z), saturate(state.z + life.y * 0.25));
+            state.z = max(0.0, state.z - taken);
+            material = 1u; // Vacated to air
+            life = float4(0.0, 0.0, 0.0, life.w * 0.15);
+            aux.z += 0.04;
+        }
+        // Case B: Fauna predation (cricket or starving wasp eaten by predator wasp):
+        else if (IsCricketMaterial(material) || IsWaspMaterial(material))
+        {
+            float4 victim = IsCricketMaterial(material) ? CricketVitalsOf(cell) : WaspVitalsOf(cell);
+            uint gen = IsCricketMaterial(material) ? FaunaGeneration(CricketGenomeOf(cell)) : WaspGeneration(WaspGenomeOf(cell));
+            uint lin = IsCricketMaterial(material) ? FaunaLineage(CricketGenomeOf(cell)) : WaspLineage(WaspGenomeOf(cell));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, gen, lin, ORGANISM_CAUSE_CONSUMED);
+            material = MATERIAL_DETRITUS;
+            aux.y = max(aux.y, saturate(victim.y * (1.0 - saturate(_WaspF.w))));
+            aux.z = max(aux.z, saturate(victim.x * (1.0 - saturate(_WaspF.z))));
+            combustion = SeedCombustion(material, D(material));
+            consumed = true;
+        }
     }
 
     uint moveWinner = ClaimAt(cell, FAUNA_CLAIM_MOVE);
     uint eggWinner = ClaimAt(cell, FAUNA_CLAIM_EGG);
     bool vacated = false;
 
-    if (IsFaunaMaterial(material) && FaunaStage(faunaGenome) == FAUNA_STAGE_DEAD)
+    // 2. MORTALITY / NATURAL DEATH TO DETRITUS:
+    if (!consumed && IsCricketMaterial(material) && FaunaStage(CricketGenomeOf(cell)) == FAUNA_STAGE_DEAD)
     {
-        material = 12u;
+        material = MATERIAL_DETRITUS;
+        aux.z = max(aux.z, saturate(CricketVitalsOf(cell).x * 0.4));
+        combustion = SeedCombustion(material, D(material));
         vacated = true;
     }
-    else if (IsCricketMaterial(material) || IsFaunaEggMaterial(material))
+    else if (!consumed && (IsWaspMaterial(material) || IsWaspEggMaterial(material)) && WaspStage(WaspGenomeOf(cell)) == WASP_STAGE_DEAD)
+    {
+        material = MATERIAL_DETRITUS;
+        aux.z = max(aux.z, saturate(WaspVitalsOf(cell).x * 0.5));
+        combustion = SeedCombustion(material, D(material));
+        vacated = true;
+    }
+    // 3. MOVEMENT DEPARTURE:
+    else if (!consumed && (IsCricketMaterial(material) || IsFaunaEggMaterial(material)))
     {
         int2 dest = cell;
-        float4 motion = MotionOf(cell);
+        float4 motion = CricketMotionOf(cell);
         float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
         int2 step = int2(0, 0);
         if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
@@ -656,97 +1261,177 @@ void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
             material = 1u;
             vacated = true;
         }
-        else if (IsFaunaEggMaterial(material) && EggReadyToHatch(faunaGenome, VitalsOf(cell)))
+        else if (IsFaunaEggMaterial(material) && CricketEggReadyToHatch(CricketGenomeOf(cell), CricketVitalsOf(cell)))
         {
             material = FAUNA_CRICKET_ID;
         }
     }
+    else if (!consumed && IsWaspMaterial(material))
+    {
+        float4 motion = WaspMotionOf(cell);
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        int2 dest = any(step != int2(0, 0)) ? C(cell + step) : cell;
+        if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
+        {
+            material = 1u;
+            vacated = true;
+        }
+    }
+    else if (!consumed && IsWaspEggMaterial(material) && WaspEggReadyToHatch(WaspGenomeOf(cell), WaspVitalsOf(cell)))
+    {
+        material = WASP_ID;
+    }
 
-    if (!vacated && moveWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material))
+    // 4. MOVEMENT ARRIVAL:
+    if (!consumed && !vacated && moveWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material))
     {
         int2 source = UnpackFaunaCell(moveWinner, _GridSize);
         uint srcMat = M(source);
-        if (IsFaunaMaterial(srcMat))
+        if (IsAnyFaunaMaterial(srcMat))
             material = srcMat;
     }
-    else if (!vacated && eggWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material) && HasLandingSupport(cell))
+    // 5. EGG ARRIVAL:
+    else if (!consumed && !vacated && eggWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material) && HasLandingSupport(cell))
     {
-        material = FAUNA_EGG_ID;
+        int2 source = UnpackFaunaCell(eggWinner, _GridSize);
+        uint srcMat = M(source);
+        material = IsWaspMaterial(srcMat) ? WASP_EGG_ID : FAUNA_EGG_ID;
     }
 
     WriteWorld(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
+// -------------------------------------------------------------------------
+// 7. APPLY FAUNA STATE
+// Updates organism vitals, kinematics, cargo, genetics, and reproduction in ping-pong textures.
+// -------------------------------------------------------------------------
 [numthreads(8, 8, 1)]
 void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
     int2 cell = id.xy;
     uint material = M(cell);
-    float4 vitals = VitalsOf(cell);
-    float4 motion = MotionOf(cell);
-    uint4 genome = FaunaG(cell);
-    uint4 partner = PartnerOf(cell);
     uint packedSelf = PackFaunaCell(cell, _GridSize);
 
     uint moveWinner = ClaimAt(cell, FAUNA_CLAIM_MOVE);
     uint eggWinner = ClaimAt(cell, FAUNA_CLAIM_EGG);
 
+    // ---------------------------------------------------------------------
+    // A. HANDLE ARRIVING MOVERS
+    // ---------------------------------------------------------------------
     if (moveWinner != FAUNA_CLAIM_EMPTY)
     {
         int2 source = UnpackFaunaCell(moveWinner, _GridSize);
-        vitals = VitalsOf(source);
-        motion = MotionOf(source);
-        genome = FaunaG(source);
-        partner = PartnerOf(source);
-        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
-        if (abs(nextFrac.x) >= 0.5) nextFrac.x -= sign(nextFrac.x);
-        if (abs(nextFrac.y) >= 0.5) nextFrac.y -= sign(nextFrac.y);
-        motion.zw = nextFrac;
-        if (HasLandingSupport(cell) && motion.y <= 0.05)
+        uint srcMat = M(source);
+
+        // Arriving Cricket:
+        if (IsCricketMaterial(srcMat) || IsFaunaEggMaterial(srcMat))
         {
-            motion = float4(0.0, 0.0, 0.0, 0.0);
-            uint stage = FaunaStage(genome);
-            genome.w = PackFaunaMeta(stage, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+            float4 vitals = CricketVitalsOf(source);
+            float4 motion = CricketMotionOf(source);
+            uint4 genome = CricketGenomeOf(source);
+            uint4 partner = CricketPartnerOf(source);
+
+            float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+            if (abs(nextFrac.x) >= 0.5) nextFrac.x -= sign(nextFrac.x);
+            if (abs(nextFrac.y) >= 0.5) nextFrac.y -= sign(nextFrac.y);
+            motion.zw = nextFrac;
+            if (HasLandingSupport(cell) && motion.y <= 0.05)
+            {
+                motion = float4(0.0, 0.0, 0.0, 0.0);
+                uint stage = FaunaStage(genome);
+                genome.w = PackFaunaMeta(stage, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+            }
+            WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+            return;
         }
-        WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
-        return;
+
+        // Arriving Wasp:
+        if (IsWaspMaterial(srcMat) || IsWaspEggMaterial(srcMat))
+        {
+            float4 vitals = WaspVitalsOf(source);
+            float4 motion = WaspMotionOf(source);
+            uint4 genome = WaspGenomeOf(source);
+            uint4 partner = WaspPartnerOf(source);
+            uint4 cargo0 = WaspCargoOf(source, 0u);
+            uint4 cargo1 = WaspCargoOf(source, 1u);
+            uint4 cargo2 = WaspCargoOf(source, 2u);
+
+            float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+            if (abs(nextFrac.x) >= 0.5) nextFrac.x -= sign(nextFrac.x);
+            if (abs(nextFrac.y) >= 0.5) nextFrac.y -= sign(nextFrac.y);
+            motion.zw = nextFrac;
+            WriteWaspState(_FaunaWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+            return;
+        }
     }
 
-    if (eggWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material) && FaunaStage(genome) != FAUNA_STAGE_EGG)
+    // ---------------------------------------------------------------------
+    // B. HANDLE NEWLY LAID EGGS
+    // ---------------------------------------------------------------------
+    if (eggWinner != FAUNA_CLAIM_EMPTY && IsFaunaOpenHabitat(material))
     {
         int2 parent = UnpackFaunaCell(eggWinner, _GridSize);
-        uint4 parentGenome = FaunaG(parent);
-        uint4 parentPartner = PartnerOf(parent);
-        uint salt = packedSelf * 17u + (uint)_Tick * 31u + (uint)_Seed;
-        uint4 child = FaunaHasPartner(parentPartner)
-            ? CombineFaunaGenomes(parentGenome, parentPartner, salt)
-            : parentGenome;
-        child = MutateFaunaGenome(child, _FaunaF.x, salt + 17u);
-        float hatchT = CellHash(cell, 41u);
-        float hatch = lerp(max(1.0, _FaunaI.x), max(_FaunaI.x, _FaunaI.y), hatchT);
-        float4 eggVitals = float4(saturate(VitalsOf(parent).x * 0.2 + 0.15), saturate(VitalsOf(parent).y * 0.5 + 0.3), 0.0, hatch);
-        child.w = PackFaunaMeta(FAUNA_STAGE_EGG, FAUNA_BEHAVIOR_IDLE, (FaunaGeneration(parentGenome) + 1u) & 255u, FaunaLineage(parentGenome));
-        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_REPRODUCE, FaunaGeneration(parentGenome), FaunaLineage(parentGenome), ORGANISM_CAUSE_LAID);
-        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FaunaGeneration(child), FaunaLineage(child), ORGANISM_CAUSE_NONE);
-        WriteFaunaState(_FaunaWrite, cell, eggVitals, 0.0, child, uint4(0, 0, 0, 0));
-        return;
+        uint parentMat = M(parent);
+
+        // Cricket Egg:
+        if (IsCricketMaterial(parentMat))
+        {
+            uint4 pGenome = CricketGenomeOf(parent);
+            uint4 pPartner = CricketPartnerOf(parent);
+            uint salt = packedSelf * 17u + (uint)_Tick * 31u + (uint)_Seed;
+            uint4 child = FaunaHasPartner(pPartner)
+                ? CombineFaunaGenomes(pGenome, pPartner, salt)
+                : pGenome;
+            child = MutateFaunaGenome(child, _FaunaF.x, salt + 17u);
+            float hatchT = CellHash(cell, 41u);
+            float hatch = lerp(max(1.0, _FaunaI.x), max(_FaunaI.x, _FaunaI.y), hatchT);
+            float4 eggVitals = float4(saturate(CricketVitalsOf(parent).x * 0.2 + 0.15), saturate(CricketVitalsOf(parent).y * 0.5 + 0.3), 0.0, hatch);
+            child.w = PackFaunaMeta(FAUNA_STAGE_EGG, FAUNA_BEHAVIOR_IDLE, (FaunaGeneration(pGenome) + 1u) & 255u, FaunaLineage(pGenome));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_REPRODUCE, FaunaGeneration(pGenome), FaunaLineage(pGenome), ORGANISM_CAUSE_LAID);
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FaunaGeneration(child), FaunaLineage(child), ORGANISM_CAUSE_NONE);
+            WriteFaunaState(_FaunaWrite, cell, eggVitals, 0.0, child, uint4(0, 0, 0, 0));
+            return;
+        }
+
+        // Wasp Egg:
+        if (IsWaspMaterial(parentMat))
+        {
+            uint4 pGenome = WaspGenomeOf(parent);
+            uint4 pPartner = WaspPartnerOf(parent);
+            uint salt = packedSelf * 17u + (uint)_Tick * 31u + (uint)_Seed;
+            uint4 child = WaspHasPartner(pPartner)
+                ? CombineFaunaGenomes(pGenome, pPartner, salt)
+                : pGenome;
+            child = MutateWaspGenome(child, _WaspH.y, salt + 17u);
+            float hatch = lerp(max(1.0, _WaspI.z), max(_WaspI.z, _WaspI.w), CellHash(cell, 41u));
+            float4 parentVitals = WaspVitalsOf(parent);
+            float4 eggVitals = float4(saturate(parentVitals.x * 0.2 + 0.15), saturate(parentVitals.y * 0.5 + 0.3), 0.0, hatch);
+            child.w = PackWaspMeta(WASP_STAGE_EGG, WASP_BEHAVIOR_IDLE, (WaspGeneration(pGenome) + 1u) & 255u, WaspLineage(pGenome));
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_REPRODUCE, WaspGeneration(pGenome), WaspLineage(pGenome), ORGANISM_CAUSE_LAID);
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, WaspGeneration(child), WaspLineage(child), ORGANISM_CAUSE_NONE);
+            uint4 zero = uint4(0u, 0u, 0u, 0u);
+            WriteWaspState(_FaunaWrite, cell, eggVitals, 0.0, child, zero, zero, zero, zero);
+            return;
+        }
     }
 
-    if (!IsFaunaMaterial(material) && FaunaStage(genome) != FAUNA_STAGE_EMPTY)
+    // ---------------------------------------------------------------------
+    // C. VACANCY / DEATH / NON-FAUNA CLEANUP
+    // ---------------------------------------------------------------------
+    if (!IsAnyFaunaMaterial(material))
     {
-        ClearFaunaState(_FaunaWrite, cell);
-        return;
-    }
-    if (!IsFaunaMaterial(material))
-    {
-        ClearFaunaState(_FaunaWrite, cell);
+        ClearAllFaunaState(_FaunaWrite, cell);
         return;
     }
 
     bool vacated = false;
-    if (IsFaunaMaterial(material))
+    if (IsCricketMaterial(material) || IsFaunaEggMaterial(material))
     {
+        float4 motion = CricketMotionOf(cell);
         float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
         int2 step = int2(0, 0);
         if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
@@ -757,77 +1442,228 @@ void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
         if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
             vacated = true;
     }
-
-    if (vacated || FaunaStage(genome) == FAUNA_STAGE_DEAD)
+    else if (IsWaspMaterial(material))
     {
-        ClearFaunaState(_FaunaWrite, cell);
+        float4 motion = WaspMotionOf(cell);
+        float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
+        int2 step = int2(0, 0);
+        if (abs(nextFrac.x) >= 0.5) step.x = nextFrac.x > 0.0 ? 1 : -1;
+        else if (abs(nextFrac.y) >= 0.5) step.y = nextFrac.y > 0.0 ? 1 : -1;
+        int2 dest = any(step != int2(0, 0)) ? C(cell + step) : cell;
+        if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
+            vacated = true;
+    }
+
+    bool eaten = ClaimAt(cell, FAUNA_CLAIM_FEED) != FAUNA_CLAIM_EMPTY && (IsCricketMaterial(material) || IsWaspMaterial(material));
+    if (vacated || eaten)
+    {
+        ClearAllFaunaState(_FaunaWrite, cell);
         return;
     }
 
-    int2 algae = NeighborAlgae(cell);
-    if (IsCricketMaterial(material) && !all(algae == cell) && ClaimAt(algae, FAUNA_CLAIM_FEED) == packedSelf)
+    // ---------------------------------------------------------------------
+    // D. IN-PLACE CRICKET RESOLUTION
+    // ---------------------------------------------------------------------
+    if (IsCricketMaterial(material) || IsFaunaEggMaterial(material))
     {
-        float meal = IsLeafMaterial(M(algae))
-            ? max(0.08, D(M(algae)).biology.y)
-            : saturate(L(algae).y) * max(0.05, D(M(algae)).biology.y);
-        float moisture = min(max(0.0, S(algae).z), saturate(S(algae).z + L(algae).y * 0.25));
-        vitals.x = saturate(min(CalorieCap(genome), vitals.x + meal) - max(0.0, _FaunaD.x));
-        vitals.y = saturate(vitals.y + moisture);
-    }
+        float4 vitals = CricketVitalsOf(cell);
+        float4 motion = CricketMotionOf(cell);
+        uint4 genome = CricketGenomeOf(cell);
+        uint4 partner = CricketPartnerOf(cell);
 
-    uint mateWinner = ClaimAt(cell, FAUNA_CLAIM_MATE);
-    if (IsCricketMaterial(material) && FaunaStage(genome) == FAUNA_STAGE_ADULT)
-    {
-        int2 mateDest = AdjacentEligibleAdult(cell);
-        bool received = mateWinner != FAUNA_CLAIM_EMPTY;
-        bool sent = !all(mateDest == cell) && ClaimAt(mateDest, FAUNA_CLAIM_MATE) == packedSelf;
-        if (received || sent)
+        if (FaunaStage(genome) == FAUNA_STAGE_DEAD)
         {
-            int2 other = received ? UnpackFaunaCell(mateWinner, _GridSize) : mateDest;
-            if (IsCricketMaterial(M(other)) && FaunaStage(FaunaG(other)) == FAUNA_STAGE_ADULT)
+            ClearFaunaState(_FaunaWrite, cell);
+            return;
+        }
+
+        // Herbivory meal benefits:
+        int2 flora = NeighborFlora(cell);
+        if (IsCricketMaterial(material) && !all(flora == cell) && ClaimAt(flora, FAUNA_CLAIM_FEED) == packedSelf)
+        {
+            float meal = 0.35;
+            float moisture = 0.25;
+            uint fMat = M(flora);
+            if (fMat == FLORA_ALGAE_ID || IsFloraMaterial(fMat))
             {
-                uint4 otherGenome = FaunaG(other);
-                partner = otherGenome;
-                partner.w = 1u;
-                vitals.w = max(vitals.w, _FaunaH.x);
-                LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_MATE, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_MATED);
+                float4 phys = SampleFloraPhysiology(_FloraRead, flora);
+                meal = max(0.15, phys.x * 0.4);
+                moisture = max(0.1, phys.z * 0.5);
+            }
+            else if (IsGrassSoilAnchor(fMat))
+            {
+                float4 phys = SampleFloraPhysiology(_FloraRead, flora);
+                meal = max(0.15, phys.x * 0.45);
+                moisture = max(0.1, phys.z * 0.4);
+            }
+            vitals.x = saturate(min(CalorieCap(genome), vitals.x + meal) - max(0.0, _FaunaD.x));
+            vitals.y = saturate(vitals.y + moisture);
+        }
+
+        // Mating:
+        uint mateWinner = ClaimAt(cell, FAUNA_CLAIM_MATE);
+        if (IsCricketMaterial(material) && FaunaStage(genome) == FAUNA_STAGE_ADULT)
+        {
+            int2 mateDest = AdjacentEligibleAdultCricket(cell);
+            bool received = mateWinner != FAUNA_CLAIM_EMPTY;
+            bool sent = !all(mateDest == cell) && ClaimAt(mateDest, FAUNA_CLAIM_MATE) == packedSelf;
+            if (received || sent)
+            {
+                int2 other = received ? UnpackFaunaCell(mateWinner, _GridSize) : mateDest;
+                if (IsCricketMaterial(M(other)) && FaunaStage(CricketGenomeOf(other)) == FAUNA_STAGE_ADULT)
+                {
+                    uint4 otherGenome = CricketGenomeOf(other);
+                    partner = otherGenome;
+                    partner.w = 1u;
+                    vitals.w = max(vitals.w, _FaunaH.x);
+                    LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_MATE, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_MATED);
+                }
             }
         }
+
+        // Egg laying cooldown:
+        bool laid = false;
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 dest = C(cell + offsets[i]);
+            if (ClaimAt(dest, FAUNA_CLAIM_EGG) == packedSelf) laid = true;
+        }
+        if (laid)
+        {
+            vitals.x = saturate(vitals.x * 0.7);
+            vitals.w = max(vitals.w, _FaunaH.y);
+        }
+
+        // Hatching:
+        if (IsFaunaEggMaterial(material) && CricketEggReadyToHatch(genome, vitals))
+        {
+            genome.w = PackFaunaMeta(FAUNA_STAGE_JUVENILE, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+            vitals.z = 0.0;
+            vitals.w = 0.0;
+            vitals.x = saturate(max(vitals.x, 0.35));
+            vitals.y = saturate(max(vitals.y, 0.45));
+            motion = 0.0;
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_HATCHED);
+        }
+
+        motion.zw = motion.zw + motion.xy * _DeltaTime;
+        motion.zw = clamp(motion.zw, -0.49, 0.49);
+        if (FaunaBehavior(genome) == FAUNA_BEHAVIOR_AIRBORNE && HasLandingSupport(cell) && abs(motion.x) < 0.05 && motion.y <= 0.05)
+        {
+            motion = 0.0;
+            genome.w = PackFaunaMeta(FaunaStage(genome), FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
+        }
+
+        WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+        return;
     }
 
-    bool laid = false;
-    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
-    [unroll]
-    for (int i = 0; i < 4; i++)
+    // ---------------------------------------------------------------------
+    // E. IN-PLACE WASP RESOLUTION
+    // ---------------------------------------------------------------------
+    if (IsWaspMaterial(material) || IsWaspEggMaterial(material))
     {
-        int2 dest = C(cell + offsets[i]);
-        if (ClaimAt(dest, FAUNA_CLAIM_EGG) == packedSelf)
-            laid = true;
-    }
-    if (laid)
-    {
-        vitals.x = saturate(vitals.x * 0.7);
-        vitals.w = max(vitals.w, _FaunaH.y);
-    }
+        float4 vitals = WaspVitalsOf(cell);
+        float4 motion = WaspMotionOf(cell);
+        uint4 genome = WaspGenomeOf(cell);
+        uint4 partner = WaspPartnerOf(cell);
+        uint4 cargo0 = WaspCargoOf(cell, 0u);
+        uint4 cargo1 = WaspCargoOf(cell, 1u);
+        uint4 cargo2 = WaspCargoOf(cell, 2u);
 
-    if (IsFaunaEggMaterial(material) && EggReadyToHatch(genome, vitals))
-    {
-        genome.w = PackFaunaMeta(FAUNA_STAGE_JUVENILE, FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
-        vitals.z = 0.0;
-        vitals.w = 0.0;
-        vitals.x = saturate(max(vitals.x, 0.35));
-        vitals.y = saturate(max(vitals.y, 0.45));
-        motion = 0.0;
-        LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_HATCHED);
-    }
+        if (WaspStage(genome) == WASP_STAGE_DEAD)
+        {
+            ClearWaspState(_FaunaWrite, cell);
+            return;
+        }
 
-    motion.zw = motion.zw + motion.xy * _DeltaTime;
-    motion.zw = clamp(motion.zw, -0.49, 0.49);
-    if (FaunaBehavior(genome) == FAUNA_BEHAVIOR_AIRBORNE && HasLandingSupport(cell) && abs(motion.x) < 0.05 && motion.y <= 0.05)
-    {
-        motion = 0.0;
-        genome.w = PackFaunaMeta(FaunaStage(genome), FAUNA_BEHAVIOR_IDLE, FaunaGeneration(genome), FaunaLineage(genome));
-    }
+        // Predation meal benefits:
+        bool starving = vitals.x < _WaspC.z;
+        int2 prey = AdjacentPrey(cell, starving);
+        if (IsWaspMaterial(material) && !all(prey == cell) && ClaimAt(prey, FAUNA_CLAIM_FEED) == packedSelf)
+        {
+            float4 victim = IsCricketMaterial(M(prey)) ? CricketVitalsOf(prey) : WaspVitalsOf(prey);
+            vitals.x = saturate(min(WaspCalorieCap(genome), vitals.x + victim.x * max(0.0, _WaspF.z)));
+            vitals.y = saturate(vitals.y + victim.y * max(0.0, _WaspF.w));
+        }
 
-    WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
+        // Flower Nectar & Pollination Cargo Exchange:
+        int2 flower = AdjacentFlower(cell);
+        if (IsWaspMaterial(material) && !all(flower == cell) && ClaimAt(flower, FAUNA_CLAIM_FLOWER) == packedSelf)
+        {
+            float hostNectar;
+            uint4 hostGenome;
+            if (BestFlower(flower, hostNectar, hostGenome))
+            {
+                float draw = min(hostNectar, max(0.0, _WaspG.x));
+                vitals.x = saturate(min(WaspCalorieCap(genome), vitals.x + draw * max(0.0, _WaspG.y)));
+                vitals.y = saturate(vitals.y + draw * max(0.0, _WaspG.z));
+
+                // Pollen Cargo: drop foreign lineage sample, pick up local sample:
+                uint hostLineage = GrassLineage(hostGenome);
+                int index = WaspCargoForeignIndex(cargo0, cargo1, cargo2, hostLineage);
+                if (index >= 0)
+                    WaspCargoRemove(cargo0, cargo1, cargo2, index);
+                uint capacity = WaspPollenCapacity(_WaspG.w);
+                if (WaspCargoCount(cargo0, cargo1, cargo2) < capacity)
+                    WaspCargoPush(cargo0, cargo1, cargo2, hostGenome, capacity);
+            }
+        }
+
+        // Mating:
+        uint mateWinner = ClaimAt(cell, FAUNA_CLAIM_MATE);
+        if (IsWaspMaterial(material) && WaspStage(genome) == WASP_STAGE_ADULT)
+        {
+            int2 mateDest = AdjacentEligibleAdultWasp(cell);
+            bool received = mateWinner != FAUNA_CLAIM_EMPTY;
+            bool sent = !all(mateDest == cell) && ClaimAt(mateDest, FAUNA_CLAIM_MATE) == packedSelf;
+            if (received || sent)
+            {
+                int2 other = received ? UnpackFaunaCell(mateWinner, _GridSize) : mateDest;
+                if (IsWaspMaterial(M(other)) && WaspStage(WaspGenomeOf(other)) == WASP_STAGE_ADULT)
+                {
+                    partner = WaspGenomeOf(other);
+                    partner.w = 1u;
+                    vitals.w = max(vitals.w, _WaspH.z);
+                    LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_MATE, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_MATED);
+                }
+            }
+        }
+
+        // Egg laying cooldown:
+        bool laid = false;
+        int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(-2, 0), int2(2, 0) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            if (ClaimAt(C(cell + offsets[i]), FAUNA_CLAIM_EGG) == packedSelf)
+                laid = true;
+        }
+        if (laid)
+        {
+            vitals.x = saturate(vitals.x * 0.7);
+            vitals.w = max(vitals.w, _WaspH.w);
+        }
+
+        // Hatching:
+        if (IsWaspEggMaterial(material) && WaspEggReadyToHatch(genome, vitals))
+        {
+            genome.w = PackWaspMeta(WASP_STAGE_JUVENILE, WASP_BEHAVIOR_CRUISE, WaspGeneration(genome), WaspLineage(genome));
+            vitals.z = 0.0;
+            vitals.w = 0.0;
+            vitals.x = saturate(max(vitals.x, 0.35));
+            vitals.y = saturate(max(vitals.y, 0.45));
+            motion = 0.0;
+            LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_HATCHED);
+        }
+
+        if (IsWaspMaterial(material))
+        {
+            motion.zw = clamp(motion.zw + motion.xy * _DeltaTime, -0.49, 0.49);
+        }
+
+        WriteWaspState(_FaunaWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
+    }
 }

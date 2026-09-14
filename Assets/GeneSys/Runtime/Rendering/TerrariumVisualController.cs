@@ -208,7 +208,12 @@ namespace GeneSys.Rendering
             GameObject go = GameObject.CreatePrimitive(PrimitiveType.Quad);
             go.name = name;
             go.transform.SetParent(parent, false);
-            Object.Destroy(go.GetComponent<Collider>());
+            var col = go.GetComponent<Collider>();
+            if (col != null)
+            {
+                if (Application.isPlaying) Object.Destroy(col);
+                else Object.DestroyImmediate(col);
+            }
             var meshRenderer = go.GetComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = material;
             meshRenderer.shadowCastingMode = ShadowCastingMode.Off;
@@ -336,7 +341,12 @@ namespace GeneSys.Rendering
             }
 
             starSystem.Clear(true);
+            var main = starSystem.main;
+            if (main.maxParticles < count) main.maxParticles = count;
             starSystem.SetParticles(particles, count);
+            int alive = starSystem.particleCount;
+            if (customDataScratch.Count > alive)
+                customDataScratch.RemoveRange(alive, customDataScratch.Count - alive);
             starSystem.SetCustomParticleData(customDataScratch, ParticleSystemCustomData.Custom1);
             starSystem.Play(true);
             UpdateStarfieldZoom();
@@ -485,17 +495,24 @@ namespace GeneSys.Rendering
             return texture;
         }
 
+        private static void SafeDestroy(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying) UnityEngine.Object.Destroy(obj);
+            else UnityEngine.Object.DestroyImmediate(obj);
+        }
+
         private void OnDestroy()
         {
-            if (starMaterial != null) Destroy(starMaterial);
-            if (nebulaMaterial != null) Destroy(nebulaMaterial);
-            if (atmosphereMaterial != null) Destroy(atmosphereMaterial);
-            if (solarMaterial != null) Destroy(solarMaterial);
-            if (coreMaterial != null) Destroy(coreMaterial);
-            if (softParticleTexture != null) Destroy(softParticleTexture);
-            if (visualsRoot != null) Destroy(visualsRoot.gameObject);
-            if (solarRoot != null) Destroy(solarRoot.gameObject);
-            if (coreRoot != null) Destroy(coreRoot.gameObject);
+            SafeDestroy(starMaterial);
+            SafeDestroy(nebulaMaterial);
+            SafeDestroy(atmosphereMaterial);
+            SafeDestroy(solarMaterial);
+            SafeDestroy(coreMaterial);
+            SafeDestroy(softParticleTexture);
+            if (visualsRoot != null) SafeDestroy(visualsRoot.gameObject);
+            if (solarRoot != null) SafeDestroy(solarRoot.gameObject);
+            if (coreRoot != null) SafeDestroy(coreRoot.gameObject);
         }
 
         public static Vector2 SolarDirectionFromAngle01(float solarAngle01)

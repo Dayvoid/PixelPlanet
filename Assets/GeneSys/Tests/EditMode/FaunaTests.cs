@@ -92,11 +92,11 @@ namespace GeneSys.Tests
         {
             using var resources = new SimulationResources(PolarGridDefinition.Validation);
             Assert.That(resources.FaunaRead.dimension, Is.EqualTo(UnityEngine.Rendering.TextureDimension.Tex2DArray));
-            Assert.That(resources.FaunaRead.volumeDepth, Is.EqualTo(4));
+            Assert.That(resources.FaunaRead.volumeDepth, Is.EqualTo(FaunaGenome.SliceCount));
             Assert.That(resources.FaunaRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32B32A32_SFloat));
             Assert.That(resources.AcousticRead.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32_SFloat));
             Assert.That(resources.AcousticPrev.graphicsFormat, Is.EqualTo(GraphicsFormat.R32G32_SFloat));
-            Assert.That(resources.FaunaClaims.volumeDepth, Is.EqualTo(4));
+            Assert.That(resources.FaunaClaims.volumeDepth, Is.EqualTo(FaunaGenome.ClaimSliceCount));
             Assert.That(resources.FaunaClaims.graphicsFormat, Is.EqualTo(GraphicsFormat.R32_UInt));
         }
 

@@ -13,11 +13,37 @@ namespace GeneSys.Simulation
         public const int GeneCount = 12;
         public const uint AlgaeId = 128;
 
+        public const uint ArchetypeNone = 0;
+        public const uint ArchetypeAlgae = 1;
+        public const uint ArchetypeGrass = 2;
+        public const uint ArchetypeTree = 3;
+
+        public const uint StageEmpty = 0;
         public const uint StageSpore = 0;
+        public const uint StageSprout = 1;
         public const uint StageActive = 1;
+        public const uint StageJuvenile = 2;
         public const uint StageDormant = 2;
+        public const uint StageMature = 3;
         public const uint StageDesiccated = 3;
         public const uint StageDead = 4;
+
+        public const uint RoleNone = 0;
+        public const uint RoleFilm = 1;
+        public const uint RoleTurf = 2;
+        public const uint RoleRoot = 3;
+        public const uint RoleTrunk = 4;
+        public const uint RoleBranch = 5;
+        public const uint RoleStem = 6;
+        public const uint RoleLeaf = 7;
+
+        public const int PhysiologySlice = 0;
+        public const int IdentitySlice = 1;
+        public const int TopologySlice = 2;
+        public const int GenomeSlice = 3;
+        public const int PropaguleSlice = 4;
+        public const int SliceCount = 5;
+        public const int PropaguleSliceCount = 2;
 
         public const int GeneTempOptimum = 0;
         public const int GeneTempTolerance = 1;

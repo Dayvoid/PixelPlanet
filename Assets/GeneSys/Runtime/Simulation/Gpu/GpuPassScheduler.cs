@@ -30,8 +30,7 @@ namespace GeneSys.Simulation.Gpu
         private const int MaxBrushCommands = 1024;
         private readonly List<BrushCommand> brushCommands = new(MaxBrushCommands);
         private readonly List<Vector2> globalAdjusts = new(8);
-        private readonly List<BrushCommand> grassPaintCommands = new(32);
-        private readonly List<BrushCommand> treePaintCommands = new(32);
+        private readonly List<BrushCommand> floraPaintCommands = new(32);
         private readonly ComputeShader worldGeneration;
         private readonly ComputeShader materialSimulation;
         private readonly ComputeShader geology;
@@ -41,10 +40,6 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader mycology;
         private readonly ComputeShader flora;
         private readonly ComputeShader fauna;
-        private readonly ComputeShader grass;
-        private readonly ComputeShader plantResources;
-        private readonly ComputeShader tree;
-        private readonly ComputeShader wasp;
         private readonly ComputeShader combustion;
         private readonly ComputeShader storm;
         private readonly ComputeShader climate;
@@ -73,7 +68,7 @@ namespace GeneSys.Simulation.Gpu
         public GpuPassScheduler(SimulationConfig config, SimulationResources resources, MaterialRegistry registry,
             ComputeShader worldGeneration, ComputeShader materialSimulation, ComputeShader geology,
             ComputeShader hydrology, ComputeShader hydrostatic, ComputeShader weather, ComputeShader mycology, ComputeShader flora,
-            ComputeShader fauna, ComputeShader grass, ComputeShader combustion, ComputeShader storm,
+            ComputeShader fauna, ComputeShader grass = null, ComputeShader combustion = null, ComputeShader storm = null,
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
             ComputeShader climate = null, ComputeShader geodynamics = null,
             ComputeShader margolusTransport = null)
@@ -89,10 +84,6 @@ namespace GeneSys.Simulation.Gpu
             this.mycology = mycology;
             this.flora = flora;
             this.fauna = fauna;
-            this.grass = grass;
-            this.plantResources = plantResources;
-            this.tree = tree;
-            this.wasp = wasp;
             this.combustion = combustion;
             this.storm = storm;
             this.climate = climate;
@@ -184,21 +175,22 @@ namespace GeneSys.Simulation.Gpu
             Dispatch(worldGeneration, kernel);
             if (flora != null)
             {
+                resources.ClearFlora();
                 int seedFlora = flora.FindKernel("SeedFlora");
                 if (seedFlora >= 0)
                 {
                     SetCommon(flora, seedFlora, 0f);
+                    flora.SetBuffer(seedFlora, "_MaterialDefinitions", materialBuffer);
                     flora.SetTexture(seedFlora, "_MaterialRead", resources.MaterialRead);
-                    flora.SetTexture(seedFlora, "_LifeGenomeWrite", resources.LifeGenomeRead);
-                    BindClimateState(flora, seedFlora);
+                    flora.SetTexture(seedFlora, "_FloraWrite", resources.FloraWrite);
                     BindOrganismHistory(flora, seedFlora);
                     Dispatch(flora, seedFlora);
+                    resources.SwapFlora();
+                    CommitFloraWorld();
                 }
             }
+
             resources.ClearFaunaAndAcoustic();
-            resources.ClearGrass();
-            resources.ClearWasp();
-            resources.ClearTree();
             if (fauna != null)
             {
                 int seedFauna = fauna.FindKernel("SeedFauna");
@@ -207,61 +199,10 @@ namespace GeneSys.Simulation.Gpu
                     SetCommon(fauna, seedFauna, 0f);
                     fauna.SetTexture(seedFauna, "_MaterialRead", resources.MaterialRead);
                     fauna.SetTexture(seedFauna, "_FaunaRead", resources.FaunaRead);
-                    fauna.SetTexture(seedFauna, "_FaunaWrite", resources.FaunaRead);
+                    fauna.SetTexture(seedFauna, "_FaunaWrite", resources.FaunaWrite);
                     BindOrganismHistory(fauna, seedFauna);
                     Dispatch(fauna, seedFauna);
-                }
-            }
-            if (grass != null)
-            {
-                int seedGrass = grass.FindKernel("SeedGrass");
-                if (seedGrass >= 0)
-                {
-                    SetCommon(grass, seedGrass, 0f);
-                    grass.SetBuffer(seedGrass, "_MaterialDefinitions", materialBuffer);
-                    grass.SetTexture(seedGrass, "_MaterialRead", resources.MaterialRead);
-                    grass.SetTexture(seedGrass, "_GrassRead", resources.GrassRead);
-                    grass.SetTexture(seedGrass, "_GrassWrite", resources.GrassWrite);
-                    BindOrganismHistory(grass, seedGrass);
-                    Dispatch(grass, seedGrass);
-                    resources.SwapGrass();
-                }
-            }
-            if (tree != null)
-            {
-                int seedTree = tree.FindKernel("SeedTree");
-                if (seedTree >= 0)
-                {
-                    SetCommon(tree, seedTree, 0f);
-                    tree.SetTexture(seedTree, "_MaterialRead", resources.MaterialRead);
-                    tree.SetTexture(seedTree, "_TreeRead", resources.TreeRead);
-                    tree.SetTexture(seedTree, "_TreeWrite", resources.TreeWrite);
-                    BindOrganismHistory(tree, seedTree);
-                    Dispatch(tree, seedTree);
-                    resources.SwapTree();
-                    if (config.treeSeedAtWorldgen)
-                        CommitTreeWorld();
-                }
-            }
-            if (wasp != null)
-            {
-                int scatterWasp = wasp.FindKernel("ScatterWasp");
-                if (scatterWasp >= 0 && config.waspSeedAtWorldgen)
-                {
-                    SetCommon(wasp, scatterWasp, 0f);
-                    wasp.SetTexture(scatterWasp, "_MaterialRead", resources.MaterialRead);
-                    wasp.SetTexture(scatterWasp, "_MaterialWrite", resources.MaterialRead);
-                    Dispatch(wasp, scatterWasp);
-                }
-                int seedWasp = wasp.FindKernel("SeedWasp");
-                if (seedWasp >= 0)
-                {
-                    SetCommon(wasp, seedWasp, 0f);
-                    wasp.SetTexture(seedWasp, "_MaterialRead", resources.MaterialRead);
-                    wasp.SetTexture(seedWasp, "_WaspRead", resources.WaspRead);
-                    wasp.SetTexture(seedWasp, "_WaspWrite", resources.WaspRead);
-                    BindOrganismHistory(wasp, seedWasp);
-                    Dispatch(wasp, seedWasp);
+                    resources.SwapFauna();
                 }
             }
             resources.CopyReadToWrite();
@@ -296,12 +237,19 @@ namespace GeneSys.Simulation.Gpu
 
         public void QueueGrassSeed(BrushCommand command)
         {
-            if (grassPaintCommands.Count < 32) grassPaintCommands.Add(command);
+            command.materialId = FloraGenome.ArchetypeGrass;
+            if (floraPaintCommands.Count < 32) floraPaintCommands.Add(command);
         }
 
         public void QueueTreeSprout(BrushCommand command)
         {
-            if (treePaintCommands.Count < 32) treePaintCommands.Add(command);
+            command.materialId = FloraGenome.ArchetypeTree;
+            if (floraPaintCommands.Count < 32) floraPaintCommands.Add(command);
+        }
+
+        public void QueueFloraPaint(BrushCommand command)
+        {
+            if (floraPaintCommands.Count < 32) floraPaintCommands.Add(command);
         }
 
         public void RefreshMaterialDefinitions(MaterialRegistry registry)
@@ -421,36 +369,13 @@ namespace GeneSys.Simulation.Gpu
 
             if (flora != null)
             {
-                if (Due(config.transportPassInterval))
-                {
-                    float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
-                    DispatchPass(flora, flora.FindKernel("SporeTransport"), transportDt);
-                    DispatchPass(flora, flora.FindKernel("Photosynthesis"), transportDt);
-                }
-                if (Due(config.slowPassInterval))
-                {
-                    float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
-                    DispatchPass(flora, flora.FindKernel("FloraLifecycle"), slowDt);
-                    if (config.floraPoleDriftRate > 1e-8f || config.floraWindShearRate > 1e-8f || config.floraRainShearRate > 1e-8f)
-                        DispatchPass(flora, flora.FindKernel("FloraMigration"), slowDt);
-                }
+                DispatchFlora(deltaTime);
             }
 
-            if (plantResources != null && Due(config.transportPassInterval))
-                DispatchPlantRoots(CadenceDt(deltaTime, config.transportPassInterval));
-
-            if (grass != null)
-                DispatchGrass(deltaTime);
-
-            if (tree != null)
-                DispatchTree(deltaTime);
-
             if (fauna != null)
+            {
                 DispatchFauna(deltaTime);
-
-            // Wasps run last so predation resolves against settled cricket state.
-            if (wasp != null)
-                DispatchWasp(deltaTime);
+            }
 
             tick++;
             stopwatch.Stop();
@@ -972,7 +897,7 @@ namespace GeneSys.Simulation.Gpu
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)
         {
-            if (shader != flora && shader != fauna && shader != grass && shader != combustion && shader != wasp && shader != tree)
+            if (shader != flora && shader != fauna && shader != combustion)
                 return;
             shader.SetBuffer(kernel, "_OrganismHistory", organismHistoryBuffer);
             shader.SetBuffer(kernel, "_OrganismHistoryCounter", organismHistoryCounterBuffer);
@@ -1115,308 +1040,179 @@ namespace GeneSys.Simulation.Gpu
             storm.SetTexture(kernel, "_CombustionWrite", resources.CombustionRead);
             storm.SetTexture(kernel, "_StormWrite", resources.StormRead);
             storm.SetBuffer(kernel, "_StrikeSeeds", strikeSeedBuffer);
-            storm.SetBuffer(kernel, "_StrikeCounter", strikeCounterBuffer);
         }
 
-        private void DispatchGrass(float deltaTime)
+        private void DispatchFlora(float deltaTime)
         {
-            bool paintedThisTick = grassPaintCommands.Count > 0;
+            bool paintedThisTick = floraPaintCommands.Count > 0;
 
             if (Due(config.transportPassInterval) && !paintedThisTick)
             {
                 float transportDt = CadenceDt(deltaTime, config.transportPassInterval);
-                int life = grass.FindKernel("PhotosynthesisLifecycle");
-                int pollen = grass.FindKernel("PollenTransport");
-                int seeds = grass.FindKernel("SeedTransport");
-                if (life < 0 || pollen < 0 || seeds < 0)
-                {
-                    UnityEngine.Debug.LogError("GeneSys: missing grass compute kernel. Skipping grass transport.");
-                }
-                else
-                {
-                SetCommon(grass, life, transportDt);
-                grass.SetBuffer(life, "_MaterialDefinitions", materialBuffer);
-                BindGrassWorldReads(life);
-                grass.SetTexture(life, "_LightRead", resources.LightField);
-                grass.SetTexture(life, "_AuxWrite", resources.AuxWrite);
-                grass.SetTexture(life, "_GrassRead", resources.GrassRead);
-                grass.SetTexture(life, "_GrassWrite", resources.GrassWrite);
-                grass.SetTexture(life, "_PropaguleRead", resources.PropaguleRead);
-                grass.SetTexture(life, "_PropaguleWrite", resources.PropaguleWrite);
-                grass.SetTexture(life, "_GrassRootFlux", resources.GrassRootFlux);
-                grass.SetTexture(life, "_GrassVisit", resources.GrassVisit);
-                BindOrganismHistory(grass, life);
-                Dispatch(grass, life);
-                Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
-                resources.SwapGrass();
-                resources.SwapPropagule();
+                int rootUptake = flora.FindKernel("RootUptake");
+                int photo = flora.FindKernel("Photosynthesis");
+                int propTransport = flora.FindKernel("PropaguleTransport");
 
-                int clearVisit = grass.FindKernel("ClearGrassVisit");
-                if (clearVisit >= 0)
+                if (rootUptake >= 0)
                 {
-                    SetCommon(grass, clearVisit, transportDt);
-                    grass.SetTexture(clearVisit, "_GrassVisitWrite", resources.GrassVisit);
-                    Dispatch(grass, clearVisit);
+                    SetCommon(flora, rootUptake, transportDt);
+                    flora.SetBuffer(rootUptake, "_MaterialDefinitions", materialBuffer);
+                    BindFloraWorldReads(rootUptake);
+                    flora.SetTexture(rootUptake, "_StateRead", resources.StateRead);
+                    flora.SetTexture(rootUptake, "_StateWrite", resources.StateWrite);
+                    flora.SetTexture(rootUptake, "_AuxRead", resources.AuxRead);
+                    flora.SetTexture(rootUptake, "_AuxWrite", resources.AuxWrite);
+                    flora.SetTexture(rootUptake, "_FloraRead", resources.FloraRead);
+                    flora.SetTexture(rootUptake, "_FloraWrite", resources.FloraWrite);
+                    Dispatch(flora, rootUptake);
+                    Graphics.CopyTexture(resources.StateWrite, resources.StateRead);
+                    Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
+                    resources.SwapFlora();
                 }
 
-                SetCommon(grass, pollen, transportDt);
-                BindGrassWorldReads(pollen);
-                grass.SetTexture(pollen, "_PropaguleRead", resources.PropaguleRead);
-                grass.SetTexture(pollen, "_PropaguleWrite", resources.PropaguleWrite);
-                Dispatch(grass, pollen);
-                resources.SwapPropagule();
+                if (photo >= 0)
+                {
+                    SetCommon(flora, photo, transportDt);
+                    flora.SetBuffer(photo, "_MaterialDefinitions", materialBuffer);
+                    BindFloraWorldReads(photo);
+                    flora.SetTexture(photo, "_StateRead", resources.StateRead);
+                    flora.SetTexture(photo, "_AuxRead", resources.AuxRead);
+                    flora.SetTexture(photo, "_AuxWrite", resources.AuxWrite);
+                    flora.SetTexture(photo, "_CombustionRead", resources.CombustionRead);
+                    flora.SetTexture(photo, "_CombustionWrite", resources.CombustionWrite);
+                    flora.SetTexture(photo, "_LifeGenomeRead", resources.LifeGenomeRead);
+                    flora.SetTexture(photo, "_LifeGenomeWrite", resources.LifeGenomeWrite);
+                    flora.SetTexture(photo, "_LightRead", resources.LightField);
+                    flora.SetTexture(photo, "_FloraRead", resources.FloraRead);
+                    flora.SetTexture(photo, "_FloraWrite", resources.FloraWrite);
+                    BindOrganismHistory(flora, photo);
+                    Dispatch(flora, photo);
+                    Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
+                    Graphics.CopyTexture(resources.CombustionWrite, resources.CombustionRead);
+                    Graphics.CopyTexture(resources.LifeGenomeWrite, resources.LifeGenomeRead);
+                    resources.SwapFlora();
+                }
 
-                SetCommon(grass, seeds, transportDt);
-                BindGrassWorldReads(seeds);
-                grass.SetTexture(seeds, "_PropaguleRead", resources.PropaguleRead);
-                grass.SetTexture(seeds, "_PropaguleWrite", resources.PropaguleWrite);
-                Dispatch(grass, seeds);
-                resources.SwapPropagule();
+                if (propTransport >= 0)
+                {
+                    SetCommon(flora, propTransport, transportDt);
+                    flora.SetTexture(propTransport, "_FlowRead", resources.FlowRead);
+                    flora.SetTexture(propTransport, "_MaterialRead", resources.MaterialRead);
+                    flora.SetTexture(propTransport, "_PropaguleRead", resources.PropaguleRead);
+                    flora.SetTexture(propTransport, "_PropaguleWrite", resources.PropaguleWrite);
+                    Dispatch(flora, propTransport);
+                    resources.SwapPropagule();
                 }
             }
 
             if (Due(config.slowPassInterval) && !paintedThisTick)
             {
                 float slowDt = CadenceDt(deltaTime, config.slowPassInterval);
-                int germ = grass.FindKernel("Germination");
-                int clear = grass.FindKernel("ClearDropClaims");
-                int claim = grass.FindKernel("ClaimFlowerDrop");
-                int apply = grass.FindKernel("ApplyFlowerDrop");
-                if (germ < 0 || clear < 0 || claim < 0 || apply < 0)
+                int germ = flora.FindKernel("PropaguleGerminate");
+                int clear = flora.FindKernel("ClearFloraClaims");
+                int claim = flora.FindKernel("ClaimGrowth");
+
+                if (germ >= 0)
                 {
-                    UnityEngine.Debug.LogError("GeneSys: missing grass compute kernel. Skipping grass slow pass.");
-                }
-                else
-                {
-
-                SetCommon(grass, germ, slowDt);
-                BindGrassWorldReads(germ);
-                grass.SetTexture(germ, "_GrassRead", resources.GrassRead);
-                grass.SetTexture(germ, "_GrassWrite", resources.GrassWrite);
-                grass.SetTexture(germ, "_PropaguleRead", resources.PropaguleRead);
-                grass.SetTexture(germ, "_PropaguleWrite", resources.PropaguleWrite);
-                BindOrganismHistory(grass, germ);
-                Dispatch(grass, germ);
-                resources.SwapGrass();
-                resources.SwapPropagule();
-
-                SetCommon(grass, clear, slowDt);
-                grass.SetTexture(clear, "_GrassDropClaimsWrite", resources.GrassDropClaims);
-                Dispatch(grass, clear);
-
-                SetCommon(grass, claim, slowDt);
-                BindGrassWorldReads(claim);
-                grass.SetTexture(claim, "_GrassRead", resources.GrassRead);
-                grass.SetTexture(claim, "_GrassDropClaimsWrite", resources.GrassDropClaims);
-                Dispatch(grass, claim);
-
-                int dropWorld = hydrology.FindKernel("ApplyFlowerDrop");
-                if (dropWorld >= 0)
-                {
-                    SetCommon(hydrology, dropWorld, slowDt);
-                    hydrology.SetBuffer(dropWorld, "_MaterialDefinitions", materialBuffer);
-                    BindPassTextures(hydrology, dropWorld);
-                    hydrology.SetTexture(dropWorld, "_GrassDropClaims", resources.GrassDropClaims);
-                    Dispatch(hydrology, dropWorld);
-                    resources.Swap();
+                    SetCommon(flora, germ, slowDt);
+                    flora.SetBuffer(germ, "_MaterialDefinitions", materialBuffer);
+                    BindFloraWorldReads(germ);
+                    flora.SetTexture(germ, "_StateRead", resources.StateRead);
+                    flora.SetTexture(germ, "_AuxRead", resources.AuxRead);
+                    flora.SetTexture(germ, "_FloraRead", resources.FloraRead);
+                    flora.SetTexture(germ, "_FloraWrite", resources.FloraWrite);
+                    flora.SetTexture(germ, "_PropaguleRead", resources.PropaguleRead);
+                    flora.SetTexture(germ, "_PropaguleWrite", resources.PropaguleWrite);
+                    BindOrganismHistory(flora, germ);
+                    Dispatch(flora, germ);
+                    resources.SwapFlora();
+                    resources.SwapPropagule();
                 }
 
-                SetCommon(grass, apply, slowDt);
-                grass.SetTexture(apply, "_GrassRead", resources.GrassRead);
-                grass.SetTexture(apply, "_GrassWrite", resources.GrassWrite);
-                Dispatch(grass, apply);
-                resources.SwapGrass();
+                if (clear >= 0 && claim >= 0)
+                {
+                    SetCommon(flora, clear, slowDt);
+                    flora.SetTexture(clear, "_FloraClaimsWrite", resources.FloraClaims);
+                    Dispatch(flora, clear);
+
+                    SetCommon(flora, claim, slowDt);
+                    flora.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
+                    BindFloraWorldReads(claim);
+                    flora.SetTexture(claim, "_FloraRead", resources.FloraRead);
+                    flora.SetTexture(claim, "_FloraClaimsWrite", resources.FloraClaims);
+                    Dispatch(flora, claim);
+
+                    CommitFloraWorld();
                 }
             }
 
-            if (grassPaintCommands.Count > 0)
+            if (floraPaintCommands.Count > 0)
             {
-                int paint = grass.FindKernel("PaintGrass");
+                int paint = flora.FindKernel("PaintFlora");
+                int clear = flora.FindKernel("ClearFloraClaims");
                 if (paint >= 0)
                 {
-                    foreach (BrushCommand command in grassPaintCommands)
+                    if (clear >= 0)
                     {
-                        SetCommon(grass, paint, deltaTime);
-                        grass.SetVector("_GrassPaintCell", new Vector4(command.center.x, command.center.y, command.radius, 0f));
-                        grass.SetTexture(paint, "_MaterialRead", resources.MaterialRead);
-                        grass.SetTexture(paint, "_GrassRead", resources.GrassRead);
-                        grass.SetTexture(paint, "_GrassWrite", resources.GrassWrite);
-                        BindOrganismHistory(grass, paint);
-                        Dispatch(grass, paint);
-                        resources.SwapGrass();
+                        SetCommon(flora, clear, deltaTime);
+                        flora.SetTexture(clear, "_FloraClaimsWrite", resources.FloraClaims);
+                        Dispatch(flora, clear);
                     }
-                }
-                grassPaintCommands.Clear();
-            }
-        }
 
-        private void BindGrassWorldReads(int kernel)
-        {
-            grass.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
-            grass.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
-            grass.SetTexture(kernel, "_StateRead", resources.StateRead);
-            grass.SetTexture(kernel, "_FlowRead", resources.FlowRead);
-            grass.SetTexture(kernel, "_AuxRead", resources.AuxRead);
-            grass.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
-            grass.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
-        }
-
-        private void DispatchPlantRoots(float deltaTime)
-        {
-            int demand = plantResources.FindKernel("RootDemand");
-            int debit = plantResources.FindKernel("SoilDebit");
-            if (demand < 0 || debit < 0)
-            {
-                UnityEngine.Debug.LogError("GeneSys: missing plant resource kernel. Skipping shared root allocation.");
-                return;
-            }
-
-            SetCommon(plantResources, demand, deltaTime);
-            plantResources.SetTexture(demand, "_MaterialRead", resources.MaterialRead);
-            plantResources.SetTexture(demand, "_StateRead", resources.StateRead);
-            plantResources.SetTexture(demand, "_AuxRead", resources.AuxRead);
-            plantResources.SetTexture(demand, "_GrassRead", resources.GrassRead);
-            plantResources.SetTexture(demand, "_TreeRead", resources.TreeRead);
-            plantResources.SetTexture(demand, "_GrassRootFlux", resources.GrassRootFlux);
-            Dispatch(plantResources, demand);
-
-            SetCommon(plantResources, debit, deltaTime);
-            plantResources.SetTexture(debit, "_MaterialRead", resources.MaterialRead);
-            plantResources.SetTexture(debit, "_StateRead", resources.StateRead);
-            plantResources.SetTexture(debit, "_AuxRead", resources.AuxRead);
-            plantResources.SetTexture(debit, "_StateWrite", resources.StateWrite);
-            plantResources.SetTexture(debit, "_AuxWrite", resources.AuxWrite);
-            plantResources.SetTexture(debit, "_GrassRootFlux", resources.GrassRootFlux);
-            Dispatch(plantResources, debit);
-            Graphics.CopyTexture(resources.StateWrite, resources.StateRead);
-            Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
-        }
-
-        private void DispatchTree(float deltaTime)
-        {
-            bool paintedThisTick = treePaintCommands.Count > 0;
-            int physiology = tree.FindKernel("Physiology");
-            int clear = tree.FindKernel("ClearGrowthClaims");
-            int claim = tree.FindKernel("ClaimGrowth");
-            int applyWorld = tree.FindKernel("ApplyWorld");
-            int applyState = tree.FindKernel("ApplyState");
-            if (physiology < 0 || clear < 0 || claim < 0 || applyWorld < 0 || applyState < 0)
-            {
-                UnityEngine.Debug.LogError("GeneSys: missing tree compute kernel. Skipping tree pass.");
-                treePaintCommands.Clear();
-                return;
-            }
-
-            if (!paintedThisTick)
-            {
-                SetCommon(tree, physiology, deltaTime);
-                tree.SetFloat("_TreeReceiptScale", Due(config.transportPassInterval) ? Interval(config.transportPassInterval) : 0f);
-                tree.SetBuffer(physiology, "_MaterialDefinitions", materialBuffer);
-                BindTreeWorldReads(physiology);
-                tree.SetTexture(physiology, "_AuxWrite", resources.AuxWrite);
-                tree.SetTexture(physiology, "_LightRead", resources.LightField);
-                tree.SetTexture(physiology, "_GrassRootFlux", resources.GrassRootFlux);
-                tree.SetTexture(physiology, "_TreeRead", resources.TreeRead);
-                tree.SetTexture(physiology, "_TreeWrite", resources.TreeWrite);
-                BindOrganismHistory(tree, physiology);
-                Dispatch(tree, physiology);
-                Graphics.CopyTexture(resources.AuxWrite, resources.AuxRead);
-                resources.SwapTree();
-
-                SetCommon(tree, clear, deltaTime);
-                tree.SetTexture(clear, "_TreeGrowthClaimsWrite", resources.TreeGrowthClaims);
-                Dispatch(tree, clear);
-
-                SetCommon(tree, claim, deltaTime);
-                tree.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
-                BindTreeWorldReads(claim);
-                tree.SetTexture(claim, "_TreeRead", resources.TreeRead);
-                tree.SetTexture(claim, "_TreeGrowthClaimsWrite", resources.TreeGrowthClaims);
-                Dispatch(tree, claim);
-
-                CommitTreeWorld();
-            }
-
-            if (treePaintCommands.Count > 0)
-            {
-                int paint = tree.FindKernel("PaintTree");
-                if (paint >= 0)
-                {
-                    SetCommon(tree, clear, deltaTime);
-                    tree.SetTexture(clear, "_TreeGrowthClaimsWrite", resources.TreeGrowthClaims);
-                    Dispatch(tree, clear);
-                    foreach (BrushCommand command in treePaintCommands)
+                    foreach (BrushCommand command in floraPaintCommands)
                     {
-                        SetCommon(tree, paint, deltaTime);
-                        tree.SetVector("_TreePaintCell", new Vector4(command.center.x, command.center.y, command.radius, 0f));
-                        tree.SetTexture(paint, "_MaterialRead", resources.MaterialRead);
-                        tree.SetTexture(paint, "_TreeRead", resources.TreeRead);
-                        tree.SetTexture(paint, "_TreeWrite", resources.TreeWrite);
-                        BindOrganismHistory(tree, paint);
-                        Dispatch(tree, paint);
-                        resources.SwapTree();
+                        SetCommon(flora, paint, deltaTime);
+                        flora.SetBuffer(paint, "_MaterialDefinitions", materialBuffer);
+                        flora.SetVector("_FloraPaintCell", new Vector4(command.center.x, command.center.y, command.radius, (float)command.materialId));
+                        flora.SetTexture(paint, "_MaterialRead", resources.MaterialRead);
+                        flora.SetTexture(paint, "_FloraRead", resources.FloraRead);
+                        flora.SetTexture(paint, "_FloraWrite", resources.FloraWrite);
+                        BindOrganismHistory(flora, paint);
+                        Dispatch(flora, paint);
+                        resources.SwapFlora();
                     }
-                    CommitTreeWorld();
+                    CommitFloraWorld();
                 }
-                treePaintCommands.Clear();
+                floraPaintCommands.Clear();
             }
         }
 
-        private void CommitTreeWorld()
+        private void CommitFloraWorld()
         {
-            int applyWorld = tree.FindKernel("ApplyWorld");
-            int applyState = tree.FindKernel("ApplyState");
+            if (flora == null) return;
+            int applyWorld = flora.FindKernel("ApplyFloraWorld");
+            int applyState = flora.FindKernel("ApplyFloraState");
             if (applyWorld < 0 || applyState < 0) return;
 
-            SetCommon(tree, applyWorld, 0f);
-            tree.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
-            BindTreeApplyWorld(applyWorld);
-            BindOrganismHistory(tree, applyWorld);
-            Dispatch(tree, applyWorld);
+            SetCommon(flora, applyWorld, 0f);
+            flora.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
+            BindPassTextures(flora, applyWorld);
+            flora.SetTexture(applyWorld, "_FloraRead", resources.FloraRead);
+            flora.SetTexture(applyWorld, "_FloraClaims", resources.FloraClaims);
+            BindOrganismHistory(flora, applyWorld);
+            Dispatch(flora, applyWorld);
             resources.Swap();
 
-            SetCommon(tree, applyState, 0f);
-            tree.SetBuffer(applyState, "_MaterialDefinitions", materialBuffer);
-            BindTreeWorldReads(applyState);
-            tree.SetTexture(applyState, "_TreeRead", resources.TreeRead);
-            tree.SetTexture(applyState, "_TreeWrite", resources.TreeWrite);
-            tree.SetTexture(applyState, "_TreeGrowthClaims", resources.TreeGrowthClaims);
-            BindOrganismHistory(tree, applyState);
-            Dispatch(tree, applyState);
-            resources.SwapTree();
+            SetCommon(flora, applyState, 0f);
+            flora.SetBuffer(applyState, "_MaterialDefinitions", materialBuffer);
+            BindFloraWorldReads(applyState);
+            flora.SetTexture(applyState, "_FloraRead", resources.FloraRead);
+            flora.SetTexture(applyState, "_FloraWrite", resources.FloraWrite);
+            flora.SetTexture(applyState, "_FloraClaims", resources.FloraClaims);
+            BindOrganismHistory(flora, applyState);
+            Dispatch(flora, applyState);
+            resources.SwapFlora();
         }
 
-        private void BindTreeWorldReads(int kernel)
+        private void BindFloraWorldReads(int kernel)
         {
-            tree.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
-            tree.SetTexture(kernel, "_StateRead", resources.StateRead);
-            tree.SetTexture(kernel, "_FlowRead", resources.FlowRead);
-            tree.SetTexture(kernel, "_AuxRead", resources.AuxRead);
-            tree.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
-            tree.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
-            tree.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
-        }
-
-        private void BindTreeApplyWorld(int kernel)
-        {
-            tree.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
-            tree.SetTexture(kernel, "_MaterialWrite", resources.MaterialWrite);
-            tree.SetTexture(kernel, "_StateRead", resources.StateRead);
-            tree.SetTexture(kernel, "_StateWrite", resources.StateWrite);
-            tree.SetTexture(kernel, "_FlowRead", resources.FlowRead);
-            tree.SetTexture(kernel, "_FlowWrite", resources.FlowWrite);
-            tree.SetTexture(kernel, "_AuxRead", resources.AuxRead);
-            tree.SetTexture(kernel, "_AuxWrite", resources.AuxWrite);
-            tree.SetTexture(kernel, "_ShadeRead", resources.ShadeRead);
-            tree.SetTexture(kernel, "_ShadeWrite", resources.ShadeWrite);
-            tree.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
-            tree.SetTexture(kernel, "_EcologyWrite", resources.EcologyWrite);
-            tree.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
-            tree.SetTexture(kernel, "_CombustionWrite", resources.CombustionWrite);
-            tree.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
-            tree.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeWrite);
-            tree.SetTexture(kernel, "_TreeRead", resources.TreeRead);
-            tree.SetTexture(kernel, "_TreeGrowthClaims", resources.TreeGrowthClaims);
+            flora.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            flora.SetTexture(kernel, "_StateRead", resources.StateRead);
+            flora.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            flora.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            flora.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
+            flora.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            flora.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
         }
 
         private void DispatchFauna(float deltaTime)
@@ -1475,22 +1271,8 @@ namespace GeneSys.Simulation.Gpu
 
             SetCommon(fauna, applyWorld, deltaTime);
             fauna.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
-            fauna.SetTexture(applyWorld, "_MaterialRead", resources.MaterialRead);
-            fauna.SetTexture(applyWorld, "_MaterialWrite", resources.MaterialWrite);
-            fauna.SetTexture(applyWorld, "_StateRead", resources.StateRead);
-            fauna.SetTexture(applyWorld, "_StateWrite", resources.StateWrite);
-            fauna.SetTexture(applyWorld, "_FlowRead", resources.FlowRead);
-            fauna.SetTexture(applyWorld, "_FlowWrite", resources.FlowWrite);
-            fauna.SetTexture(applyWorld, "_AuxRead", resources.AuxRead);
-            fauna.SetTexture(applyWorld, "_AuxWrite", resources.AuxWrite);
-            fauna.SetTexture(applyWorld, "_ShadeRead", resources.ShadeRead);
-            fauna.SetTexture(applyWorld, "_ShadeWrite", resources.ShadeWrite);
-            fauna.SetTexture(applyWorld, "_EcologyRead", resources.EcologyRead);
-            fauna.SetTexture(applyWorld, "_EcologyWrite", resources.EcologyWrite);
-            fauna.SetTexture(applyWorld, "_CombustionRead", resources.CombustionRead);
-            fauna.SetTexture(applyWorld, "_CombustionWrite", resources.CombustionWrite);
-            fauna.SetTexture(applyWorld, "_LifeGenomeRead", resources.LifeGenomeRead);
-            fauna.SetTexture(applyWorld, "_LifeGenomeWrite", resources.LifeGenomeWrite);
+            BindPassTextures(fauna, applyWorld);
+            fauna.SetTexture(applyWorld, "_FloraRead", resources.FloraRead);
             fauna.SetTexture(applyWorld, "_FaunaRead", resources.FaunaRead);
             fauna.SetTexture(applyWorld, "_FaunaClaims", resources.FaunaClaims);
             BindOrganismHistory(fauna, applyWorld);
@@ -1509,117 +1291,6 @@ namespace GeneSys.Simulation.Gpu
             resources.SwapFauna();
         }
 
-        private void DispatchWasp(float deltaTime)
-        {
-            int seed = wasp.FindKernel("SeedWasp");
-            int metabolism = wasp.FindKernel("WaspMetabolism");
-            int clear = wasp.FindKernel("ClearWaspClaims");
-            int claim = wasp.FindKernel("ClaimWaspActions");
-            int flower = wasp.FindKernel("ApplyWaspFlower");
-            int applyWorld = wasp.FindKernel("ApplyWaspWorld");
-            int applyState = wasp.FindKernel("ApplyWaspState");
-            if (seed < 0 || metabolism < 0 || clear < 0 || claim < 0 || flower < 0 || applyWorld < 0 || applyState < 0)
-            {
-                UnityEngine.Debug.LogError("GeneSys: missing wasp compute kernel. Skipping wasp pass.");
-                return;
-            }
-
-            SetCommon(wasp, seed, deltaTime);
-            wasp.SetTexture(seed, "_MaterialRead", resources.MaterialRead);
-            wasp.SetTexture(seed, "_WaspRead", resources.WaspRead);
-            wasp.SetTexture(seed, "_WaspWrite", resources.WaspWrite);
-            BindOrganismHistory(wasp, seed);
-            Dispatch(wasp, seed);
-            resources.SwapWasp();
-
-            SetCommon(wasp, metabolism, deltaTime);
-            wasp.SetBuffer(metabolism, "_MaterialDefinitions", materialBuffer);
-            BindWaspWorldReads(metabolism);
-            wasp.SetTexture(metabolism, "_WaspRead", resources.WaspRead);
-            wasp.SetTexture(metabolism, "_WaspWrite", resources.WaspWrite);
-            wasp.SetTexture(metabolism, "_FaunaRead", resources.FaunaRead);
-            wasp.SetTexture(metabolism, "_GrassRead", resources.GrassRead);
-            wasp.SetTexture(metabolism, "_AcousticRead", resources.AcousticRead);
-            BindOrganismHistory(wasp, metabolism);
-            Dispatch(wasp, metabolism);
-            resources.SwapWasp();
-
-            SetCommon(wasp, clear, deltaTime);
-            wasp.SetTexture(clear, "_WaspClaimsWrite", resources.WaspClaims);
-            Dispatch(wasp, clear);
-
-            SetCommon(wasp, claim, deltaTime);
-            wasp.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
-            BindWaspWorldReads(claim);
-            wasp.SetTexture(claim, "_WaspRead", resources.WaspRead);
-            wasp.SetTexture(claim, "_FaunaRead", resources.FaunaRead);
-            wasp.SetTexture(claim, "_GrassRead", resources.GrassRead);
-            wasp.SetTexture(claim, "_AcousticRead", resources.AcousticRead);
-            wasp.SetTexture(claim, "_WaspClaimsWrite", resources.WaspClaims);
-            Dispatch(wasp, claim);
-
-            // Records the visit for the next grass pass. Runs before the world pass so it
-            // still sees the pre-kill material grid.
-            SetCommon(wasp, flower, deltaTime);
-            wasp.SetBuffer(flower, "_MaterialDefinitions", materialBuffer);
-            wasp.SetTexture(flower, "_MaterialRead", resources.MaterialRead);
-            wasp.SetTexture(flower, "_WaspRead", resources.WaspRead);
-            wasp.SetTexture(flower, "_GrassRead", resources.GrassRead);
-            wasp.SetTexture(flower, "_WaspClaims", resources.WaspClaims);
-            wasp.SetTexture(flower, "_GrassVisitWrite", resources.GrassVisit);
-            Dispatch(wasp, flower);
-
-            SetCommon(wasp, applyWorld, deltaTime);
-            wasp.SetBuffer(applyWorld, "_MaterialDefinitions", materialBuffer);
-            wasp.SetTexture(applyWorld, "_MaterialRead", resources.MaterialRead);
-            wasp.SetTexture(applyWorld, "_MaterialWrite", resources.MaterialWrite);
-            wasp.SetTexture(applyWorld, "_StateRead", resources.StateRead);
-            wasp.SetTexture(applyWorld, "_StateWrite", resources.StateWrite);
-            wasp.SetTexture(applyWorld, "_FlowRead", resources.FlowRead);
-            wasp.SetTexture(applyWorld, "_FlowWrite", resources.FlowWrite);
-            wasp.SetTexture(applyWorld, "_AuxRead", resources.AuxRead);
-            wasp.SetTexture(applyWorld, "_AuxWrite", resources.AuxWrite);
-            wasp.SetTexture(applyWorld, "_ShadeRead", resources.ShadeRead);
-            wasp.SetTexture(applyWorld, "_ShadeWrite", resources.ShadeWrite);
-            wasp.SetTexture(applyWorld, "_EcologyRead", resources.EcologyRead);
-            wasp.SetTexture(applyWorld, "_EcologyWrite", resources.EcologyWrite);
-            wasp.SetTexture(applyWorld, "_CombustionRead", resources.CombustionRead);
-            wasp.SetTexture(applyWorld, "_CombustionWrite", resources.CombustionWrite);
-            wasp.SetTexture(applyWorld, "_LifeGenomeRead", resources.LifeGenomeRead);
-            wasp.SetTexture(applyWorld, "_LifeGenomeWrite", resources.LifeGenomeWrite);
-            wasp.SetTexture(applyWorld, "_FaunaRead", resources.FaunaRead);
-            wasp.SetTexture(applyWorld, "_WaspRead", resources.WaspRead);
-            wasp.SetTexture(applyWorld, "_WaspClaims", resources.WaspClaims);
-            BindOrganismHistory(wasp, applyWorld);
-            Dispatch(wasp, applyWorld);
-
-            SetCommon(wasp, applyState, deltaTime);
-            wasp.SetBuffer(applyState, "_MaterialDefinitions", materialBuffer);
-            BindWaspWorldReads(applyState);
-            wasp.SetTexture(applyState, "_WaspRead", resources.WaspRead);
-            wasp.SetTexture(applyState, "_WaspWrite", resources.WaspWrite);
-            wasp.SetTexture(applyState, "_FaunaRead", resources.FaunaRead);
-            wasp.SetTexture(applyState, "_GrassRead", resources.GrassRead);
-            wasp.SetTexture(applyState, "_AcousticRead", resources.AcousticRead);
-            wasp.SetTexture(applyState, "_WaspClaims", resources.WaspClaims);
-            BindOrganismHistory(wasp, applyState);
-            Dispatch(wasp, applyState);
-
-            resources.Swap();
-            resources.SwapWasp();
-        }
-
-        private void BindWaspWorldReads(int kernel)
-        {
-            wasp.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
-            wasp.SetTexture(kernel, "_StateRead", resources.StateRead);
-            wasp.SetTexture(kernel, "_FlowRead", resources.FlowRead);
-            wasp.SetTexture(kernel, "_AuxRead", resources.AuxRead);
-            wasp.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
-            wasp.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
-            wasp.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
-        }
-
         private void BindFaunaWorldReads(int kernel)
         {
             fauna.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
@@ -1629,6 +1300,7 @@ namespace GeneSys.Simulation.Gpu
             fauna.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
             fauna.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
             fauna.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            fauna.SetTexture(kernel, "_FloraRead", resources.FloraRead);
         }
 
         public void Dispose()
