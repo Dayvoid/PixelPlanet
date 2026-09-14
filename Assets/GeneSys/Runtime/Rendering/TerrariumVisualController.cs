@@ -45,11 +45,13 @@ namespace GeneSys.Rendering
         private ParticleSystemRenderer starRenderer;
         private ParticleSystemRenderer nebulaRenderer;
         private MeshRenderer atmosphereRenderer;
+        private MeshRenderer atmosphereRendererSecondary;
         private MeshRenderer solarRenderer;
         private MeshRenderer coreRenderer;
         private Material starMaterial;
         private Material nebulaMaterial;
         private Material atmosphereMaterial;
+        private Material atmosphereMaterialSecondary;
         private Material solarMaterial;
         private Material coreMaterial;
         private Texture2D softParticleTexture;
@@ -87,7 +89,9 @@ namespace GeneSys.Rendering
 
         private void EnsureBuilt()
         {
-            if (built) return;
+            if (built && visualsRoot != null) return;
+            Teardown();
+
             if (spaceParticleShader == null) spaceParticleShader = Shader.Find("GeneSys/Space Particle");
             if (atmosphereGlowShader == null) atmosphereGlowShader = Shader.Find("GeneSys/Atmosphere Glow");
             if (solarBodyShader == null) solarBodyShader = Shader.Find("GeneSys/Solar Body");
@@ -99,14 +103,15 @@ namespace GeneSys.Rendering
             }
 
             softParticleTexture = CreateSoftDiscTexture(64);
-            visualsRoot = new GameObject("Terrarium Visuals").transform;
+            visualsRoot = new GameObject("Terrarium Visuals") { hideFlags = HideFlags.DontSave }.transform;
             visualsRoot.SetParent(null, false);
 
             starMaterial = CreateParticleMaterial("GeneSys Star Material", 0f);
             nebulaMaterial = CreateParticleMaterial("GeneSys Nebula Material", 1f);
-            atmosphereMaterial = new Material(atmosphereGlowShader) { name = "GeneSys Atmosphere Glow Runtime" };
-            solarMaterial = new Material(solarBodyShader) { name = "GeneSys Solar Body Runtime" };
-            coreMaterial = new Material(moltenCoreShader) { name = "GeneSys Molten Core Runtime" };
+            atmosphereMaterial = new Material(atmosphereGlowShader) { name = "GeneSys Atmosphere Glow Runtime", hideFlags = HideFlags.DontSave };
+            atmosphereMaterialSecondary = new Material(atmosphereGlowShader) { name = "GeneSys Atmosphere Glow Secondary Runtime", hideFlags = HideFlags.DontSave };
+            solarMaterial = new Material(solarBodyShader) { name = "GeneSys Solar Body Runtime", hideFlags = HideFlags.DontSave };
+            coreMaterial = new Material(moltenCoreShader) { name = "GeneSys Molten Core Runtime", hideFlags = HideFlags.DontSave };
 
             starSystem = CreateParticleLayer("Starfield", visualsRoot, starMaterial, out starRenderer, 512);
             nebulaSystem = CreateParticleLayer("Nebula", visualsRoot, nebulaMaterial, out nebulaRenderer, 64);
@@ -115,14 +120,16 @@ namespace GeneSys.Rendering
             SetupStarVertexStreams(starRenderer);
 
             atmosphereRenderer = CreateQuad("Atmosphere Glow", visualsRoot, atmosphereMaterial, 15);
+            atmosphereRendererSecondary = CreateQuad("Atmosphere Glow Secondary", visualsRoot, atmosphereMaterialSecondary, 14);
+
             Transform solarParent = display != null ? display.transform : visualsRoot;
-            solarRoot = new GameObject("Solar Orbit").transform;
+            solarRoot = new GameObject("Solar Orbit") { hideFlags = HideFlags.DontSave }.transform;
             solarRoot.SetParent(solarParent, false);
             solarRenderer = CreateQuad("Solar Body", solarRoot, solarMaterial, 20);
             solarRenderer.transform.localScale = Vector3.one * 0.12f;
 
             Transform coreParent = display != null ? display.transform : visualsRoot;
-            coreRoot = new GameObject("Planetary Core").transform;
+            coreRoot = new GameObject("Planetary Core") { hideFlags = HideFlags.DontSave }.transform;
             coreRoot.SetParent(coreParent, false);
             coreRoot.localPosition = new Vector3(0f, 0f, -0.01f);
             coreRenderer = CreateQuad("Molten Core", coreRoot, coreMaterial, 55);
@@ -138,7 +145,8 @@ namespace GeneSys.Rendering
             {
                 name = name,
                 mainTexture = softParticleTexture,
-                enableInstancing = true
+                enableInstancing = true,
+                hideFlags = HideFlags.DontSave
             };
             material.SetFloat("_Mode", mode);
             material.SetFloat("_Softness", mode < 0.5f ? 2.8f : 1.35f);
@@ -149,7 +157,7 @@ namespace GeneSys.Rendering
         private static ParticleSystem CreateParticleLayer(string name, Transform parent, Material material,
             out ParticleSystemRenderer renderer, int maxParticles)
         {
-            var go = new GameObject(name);
+            var go = new GameObject(name) { hideFlags = HideFlags.DontSave };
             go.transform.SetParent(parent, false);
             var system = go.AddComponent<ParticleSystem>();
             renderer = go.GetComponent<ParticleSystemRenderer>();
@@ -207,6 +215,7 @@ namespace GeneSys.Rendering
         {
             GameObject go = GameObject.CreatePrimitive(PrimitiveType.Quad);
             go.name = name;
+            go.hideFlags = HideFlags.DontSave;
             go.transform.SetParent(parent, false);
             var col = go.GetComponent<Collider>();
             if (col != null)
@@ -278,6 +287,29 @@ namespace GeneSys.Rendering
                     atmosphereMaterial.SetFloat("_Softness", 1.55f);
                     atmosphereMaterial.SetFloat("_PixelScale", config.atmosphereGlowPixelScale);
                     atmosphereMaterial.SetFloat("_RayCount", config.atmosphereGlowRayCount);
+                    atmosphereMaterial.SetFloat("_Speed", 1.0f);
+                }
+            }
+
+            if (atmosphereRendererSecondary != null)
+            {
+                atmosphereRendererSecondary.gameObject.SetActive(glowEnabled);
+                if (glowEnabled && atmosphereMaterialSecondary != null && display != null)
+                {
+                    float planetScale = display.transform.lossyScale.x;
+                    Vector3 planetPos = display.transform.position;
+                    atmosphereRendererSecondary.transform.SetPositionAndRotation(
+                        new Vector3(planetPos.x, planetPos.y, planetPos.z + 0.082f),
+                        display.transform.rotation);
+                    atmosphereRendererSecondary.transform.localScale = Vector3.one * (planetScale * 1.32f);
+                    atmosphereMaterialSecondary.SetColor("_GlowColor", new Color(0.45f, 0.8f, 1f, 1f));
+                    atmosphereMaterialSecondary.SetFloat("_InnerRadius", 0.76f);
+                    atmosphereMaterialSecondary.SetFloat("_OuterRadius", 1.02f);
+                    atmosphereMaterialSecondary.SetFloat("_Intensity", config.atmosphereGlowStrength * 0.75f);
+                    atmosphereMaterialSecondary.SetFloat("_Softness", 1.75f);
+                    atmosphereMaterialSecondary.SetFloat("_PixelScale", config.atmosphereGlowPixelScale * 0.85f);
+                    atmosphereMaterialSecondary.SetFloat("_RayCount", Mathf.Max(3f, config.atmosphereGlowRayCount - 2f));
+                    atmosphereMaterialSecondary.SetFloat("_Speed", 0.5f);
                 }
             }
 
@@ -502,17 +534,68 @@ namespace GeneSys.Rendering
             else UnityEngine.Object.DestroyImmediate(obj);
         }
 
-        private void OnDestroy()
+        public void Teardown()
         {
+            built = false;
             SafeDestroy(starMaterial);
             SafeDestroy(nebulaMaterial);
             SafeDestroy(atmosphereMaterial);
+            SafeDestroy(atmosphereMaterialSecondary);
             SafeDestroy(solarMaterial);
             SafeDestroy(coreMaterial);
             SafeDestroy(softParticleTexture);
-            if (visualsRoot != null) SafeDestroy(visualsRoot.gameObject);
-            if (solarRoot != null) SafeDestroy(solarRoot.gameObject);
-            if (coreRoot != null) SafeDestroy(coreRoot.gameObject);
+            starMaterial = null;
+            nebulaMaterial = null;
+            atmosphereMaterial = null;
+            atmosphereMaterialSecondary = null;
+            solarMaterial = null;
+            coreMaterial = null;
+            softParticleTexture = null;
+
+            if (visualsRoot != null)
+            {
+                SafeDestroy(visualsRoot.gameObject);
+                visualsRoot = null;
+            }
+            if (solarRoot != null)
+            {
+                SafeDestroy(solarRoot.gameObject);
+                solarRoot = null;
+            }
+            if (coreRoot != null)
+            {
+                SafeDestroy(coreRoot.gameObject);
+                coreRoot = null;
+            }
+
+            if (display != null)
+            {
+                Transform solarChild = display.transform.Find("Solar Orbit");
+                if (solarChild != null) SafeDestroy(solarChild.gameObject);
+                Transform coreChild = display.transform.Find("Planetary Core");
+                if (coreChild != null) SafeDestroy(coreChild.gameObject);
+            }
+            else
+            {
+                var solarChild = GameObject.Find("Solar Orbit");
+                if (solarChild != null) SafeDestroy(solarChild);
+                var coreChild = GameObject.Find("Planetary Core");
+                if (coreChild != null) SafeDestroy(coreChild);
+            }
+
+            var existingVisuals = GameObject.Find("Terrarium Visuals");
+            if (existingVisuals != null)
+                SafeDestroy(existingVisuals);
+        }
+
+        private void OnDisable()
+        {
+            Teardown();
+        }
+
+        private void OnDestroy()
+        {
+            Teardown();
         }
 
         public static Vector2 SolarDirectionFromAngle01(float solarAngle01)

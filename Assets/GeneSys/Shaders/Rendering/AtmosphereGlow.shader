@@ -9,6 +9,7 @@ Shader "GeneSys/Atmosphere Glow"
         _Softness ("Softness", Float) = 1.4
         _PixelScale ("Pixel Scale", Float) = 18
         _RayCount ("Ray Count", Float) = 7
+        _Speed ("Speed", Float) = 1.0
     }
 
     SubShader
@@ -41,6 +42,7 @@ Shader "GeneSys/Atmosphere Glow"
                 float _Softness;
                 float _PixelScale;
                 float _RayCount;
+                float _Speed;
             CBUFFER_END
 
             struct Attributes
@@ -85,9 +87,10 @@ Shader "GeneSys/Atmosphere Glow"
                 // Match solar corona: quantized hash dither + slow radial rays.
                 float angle = atan2(p.y, p.x);
                 float rays = max(1.0, _RayCount);
-                float ray = 0.55 + 0.45 * abs(sin(angle * rays + _Time.y * 0.4));
+                float speed = max(0.001, _Speed);
+                float ray = 0.55 + 0.45 * abs(sin(angle * rays + _Time.y * (0.4 * speed)));
                 float pixelScale = max(4.0, _PixelScale);
-                float2 pixelCell = floor(float2(angle * rays * 2.8, r * pixelScale) + _Time.y * 0.25);
+                float2 pixelCell = floor(float2(angle * rays * 2.8, r * pixelScale) + _Time.y * (0.25 * speed));
                 float pixelNoise = lerp(0.72, 1.0, Hash21(pixelCell));
 
                 float alpha = falloff * edgeBoost * ray * pixelNoise * max(0.0, _Intensity);

@@ -334,14 +334,16 @@ namespace GeneSys.Simulation
 
         private void EnsureBuilt()
         {
-            if (probeRenderer != null) return;
+            if (probeRenderer != null && probeRoot != null) return;
             if (display == null) display = FindFirstObjectByType<PlanetoidDisplayRenderer>();
             if (display == null) return;
 
-            probeRoot = new GameObject("Probe Orbit").transform;
+            Teardown();
+
+            probeRoot = new GameObject("Probe Orbit") { hideFlags = HideFlags.DontSave }.transform;
             probeRoot.SetParent(display.transform, false);
 
-            var probeObject = new GameObject("Probe");
+            var probeObject = new GameObject("Probe") { hideFlags = HideFlags.DontSave };
             probeObject.transform.SetParent(probeRoot, false);
             probeRenderer = probeObject.AddComponent<SpriteRenderer>();
             probeRenderer.sprite = probeSprite;
@@ -389,9 +391,46 @@ namespace GeneSys.Simulation
             }
         }
 
+        public void Teardown()
+        {
+            if (probeRenderer != null)
+            {
+                SafeDestroy(probeRenderer.gameObject);
+                probeRenderer = null;
+            }
+            if (probeRoot != null)
+            {
+                SafeDestroy(probeRoot.gameObject);
+                probeRoot = null;
+            }
+
+            if (display != null)
+            {
+                Transform orbitChild = display.transform.Find("Probe Orbit");
+                if (orbitChild != null) SafeDestroy(orbitChild.gameObject);
+            }
+            else
+            {
+                var existingProbeOrbit = GameObject.Find("Probe Orbit");
+                if (existingProbeOrbit != null) SafeDestroy(existingProbeOrbit);
+            }
+        }
+
+        private static void SafeDestroy(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying) UnityEngine.Object.Destroy(obj);
+            else UnityEngine.Object.DestroyImmediate(obj);
+        }
+
+        private void OnDisable()
+        {
+            Teardown();
+        }
+
         private void OnDestroy()
         {
-            if (probeRoot != null) Destroy(probeRoot.gameObject);
+            Teardown();
         }
     }
 }

@@ -90,5 +90,14 @@ namespace GeneSys.Tests
             Assert.That(display.Contains("depthFade = saturate((simulationRadius - _VisualCoreRadius) / max(0.01, 1.0 - _VisualCoreRadius));"));
             Assert.That(display.Contains("coreGridFade"));
         }
+
+        [Test]
+        public void AtmosphereGlowShaderContainsSpeedPropertyAndFragIntegration()
+        {
+            string shader = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/AtmosphereGlow.shader");
+            Assert.That(shader.Contains("_Speed (\"Speed\", Float) = 1.0"));
+            Assert.That(shader.Contains("float _Speed;"));
+            Assert.That(shader.Contains("max(0.001, _Speed)"));
+        }
     }
 }
