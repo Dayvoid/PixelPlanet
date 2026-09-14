@@ -1008,5 +1008,49 @@ namespace GeneSys.Tests
             RestoreDefaults(host);
             RestoreTransport(host, transport);
         }
+
+        [UnityTest]
+        public IEnumerator PersistentVerticalDriveDoesNotRunAwayToLimits()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 8805;
+            bool transport = host.Config.enableMaterialTransport;
+            ConfigureKinematics(host);
+            host.Config.tectonicKinematicCoupling = 0.15f;
+            host.Config.tectonicUpliftScale = 1f;
+            host.Config.tectonicConvergenceScale = 1f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            int atmosphereY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.atmosphereStartRadius * (height - 1)), 1, height - 1);
+            PaintLidColumn(host, x, y0);
+            yield return Step(host, 1);
+
+            int surfaceBefore = 0;
+            yield return ReadMaterials(host, mats => surfaceBefore = LidSurfaceY(mats, x, width, height));
+            Assert.That(surfaceBefore, Is.GreaterThan(0));
+
+            for (int i = 0; i < 80; i++)
+            {
+                ForceKinematics(host, 0f, 2f);
+                yield return Step(host, 1);
+            }
+
+            yield return ReadMaterials(host, mats =>
+            {
+                int surfaceAfter = LidSurfaceY(mats, x, width, height);
+                Assert.That(surfaceAfter, Is.LessThan(atmosphereY - 2));
+                Assert.That(surfaceAfter - surfaceBefore, Is.LessThan(12));
+            });
+            RestoreDefaults(host);
+            RestoreTransport(host, transport);
+        }
     }
 }

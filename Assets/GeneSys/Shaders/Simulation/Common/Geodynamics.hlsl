@@ -279,13 +279,47 @@ float GeodynamicsKinematicChance(float drive)
     float strength = abs(drive) * coupling;
     if (strength < 0.25)
         return 0.0;
-    return saturate((strength - 0.25) * 2.0 + 1e-4);
+    float t = saturate((strength - 0.25) * 2.0);
+    // Default coupling must not saturate: a standing plume would otherwise
+    // raise or drop the lid every geodynamics tick until it hits a wall.
+    float cap = lerp(0.22, 1.0, saturate((coupling - 0.2) / 0.8));
+    return saturate(t * cap + 1e-4);
 }
 
 float GeodynamicsKinematicGate(int theta)
 {
     int bin = GeodynamicsAngularBin(theta);
     return Hash01((uint)bin * 73856093u + (uint)_Tick * 19349663u + (uint)_Seed);
+}
+
+int GeodynamicsKinematicSpacing()
+{
+    float coupling = saturate(_GeodynamicsK.x);
+    float hold = 1.0 - coupling;
+    return max(1, (int)round(1.0 + 8.0 * hold * hold));
+}
+
+bool GeodynamicsKinematicDue(int theta)
+{
+    int spacing = GeodynamicsKinematicSpacing();
+    if (spacing <= 1)
+        return true;
+    int period = max(1, (int)_GeodynamicsA.x);
+    int geoTick = _Tick / period;
+    int bin = GeodynamicsAngularBin(theta);
+    int phase = (int)(Hash01((uint)bin * 374761u + (uint)_Seed) * (float)spacing);
+    int slot = geoTick - phase;
+    int wrapped = slot % spacing;
+    if (wrapped < 0) wrapped += spacing;
+    return wrapped == 0;
+}
+
+bool GeodynamicsKinematicTriggered(int theta, float drive)
+{
+    float chance = GeodynamicsKinematicChance(drive);
+    if (chance <= 0.0 || !GeodynamicsKinematicDue(theta))
+        return false;
+    return chance >= 0.999 || GeodynamicsKinematicGate(theta) < chance;
 }
 
 #endif

@@ -6,7 +6,7 @@
 #pragma kernel TectonicDisplacement
 #pragma kernel TectonicVertical
 #pragma target 5.0
-#define TECTONIC_KINEMATICS_VERSION 3
+#define TECTONIC_KINEMATICS_VERSION 4
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -553,9 +553,8 @@ void TectonicDisplacement(uint3 id : SV_DispatchThreadID)
     float drive = 0.5 * (GeodynamicsAngularDrive(leftX, radius) + GeodynamicsAngularDrive(rightX, radius));
     drive *= max(0.0, _GeodynamicsK.w);
     float gamma = (6.28318530718 * max(0.04, radius) * (float)_GridSize.y) / (float)width;
-    float chance = GeodynamicsKinematicChance(drive / max(0.25, gamma));
     bool swap = IsTectonicLidMaterial(leftMat) && IsTectonicLidMaterial(rightMat)
-        && chance > 0.0 && (chance >= 0.999 || GeodynamicsKinematicGate(leftX) < chance);
+        && GeodynamicsKinematicTriggered(leftX, drive / max(0.25, gamma));
 
     if (swap)
     {
@@ -625,34 +624,17 @@ int TectonicVerticalShift(int theta, int surfaceY, int mohoY, bool blocked)
     if (Radius01(surfaceY, height) < _PlayableInnerRadius)
         return 0;
 
-    float surfaceR = Radius01(surfaceY, height);
-    float midR = Radius01((mohoY + surfaceY) / 2, height);
-    float2 rawFlow = GeodynamicsFlow(theta, surfaceR);
-    float2 midFlow = GeodynamicsFlow(theta, midR);
-    if (abs(midFlow.y) > abs(rawFlow.y))
-        rawFlow = midFlow;
-    float drive = GeodynamicsVerticalDrive(theta, surfaceR);
-    float midDrive = GeodynamicsVerticalDrive(theta, midR);
-    if (abs(midDrive) > abs(drive))
-        drive = midDrive;
-
-    float liftScale = max(1.0, _GeodynamicsK.y);
-    if (rawFlow.y < -0.15)
-        drive = min(drive, rawFlow.y * liftScale);
-    else if (rawFlow.y > 0.15)
-        drive = max(drive, rawFlow.y * liftScale);
-
-    float chance = GeodynamicsKinematicChance(drive);
-    bool gated = chance > 0.0 && (chance >= 0.999 || GeodynamicsKinematicGate(theta) < chance);
-    bool forcedDown = rawFlow.y < -0.15;
-    bool forcedUp = rawFlow.y > 0.15;
-    if ((gated || forcedUp) && drive > 0.0 && surfaceY + 1 < atmosphereY)
+    float sampleR = Radius01((mohoY + surfaceY) / 2, height);
+    float drive = GeodynamicsVerticalDrive(theta, sampleR);
+    if (!GeodynamicsKinematicTriggered(theta, drive))
+        return 0;
+    if (drive > 0.0 && surfaceY + 1 < atmosphereY)
     {
         uint above = ReadMaterial(int2(theta, surfaceY + 1));
         if (IsTectonicOpenCarrier(above) && above != 9u)
             return 1;
     }
-    if ((gated || forcedDown) && drive <= 0.0)
+    if (drive < 0.0)
         return -1;
     return 0;
 }

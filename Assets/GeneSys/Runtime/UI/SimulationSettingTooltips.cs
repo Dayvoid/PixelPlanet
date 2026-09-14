@@ -154,7 +154,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.tectonicSurfaceCoupling)] =
                 "How much a seismic envelope adds to surfaceFailureStress on weak, wet, exposed, or unsupported crust. It never directly replaces terrain cells.",
             [nameof(SimulationConfig.tectonicKinematicCoupling)] =
-                "Master mix for crustal kinematics. At 0, the lid stays put. Raising it lets lattice flow, convergence, and coseismic slip move terrain cells (unlike surface coupling, which only loads failure stress).",
+                "Master mix for crustal kinematics. At 0, the lid stays put. Raising it lets lattice flow, convergence, and coseismic slip move terrain cells in spaced increments (unlike surface coupling, which only loads failure stress).",
             [nameof(SimulationConfig.tectonicUpliftScale)] =
                 "How strongly buoyant flow and overpressure raise or lower the lithospheric lid by shifting whole columns. Higher values grow ridges and basins faster.",
             [nameof(SimulationConfig.tectonicConvergenceScale)] =

@@ -143,6 +143,10 @@ namespace GeneSys.Tests
             Assert.That(geoHlsl, Does.Contain("GeodynamicsDikeNucleation"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsVerticalDrive"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsAngularDrive"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsKinematicTriggered"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsKinematicSpacing"));
+            Assert.That(geology, Does.Not.Contain("forcedUp"));
+            Assert.That(geology, Does.Not.Contain("forcedDown"));
             Assert.That(geoHlsl, Does.Not.Contain("GeodynamicsFaultWeakness(theta, radius01) * 0.55"));
 
             string hydrology = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
