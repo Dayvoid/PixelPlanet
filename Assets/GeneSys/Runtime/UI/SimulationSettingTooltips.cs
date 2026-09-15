@@ -244,6 +244,21 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.margolusMagmaLevelingBias)] =
                 "Strength of horizontal magma leveling during Margolus block swaps. Water surfaces are leveled only by the hydrostatic column solver.",
 
+            [nameof(SimulationConfig.enableRockChunks)] =
+                "Groups unsupported surface granite and limestone into child chunks that tip around a remaining hinge or heel instead of raining straight down. Disable to keep only Margolus pixel settling.",
+            [nameof(SimulationConfig.rockChunkMaxSearchTicks)] =
+                "Maximum ticks to grow a connected rock search before classifying it. Higher values reach taller pillars; 40 keeps gravity delay within two seconds at 20 ticks per second.",
+            [nameof(SimulationConfig.rockChunkHopsPerTick)] =
+                "How many neighbor hops a rock search may expand each tick. 1 spreads work across the planet; higher values classify features sooner at extra cost.",
+            [nameof(SimulationConfig.rockChunkBasementRelaxations)] =
+                "Bellman-Ford iterations per tick for distance-to-core/mantle. More iterations ground thick crust faster so surface searches can tell parent rock from floating children.",
+            [nameof(SimulationConfig.rockChunkMaxConcurrent)] =
+                "How many rock searches and flying chunks may run at once. Extra undercut cells wait for a free slot instead of stalling the tick.",
+            [nameof(SimulationConfig.rockChunkMaxCells)] =
+                "Largest rigid child a search may capture. Bigger overhangs above this limit stay with Margolus so a whole mountain cannot become one spinning slab.",
+            [nameof(SimulationConfig.rockChunkMinCells)] =
+                "Smallest connected rock body that tips as a chunk. Isolated one- and two-cell debris still fall with Margolus.",
+
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",
             [nameof(SimulationConfig.solarIntensity)] =

@@ -192,6 +192,15 @@ namespace GeneSys.Configuration
         [FormerlySerializedAs("margolusFluidLevelingBias")]
         [Range(0f, 2f)] public float margolusMagmaLevelingBias = 0.5f;
 
+        [Header("Surface rock chunks")]
+        public bool enableRockChunks = true;
+        [Range(2, 64)] public int rockChunkMaxSearchTicks = 40;
+        [Range(1, 4)] public int rockChunkHopsPerTick = 1;
+        [Range(1, 16)] public int rockChunkBasementRelaxations = 8;
+        [Range(8, 32)] public int rockChunkMaxConcurrent = 32;
+        [Range(8, 96)] public int rockChunkMaxCells = 96;
+        [Range(2, 16)] public int rockChunkMinCells = 3;
+
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
         [FormerlySerializedAs("atmosphereSolarHeating")]
@@ -1119,6 +1128,12 @@ namespace GeneSys.Configuration
             margolusSubsteps = Mathf.Clamp(margolusSubsteps, 1, 4);
             margolusReposeFriction = Mathf.Max(0.1f, margolusReposeFriction);
             margolusMagmaLevelingBias = Mathf.Max(0f, margolusMagmaLevelingBias);
+            rockChunkMaxSearchTicks = Mathf.Clamp(rockChunkMaxSearchTicks, 2, 64);
+            rockChunkHopsPerTick = Mathf.Clamp(rockChunkHopsPerTick, 1, 4);
+            rockChunkBasementRelaxations = Mathf.Clamp(rockChunkBasementRelaxations, 1, 16);
+            rockChunkMaxConcurrent = Mathf.Clamp(rockChunkMaxConcurrent, 8, 32);
+            rockChunkMaxCells = Mathf.Clamp(rockChunkMaxCells, 8, 96);
+            rockChunkMinCells = Mathf.Clamp(rockChunkMinCells, 2, Mathf.Min(16, rockChunkMaxCells));
         }
     }
 }

@@ -5,6 +5,7 @@
 #pragma target 5.1
 
 #include "../../Shaders/Simulation/Common/MargolusCommon.hlsl"
+#include "../../Shaders/Simulation/Common/RockChunks.hlsl"
 
 Texture2D<uint> _MaterialRead;
 Texture2D<float4> _StateRead;
@@ -16,6 +17,7 @@ Texture2D<float4> _CombustionRead;
 Texture2DArray<float4> _LifeGenomeRead;
 Texture2DArray<float4> _GrassRead;
 Texture2DArray<float4> _TreeRead;
+Texture2D<uint> _RockSupportRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 #ifndef GRASS_ONLY
@@ -40,6 +42,7 @@ float _AtmosphereStartRadius;
 float4 _Mechanics;      // x = gravityStrength
 float4 _MargolusParams; // x = gravityBias, y = reposeFriction, z = metricEnable, w = magmaLevelingBias
 int _MargolusLiquidOnly;
+int _RockChunksEnabled;
 float4 _GrassI;         // root cohesion
 float4 _TreeH;          // root cohesion
 
@@ -148,6 +151,9 @@ bool IsCellPinned(int2 cell, MargolusCell c, MaterialGpuData def)
     {
         // Calved rock has failed structurally and is unpinned
         if (c.aux.w >= 1.0) return false;
+
+        if (_RockChunksEnabled != 0 && RockShouldHoldForChunk(cell, c.material, c.aux.w, _RockSupportRead.Load(int3(cell, 0)), _GridSize, _MaterialRead))
+            return true;
 
         // Compression support: resting on basement or solid rock below
         if (cell.y <= 0) return true;

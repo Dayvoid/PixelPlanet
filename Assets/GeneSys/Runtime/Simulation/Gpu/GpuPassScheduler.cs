@@ -5,6 +5,7 @@ using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation.Climate;
 using GeneSys.Simulation.Geodynamics;
+using GeneSys.Simulation.RockChunks;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -45,6 +46,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader climate;
         private readonly ComputeShader geodynamics;
         private readonly ComputeShader margolusTransport;
+        private readonly ComputeShader rockChunks;
         private bool climateInit;
         private bool geodynamicsInit;
         private readonly GraphicsBuffer strikeSeedBuffer;
@@ -71,7 +73,7 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader fauna, ComputeShader grass = null, ComputeShader combustion = null, ComputeShader storm = null,
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
             ComputeShader climate = null, ComputeShader geodynamics = null,
-            ComputeShader margolusTransport = null)
+            ComputeShader margolusTransport = null, ComputeShader rockChunks = null)
         {
             this.config = config;
             this.resources = resources;
@@ -89,6 +91,7 @@ namespace GeneSys.Simulation.Gpu
             this.climate = climate;
             this.geodynamics = geodynamics;
             this.margolusTransport = margolusTransport;
+            this.rockChunks = rockChunks;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -206,6 +209,7 @@ namespace GeneSys.Simulation.Gpu
                 }
             }
             resources.CopyReadToWrite();
+            resources.ClearRockChunks();
             RebuildClimate();
             RebuildGeodynamics(true);
         }
@@ -318,6 +322,8 @@ namespace GeneSys.Simulation.Gpu
             }
 
             DispatchPass(materialSimulation, materialSimulation.FindKernel("PhaseChange"), deltaTime);
+            if (config.enableRockChunks)
+                DispatchRockChunks(deltaTime);
             if (config.enableMaterialTransport)
             {
                 for (int m = 0; m < config.margolusSubsteps; m++)
@@ -448,6 +454,138 @@ namespace GeneSys.Simulation.Gpu
             }
         }
 
+        private void DispatchRockChunks(float deltaTime)
+        {
+            if (rockChunks == null || resources.RockSupportRead == null) return;
+            int relax = rockChunks.FindKernel("RelaxHops");
+            int reset = rockChunks.FindKernel("ResetSearchAccum");
+            int seed = rockChunks.FindKernel("SeedUndercutRock");
+            int expand = rockChunks.FindKernel("ExpandSearch");
+            int finalize = rockChunks.FindKernel("FinalizeSearch");
+            int capture = rockChunks.FindKernel("CaptureMembers");
+            int afterCapture = rockChunks.FindKernel("AfterCapture");
+            int outcome = rockChunks.FindKernel("ApplySearchOutcome");
+            int integrate = rockChunks.FindKernel("IntegrateChunks");
+            int clearClaims = rockChunks.FindKernel("ClearClaims");
+            int claim = rockChunks.FindKernel("ClaimDestinations");
+            int resolve = rockChunks.FindKernel("ResolveCollisions");
+            int commit = rockChunks.FindKernel("CommitChunkMove");
+            int stamp = rockChunks.FindKernel("StampRockSupport");
+            int updateMembers = rockChunks.FindKernel("UpdateMemberPositions");
+            int freeSettled = rockChunks.FindKernel("FreeSettledSlots");
+            if (relax < 0 || reset < 0 || seed < 0 || expand < 0 || finalize < 0 || capture < 0 ||
+                afterCapture < 0 || outcome < 0 || integrate < 0 || clearClaims < 0 || claim < 0 ||
+                resolve < 0 || commit < 0 || stamp < 0 || updateMembers < 0 || freeSettled < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: missing RockChunks compute kernel. Skipping rock chunk pass.");
+                return;
+            }
+
+            int relaxations = Mathf.Clamp(config.rockChunkBasementRelaxations, 1, 16);
+            for (int i = 0; i < relaxations; i++)
+            {
+                BindRockChunkCommon(relax, deltaTime, bindSupportWrite: true);
+                Dispatch(rockChunks, relax);
+                resources.SwapRockSupport();
+            }
+
+            BindRockChunkCommon(reset, deltaTime, bindSupportWrite: false);
+            rockChunks.Dispatch(reset, 1, 1, 1);
+
+            BindRockChunkCommon(seed, deltaTime, bindSupportWrite: true);
+            Dispatch(rockChunks, seed);
+            resources.SwapRockSupport();
+
+            int hops = Mathf.Clamp(config.rockChunkHopsPerTick, 1, 4);
+            for (int i = 0; i < hops; i++)
+            {
+                BindRockChunkCommon(expand, deltaTime, bindSupportWrite: true);
+                Dispatch(rockChunks, expand);
+                resources.SwapRockSupport();
+            }
+
+            BindRockChunkCommon(finalize, deltaTime, bindSupportWrite: false);
+            rockChunks.Dispatch(finalize, 1, 1, 1);
+
+            BindRockChunkCommon(capture, deltaTime, bindSupportWrite: true);
+            Dispatch(rockChunks, capture);
+            resources.SwapRockSupport();
+
+            BindRockChunkCommon(afterCapture, deltaTime, bindSupportWrite: false);
+            rockChunks.Dispatch(afterCapture, 1, 1, 1);
+
+            BindRockChunkCommon(outcome, deltaTime, bindSupportWrite: true);
+            Dispatch(rockChunks, outcome);
+            resources.SwapRockSupport();
+
+            BindRockChunkCommon(integrate, deltaTime, bindSupportWrite: false);
+            rockChunks.Dispatch(integrate, 1, 1, 1);
+
+            BindRockChunkCommon(clearClaims, deltaTime, bindSupportWrite: false, bindClaimsWrite: true);
+            Dispatch(rockChunks, clearClaims);
+
+            BindRockChunkCommon(claim, deltaTime, bindSupportWrite: false, bindClaimsWrite: true);
+            int memberGroups = Mathf.Max(1, Mathf.CeilToInt(RockChunksGrid.MemberBufferCount() / 64f));
+            rockChunks.Dispatch(claim, memberGroups, 1, 1);
+
+            BindRockChunkCommon(resolve, deltaTime, bindSupportWrite: false);
+            rockChunks.Dispatch(resolve, 1, 1, 1);
+
+            BindRockChunkCommon(commit, deltaTime, bindSupportWrite: false, bindCellWrites: true, bindClaimsRead: true);
+            Dispatch(rockChunks, commit);
+            resources.Swap();
+
+            BindRockChunkCommon(stamp, deltaTime, bindSupportWrite: true, bindClaimsRead: true);
+            Dispatch(rockChunks, stamp);
+            resources.SwapRockSupport();
+
+            BindRockChunkCommon(updateMembers, deltaTime, bindSupportWrite: false, bindClaimsRead: true);
+            rockChunks.Dispatch(updateMembers, memberGroups, 1, 1);
+
+            BindRockChunkCommon(freeSettled, deltaTime, bindSupportWrite: false);
+            rockChunks.Dispatch(freeSettled, 1, 1, 1);
+        }
+
+        private void BindRockChunkCommon(int kernel, float deltaTime, bool bindSupportWrite = false, bool bindCellWrites = false, bool bindClaimsWrite = false, bool bindClaimsRead = false)
+        {
+            SetCommon(rockChunks, kernel, deltaTime);
+            rockChunks.SetInt("_RockChunkMaxSearchTicks", config.rockChunkMaxSearchTicks);
+            rockChunks.SetInt("_RockChunkHopsPerTick", config.rockChunkHopsPerTick);
+            rockChunks.SetInt("_RockChunkMaxCells", config.rockChunkMaxCells);
+            rockChunks.SetInt("_RockChunkMinCells", config.rockChunkMinCells);
+            rockChunks.SetInt("_RockChunkMaxConcurrent", config.rockChunkMaxConcurrent);
+            rockChunks.SetInt("_RockChunkEnabled", config.enableRockChunks ? 1 : 0);
+            rockChunks.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            rockChunks.SetTexture(kernel, "_StateRead", resources.StateRead);
+            rockChunks.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            rockChunks.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            rockChunks.SetTexture(kernel, "_ShadeRead", resources.ShadeRead);
+            rockChunks.SetTexture(kernel, "_EcologyRead", resources.EcologyRead);
+            rockChunks.SetTexture(kernel, "_CombustionRead", resources.CombustionRead);
+            rockChunks.SetTexture(kernel, "_LifeGenomeRead", resources.LifeGenomeRead);
+            rockChunks.SetTexture(kernel, "_RockSupportRead", resources.RockSupportRead);
+            rockChunks.SetBuffer(kernel, "_RockChunkHeaders", resources.RockChunkHeaders);
+            rockChunks.SetBuffer(kernel, "_RockChunkMembers", resources.RockChunkMembers);
+            if (bindClaimsWrite || bindClaimsRead)
+            {
+                rockChunks.SetTexture(kernel, "_RockChunkClaims", resources.RockChunkClaims);
+                rockChunks.SetTexture(kernel, "_RockChunkDest", resources.RockChunkDest);
+            }
+            if (bindSupportWrite)
+                rockChunks.SetTexture(kernel, "_RockSupportWrite", resources.RockSupportWrite);
+            if (bindCellWrites)
+            {
+                rockChunks.SetTexture(kernel, "_MaterialWrite", resources.MaterialWrite);
+                rockChunks.SetTexture(kernel, "_StateWrite", resources.StateWrite);
+                rockChunks.SetTexture(kernel, "_FlowWrite", resources.FlowWrite);
+                rockChunks.SetTexture(kernel, "_AuxWrite", resources.AuxWrite);
+                rockChunks.SetTexture(kernel, "_ShadeWrite", resources.ShadeWrite);
+                rockChunks.SetTexture(kernel, "_EcologyWrite", resources.EcologyWrite);
+                rockChunks.SetTexture(kernel, "_CombustionWrite", resources.CombustionWrite);
+                rockChunks.SetTexture(kernel, "_LifeGenomeWrite", resources.LifeGenomeWrite);
+            }
+        }
+
         private void BindMargolusPhase(int kernel, float deltaTime, bool liquidOnly = false)
         {
             SetCommon(margolusTransport, kernel, deltaTime);
@@ -456,6 +594,9 @@ namespace GeneSys.Simulation.Gpu
             margolusTransport.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             margolusTransport.SetTexture(kernel, "_GrassRead", resources.GrassRead);
             margolusTransport.SetTexture(kernel, "_TreeRead", resources.TreeRead);
+            if (resources.RockSupportRead != null)
+                margolusTransport.SetTexture(kernel, "_RockSupportRead", resources.RockSupportRead);
+            margolusTransport.SetInt("_RockChunksEnabled", config.enableRockChunks && rockChunks != null ? 1 : 0);
         }
 
         private void BindMargolusGrass(int kernel, float deltaTime)
@@ -467,6 +608,9 @@ namespace GeneSys.Simulation.Gpu
             margolusTransport.SetTexture(kernel, "_GrassRead", resources.GrassRead);
             margolusTransport.SetTexture(kernel, "_GrassWrite", resources.GrassWrite);
             margolusTransport.SetTexture(kernel, "_TreeRead", resources.TreeRead);
+            if (resources.RockSupportRead != null)
+                margolusTransport.SetTexture(kernel, "_RockSupportRead", resources.RockSupportRead);
+            margolusTransport.SetInt("_RockChunksEnabled", config.enableRockChunks && rockChunks != null ? 1 : 0);
         }
 
         private void BindMargolusParams(int kernel, bool liquidOnly = false)

@@ -1,0 +1,898 @@
+#pragma kernel RelaxHops SUPPORT_WRITE
+#pragma kernel ResetSearchAccum
+#pragma kernel SeedUndercutRock SUPPORT_WRITE
+#pragma kernel ExpandSearch SUPPORT_WRITE
+#pragma kernel FinalizeSearch
+#pragma kernel CaptureMembers SUPPORT_WRITE
+#pragma kernel AfterCapture
+#pragma kernel ApplySearchOutcome SUPPORT_WRITE
+#pragma kernel IntegrateChunks
+#pragma kernel ClearClaims CLAIMS_WRITE
+#pragma kernel ClaimDestinations CLAIMS_WRITE
+#pragma kernel ResolveCollisions
+#pragma kernel CommitChunkMove CLAIMS_SRV CELL_WRITE
+#pragma kernel StampRockSupport CLAIMS_SRV SUPPORT_WRITE
+#pragma kernel UpdateMemberPositions CLAIMS_SRV
+#pragma kernel FreeSettledSlots
+#pragma target 5.1
+
+#include "../../Shaders/Simulation/Common/RockChunks.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+Texture2D<float2> _FlowRead;
+Texture2D<float4> _AuxRead;
+Texture2D<uint> _ShadeRead;
+Texture2D<float4> _EcologyRead;
+Texture2D<float4> _CombustionRead;
+Texture2DArray<float4> _LifeGenomeRead;
+Texture2D<uint> _RockSupportRead;
+
+#ifdef CELL_WRITE
+RWTexture2D<uint> _MaterialWrite;
+RWTexture2D<float4> _StateWrite;
+RWTexture2D<float2> _FlowWrite;
+RWTexture2D<float4> _AuxWrite;
+RWTexture2D<uint> _ShadeWrite;
+RWTexture2D<float4> _EcologyWrite;
+RWTexture2D<float4> _CombustionWrite;
+RWTexture2DArray<float4> _LifeGenomeWrite;
+#endif
+#ifdef SUPPORT_WRITE
+RWTexture2D<uint> _RockSupportWrite;
+#endif
+#ifdef CLAIMS_SRV
+Texture2D<uint> _RockChunkClaims;
+Texture2D<uint> _RockChunkDest;
+#elif defined(CLAIMS_WRITE)
+RWTexture2D<uint> _RockChunkClaims;
+RWTexture2D<uint> _RockChunkDest;
+#endif
+
+RWStructuredBuffer<RockChunkHeader> _RockChunkHeaders;
+RWStructuredBuffer<RockChunkMember> _RockChunkMembers;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float4 _Mechanics;
+int _RockChunkMaxSearchTicks;
+int _RockChunkHopsPerTick;
+int _RockChunkMaxCells;
+int _RockChunkMinCells;
+int _RockChunkMaxConcurrent;
+int _RockChunkEnabled;
+
+int2 RC(int2 cell) { return RockClampCell(cell, _GridSize); }
+uint RM(int2 cell) { return _MaterialRead.Load(int3(RC(cell), 0)); }
+uint RS(int2 cell) { return _RockSupportRead.Load(int3(RC(cell), 0)); }
+
+uint ClaimAt(int2 cell)
+{
+#ifdef CLAIMS_SRV
+    return _RockChunkClaims.Load(int3(cell, 0));
+#elif defined(CLAIMS_WRITE)
+    return _RockChunkClaims[cell];
+#else
+    return ROCK_CHUNK_EMPTY_PACKED;
+#endif
+}
+
+uint DestAt(int2 cell)
+{
+#ifdef CLAIMS_SRV
+    return _RockChunkDest.Load(int3(cell, 0));
+#elif defined(CLAIMS_WRITE)
+    return _RockChunkDest[cell];
+#else
+    return ROCK_CHUNK_EMPTY_PACKED;
+#endif
+}
+
+#ifdef CELL_WRITE
+void CopyThroughCell(int2 cell)
+{
+    _MaterialWrite[cell] = _MaterialRead.Load(int3(cell, 0));
+    _StateWrite[cell] = _StateRead.Load(int3(cell, 0));
+    _FlowWrite[cell] = _FlowRead.Load(int3(cell, 0));
+    _AuxWrite[cell] = _AuxRead.Load(int3(cell, 0));
+    _ShadeWrite[cell] = _ShadeRead.Load(int3(cell, 0));
+    _EcologyWrite[cell] = _EcologyRead.Load(int3(cell, 0));
+    _CombustionWrite[cell] = _CombustionRead.Load(int3(cell, 0));
+    WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
+}
+
+void CopyCellFrom(int2 dst, int2 src)
+{
+    _MaterialWrite[dst] = _MaterialRead.Load(int3(src, 0));
+    _StateWrite[dst] = _StateRead.Load(int3(src, 0));
+    _FlowWrite[dst] = _FlowRead.Load(int3(src, 0));
+    _AuxWrite[dst] = _AuxRead.Load(int3(src, 0));
+    _ShadeWrite[dst] = _ShadeRead.Load(int3(src, 0));
+    _EcologyWrite[dst] = _EcologyRead.Load(int3(src, 0));
+    _CombustionWrite[dst] = _CombustionRead.Load(int3(src, 0));
+    WriteLifeGenome(_LifeGenomeWrite, dst, SampleLife(_LifeGenomeRead, src), SampleGenome(_LifeGenomeRead, src));
+}
+
+void WriteVacatedSwap(int2 dst, int2 from)
+{
+    CopyCellFrom(dst, from);
+}
+#endif
+
+void AccumulMember(uint slot, int2 cell, uint hops)
+{
+    uint dummy;
+    InterlockedAdd(_RockChunkHeaders[slot].memberCount, 1, dummy);
+    InterlockedAdd(_RockChunkHeaders[slot].massU, 1, dummy);
+    float2 p = RockCellToCartesian(cell, _GridSize);
+    InterlockedAdd(_RockChunkHeaders[slot].sumX, RockEncodeCoord(p.x), dummy);
+    InterlockedAdd(_RockChunkHeaders[slot].sumY, RockEncodeCoord(p.y), dummy);
+    uint heel = ((uint)cell.y << 16) | ((uint)cell.x & 0xFFFFu);
+    InterlockedMin(_RockChunkHeaders[slot].heelPacked, heel);
+}
+
+void RecordContact(uint slot, int2 cell)
+{
+    uint dummy;
+    InterlockedAdd(_RockChunkHeaders[slot].contactCount, 1, dummy);
+    float2 p = RockCellToCartesian(cell, _GridSize);
+    InterlockedAdd(_RockChunkHeaders[slot].contactSumX, RockEncodeCoord(p.x), dummy);
+    InterlockedAdd(_RockChunkHeaders[slot].contactSumY, RockEncodeCoord(p.y), dummy);
+    uint seedPacked = _RockChunkHeaders[slot].seedPacked;
+    int seedX = (int)(seedPacked & 0xFFFFu);
+    int off = RockAngularOff(cell.x, seedX, _GridSize.x);
+    uint uoff = (uint)(off + 32768);
+    InterlockedMin(_RockChunkHeaders[slot].contactMinOff, uoff);
+    InterlockedMax(_RockChunkHeaders[slot].contactMaxOff, uoff);
+}
+
+void DetectContacts(uint slot, int2 cell, uint myHops)
+{
+    int2 dirs[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = RC(cell + dirs[i]);
+        if (dirs[i].y < 0 && cell.y <= 0) continue;
+        if (dirs[i].y > 0 && cell.y >= _GridSize.y - 1) continue;
+        uint nmat = RM(n);
+        if (IsRockBasement(nmat))
+        {
+            RecordContact(slot, n);
+            continue;
+        }
+        if (!IsRockMaterial(nmat)) continue;
+        uint np = RS(n);
+        uint nStatus = RockStatus(np);
+        uint nSlot = RockSlot(np);
+        uint nHops = RockHops(np);
+        if (nStatus == ROCK_STATUS_SEARCHING && nSlot == slot) continue;
+        if (nHops < ROCK_CHUNK_HOPS_MAX && nHops + 2u < myHops)
+            RecordContact(slot, n);
+    }
+}
+
+float2 HeaderCom(RockChunkHeader h)
+{
+    uint count = max(1u, h.massU);
+    return float2(RockDecodeCoord(h.sumX, count), RockDecodeCoord(h.sumY, count));
+}
+
+float2 HeaderContact(RockChunkHeader h)
+{
+    uint count = max(1u, h.contactCount);
+    return float2(RockDecodeCoord(h.contactSumX, count), RockDecodeCoord(h.contactSumY, count));
+}
+
+#ifdef SUPPORT_WRITE
+[numthreads(8, 8, 1)]
+void RelaxHops(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    uint mat = RM(cell);
+    uint old = RS(cell);
+    uint status = RockStatus(old);
+    uint slot = RockSlot(old);
+    uint seedHops = RockSeedHops(old);
+    uint hopsOld = RockHops(old);
+    uint hopsNew = ROCK_CHUNK_HOPS_MAX;
+
+    if (IsRockBasement(mat))
+    {
+        hopsNew = 0u;
+        status = ROCK_STATUS_IDLE;
+        slot = 0u;
+        seedHops = 0u;
+    }
+    else if (IsRockMaterial(mat))
+    {
+        uint best = ROCK_CHUNK_HOPS_MAX;
+        int2 dirs[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 n = RC(cell + dirs[i]);
+            if (dirs[i].y < 0 && cell.y <= 0) continue;
+            if (dirs[i].y > 0 && cell.y >= _GridSize.y - 1) continue;
+            uint nmat = RM(n);
+            if (!IsRockMaterial(nmat) && !IsRockBasement(nmat)) continue;
+            uint nh = IsRockBasement(nmat) ? 0u : RockHops(RS(n));
+            best = min(best, nh);
+        }
+        hopsNew = best >= ROCK_CHUNK_HOPS_MAX ? ROCK_CHUNK_HOPS_MAX : min(ROCK_CHUNK_HOPS_MAX, best + 1u);
+        if (status == ROCK_STATUS_STABLEHOLD && hopsNew > hopsOld)
+            status = ROCK_STATUS_IDLE;
+    }
+    else
+    {
+        status = ROCK_STATUS_IDLE;
+        slot = 0u;
+        seedHops = 0u;
+        hopsNew = ROCK_CHUNK_HOPS_MAX;
+    }
+
+    _RockSupportWrite[cell] = RockPackSupport(hopsNew, status, slot, seedHops);
+}
+#endif
+
+[numthreads(32, 1, 1)]
+void ResetSearchAccum(uint3 id : SV_DispatchThreadID)
+{
+    uint slot = id.x;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_SEARCHING) return;
+    h.prevMemberCount = h.memberCount;
+    h.memberCount = 0;
+    h.massU = 0;
+    h.sumX = 0;
+    h.sumY = 0;
+    h.contactCount = 0;
+    h.contactSumX = 0;
+    h.contactSumY = 0;
+    h.contactMinOff = 0x7FFFFFFFu;
+    h.contactMaxOff = 0;
+    h.heelPacked = 0x7FFFFFFFu;
+    _RockChunkHeaders[slot] = h;
+}
+
+#ifdef SUPPORT_WRITE
+[numthreads(8, 8, 1)]
+void SeedUndercutRock(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    uint packed = RS(cell);
+    _RockSupportWrite[cell] = packed;
+    if (_RockChunkEnabled == 0) return;
+
+    uint mat = RM(cell);
+    uint status = RockStatus(packed);
+    if (status != ROCK_STATUS_IDLE) return;
+    if (!IsRockChunkSeedMaterial(mat)) return;
+    float auxW = _AuxRead.Load(int3(cell, 0)).w;
+    if (auxW >= 1.0) return;
+    if (!IsRockOpenBelow(cell, _GridSize, _MaterialRead)) return;
+    if (!HasRockSurfaceAir(cell, _GridSize, _MaterialRead)) return;
+    if (!HasRockNeighbor(cell, _GridSize, _MaterialRead)) return;
+
+    uint hops = RockHops(packed);
+    for (uint i = 0; i < ROCK_CHUNK_MAX_SLOTS && i < (uint)max(1, _RockChunkMaxConcurrent); i++)
+    {
+        uint old;
+        InterlockedCompareExchange(_RockChunkHeaders[i].status, ROCK_HEADER_EMPTY, ROCK_HEADER_SEARCHING, old);
+        if (old == ROCK_HEADER_EMPTY)
+        {
+            RockChunkHeader h;
+            h.status = ROCK_HEADER_SEARCHING;
+            h.memberCount = 0;
+            h.prevMemberCount = 0;
+            h.ageTicks = 0;
+            h.flags = 0;
+            h.contactCount = 0;
+            h.heelPacked = 0x7FFFFFFFu;
+            h.seedPacked = RockPackXY(cell);
+            h.sumX = 0;
+            h.sumY = 0;
+            h.contactSumX = 0;
+            h.contactSumY = 0;
+            h.contactMinOff = 0x7FFFFFFFu;
+            h.contactMaxOff = 0;
+            h.massU = 0;
+            h.maxRadiusU = 0;
+            h.pivotX = 0;
+            h.pivotY = 0;
+            h.angle = 0;
+            h.omega = 0;
+            h.restPivotX = 0;
+            h.restPivotY = 0;
+            h.lastDAngle = 0;
+            h.pad0 = 0;
+            h.biasSign = 1;
+            h.collision = 0;
+            h.halfStepUsed = 0;
+            h.ageInFlight = 0;
+            h.pad1 = 0;
+            h.pad2 = 0;
+            h.pad3 = 0;
+            h.pad4 = 0;
+            _RockChunkHeaders[i] = h;
+            _RockSupportWrite[cell] = RockPackSupport(hops, ROCK_STATUS_SEARCHING, i, 0u);
+            break;
+        }
+    }
+}
+
+[numthreads(8, 8, 1)]
+void ExpandSearch(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    uint packed = RS(cell);
+    uint mat = RM(cell);
+    if (!IsRockMaterial(mat))
+    {
+        _RockSupportWrite[cell] = packed;
+        return;
+    }
+
+    uint status = RockStatus(packed);
+    uint slot = RockSlot(packed);
+    uint hops = RockHops(packed);
+    uint seedHops = RockSeedHops(packed);
+    int maxSearch = max(2, _RockChunkMaxSearchTicks);
+    int maxCells = clamp(_RockChunkMaxCells, 3, (int)ROCK_CHUNK_MAX_CELLS);
+
+    if (status == ROCK_STATUS_SEARCHING && slot < ROCK_CHUNK_MAX_SLOTS && _RockChunkHeaders[slot].status == ROCK_HEADER_SEARCHING)
+    {
+        AccumulMember(slot, cell, hops);
+        DetectContacts(slot, cell, hops);
+        _RockSupportWrite[cell] = RockPackSupport(hops, ROCK_STATUS_SEARCHING, slot, seedHops);
+        return;
+    }
+
+    if (status == ROCK_STATUS_INFLIGHT || status == ROCK_STATUS_STABLEHOLD || status == ROCK_STATUS_SEARCHING)
+    {
+        _RockSupportWrite[cell] = packed;
+        return;
+    }
+
+    uint joinId = 0xFFFFFFFFu;
+    uint joinSeed = 0u;
+    int2 dirs[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = RC(cell + dirs[i]);
+        if (dirs[i].y < 0 && cell.y <= 0) continue;
+        if (dirs[i].y > 0 && cell.y >= _GridSize.y - 1) continue;
+        uint nmat = RM(n);
+        if (!IsRockMaterial(nmat) && !IsRockBasement(nmat)) continue;
+        uint np = RS(n);
+        uint nStatus = RockStatus(np);
+        uint nSlot = RockSlot(np);
+        uint nHops = IsRockBasement(nmat) ? 0u : RockHops(np);
+        if (nStatus != ROCK_STATUS_SEARCHING || nSlot >= ROCK_CHUNK_MAX_SLOTS) continue;
+        if (_RockChunkHeaders[nSlot].status != ROCK_HEADER_SEARCHING) continue;
+
+        if (hops + 2u < nHops && hops < ROCK_CHUNK_HOPS_MAX)
+        {
+            RecordContact(nSlot, cell);
+            continue;
+        }
+
+        uint nextSeed = RockSeedHops(np) + 1u;
+        if (nextSeed >= (uint)maxSearch) continue;
+        bool canJoin = HasRockSurfaceAir(cell, _GridSize, _MaterialRead) || hops >= 20u || nextSeed <= 3u;
+        if (!canJoin) continue;
+        if (_RockChunkHeaders[nSlot].memberCount >= (uint)maxCells) continue;
+        if (nSlot < joinId)
+        {
+            joinId = nSlot;
+            joinSeed = nextSeed;
+        }
+    }
+
+    if (joinId != 0xFFFFFFFFu)
+    {
+        AccumulMember(joinId, cell, hops);
+        DetectContacts(joinId, cell, hops);
+        _RockSupportWrite[cell] = RockPackSupport(hops, ROCK_STATUS_SEARCHING, joinId, joinSeed);
+    }
+    else
+        _RockSupportWrite[cell] = packed;
+}
+#endif
+
+[numthreads(32, 1, 1)]
+void FinalizeSearch(uint3 id : SV_DispatchThreadID)
+{
+    uint slot = id.x;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_SEARCHING) return;
+
+    h.ageTicks += 1;
+    uint members = h.memberCount;
+    bool stagnant = members == h.prevMemberCount && members > 0u;
+    bool empty = members == 0u;
+    int minCells = max(1, _RockChunkMinCells);
+    int maxCells = clamp(_RockChunkMaxCells, minCells, (int)ROCK_CHUNK_MAX_CELLS);
+    int maxTicks = max(2, _RockChunkMaxSearchTicks);
+    bool done = (stagnant && h.ageTicks >= 2u) || h.ageTicks >= (uint)maxTicks || empty && h.ageTicks >= 2u;
+
+    if (!done)
+    {
+        _RockChunkHeaders[slot] = h;
+        return;
+    }
+
+    if (empty || members < (uint)minCells)
+    {
+        h.status = ROCK_HEADER_EMPTY;
+        h.flags = 0;
+        _RockChunkHeaders[slot] = h;
+        return;
+    }
+
+    if (members > (uint)maxCells)
+    {
+        h.status = ROCK_HEADER_EMPTY;
+        h.flags = 0;
+        _RockChunkHeaders[slot] = h;
+        return;
+    }
+
+    bool hasContacts = h.contactCount > 0u && h.contactMinOff != 0x7FFFFFFFu;
+    float2 com = HeaderCom(h);
+    int seedX = (int)(h.seedPacked & 0xFFFFu);
+    int2 comCell = RockCartesianToCell(com, _GridSize);
+    int comOff = RockAngularOff(comCell.x, seedX, _GridSize.x);
+    bool stable = false;
+    if (hasContacts)
+    {
+        int minOff = (int)h.contactMinOff - 32768;
+        int maxOff = (int)h.contactMaxOff - 32768;
+        int slack = 2;
+        stable = comOff >= minOff - slack && comOff <= maxOff + slack;
+    }
+
+    if (stable)
+    {
+        h.status = ROCK_HEADER_EMPTY;
+        h.flags = ROCK_FLAG_STABLE;
+        _RockChunkHeaders[slot] = h;
+        return;
+    }
+
+    float2 pivot;
+    int bias = 1;
+    if (hasContacts)
+        pivot = HeaderContact(h);
+    else
+    {
+        int2 heel = RockUnpackXY(h.heelPacked == 0x7FFFFFFFu ? h.seedPacked : h.heelPacked);
+        pivot = RockCellToCartesian(heel, _GridSize);
+        float2 radial = pivot;
+        float rl = length(radial);
+        float2 tangent = rl > 1e-6 ? float2(-radial.y, radial.x) / rl : float2(1, 0);
+        float2 r = com - pivot;
+        float side = r.x * tangent.x + r.y * tangent.y;
+        uint hv = Hash(h.seedPacked ^ (uint)_Seed ^ (uint)_Tick);
+        if (abs(side) < 0.25 / max(1.0, (float)_GridSize.x))
+            bias = (hv & 1u) != 0u ? 1 : -1;
+        else
+            bias = side >= 0.0 ? 1 : -1;
+        float cellArc = rl * ROCK_TAU / max(1.0, (float)_GridSize.x);
+        pivot += tangent * ((float)bias) * cellArc * 0.75;
+    }
+
+    h.status = ROCK_HEADER_CAPTURE;
+    h.flags = hasContacts ? ROCK_FLAG_HINGED : ROCK_FLAG_DETACHED;
+    h.pivotX = pivot.x;
+    h.pivotY = pivot.y;
+    h.restPivotX = pivot.x;
+    h.restPivotY = pivot.y;
+    h.angle = 0;
+    h.omega = 0;
+    h.lastDAngle = 0;
+    h.biasSign = bias;
+    h.collision = 0;
+    h.halfStepUsed = 0;
+    h.ageInFlight = 0;
+    h.memberCount = 0;
+    _RockChunkHeaders[slot] = h;
+}
+
+#ifdef SUPPORT_WRITE
+[numthreads(8, 8, 1)]
+void CaptureMembers(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    uint packed = RS(cell);
+    uint status = RockStatus(packed);
+    uint slot = RockSlot(packed);
+    if (status != ROCK_STATUS_SEARCHING || slot >= ROCK_CHUNK_MAX_SLOTS)
+    {
+        _RockSupportWrite[cell] = packed;
+        return;
+    }
+    if (_RockChunkHeaders[slot].status != ROCK_HEADER_CAPTURE)
+    {
+        _RockSupportWrite[cell] = packed;
+        return;
+    }
+
+    uint idx;
+    InterlockedAdd(_RockChunkHeaders[slot].memberCount, 1, idx);
+    int maxCells = clamp(_RockChunkMaxCells, 3, (int)ROCK_CHUNK_MAX_CELLS);
+    if (idx < (uint)maxCells)
+    {
+        float2 p = RockCellToCartesian(cell, _GridSize);
+        float2 pivot = float2(_RockChunkHeaders[slot].restPivotX, _RockChunkHeaders[slot].restPivotY);
+        float2 off = p - pivot;
+        uint midx = slot * ROCK_CHUNK_MAX_CELLS + idx;
+        RockChunkMember m;
+        m.packedXY = RockPackXY(cell);
+        m.chunkId = slot;
+        m.restOx = off.x;
+        m.restOy = off.y;
+        _RockChunkMembers[midx] = m;
+        uint du = (uint)round(length(off) * 65536.0);
+        uint dummy;
+        InterlockedMax(_RockChunkHeaders[slot].maxRadiusU, du, dummy);
+    }
+
+    _RockSupportWrite[cell] = RockPackSupport(RockHops(packed), ROCK_STATUS_INFLIGHT, slot, RockSeedHops(packed));
+}
+#endif
+
+[numthreads(32, 1, 1)]
+void AfterCapture(uint3 id : SV_DispatchThreadID)
+{
+    uint slot = id.x;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_CAPTURE) return;
+    int minCells = max(1, _RockChunkMinCells);
+    if (h.memberCount >= (uint)minCells)
+        h.status = ROCK_HEADER_INFLIGHT;
+    else
+    {
+        h.status = ROCK_HEADER_EMPTY;
+        h.flags = 0;
+        for (uint i = 0; i < ROCK_CHUNK_MAX_CELLS; i++)
+            _RockChunkMembers[slot * ROCK_CHUNK_MAX_CELLS + i].packedXY = ROCK_CHUNK_EMPTY_PACKED;
+    }
+    _RockChunkHeaders[slot] = h;
+}
+
+#ifdef SUPPORT_WRITE
+[numthreads(8, 8, 1)]
+void ApplySearchOutcome(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    uint packed = RS(cell);
+    uint status = RockStatus(packed);
+    uint slot = RockSlot(packed);
+    if (status != ROCK_STATUS_SEARCHING && status != ROCK_STATUS_INFLIGHT)
+    {
+        _RockSupportWrite[cell] = packed;
+        return;
+    }
+    if (slot >= ROCK_CHUNK_MAX_SLOTS)
+    {
+        _RockSupportWrite[cell] = RockPackSupport(RockHops(packed), ROCK_STATUS_IDLE, 0, 0);
+        return;
+    }
+    uint hs = _RockChunkHeaders[slot].status;
+    uint flags = _RockChunkHeaders[slot].flags;
+    if (status == ROCK_STATUS_SEARCHING && hs == ROCK_HEADER_EMPTY)
+    {
+        uint next = (flags & ROCK_FLAG_STABLE) != 0u ? ROCK_STATUS_STABLEHOLD : ROCK_STATUS_IDLE;
+        _RockSupportWrite[cell] = RockPackSupport(RockHops(packed), next, 0, 0);
+        return;
+    }
+    if (status == ROCK_STATUS_INFLIGHT && hs != ROCK_HEADER_INFLIGHT && hs != ROCK_HEADER_CAPTURE)
+    {
+        _RockSupportWrite[cell] = RockPackSupport(RockHops(packed), ROCK_STATUS_IDLE, 0, 0);
+        return;
+    }
+    _RockSupportWrite[cell] = packed;
+}
+#endif
+
+[numthreads(32, 1, 1)]
+void IntegrateChunks(uint3 id : SV_DispatchThreadID)
+{
+    uint slot = id.x;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_INFLIGHT) return;
+
+    float2 pivot = float2(h.pivotX, h.pivotY);
+    float2 com = 0;
+    uint count = 0;
+    uint maxCells = min(h.memberCount, ROCK_CHUNK_MAX_CELLS);
+    for (uint i = 0; i < maxCells; i++)
+    {
+        RockChunkMember m = _RockChunkMembers[slot * ROCK_CHUNK_MAX_CELLS + i];
+        if (m.packedXY == ROCK_CHUNK_EMPTY_PACKED) continue;
+        float2 p = pivot + RockRotate(float2(m.restOx, m.restOy), h.angle);
+        com += p;
+        count++;
+    }
+    if (count == 0u)
+    {
+        h.status = ROCK_HEADER_EMPTY;
+        _RockChunkHeaders[slot] = h;
+        return;
+    }
+    com /= (float)count;
+
+    float gravity = max(0.0, _Mechanics.x);
+    float2 gdir = -com;
+    float glen = length(gdir);
+    if (glen > 1e-6) gdir /= glen;
+    float2 r = com - pivot;
+    float torque = r.x * gdir.y - r.y * gdir.x;
+    float maxR = max(h.maxRadiusU / 65536.0, 1.0 / max(1.0, (float)_GridSize.y));
+    float I = max(1e-6, (float)count * maxR * maxR);
+    float dt = max(1.0 / 20.0, _DeltaTime);
+    h.omega += (torque * gravity / I) * dt * 6.0;
+    if (abs(h.omega) < 0.04)
+        h.omega = (h.biasSign >= 0 ? 1.0 : -1.0) * 0.08 * max(0.35, gravity);
+    h.omega *= 0.985;
+    float pr = max(length(pivot), 1.0 / max(1.0, (float)_GridSize.y));
+    float cellArc = min(1.0 / max(1.0, (float)_GridSize.y), pr * ROCK_TAU / max(1.0, (float)_GridSize.x));
+    float maxD = cellArc / maxR;
+    float dAngle = clamp(h.omega * dt, -maxD, maxD);
+    h.angle += dAngle;
+    h.lastDAngle = dAngle;
+    h.ageInFlight += 1;
+
+    if ((h.flags & ROCK_FLAG_DETACHED) != 0u && (h.ageInFlight & 1u) == 0u)
+    {
+        float nr = max(cellArc, pr - cellArc);
+        pivot *= nr / pr;
+        h.pivotX = pivot.x;
+        h.pivotY = pivot.y;
+    }
+
+    if (h.ageInFlight > 96u)
+        h.flags |= ROCK_FLAG_SETTLING;
+
+    h.collision = 0;
+    _RockChunkHeaders[slot] = h;
+}
+
+#ifdef CLAIMS_WRITE
+[numthreads(8, 8, 1)]
+void ClearClaims(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    _RockChunkClaims[cell] = ROCK_CHUNK_EMPTY_PACKED;
+    _RockChunkDest[cell] = ROCK_CHUNK_EMPTY_PACKED;
+}
+
+[numthreads(64, 1, 1)]
+void ClaimDestinations(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    uint total = ROCK_CHUNK_MAX_SLOTS * ROCK_CHUNK_MAX_CELLS;
+    if (index >= total) return;
+    RockChunkMember m = _RockChunkMembers[index];
+    if (m.packedXY == ROCK_CHUNK_EMPTY_PACKED) return;
+    uint slot = m.chunkId;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_INFLIGHT) return;
+    if ((h.flags & ROCK_FLAG_SETTLING) != 0u) return;
+
+    float2 pivot = float2(h.pivotX, h.pivotY);
+    int2 dest = RockCartesianToCell(pivot + RockRotate(float2(m.restOx, m.restOy), h.angle), _GridSize);
+    int2 src = RockUnpackXY(m.packedXY);
+    uint destMat = RM(dest);
+    uint destPack = RS(dest);
+    bool destFree = IsRockChunkOpen(destMat);
+    bool destSelf = RockStatus(destPack) == ROCK_STATUS_INFLIGHT && RockSlot(destPack) == slot;
+    if (!destFree && !destSelf)
+    {
+        uint dummy;
+        InterlockedAdd(_RockChunkHeaders[slot].collision, 1, dummy);
+        return;
+    }
+
+    uint original;
+    InterlockedMin(_RockChunkClaims[dest], m.packedXY, original);
+    if (original != ROCK_CHUNK_EMPTY_PACKED && original != m.packedXY)
+    {
+        uint dummy;
+        InterlockedAdd(_RockChunkHeaders[slot].collision, 1, dummy);
+        return;
+    }
+    _RockChunkDest[src] = RockPackXY(dest);
+}
+#endif
+
+[numthreads(32, 1, 1)]
+void ResolveCollisions(uint3 id : SV_DispatchThreadID)
+{
+    uint slot = id.x;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_INFLIGHT) return;
+    if (h.collision == 0u) return;
+    if (h.halfStepUsed == 0u)
+    {
+        h.angle -= h.lastDAngle;
+        h.omega *= 0.5;
+        h.halfStepUsed = 1;
+        // Keep collision set so this tick does not commit the rejected pose.
+    }
+    else
+        h.flags |= ROCK_FLAG_SETTLING;
+    _RockChunkHeaders[slot] = h;
+}
+
+#ifdef CELL_WRITE
+[numthreads(8, 8, 1)]
+void CommitChunkMove(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    uint incoming = ClaimAt(cell);
+    uint outgoing = DestAt(cell);
+    uint packed = RS(cell);
+    uint status = RockStatus(packed);
+    uint slot = RockSlot(packed);
+    bool settling = false;
+    bool selfMoveOk = false;
+    if (status == ROCK_STATUS_INFLIGHT && slot < ROCK_CHUNK_MAX_SLOTS)
+    {
+        RockChunkHeader h = _RockChunkHeaders[slot];
+        settling = (h.flags & ROCK_FLAG_SETTLING) != 0u;
+        selfMoveOk = h.status == ROCK_HEADER_INFLIGHT && !settling && h.collision == 0u;
+    }
+
+    if (incoming != ROCK_CHUNK_EMPTY_PACKED)
+    {
+        int2 src = RockUnpackXY(incoming);
+        uint srcPack = RS(src);
+        uint srcSlot = RockSlot(srcPack);
+        bool srcMove = RockStatus(srcPack) == ROCK_STATUS_INFLIGHT && srcSlot < ROCK_CHUNK_MAX_SLOTS
+            && _RockChunkHeaders[srcSlot].status == ROCK_HEADER_INFLIGHT
+            && (_RockChunkHeaders[srcSlot].flags & ROCK_FLAG_SETTLING) == 0u
+            && _RockChunkHeaders[srcSlot].collision == 0u;
+        if (srcMove)
+        {
+            CopyCellFrom(cell, src);
+            return;
+        }
+    }
+
+    if (selfMoveOk && outgoing != ROCK_CHUNK_EMPTY_PACKED && incoming == ROCK_CHUNK_EMPTY_PACKED)
+    {
+        int2 dest = RockUnpackXY(outgoing);
+        WriteVacatedSwap(cell, dest);
+        return;
+    }
+
+    CopyThroughCell(cell);
+    if (settling)
+    {
+        float4 aux = _AuxWrite[cell];
+        float impact = 0.4;
+        int2 dirs[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            int2 n = RC(cell + dirs[i]);
+            if (dirs[i].y < 0 && cell.y <= 0) continue;
+            if (dirs[i].y > 0 && cell.y >= _GridSize.y - 1) continue;
+            uint nmat = RM(n);
+            uint np = RS(n);
+            if (IsRockMaterial(nmat) && !(RockStatus(np) == ROCK_STATUS_INFLIGHT && RockSlot(np) == slot))
+                impact = 1.0;
+        }
+        aux.w = max(aux.w, impact);
+        _AuxWrite[cell] = aux;
+    }
+}
+#endif
+
+#if defined(SUPPORT_WRITE) && defined(CLAIMS_SRV)
+[numthreads(8, 8, 1)]
+void StampRockSupport(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = int2(id.xy);
+    uint packed = RS(cell);
+    uint status = RockStatus(packed);
+    uint slot = RockSlot(packed);
+    uint incoming = ClaimAt(cell);
+    uint outgoing = DestAt(cell);
+
+    bool settling = false;
+    bool moveOk = false;
+    if (status == ROCK_STATUS_INFLIGHT && slot < ROCK_CHUNK_MAX_SLOTS)
+    {
+        RockChunkHeader h = _RockChunkHeaders[slot];
+        settling = (h.flags & ROCK_FLAG_SETTLING) != 0u || h.status != ROCK_HEADER_INFLIGHT;
+        moveOk = h.status == ROCK_HEADER_INFLIGHT && !settling && h.collision == 0u;
+    }
+
+    if (incoming != ROCK_CHUNK_EMPTY_PACKED)
+    {
+        int2 src = RockUnpackXY(incoming);
+        uint srcPack = RS(src);
+        uint srcSlot = RockSlot(srcPack);
+        bool srcMove = RockStatus(srcPack) == ROCK_STATUS_INFLIGHT && srcSlot < ROCK_CHUNK_MAX_SLOTS
+            && _RockChunkHeaders[srcSlot].status == ROCK_HEADER_INFLIGHT
+            && (_RockChunkHeaders[srcSlot].flags & ROCK_FLAG_SETTLING) == 0u
+            && _RockChunkHeaders[srcSlot].collision == 0u;
+        if (srcMove)
+        {
+            _RockSupportWrite[cell] = RockPackSupport(ROCK_CHUNK_HOPS_MAX, ROCK_STATUS_INFLIGHT, srcSlot, 0);
+            return;
+        }
+    }
+
+    if (settling && status == ROCK_STATUS_INFLIGHT)
+    {
+        _RockSupportWrite[cell] = RockPackSupport(ROCK_CHUNK_HOPS_MAX, ROCK_STATUS_IDLE, 0, 0);
+        return;
+    }
+
+    if (moveOk && outgoing != ROCK_CHUNK_EMPTY_PACKED && incoming == ROCK_CHUNK_EMPTY_PACKED)
+    {
+        _RockSupportWrite[cell] = RockPackSupport(ROCK_CHUNK_HOPS_MAX, ROCK_STATUS_IDLE, 0, 0);
+        return;
+    }
+
+    _RockSupportWrite[cell] = packed;
+}
+#endif
+
+#ifdef CLAIMS_SRV
+[numthreads(64, 1, 1)]
+void UpdateMemberPositions(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    uint total = ROCK_CHUNK_MAX_SLOTS * ROCK_CHUNK_MAX_CELLS;
+    if (index >= total) return;
+    RockChunkMember m = _RockChunkMembers[index];
+    if (m.packedXY == ROCK_CHUNK_EMPTY_PACKED) return;
+    uint slot = m.chunkId;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_INFLIGHT) return;
+    if ((h.flags & ROCK_FLAG_SETTLING) != 0u || h.collision != 0u) return;
+    int2 src = RockUnpackXY(m.packedXY);
+    uint destPacked = DestAt(src);
+    if (destPacked == ROCK_CHUNK_EMPTY_PACKED) return;
+    m.packedXY = destPacked;
+    _RockChunkMembers[index] = m;
+}
+#endif
+
+[numthreads(32, 1, 1)]
+void FreeSettledSlots(uint3 id : SV_DispatchThreadID)
+{
+    uint slot = id.x;
+    if (slot >= ROCK_CHUNK_MAX_SLOTS) return;
+    RockChunkHeader h = _RockChunkHeaders[slot];
+    if (h.status != ROCK_HEADER_INFLIGHT) return;
+    if ((h.flags & ROCK_FLAG_SETTLING) == 0u) return;
+    h.status = ROCK_HEADER_EMPTY;
+    h.flags = 0;
+    for (uint i = 0; i < ROCK_CHUNK_MAX_CELLS; i++)
+        _RockChunkMembers[slot * ROCK_CHUNK_MAX_CELLS + i].packedXY = ROCK_CHUNK_EMPTY_PACKED;
+    _RockChunkHeaders[slot] = h;
+}

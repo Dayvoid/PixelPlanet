@@ -1,6 +1,7 @@
 using System;
 using GeneSys.Simulation.Climate;
 using GeneSys.Simulation.Geodynamics;
+using GeneSys.Simulation.RockChunks;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -84,6 +85,12 @@ namespace GeneSys.Simulation.Gpu
         public ComputeBuffer GeodynamicsStateWrite { get; private set; }
         public ComputeBuffer GeodynamicsEvents { get; private set; }
         public ComputeBuffer GeodynamicsEventCounter { get; private set; }
+        public RenderTexture RockSupportRead { get; private set; }
+        public RenderTexture RockSupportWrite { get; private set; }
+        public RenderTexture RockChunkClaims { get; private set; }
+        public RenderTexture RockChunkDest { get; private set; }
+        public ComputeBuffer RockChunkHeaders { get; private set; }
+        public ComputeBuffer RockChunkMembers { get; private set; }
         public PolarGridDefinition Grid { get; private set; }
         public bool IsCreated => MaterialRead != null && MaterialRead.IsCreated();
 
@@ -139,12 +146,19 @@ namespace GeneSys.Simulation.Gpu
             GeodynamicsStateWrite = CreateStructuredBuffer(GeodynamicsGrid.StateBufferCount());
             GeodynamicsEvents = CreateStructuredBuffer(GeodynamicsGrid.EventBufferCount());
             GeodynamicsEventCounter = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Structured);
+            RockSupportRead = CreateTexture("GeneSys RockSupport A", GraphicsFormat.R32_UInt);
+            RockSupportWrite = CreateTexture("GeneSys RockSupport B", GraphicsFormat.R32_UInt);
+            RockChunkClaims = CreateTexture("GeneSys RockChunk Claims", GraphicsFormat.R32_UInt);
+            RockChunkDest = CreateTexture("GeneSys RockChunk Dest", GraphicsFormat.R32_UInt);
+            RockChunkHeaders = new ComputeBuffer(RockChunksGrid.MaxSlots, RockChunksGrid.HeaderStride, ComputeBufferType.Structured);
+            RockChunkMembers = new ComputeBuffer(RockChunksGrid.MemberBufferCount(), RockChunksGrid.MemberStride, ComputeBufferType.Structured);
 
             ClearFlora();
             ClearFaunaAndAcoustic();
             ClearWaterColumns();
             ClearClimate();
             ClearGeodynamics();
+            ClearRockChunks();
         }
 
         public void ClearWaterColumns()
@@ -174,6 +188,28 @@ namespace GeneSys.Simulation.Gpu
             if (GeodynamicsEvents != null)
                 GeodynamicsEvents.SetData(new Vector4[GeodynamicsGrid.EventBufferCount()]);
             GeodynamicsEventCounter?.SetData(new uint[1]);
+        }
+
+        public void ClearRockChunks()
+        {
+            ClearRenderTarget(RockSupportRead);
+            ClearRenderTarget(RockSupportWrite);
+            ClearRenderTarget(RockChunkClaims);
+            ClearRenderTarget(RockChunkDest);
+            if (RockChunkHeaders != null)
+                RockChunkHeaders.SetData(new RockChunksGrid.Header[RockChunksGrid.MaxSlots]);
+            if (RockChunkMembers != null)
+            {
+                var members = new RockChunksGrid.Member[RockChunksGrid.MemberBufferCount()];
+                for (int i = 0; i < members.Length; i++)
+                    members[i].packedXY = RockChunksGrid.EmptyPacked;
+                RockChunkMembers.SetData(members);
+            }
+        }
+
+        public void SwapRockSupport()
+        {
+            (RockSupportRead, RockSupportWrite) = (RockSupportWrite, RockSupportRead);
         }
 
         public void SwapGeodynamics()
@@ -347,6 +383,8 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(FaunaRead, FaunaWrite);
             Graphics.CopyTexture(AcousticRead, AcousticWrite);
             Graphics.CopyTexture(PropaguleRead, PropaguleWrite);
+            if (RockSupportRead != null && RockSupportWrite != null)
+                Graphics.CopyTexture(RockSupportRead, RockSupportWrite);
         }
 
         public void Dispose()
@@ -376,6 +414,10 @@ namespace GeneSys.Simulation.Gpu
             GeodynamicsStateWrite?.Release();
             GeodynamicsEvents?.Release();
             GeodynamicsEventCounter?.Release();
+            RockChunkHeaders?.Release();
+            RockChunkMembers?.Release();
+            Release(RockSupportRead); Release(RockSupportWrite);
+            Release(RockChunkClaims); Release(RockChunkDest);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -399,6 +441,10 @@ namespace GeneSys.Simulation.Gpu
             GeodynamicsStateWrite = null;
             GeodynamicsEvents = null;
             GeodynamicsEventCounter = null;
+            RockChunkHeaders = null;
+            RockChunkMembers = null;
+            RockSupportRead = RockSupportWrite = null;
+            RockChunkClaims = RockChunkDest = null;
         }
 
         private static void Release(RenderTexture texture)

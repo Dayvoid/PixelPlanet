@@ -34,6 +34,7 @@ namespace GeneSys.UI
             { "Hydrology and erosion", "hydrology" },
             { "Climate", "weather" },
             { "Material transport (Margolus CA)", "hydrology" },
+            { "Surface rock chunks", "hydrology" },
             { "Solar and weather", "weather" },
             { "Ecology - Mycology", "ecology-mycology" },
             { "Ecology - Algae", "ecology-algae" },
@@ -63,6 +64,7 @@ namespace GeneSys.UI
             nameof(SimulationConfig.enableCoreVisual),
             nameof(SimulationConfig.enableProbeThruster),
             nameof(SimulationConfig.enableMaterialTransport),
+            nameof(SimulationConfig.enableRockChunks),
             nameof(SimulationConfig.margolusMetricEnable),
             nameof(SimulationConfig.margolusFluidEnable),
             nameof(SimulationConfig.geodynamicsLayerEnable)

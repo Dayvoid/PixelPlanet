@@ -31,6 +31,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader climate;
         [SerializeField] private ComputeShader geodynamics;
         [SerializeField] private ComputeShader margolusTransport;
+        [SerializeField] private ComputeShader rockChunks;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -118,10 +119,12 @@ namespace GeneSys.Simulation
                 geodynamics = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Geodynamics.compute");
             if (margolusTransport == null)
                 margolusTransport = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
+            if (rockChunks == null)
+                rockChunks = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/RockChunks.compute");
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, combustion: combustion, storm: storm, climate: climate, geodynamics: geodynamics, margolusTransport: margolusTransport);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, combustion: combustion, storm: storm, climate: climate, geodynamics: geodynamics, margolusTransport: margolusTransport, rockChunks: rockChunks);
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();

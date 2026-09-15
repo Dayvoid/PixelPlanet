@@ -92,6 +92,9 @@
 //   pass runs after Precipitation so new drops fall before groundwater/hydrostatic.
 //   ErosionAndCollapse owns identity changes, epigenic speleogenesis (limestone -> cave void),
 //   speleothem growth, and structural ceiling calving (aux.w >= 1.0 -> unpinned for Margolus drop).
+//   RockChunks owns rigid relocation of surface granite/limestone features that detach or
+//   hinge off the planet parent (amortized search, pivot rotation, impact settle).
+//   Margolus still owns granular, fluids, calved cave debris, and sub-minSize rock.
 //   PhaseChange owns every material ID phase flip, including Magma↔Basalt. Retired density-exchange / material-motion kernels do not exist.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 // Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
