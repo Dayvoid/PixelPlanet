@@ -150,7 +150,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.tectonicSurfaceCoupling)] =
                 "How much a seismic envelope adds to surfaceFailureStress on weak, wet, exposed, or unsupported crust. It never directly replaces terrain cells.",
             [nameof(SimulationConfig.tectonicKinematicCoupling)] =
-                "Master mix for crustal kinematics. At 0, the lid stays put. Raising it lets lattice flow, convergence, and coseismic slip move terrain cells in spaced increments (unlike surface coupling, which only loads failure stress).",
+                "Master mix for crustal kinematics. At 0, the lid stays put. Raising it scales how often lattice flow, convergence, and coseismic slip move terrain cells (unlike surface coupling, which only loads failure stress).",
             [nameof(SimulationConfig.tectonicUpliftScale)] =
                 "How strongly buoyant flow and overpressure raise or lower the lithospheric lid by shifting whole columns. Higher values grow ridges and basins faster.",
             [nameof(SimulationConfig.tectonicConvergenceScale)] =
@@ -159,6 +159,8 @@ namespace GeneSys.UI
                 "How strongly angular lattice flow shears lid cells sideways. Higher values offset strata along a sector; polar metric keeps outer rings from racing.",
             [nameof(SimulationConfig.tectonicCoseismicScale)] =
                 "Extra vertical throw and strike-slip added inside an earthquake envelope. Pulses rupture motion without changing the seismic stress path.",
+            [nameof(SimulationConfig.tectonicIsostasyScale)] =
+                "How strongly lid thickness is pulled back toward the worldgen crust ratio. Higher values cap mountain and basin relief instead of letting a standing plume walk the column to the atmosphere.",
             [nameof(SimulationConfig.extrusionRate)] =
                 "How quickly overpressured magma is driven toward the surface once the lattice supplies a volcanic envelope. Raises flow and cone building without a global pressure feed.",
             [nameof(SimulationConfig.volcanicCoolingRate)] =

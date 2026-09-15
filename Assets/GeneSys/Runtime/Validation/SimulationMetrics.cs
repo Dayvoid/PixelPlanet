@@ -123,6 +123,7 @@ namespace GeneSys.Validation
         public int ActiveEventCount;
         public float ReleasedEnergy;
         public float AffectedAngularFraction;
+        public int KinematicCellsMoved;
         public bool HasNonFinite;
     }
 
@@ -157,6 +158,7 @@ namespace GeneSys.Validation
         public int ActiveGeoEvents;
         public float ReleasedGeoEnergy;
         public float AffectedGeoArcFraction;
+        public int KinematicCellsMoved;
 
         public int TotalOrganisms;
         public int AlgaeCount;
@@ -172,7 +174,7 @@ namespace GeneSys.Validation
             return
                 $"Grid {AngularResolution}×{RadialResolution} | Ocean {OceanCoverage * 100f:F1}% ({BasinCount} basins)\n" +
                 $"Water  surf {SurfaceWaterMass:F1}  ground {GroundwaterMass:F1}  vapor {VaporMass:F1}  total {TotalTrackedWaterMass:F1}\n" +
-                $"Geo  strain {MeanStrain:F3} (peak {MaxStrain:F3})  melt P {MeanOverpressure:F3} (peak {MaxOverpressure:F3})  events {ActiveGeoEvents} (E: {ReleasedGeoEnergy:F1})\n" +
+                $"Geo  strain {MeanStrain:F3} (peak {MaxStrain:F3})  melt P {MeanOverpressure:F3} (peak {MaxOverpressure:F3})  events {ActiveGeoEvents} (E: {ReleasedGeoEnergy:F1})  moved {KinematicCellsMoved}\n" +
                 $"Atmo  T {MeanTemperature:F1}°  P {MeanPressure:F3}  RH {MeanRelativeHumidity * 100f:F0}%  cloud {CloudCover * 100f:F0}%  wind {MeanWindSpeed:F3}  fire {BurningCellCount} (O2 {MeanOxygen:F2})\n" +
                 $"Life  algae {AlgaeCount}  cricket {CricketAdults} ({CricketEggs} egg)  wasp {WaspAdults} ({WaspEggs} egg)  trees {TreeAnchors} ({TreeTotalPixels} px)";
         }

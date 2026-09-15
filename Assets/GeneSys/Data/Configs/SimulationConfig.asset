@@ -87,6 +87,12 @@ MonoBehaviour:
   tectonicCooldownTicks: 240
   tectonicMaxConcurrentEvents: 2
   tectonicSurfaceCoupling: 0.18
+  tectonicKinematicCoupling: 0.15
+  tectonicUpliftScale: 1
+  tectonicConvergenceScale: 1
+  tectonicDisplacementScale: 0.5
+  tectonicCoseismicScale: 0.35
+  tectonicIsostasyScale: 2
   extrusionRate: 0.4
   volcanicCoolingRate: 0.15
   magmaViscosity: 0.5

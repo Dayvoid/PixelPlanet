@@ -727,7 +727,12 @@ namespace GeneSys.Simulation.Gpu
                 config.tectonicConvergenceScale,
                 config.tectonicDisplacementScale));
             shader.SetVector("_GeodynamicsL", new Vector4(
-                config.tectonicCoseismicScale, 0f, 0f, 0f));
+                config.tectonicCoseismicScale,
+                config.crustRatio,
+                config.tectonicIsostasyScale,
+                0f));
+            shader.SetFloat("_TectonicCrustRatio", config.crustRatio);
+            shader.SetFloat("_TectonicIsostasyScale", config.tectonicIsostasyScale);
             shader.SetVector("_Volcanic", new Vector4(
                 config.extrusionRate,
                 config.volcanicCoolingRate,

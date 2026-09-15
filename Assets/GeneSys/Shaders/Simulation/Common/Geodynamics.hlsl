@@ -19,7 +19,7 @@ float4 _GeodynamicsB; // heatCoupling, strainGain, strainTransfer, faultHealing
 float4 _GeodynamicsC; // earthquakeThreshold, releaseFraction, footprint, cooldownTicks
 float4 _GeodynamicsD; // maxConcurrent, surfaceCoupling, volcanicThreshold, volcanicReleaseFraction
 float4 _GeodynamicsK; // kinematicCoupling, upliftScale, convergenceScale, displacementScale
-float4 _GeodynamicsL; // coseismicScale, unused
+float4 _GeodynamicsL; // coseismicScale, crustRatio, isostasyScale, unused
 #ifndef GENESYS_VOLCANIC_DECLARED
 #define GENESYS_VOLCANIC_DECLARED
 float4 _Volcanic; // extrusionRate, coolingRate, magmaViscosity, unused
@@ -256,18 +256,30 @@ float GeodynamicsConvergence(int theta, float radius01)
     return clamp(left - right, -4.0, 4.0);
 }
 
+float GeodynamicsRelativeRadialFlow(int theta, float radius01)
+{
+    int a0 = GeodynamicsAngularBin(theta);
+    int r0 = GeodynamicsRadialBin(radius01);
+    float self = GeodynamicsKinematics(a0, r0).y;
+    float mean = 0.0;
+    [unroll]
+    for (int da = -4; da <= 4; da++)
+        mean += GeodynamicsKinematics(a0 + da, r0).y;
+    return self - mean * (1.0 / 9.0);
+}
+
 float GeodynamicsVerticalDrive(int theta, float radius01)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    float2 flow = GeodynamicsFlow(theta, radius01);
+    float relativeUpwell = GeodynamicsRelativeRadialFlow(theta, radius01);
     float convergence = GeodynamicsConvergence(theta, radius01);
     float overpressure = GeodynamicsOverpressure(theta, radius01);
     float seismic = GeodynamicsSeismicEnvelope(theta, radius01);
     float upliftScale = max(0.0, _GeodynamicsK.y);
     float convergenceScale = max(0.0, _GeodynamicsK.z);
     float coseismic = max(0.0, _GeodynamicsL.x);
-    float drive = upliftScale * (flow.y + overpressure)
+    float drive = upliftScale * (relativeUpwell + overpressure)
         + convergenceScale * convergence
         + coseismic * seismic;
     return clamp(drive, -8.0, 8.0);
@@ -276,14 +288,13 @@ float GeodynamicsVerticalDrive(int theta, float radius01)
 float GeodynamicsKinematicChance(float drive)
 {
     float coupling = saturate(_GeodynamicsK.x);
-    float strength = abs(drive) * coupling;
-    if (strength < 0.25)
+    float excess = abs(drive) - 0.08;
+    if (excess <= 0.0 || coupling <= 1e-5)
         return 0.0;
-    float t = saturate((strength - 0.25) * 2.0);
-    // Default coupling must not saturate: a standing plume would otherwise
-    // raise or drop the lid every geodynamics tick until it hits a wall.
-    float cap = lerp(0.22, 1.0, saturate((coupling - 0.2) / 0.8));
-    return saturate(t * cap + 1e-4);
+    // coupling=1, |drive|=2 saturates so forced fixtures step every tick.
+    // coupling=0.15, |drive|=1 yields ~0.33, about one cell per 10–30 geo ticks
+    // once spacing is applied.
+    return saturate(coupling * excess * 2.4);
 }
 
 float GeodynamicsKinematicGate(int theta)
@@ -296,7 +307,7 @@ int GeodynamicsKinematicSpacing()
 {
     float coupling = saturate(_GeodynamicsK.x);
     float hold = 1.0 - coupling;
-    return max(1, (int)round(1.0 + 8.0 * hold * hold));
+    return max(1, (int)round(1.0 + 4.0 * hold * hold));
 }
 
 bool GeodynamicsKinematicDue(int theta)

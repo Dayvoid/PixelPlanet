@@ -47,7 +47,8 @@ namespace GeneSys.Tests
             Assert.That(config.tectonicMaxConcurrentEvents, Is.EqualTo(2));
             Assert.That(config.tectonicKinematicCoupling, Is.EqualTo(0.15f).Within(0.0001f));
             Assert.That(config.tectonicUpliftScale, Is.EqualTo(1f).Within(0.0001f));
-            Assert.That(config.tectonicDisplacementScale, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(config.tectonicDisplacementScale, Is.EqualTo(0.5f).Within(0.0001f));
+            Assert.That(config.tectonicIsostasyScale, Is.EqualTo(2f).Within(0.0001f));
             Assert.That(config.eruptionDriveScale, Is.InRange(0.2f, 0.8f));
             config.tectonicReleaseFraction = 0.9f;
             config.geodynamicsAngularBins = 4;

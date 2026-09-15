@@ -183,8 +183,9 @@ namespace GeneSys.Tests
             host.Config.tectonicKinematicCoupling = 0.15f;
             host.Config.tectonicUpliftScale = 1f;
             host.Config.tectonicConvergenceScale = 1f;
-            host.Config.tectonicDisplacementScale = 1f;
+            host.Config.tectonicDisplacementScale = 0.5f;
             host.Config.tectonicCoseismicScale = 0.35f;
+            host.Config.tectonicIsostasyScale = 2f;
             host.Config.extrusionRate = 0.4f;
             host.Config.volcanicReleaseThreshold = 0.78f;
             host.Config.volcanicReleaseFraction = 0.2f;
@@ -711,6 +712,34 @@ namespace GeneSys.Tests
             return count;
         }
 
+        private static int FindMaterialXNear(uint[] materials, uint id, int markerX, int width, int yMin, int yMax)
+        {
+            int yLo = Mathf.Max(0, yMin);
+            int yHi = Mathf.Min(materials.Length / Mathf.Max(1, width) - 1, yMax);
+            for (int y = yHi; y >= yLo; y--)
+            {
+                for (int dx = -16; dx <= 16; dx++)
+                {
+                    int x = markerX + dx;
+                    if (x < 0) x += width;
+                    else if (x >= width) x -= width;
+                    int dist = Mathf.Abs(dx);
+                    if (dist <= 16 && materials[y * width + x] == id)
+                        return x;
+                }
+            }
+            return -1;
+        }
+
+        private static int CountInColumn(uint[] materials, uint id, int x, int width, int height)
+        {
+            int count = 0;
+            for (int y = 0; y < height; y++)
+                if (materials[y * width + x] == id)
+                    count++;
+            return count;
+        }
+
         private static int LidSurfaceY(uint[] materials, int x, int width, int height)
         {
             for (int y = height - 1; y >= 0; y--)
@@ -745,6 +774,7 @@ namespace GeneSys.Tests
             host.Config.tectonicConvergenceScale = 4f;
             host.Config.tectonicDisplacementScale = 4f;
             host.Config.tectonicCoseismicScale = 0f;
+            host.Config.tectonicIsostasyScale = 2f;
             host.Config.enableMaterialTransport = false;
             host.Config.volcanicCoolingRate = 0f;
             host.Config.slowPassInterval = 1000;
@@ -754,27 +784,41 @@ namespace GeneSys.Tests
             host.Config.tectonicKinematicCoupling = 1f;
         }
 
-        private static void ForceKinematics(SimulationHost host, float flowX, float flowY, float overpressure = 0f)
+        private static int PaintedLidThickness(SimulationHost host, int y0)
+        {
+            int height = host.Grid.radialResolution;
+            int atmosphereY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.atmosphereStartRadius * (height - 1)), 1, height - 1);
+            int refCells = Mathf.Max(6, Mathf.RoundToInt(host.Config.crustRatio * (height - 1)));
+            return Mathf.Clamp(refCells, 6, Mathf.Max(6, atmosphereY - y0 - 4));
+        }
+
+        private static void ForceKinematics(SimulationHost host, float flowX, float flowY, float overpressure = 0f, int centerX = -1, int sectorBins = 3)
         {
             int angularBins = host.Config.geodynamicsAngularBins;
             int radialBins = host.Config.geodynamicsRadialBins;
+            int width = host.Grid.angularResolution;
+            int centerBin = centerX >= 0
+                ? GeodynamicsGrid.AngularBinOf(centerX, width, angularBins)
+                : -1;
             var state = new Vector4[GeodynamicsGrid.StateBufferCount()];
             host.Resources.GeodynamicsStateRead.GetData(state);
             for (int a = 0; a < angularBins; a++)
             {
+                int delta = centerBin < 0 ? 0 : Mathf.Min(Mathf.Abs(a - centerBin), angularBins - Mathf.Abs(a - centerBin));
+                bool inSector = centerBin < 0 || delta <= sectorBins;
                 for (int r = 0; r < radialBins; r++)
                 {
                     int res = GeodynamicsGrid.StateIndex(a, r, GeodynamicsGrid.SlotReservoir, angularBins, radialBins);
                     int kin = GeodynamicsGrid.StateIndex(a, r, GeodynamicsGrid.SlotKinematics, angularBins, radialBins);
                     Vector4 reservoir = state[res];
                     reservoir.x = 0f;
-                    reservoir.y = overpressure;
+                    reservoir.y = inSector ? overpressure : 0f;
                     reservoir.z = 0f;
                     reservoir.w = 0f;
                     state[res] = reservoir;
                     Vector4 kinematics = state[kin];
-                    kinematics.x = flowX;
-                    kinematics.y = flowY;
+                    kinematics.x = inSector ? flowX : 0f;
+                    kinematics.y = inSector ? flowY : 0f;
                     state[kin] = kinematics;
                 }
             }
@@ -785,11 +829,12 @@ namespace GeneSys.Tests
         private static void PaintLidColumn(SimulationHost host, int x, int y0)
         {
             int height = host.Grid.radialResolution;
+            int thickness = PaintedLidThickness(host, y0);
             for (int y = Mathf.Max(1, y0 - 8); y < y0; y++)
                 Paint(host, x, y, MaterialIds.Mantle);
-            for (int y = y0; y < y0 + 6 && y < height; y++)
+            for (int y = y0; y < y0 + thickness && y < height; y++)
                 Paint(host, x, y, MaterialIds.Rock);
-            for (int y = y0 + 6; y < height; y++)
+            for (int y = y0 + thickness; y < height; y++)
                 Paint(host, x, y, MaterialIds.Air);
         }
 
@@ -824,7 +869,7 @@ namespace GeneSys.Tests
 
             for (int i = 0; i < 10; i++)
             {
-                ForceKinematics(host, 0f, 2f);
+                ForceKinematics(host, 0f, 2f, 0f, x);
                 yield return Step(host, 1);
             }
 
@@ -855,6 +900,7 @@ namespace GeneSys.Tests
             int height = host.Grid.radialResolution;
             int x = width / 2;
             int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            int thickness = PaintedLidThickness(host, y0);
             PaintLidColumn(host, x, y0);
             yield return Step(host, 1);
 
@@ -862,15 +908,15 @@ namespace GeneSys.Tests
             yield return ReadMaterials(host, mats =>
             {
                 Assert.That(mats[(y0 - 1) * width + x], Is.EqualTo(MaterialIds.Mantle));
-                Assert.That(mats[(y0 + 5) * width + x], Is.EqualTo(MaterialIds.Rock));
-                Assert.That(mats[(y0 + 6) * width + x], Is.EqualTo(MaterialIds.Air));
+                Assert.That(mats[(y0 + thickness - 1) * width + x], Is.EqualTo(MaterialIds.Rock));
+                Assert.That(mats[(y0 + thickness) * width + x], Is.EqualTo(MaterialIds.Air));
                 surfaceBefore = LidSurfaceY(mats, x, width, height);
             });
-            Assert.That(surfaceBefore, Is.EqualTo(y0 + 5));
+            Assert.That(surfaceBefore, Is.EqualTo(y0 + thickness - 1));
 
             for (int i = 0; i < 8; i++)
             {
-                ForceKinematics(host, 0f, -2f);
+                ForceKinematics(host, 0f, -2f, 0f, x);
                 yield return Step(host, 1);
             }
 
@@ -891,8 +937,22 @@ namespace GeneSys.Tests
             SceneManager.LoadScene("Terrarium");
             yield return WaitForHost();
             SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return AssertAngularMarkerShift(host, 8803, host.Grid.angularResolution - 2, 2f);
+        }
+
+        [UnityTest]
+        public IEnumerator ForcedNegativeAngularFlowShiftsOddMarker()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return AssertAngularMarkerShift(host, 8807, 51, -2f);
+        }
+
+        private static IEnumerator AssertAngularMarkerShift(SimulationHost host, int seed, int markerX, float flowX)
+        {
             host.Clock.SetRunning(false);
-            host.Config.seed = 8803;
+            host.Config.seed = seed;
             bool transport = host.Config.enableMaterialTransport;
             ConfigureKinematics(host);
             host.Regenerate();
@@ -900,52 +960,41 @@ namespace GeneSys.Tests
 
             int width = host.Grid.angularResolution;
             int height = host.Grid.radialResolution;
-            int x = width - 2;
             int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            int thickness = PaintedLidThickness(host, y0);
             for (int dx = -4; dx <= 4; dx++)
             {
-                int px = (x + dx + width) % width;
+                int px = (markerX + dx + width) % width;
                 Paint(host, px, y0 - 1, MaterialIds.Mantle);
-                Paint(host, px, y0, MaterialIds.Rock);
-                Paint(host, px, y0 + 1, MaterialIds.Rock);
-                Paint(host, px, y0 + 2, MaterialIds.Air);
+                for (int y = y0; y < y0 + thickness; y++)
+                    Paint(host, px, y, MaterialIds.Rock);
+                for (int y = y0 + thickness; y < height; y++)
+                    Paint(host, px, y, MaterialIds.Air);
             }
-            Paint(host, x, y0 + 1, MaterialIds.Metal);
+            Paint(host, markerX, y0 + thickness - 1, MaterialIds.Metal);
             yield return Step(host, 1);
 
             int markerBefore = -1;
-            yield return ReadMaterials(host, mats =>
-            {
-                for (int dx = -8; dx <= 8; dx++)
-                {
-                    int px = (x + dx + width) % width;
-                    if (mats[(y0 + 1) * width + px] == MaterialIds.Metal)
-                        markerBefore = px;
-                }
-            });
-            Assert.That(markerBefore, Is.EqualTo(x));
+            int yLo = Mathf.Max(0, y0);
+            int yHi = Mathf.Min(height - 1, y0 + thickness + 24);
+            yield return ReadMaterials(host, mats => markerBefore = FindMaterialXNear(mats, MaterialIds.Metal, markerX, width, yLo, yHi));
+            Assert.That(markerBefore, Is.EqualTo(markerX));
 
             for (int i = 0; i < 12; i++)
             {
-                ForceKinematics(host, 2f, 0f);
+                ForceKinematics(host, flowX, 0f);
                 yield return Step(host, 1);
             }
 
             yield return ReadMaterials(host, mats =>
             {
-                int markerAfter = -1;
-                for (int px = 0; px < width; px++)
-                {
-                    if (mats[(y0 + 1) * width + px] == MaterialIds.Metal)
-                    {
-                        markerAfter = px;
-                        break;
-                    }
-                }
+                int markerAfter = FindMaterialXNear(mats, MaterialIds.Metal, markerX, width, yLo, yHi);
                 Assert.That(markerAfter, Is.GreaterThanOrEqualTo(0));
-                int delta = (markerAfter - markerBefore + width) % width;
-                Assert.That(delta, Is.GreaterThan(0));
-                Assert.That(delta, Is.LessThan(width / 2));
+                int signed = flowX > 0f
+                    ? (markerAfter - markerBefore + width) % width
+                    : (markerBefore - markerAfter + width) % width;
+                Assert.That(signed, Is.GreaterThan(0));
+                Assert.That(signed, Is.LessThan(width / 2));
             });
             RestoreDefaults(host);
             RestoreTransport(host, transport);
@@ -969,41 +1018,44 @@ namespace GeneSys.Tests
             int waterX = width / 3;
             int magmaX = (2 * width) / 3;
             int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            int thickness = PaintedLidThickness(host, y0);
             PaintLidColumn(host, waterX, y0);
             PaintLidColumn(host, magmaX, y0);
             yield return Step(host, 1);
-            Paint(host, waterX - 1, y0 + 6, MaterialIds.Rock);
-            Paint(host, waterX + 1, y0 + 6, MaterialIds.Rock);
-            Paint(host, waterX, y0 + 6, MaterialIds.Water);
-            PaintField(host, waterX, y0 + 6, 2f, 1f);
+            Paint(host, waterX - 1, y0 + thickness, MaterialIds.Rock);
+            Paint(host, waterX + 1, y0 + thickness, MaterialIds.Rock);
+            Paint(host, waterX, y0 + thickness, MaterialIds.Water);
+            PaintField(host, waterX, y0 + thickness, 2f, 1f);
             Paint(host, magmaX, y0 + 2, MaterialIds.Magma);
             PaintField(host, magmaX, y0 + 2, 1f, 1200f);
             yield return Step(host, 1);
 
-            int waterSurfaceBefore = 0;
+            int waterCountBefore = 0;
             int magmaSurfaceBefore = 0;
             yield return ReadMaterials(host, mats =>
             {
-                waterSurfaceBefore = LidSurfaceY(mats, waterX, width, height);
+                waterCountBefore = CountInColumn(mats, MaterialIds.Water, waterX, width, height);
                 magmaSurfaceBefore = LidSurfaceY(mats, magmaX, width, height);
-                Assert.That(mats[(y0 + 6) * width + waterX], Is.EqualTo(MaterialIds.Water));
+                Assert.That(mats[(y0 + thickness) * width + waterX], Is.EqualTo(MaterialIds.Water));
                 Assert.That(mats[(y0 + 2) * width + magmaX], Is.EqualTo(MaterialIds.Magma));
+                Assert.That(waterCountBefore, Is.GreaterThan(0));
             });
 
             for (int i = 0; i < 8; i++)
             {
-                ForceKinematics(host, 0f, 2f);
+                ForceKinematics(host, 0f, 2f, 0f, waterX);
                 yield return Step(host, 1);
             }
 
             yield return ReadMaterialsAndAux(host, (mats, aux) =>
             {
-                uint waterCell = mats[(y0 + 6) * width + waterX];
-                Assert.That(waterCell, Is.Not.EqualTo(MaterialIds.Rock).And.Not.EqualTo(MaterialIds.Soil));
+                int lid = LidSurfaceY(mats, waterX, width, height);
+                Assert.That(CountInColumn(mats, MaterialIds.Water, waterX, width, height), Is.EqualTo(waterCountBefore));
+                Assert.That(lid, Is.GreaterThanOrEqualTo(0));
+                Assert.That(mats[(lid + 1) * width + waterX], Is.EqualTo(MaterialIds.Water));
                 Assert.That(mats[(y0 + 2) * width + magmaX], Is.EqualTo(MaterialIds.Magma));
-                Assert.That(LidSurfaceY(mats, waterX, width, height), Is.EqualTo(waterSurfaceBefore));
                 Assert.That(LidSurfaceY(mats, magmaX, width, height), Is.EqualTo(magmaSurfaceBefore));
-                Assert.That(aux[(y0 + 5) * width + waterX].w, Is.LessThan(0.05f));
+                Assert.That(aux[lid * width + waterX].w, Is.LessThan(0.05f));
             });
             RestoreDefaults(host);
             RestoreTransport(host, transport);
@@ -1019,9 +1071,10 @@ namespace GeneSys.Tests
             host.Config.seed = 8805;
             bool transport = host.Config.enableMaterialTransport;
             ConfigureKinematics(host);
-            host.Config.tectonicKinematicCoupling = 0.15f;
+            host.Config.tectonicKinematicCoupling = 1f;
             host.Config.tectonicUpliftScale = 1f;
             host.Config.tectonicConvergenceScale = 1f;
+            host.Config.tectonicIsostasyScale = 4f;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
@@ -1037,17 +1090,99 @@ namespace GeneSys.Tests
             yield return ReadMaterials(host, mats => surfaceBefore = LidSurfaceY(mats, x, width, height));
             Assert.That(surfaceBefore, Is.GreaterThan(0));
 
+            int surfaceMid = 0;
             for (int i = 0; i < 80; i++)
             {
-                ForceKinematics(host, 0f, 2f);
+                ForceKinematics(host, 0f, 2f, 0f, x, 2);
                 yield return Step(host, 1);
+                if (i == 59)
+                    yield return ReadMaterials(host, mats => surfaceMid = LidSurfaceY(mats, x, width, height));
             }
 
             yield return ReadMaterials(host, mats =>
             {
                 int surfaceAfter = LidSurfaceY(mats, x, width, height);
+                int refCells = Mathf.Max(6, Mathf.RoundToInt(host.Config.crustRatio * (height - 1)));
+                float isostasy = Mathf.Max(0.01f, host.Config.tectonicIsostasyScale);
                 Assert.That(surfaceAfter, Is.LessThan(atmosphereY - 2));
-                Assert.That(surfaceAfter - surfaceBefore, Is.LessThan(12));
+                Assert.That(surfaceAfter, Is.EqualTo(surfaceMid).Within(3));
+                Assert.That(surfaceAfter - surfaceBefore, Is.LessThan(Mathf.RoundToInt(refCells * 2f / isostasy) + 6));
+            });
+            RestoreDefaults(host);
+            RestoreTransport(host, transport);
+        }
+
+        [UnityTest]
+        public IEnumerator DefaultCouplingPlumeMovesLidWithoutRunaway()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 8806;
+            bool transport = host.Config.enableMaterialTransport;
+            RestoreDefaults(host);
+            host.Config.geodynamicsPeriodTicks = 1;
+            host.Config.eruptionDriveScale = 0f;
+            host.Config.extrusionRate = 0f;
+            host.Config.erosionRate = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.precipitationRate = 0f;
+            host.Config.enableMaterialTransport = false;
+            host.Config.volcanicCoolingRate = 0f;
+            host.Config.slowPassInterval = 1000;
+            host.Config.coreHeatRate = 0f;
+            host.Config.thermalRate = 0f;
+            host.Config.validationIntervalTicks = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(height * 0.58f), 12, height - 12);
+            PaintLidColumn(host, x, y0);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                int px = (x + dx + width) % width;
+                if (px != x)
+                    PaintLidColumn(host, px, y0);
+                for (int dy = -6; dy <= -2; dy++)
+                {
+                    Paint(host, px, y0 + dy, MaterialIds.Magma);
+                    PaintField(host, px, y0 + dy, 1f, 1200f);
+                }
+            }
+            yield return Step(host, 1);
+
+            var surfaceBefore = new int[width];
+            yield return ReadMaterials(host, mats =>
+            {
+                for (int px = 0; px < width; px++)
+                    surfaceBefore[px] = LidSurfaceY(mats, px, width, height);
+            });
+            Assert.That(surfaceBefore[x], Is.GreaterThan(0));
+
+            yield return Step(host, 400);
+
+            int refCells = Mathf.Max(6, Mathf.RoundToInt(host.Config.crustRatio * (height - 1)));
+            float isostasy = Mathf.Max(0.01f, host.Config.tectonicIsostasyScale);
+            int maxRelief = Mathf.RoundToInt(refCells * 2f / isostasy) + 2;
+            yield return ReadMaterials(host, mats =>
+            {
+                bool sectorMoved = false;
+                int maxDelta = 0;
+                for (int px = 0; px < width; px++)
+                {
+                    int after = LidSurfaceY(mats, px, width, height);
+                    int delta = Mathf.Abs(after - surfaceBefore[px]);
+                    maxDelta = Mathf.Max(maxDelta, delta);
+                    int dist = Mathf.Min(Mathf.Abs(px - x), width - Mathf.Abs(px - x));
+                    if (dist <= 8 && after != surfaceBefore[px])
+                        sectorMoved = true;
+                }
+                Assert.That(sectorMoved, Is.True, "Default coupling should shift the lid over a painted plume sector.");
+                Assert.That(maxDelta, Is.LessThanOrEqualTo(maxRelief));
             });
             RestoreDefaults(host);
             RestoreTransport(host, transport);

@@ -289,6 +289,7 @@ namespace GeneSys.Simulation.Gpu
 
         public void Swap()
         {
+            // Fine-grid ping-pong only. Geodynamics lattice buffers are also excluded; use SwapGeodynamics.
             (MaterialRead, MaterialWrite) = (MaterialWrite, MaterialRead);
             (StateRead, StateWrite) = (StateWrite, StateRead);
             (FlowRead, FlowWrite) = (FlowWrite, FlowRead);

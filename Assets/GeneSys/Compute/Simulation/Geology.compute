@@ -6,7 +6,7 @@
 #pragma kernel TectonicDisplacement
 #pragma kernel TectonicVertical
 #pragma target 5.0
-#define TECTONIC_KINEMATICS_VERSION 4
+#define TECTONIC_KINEMATICS_VERSION 5
 
 #include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
 
@@ -27,6 +27,8 @@ RWTexture2D<float4> _CombustionWrite;
 Texture2DArray<float4> _LifeGenomeRead;
 RWTexture2DArray<float4> _LifeGenomeWrite;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+float _TectonicIsostasyScale;
+float _TectonicCrustRatio;
 
 int2 _GridSize;
 int _Tick;
@@ -467,7 +469,7 @@ bool IsTectonicLidMaterial(uint material)
 
 bool IsTectonicOpenCarrier(uint material)
 {
-    return material == 0u || material == 1u || material == 11u;
+    return material == 0u || material == 1u || material == 9u || material == 11u;
 }
 
 bool IsTectonicColumnBlocked(uint material)
@@ -481,19 +483,25 @@ void WriteCopiedCell(int2 dest, int2 src)
         ReadEcology(src), ReadCombustion(src), ReadLife(src), ReadGenome(src));
 }
 
-void WriteMantleFill(int2 dest, int2 donor)
+int TectonicWrapX(int x, int width)
 {
-    float4 state = ReadState(donor);
-    float2 flow = ReadFlow(donor);
-    float4 aux = ReadAux(donor);
-    aux.w = 0.0;
-    WriteCell(dest, 3u, state, flow, aux, ReadEcology(donor), ReadCombustion(donor), ReadLife(donor), ReadGenome(donor));
+    int wrapped = x % width;
+    return wrapped < 0 ? wrapped + width : wrapped;
 }
 
-int TectonicPairParity()
+float TectonicAngularGateDrive(int theta, float radius)
 {
-    int period = max(1, (int)_GeodynamicsA.x);
-    return (_Tick / period) & 1;
+    int width = max(1, _GridSize.x);
+    float drive = GeodynamicsAngularDrive(theta, radius) * max(0.0, _GeodynamicsK.w);
+    float gamma = (6.28318530718 * max(0.04, radius) * (float)_GridSize.y) / (float)width;
+    return drive / max(0.25, gamma);
+}
+
+int TectonicAngularSign(float drive)
+{
+    if (drive > 0.0) return 1;
+    if (drive < 0.0) return -1;
+    return 0;
 }
 
 [numthreads(8, 8, 1)]
@@ -517,37 +525,50 @@ void TectonicDisplacement(uint3 id : SV_DispatchThreadID)
     }
 
     int width = max(1, _GridSize.x);
-    int parity = TectonicPairParity();
-    int leftX = ((cell.x & 1) == parity) ? cell.x : cell.x - 1;
-    if (leftX < 0) leftX += width;
-    int rightX = leftX + 1;
-    if (rightX >= width) rightX -= width;
-    int2 left = int2(leftX, cell.y);
-    int2 right = int2(rightX, cell.y);
-    uint leftMat = ReadMaterial(left);
-    uint rightMat = ReadMaterial(right);
     float radius = Radius01(cell.y, _GridSize.y);
-    float drive = 0.5 * (GeodynamicsAngularDrive(leftX, radius) + GeodynamicsAngularDrive(rightX, radius));
-    drive *= max(0.0, _GeodynamicsK.w);
-    float gamma = (6.28318530718 * max(0.04, radius) * (float)_GridSize.y) / (float)width;
-    bool swap = IsTectonicLidMaterial(leftMat) && IsTectonicLidMaterial(rightMat)
-        && GeodynamicsKinematicTriggered(leftX, drive / max(0.25, gamma));
+    float driveHere = TectonicAngularGateDrive(cell.x, radius);
+    int sHere = TectonicAngularSign(driveHere);
+    bool trigHere = sHere != 0 && GeodynamicsKinematicTriggered(cell.x, driveHere);
 
-    if (swap)
+    int leftX = TectonicWrapX(cell.x - 1, width);
+    float driveLeft = TectonicAngularGateDrive(leftX, radius);
+    int sLeft = TectonicAngularSign(driveLeft);
+    bool trigLeft = sLeft != 0 && GeodynamicsKinematicTriggered(leftX, driveLeft);
+
+    int rightX = TectonicWrapX(cell.x + 1, width);
+    float driveRight = TectonicAngularGateDrive(rightX, radius);
+    int sRight = TectonicAngularSign(driveRight);
+    bool trigRight = sRight != 0 && GeodynamicsKinematicTriggered(rightX, driveRight);
+
+    int srcX = cell.x;
+    if (trigHere)
+        srcX = TectonicWrapX(cell.x - sHere, width);
+    else if (trigLeft && sLeft == 1)
+        srcX = leftX;
+    else if (trigRight && sRight == -1)
+        srcX = rightX;
+
+    if (srcX != cell.x)
     {
-        int2 src = cell.x == leftX ? right : left;
-        WriteCopiedCell(cell, src);
-        return;
+        int2 src = int2(srcX, cell.y);
+        if (IsTectonicLidMaterial(material) && IsTectonicLidMaterial(ReadMaterial(src)))
+        {
+            WriteCopiedCell(cell, src);
+            return;
+        }
     }
 
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
 }
 
-void TectonicColumnBounds(int theta, out int surfaceY, out int mohoY, out bool blocked)
+void TectonicColumnBounds(int theta, out int surfaceY, out int mohoY, out int packTopY, out int carrierTopY, out bool blocked)
 {
     int height = _GridSize.y;
     int atmosphereY = clamp((int)round(_AtmosphereStartRadius * (float)max(1, height - 1)), 1, height - 1);
     surfaceY = -1;
+    mohoY = -1;
+    packTopY = -1;
+    carrierTopY = -1;
     [loop]
     for (int y = atmosphereY - 1; y >= 0; y--)
     {
@@ -559,6 +580,7 @@ void TectonicColumnBounds(int theta, out int surfaceY, out int mohoY, out bool b
     }
 
     mohoY = surfaceY;
+    packTopY = surfaceY;
     blocked = surfaceY < 0;
     if (!blocked)
     {
@@ -573,15 +595,43 @@ void TectonicColumnBounds(int theta, out int surfaceY, out int mohoY, out bool b
             }
             if (material == 2u || material == 3u)
                 break;
+            if (IsTectonicOpenCarrier(material))
+                continue;
+            if (IsTectonicColumnBlocked(material))
+            {
+                blocked = true;
+                break;
+            }
             blocked = true;
+            break;
+        }
+    }
+
+    if (!blocked && surfaceY >= 0)
+    {
+        [loop]
+        for (int y = surfaceY + 1; y < atmosphereY; y++)
+        {
+            uint material = ReadMaterial(int2(theta, y));
+            if (material == 9u)
+            {
+                packTopY = y;
+                continue;
+            }
+            if (IsTectonicOpenCarrier(material))
+            {
+                carrierTopY = y;
+                break;
+            }
             break;
         }
     }
 
     if (!blocked)
     {
+        int scanTop = max(surfaceY, packTopY);
         [loop]
-        for (int y = mohoY; y <= surfaceY; y++)
+        for (int y = mohoY; y <= scanTop; y++)
         {
             if (IsTectonicColumnBlocked(ReadMaterial(int2(theta, y))))
             {
@@ -592,25 +642,25 @@ void TectonicColumnBounds(int theta, out int surfaceY, out int mohoY, out bool b
     }
 }
 
-int TectonicVerticalShift(int theta, int surfaceY, int mohoY, bool blocked)
+int TectonicVerticalShift(int theta, int surfaceY, int mohoY, int packTopY, int carrierTopY, bool blocked)
 {
     int height = _GridSize.y;
     int atmosphereY = clamp((int)round(_AtmosphereStartRadius * (float)max(1, height - 1)), 1, height - 1);
-    if (blocked || surfaceY < 1 || mohoY < 0)
+    if (blocked || surfaceY < 1 || mohoY < 0 || packTopY < mohoY)
         return 0;
     if (Radius01(surfaceY, height) < _PlayableInnerRadius)
         return 0;
 
     float sampleR = Radius01((mohoY + surfaceY) / 2, height);
     float drive = GeodynamicsVerticalDrive(theta, sampleR);
+    float refCells = max(1.0, round(max(0.01, _TectonicCrustRatio) * (float)max(1, height - 1)));
+    float isostasyScale = max(0.0, _TectonicIsostasyScale);
+    float thickness = (float)(surfaceY - mohoY + 1);
+    drive -= isostasyScale * (thickness - refCells) / refCells;
     if (!GeodynamicsKinematicTriggered(theta, drive))
         return 0;
-    if (drive > 0.0 && surfaceY + 1 < atmosphereY)
-    {
-        uint above = ReadMaterial(int2(theta, surfaceY + 1));
-        if (IsTectonicOpenCarrier(above) && above != 9u)
-            return 1;
-    }
+    if (drive > 0.0 && carrierTopY > packTopY && carrierTopY < atmosphereY)
+        return 1;
     if (drive < 0.0)
         return -1;
     return 0;
@@ -636,27 +686,23 @@ void TectonicVertical(uint3 id : SV_DispatchThreadID)
     int2 cell = id.xy;
     int surfaceY;
     int mohoY;
+    int packTopY;
+    int carrierTopY;
     bool blocked;
-    TectonicColumnBounds(cell.x, surfaceY, mohoY, blocked);
-    int shift = TectonicVerticalShift(cell.x, surfaceY, mohoY, blocked);
+    TectonicColumnBounds(cell.x, surfaceY, mohoY, packTopY, carrierTopY, blocked);
+    int shift = TectonicVerticalShift(cell.x, surfaceY, mohoY, packTopY, carrierTopY, blocked);
 
-    if (shift == 1 && cell.y >= mohoY && cell.y <= surfaceY + 1)
+    if (shift == 1 && cell.y > mohoY && cell.y <= carrierTopY)
     {
-        if (cell.y == mohoY)
-        {
-            int2 donor = mohoY > 0 ? int2(cell.x, mohoY - 1) : cell;
-            WriteMantleFill(cell, ReadMaterial(donor) == 3u ? donor : cell);
-        }
-        else
-            WriteCopiedCell(cell, int2(cell.x, cell.y - 1));
+        WriteCopiedCell(cell, int2(cell.x, cell.y - 1));
         return;
     }
-    if (shift == -1 && cell.y == surfaceY)
+    if (shift == -1 && cell.y == packTopY)
     {
         WriteTectonicAir(cell);
         return;
     }
-    if (shift == -1 && cell.y >= mohoY && cell.y < surfaceY)
+    if (shift == -1 && cell.y >= mohoY && cell.y < packTopY)
     {
         WriteCopiedCell(cell, int2(cell.x, cell.y + 1));
         return;

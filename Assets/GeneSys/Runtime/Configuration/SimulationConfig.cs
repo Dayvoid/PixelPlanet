@@ -102,8 +102,9 @@ namespace GeneSys.Configuration
         [Range(0f, 1f)] public float tectonicKinematicCoupling = 0.15f;
         [Range(0f, 4f)] public float tectonicUpliftScale = 1f;
         [Range(0f, 4f)] public float tectonicConvergenceScale = 1f;
-        [Range(0f, 4f)] public float tectonicDisplacementScale = 1f;
+        [Range(0f, 4f)] public float tectonicDisplacementScale = 0.5f;
         [Range(0f, 4f)] public float tectonicCoseismicScale = 0.35f;
+        [Range(0f, 8f)] public float tectonicIsostasyScale = 2f;
 
         [Header("Volcanism")]
         [Range(0f, 4f)] public float extrusionRate = 0.4f;
@@ -1082,6 +1083,7 @@ namespace GeneSys.Configuration
             tectonicConvergenceScale = Mathf.Max(0f, tectonicConvergenceScale);
             tectonicDisplacementScale = Mathf.Max(0f, tectonicDisplacementScale);
             tectonicCoseismicScale = Mathf.Max(0f, tectonicCoseismicScale);
+            tectonicIsostasyScale = Mathf.Max(0f, tectonicIsostasyScale);
             volcanicCoolingRate = Mathf.Max(0f, volcanicCoolingRate);
             volcanicReleaseThreshold = Mathf.Max(0.1f, volcanicReleaseThreshold);
             volcanicReleaseFraction = Mathf.Clamp(volcanicReleaseFraction, 0.05f, 0.25f);

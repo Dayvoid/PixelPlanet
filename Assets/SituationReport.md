@@ -1,6 +1,6 @@
 # Situation Report
 
-**Date:** 2026-09-13  
+**Date:** 2026-09-15  
 **Project:** GeneSys / PixelPlanet living planetoid simulation
 
 ## Project overview
@@ -26,6 +26,7 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 | Buoyant ash lift | `AshTransport` | Downward ash settle |
 | Pressure-driven magma eruption | `EruptionMotion` | Magma fall / lateral spread |
 | Horizontal free-surface water leveling | Hydrostatic column solver | Vertical Water fall |
+| Crustal lid kinematics | `TectonicDisplacement` / `TectonicVertical` | Magma, trees, wasps; seismic `aux.w` |
 | Magma / Water / Ice pixel phase flips | `PhaseChange` | Spatial transport |
 | Groundwater boil (`aux.y` → `aux.x`) | `HydrothermalRelease` | Pixel Water→Air boil (`PhaseChange`) |
 
@@ -38,7 +39,7 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 | Polar-grid world generation and material seeding | **Mature** | `WorldGeneration.compute`, `GpuPassScheduler.GenerateWorld`, `WorldGenIntegrationTests.cs`, `MargolusWorldGenStabilityTests.cs` | V2 worldgen with pre-relaxed talus aprons, exposed granite cliff faces, continental shelf marine sedimentation. |
 | Hydrology + water mass contract | **Mature** | `Assets/Concept/WaterPlan.MD`, `HydrologyIntegrationTests.cs`, `WeatherIntegrationTests.cs` | Conservation posture around evaporation/condensation/precipitation/infiltration/hydrostatic. Groundwater boil lives in `HydrothermalRelease`. |
 | Atmospheric/weather dynamics | **Mature** | `Weather.compute`, `WeatherIntegrationTests.cs` | Buoyancy, lapse, advection, pressure diffusion, precipitation, seam wrapping, conservation checks. |
-| Geology & Geodynamics | **Mature** | `Geology.compute`, `Geodynamics.compute`, `GeodynamicsContractTests.cs`, `GeologyIntegrationTests.cs`, snapshot v16 | Angular/radial geodynamics lattice; tectonic stress, mantle heat, fault rupture, hydrothermal venting. Magma freeze is owned by `PhaseChange`. |
+| Geology & Geodynamics | **Mature** | `Geology.compute`, `Geodynamics.compute`, `GeodynamicsContractTests.cs`, `GeodynamicsIntegrationTests.cs`, snapshot v16 | Angular/radial lattice plus lid kinematics (v5): relative buoyancy, isostatic restoring, directional block shear, water-riding columns. Magma freeze is owned by `PhaseChange`. GPU move-counting is omitted (D3D11 8-UAV cap on Geology kernels). |
 | Combustion and storm/lightning | **In progress** | `Combustion.compute`, `Storm.compute`, integration tests | Dedicated fields and pass chain exist; balancing continues. |
 | Biology (mycology, flora, fauna, grass, trees, wasps) | **In progress** | Dedicated compute + PlayMode coverage | Multiple trophic layers; speciation goals remain open. Grass slots ride Margolus soil swaps. |
 | Climate coarse layer | **Mature (C0–C3)** | `Climate.compute`, `DispatchClimate`, `ClimateIntegrationTests.cs` | Coarse T/albedo/moisture/wind injectors are live (`ClimateWindBias`, `ClimateSurfaceAbsorb`, `ClimateBucketScale`, `ClimateInsolationScale`). Fine layer remains the only water-mass ledger. |

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Gpu;
@@ -76,6 +77,38 @@ namespace GeneSys.Tests
             Assert.That(mats, Is.Not.Null);
             Assert.That(aux, Is.Not.Null);
             consume(mats, aux);
+        }
+
+        private static IEnumerator ReadMaterialsAuxAndState(SimulationHost host, Action<uint[], Vector4[], Vector4[]> consume)
+        {
+            bool matDone = false, auxDone = false, stateDone = false;
+            uint[] mats = null;
+            Vector4[] aux = null;
+            Vector4[] state = null;
+
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, request =>
+            {
+                if (!request.hasError) mats = request.GetData<uint>().ToArray();
+                matDone = true;
+            });
+            AsyncGPUReadback.Request(host.Resources.AuxRead, 0, request =>
+            {
+                if (!request.hasError) aux = request.GetData<Vector4>().ToArray();
+                auxDone = true;
+            });
+            AsyncGPUReadback.Request(host.Resources.StateRead, 0, request =>
+            {
+                if (!request.hasError) state = request.GetData<Vector4>().ToArray();
+                stateDone = true;
+            });
+
+            for (int i = 0; i < 240 && (!matDone || !auxDone || !stateDone); i++)
+                yield return null;
+
+            Assert.That(mats, Is.Not.Null);
+            Assert.That(aux, Is.Not.Null);
+            Assert.That(state, Is.Not.Null);
+            consume(mats, aux, state);
         }
 
         private static void Paint(SimulationHost host, int x, int y, uint materialId)
@@ -515,6 +548,89 @@ namespace GeneSys.Tests
                 Assert.That(formedSpeleothem || accumulatedCalcite, Is.True,
                     "Subterranean cave air cells beneath a weeping limestone ceiling must precipitate calcite speleothems.");
             });
+
+            RestoreConfig(host);
+        }
+
+        private static int CountMaterial(uint[] materials, uint id)
+        {
+            int count = 0;
+            for (int i = 0; i < materials.Length; i++)
+                if (materials[i] == id) count++;
+            return count;
+        }
+
+        [UnityTest]
+        public IEnumerator DiagnosticNaturallyGeneratedLimestoneDissolution()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.ApplyPreset(SimulationPreset.Validation);
+            host.Config.useOgWorldgen = false;
+            host.Config.limestoneDepositCount = 20;
+            host.Config.dissolutionRate = 0.8f;
+            host.Config.slowPassInterval = 1;
+            host.Config.seed = 4422;
+            host.Regenerate();
+            for (int i = 0; i < 8; i++) yield return null;
+
+            int initialLimestone = 0;
+            int initialAir = 0;
+            int initialWater = 0;
+            int wetLimestone = 0;
+            float maxAuxW = 0f;
+            int sampleIdx = -1;
+
+            yield return ReadMaterialsAuxAndState(host, (mats, aux, st) =>
+            {
+                initialLimestone = CountMaterial(mats, MaterialIds.Limestone);
+                initialAir = CountMaterial(mats, MaterialIds.Air);
+                initialWater = CountMaterial(mats, MaterialIds.Water);
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] == MaterialIds.Limestone)
+                    {
+                        if (sampleIdx < 0 && aux[i].y > 0.05f) sampleIdx = i;
+                        if (aux[i].y > 0.01f) wetLimestone++;
+                        if (aux[i].w > maxAuxW) maxAuxW = aux[i].w;
+                    }
+                }
+            });
+
+            Debug.Log($"[DIAGNOSTIC] Initial: Limestone={initialLimestone}, WetLimestone={wetLimestone}, Air={initialAir}, Water={initialWater}, MaxAuxW={maxAuxW}, SampleIdx={sampleIdx}");
+
+            for (int step = 0; step < 10; step++)
+            {
+                yield return Step(host, 4);
+                int currentWet = 0;
+                float totalGw = 0f;
+                int lsCount = 0;
+                float currentMaxW = 0f;
+                string sampleInfo = "";
+                yield return ReadMaterialsAuxAndState(host, (mats, aux, st) =>
+                {
+                    for (int i = 0; i < mats.Length; i++)
+                    {
+                        if (mats[i] == MaterialIds.Limestone)
+                        {
+                            lsCount++;
+                            totalGw += aux[i].y;
+                            if (aux[i].y > 0.01f) currentWet++;
+                            if (aux[i].w > currentMaxW) currentMaxW = aux[i].w;
+                        }
+                    }
+                    if (sampleIdx >= 0)
+                    {
+                        int width = host.Resources.MaterialRead.width;
+                        int sx = sampleIdx % width;
+                        int sy = sampleIdx / width;
+                        sampleInfo = $"Sample({sx},{sy}): Mat={mats[sampleIdx]}, T={st[sampleIdx].x:F1}, P={st[sampleIdx].y:F2}, Vap={aux[sampleIdx].x:F3}, GW={aux[sampleIdx].y:F3}, W={aux[sampleIdx].w:F3}";
+                    }
+                });
+                Debug.Log($"[DIAGNOSTIC-STEP {(step + 1) * 4}] Limestone={lsCount}, Wet={currentWet}, AvgGW={(lsCount > 0 ? totalGw / lsCount : 0f):F4}, MaxW={currentMaxW:F4} | {sampleInfo}");
+            }
 
             RestoreConfig(host);
         }
