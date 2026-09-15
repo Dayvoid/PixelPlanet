@@ -24,9 +24,10 @@ namespace GeneSys.Tests
                 OceanCoverage = 0.425f,
                 BasinCount = 3,
                 SurfaceWaterMass = 1250.4,
+                CloudMass = 40.0,
                 GroundwaterMass = 342.1,
                 VaporMass = 88.5,
-                TotalTrackedWaterMass = 1681.0,
+                TotalTrackedWaterMass = 1721.0,
                 MeanTemperature = 18.5f,
                 MeanPressure = 1.002f,
                 MeanRelativeHumidity = 0.64f,
@@ -66,9 +67,10 @@ namespace GeneSys.Tests
             // Verify Water
             Assert.That(formatted, Does.Contain("Water"));
             Assert.That(formatted, Does.Contain("surf 1250.4"));
+            Assert.That(formatted, Does.Contain("cloud 40.0"));
             Assert.That(formatted, Does.Contain("ground 342.1"));
             Assert.That(formatted, Does.Contain("vapor 88.5"));
-            Assert.That(formatted, Does.Contain("total 1681.0"));
+            Assert.That(formatted, Does.Contain("total 1721.0"));
 
             // Verify Geodynamics
             Assert.That(formatted, Does.Contain("Geo"));

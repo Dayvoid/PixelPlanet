@@ -82,7 +82,9 @@ bool IsExposedSurface(int2 cell, uint material)
 
 bool IsRewritableCarrier(uint material)
 {
-    return material == 0u || material == 1u || material == 9u || material == 10u;
+    // Ice is never a hydrostatic rewrite target. PhaseChange owns freeze/thaw;
+    // Margolus owns hail fall and landed snow repose.
+    return material == 0u || material == 1u || material == 9u;
 }
 
 void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, float4 ecology, float4 combustion)
@@ -141,7 +143,8 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
         {
             int2 above = cell + int2(0, 1);
             uint aboveMaterial = M(above);
-            if (aboveMaterial == 9u)
+            bool pondRain = _HydrologyC.y > 1e-6 && IsPondableRainPixel(above, aboveMaterial);
+            if (aboveMaterial == 9u && !IsHydrometeor(above, aboveMaterial) && !pondRain)
             {
                 float4 aboveState = S(above);
                 float soak = InfiltrationAmount(aboveState.z * WaterLiquidFraction(aboveState.x, hysteresis), remaining, absorbency, porosity, infiltrationRate, _DeltaTime);
@@ -151,7 +154,8 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    if (material == 9u && cell.y > 0)
+    bool pondThis = _HydrologyC.y > 1e-6 && IsPondableRainPixel(cell, material);
+    if (material == 9u && cell.y > 0 && !IsHydrometeor(cell, material) && !pondThis)
     {
         int2 below = cell + int2(0, -1);
         uint belowMaterial = M(below);
@@ -735,8 +739,16 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
     float remainder;
     PartitionSurfaceVolume(newVolume, canFilm, expectedCells, remainder);
     KeepLandedRainPixel(hadPixels, newVolume, expectedCells, remainder);
-    bool spawnPixels = expectedCells > 0 && bedY >= 0;
     int currentCells = hadPixels ? max(0, waterTop - bedY) : 0;
+    // Flux can move many cells of volume in one tick. Spawning the whole stack at once
+    // is the tower artifact; keep extra mass on film (or the top pixel) and grow by one.
+    int maxNewCells = currentCells + 1;
+    if (expectedCells > maxNewCells)
+    {
+        expectedCells = maxNewCells;
+        remainder = max(0.0, newVolume - (float)expectedCells);
+    }
+    bool spawnPixels = expectedCells > 0 && bedY >= 0;
     float currentFilm = 0.0;
     if (bedY >= 0 && canFilm)
         currentFilm = max(0.0, S(int2(x, bedY)).z);
@@ -747,7 +759,6 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
     int newTop = spawnPixels ? bedY + newCells : bedY;
     int oldTop = hadPixels ? waterTop : bedY;
     bool idle = abs(net) <= 1e-8 && !mismatch;
-    float hysteresis = max(0.001, _WeatherC.z);
 
     // Evacuate any vapor or cloud from cells about to be inundated by rising water,
     // plus any vapor trapped inside submerged liquid cells, so it vents to the air
@@ -808,7 +819,7 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
             if ((material == 7u || material == 8u || material == 15u) && state.z > 0.05 && D(material).biology.z > 0.2)
                 flow *= saturate(1.0 - max(0.0, _HydrologyC.y) * 0.25 * _DeltaTime);
         }
-        else if (rewrite && y > bedY && y <= max(oldTop, newTop) && IsRewritableCarrier(material))
+        else if (rewrite && y > bedY && y <= max(oldTop, newTop) && IsRewritableCarrier(material) && !IsHydrometeor(cell, material))
         {
             int slot = y - (bedY + 1);
             float slotMass = 0.0;
@@ -818,19 +829,21 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
                     slotMass = newVolume;
                 else if (canFilm)
                     slotMass = 1.0;
+                else if (slot == newCells - 1)
+                    slotMass = max(0.0, newVolume - (float)slot);
                 else
-                    slotMass = min(1.0, max(0.0, newVolume - (float)slot));
+                    slotMass = 1.0;
             }
             if (slotMass > 1e-6)
             {
-                material = LiquidPixelId(newTemp, hysteresis);
+                material = 9u;
                 state.z = slotMass;
                 state.x = newTemp;
                 aux.x = (y == newTop && oldTop == newTop) ? max(0.0, aux.x) : 0.0;
                 aux.y = 0.0;
                 flow.x += net * 0.35;
             }
-            else if ((material == 9u || material == 10u) && !IsAirborneLiquid(cell, material))
+            else if (material == 9u && !IsAirborneLiquid(cell, material))
             {
                 material = 1u;
                 state.z = 0.0;

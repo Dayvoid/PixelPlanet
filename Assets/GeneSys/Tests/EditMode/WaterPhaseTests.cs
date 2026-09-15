@@ -46,6 +46,8 @@ namespace GeneSys.Tests
             Assert.That(scheduler, Does.Contain("config.solarIntensity"));
             Assert.That(scheduler, Does.Contain("config.atmosphereAbsorption"));
             Assert.That(scheduler, Does.Contain("FindKernel(\"Precipitation\")"));
+            Assert.That(scheduler, Does.Contain("liquidOnly: true"));
+            Assert.That(scheduler, Does.Contain("precipitationRate > 1e-8f"));
             Assert.That(scheduler, Does.Contain("LightAttenuation"));
             Assert.That(scheduler, Does.Not.Contain("GeothermalDischarge"));
             Assert.That(SimulationSettingTooltips.TryGet(nameof(SimulationConfig.vaporCapacityScale), out string capacity), Is.True);
@@ -91,6 +93,18 @@ namespace GeneSys.Tests
             Assert.That(hydrostaticSrc, Does.Contain("donorVol - PRECIP_MIN_DROP"));
             Assert.That(hydrostaticSrc, Does.Contain("if (donorTemp <= WATER_MELT_TEMP)"));
             Assert.That(hydrostaticSrc, Does.Not.Contain("min(donorTemp, bedTemp)"));
+            string surfaceWater = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SurfaceWater.hlsl");
+            Assert.That(surfaceWater, Does.Contain("IsHydrometeor"));
+            Assert.That(surfaceWater, Does.Contain("IsPondableRainPixel"));
+            string margolusCommon = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");
+            Assert.That(margolusCommon, Does.Contain("material == 10u"));
+            string margolus = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
+            Assert.That(margolus, Does.Contain("_MargolusLiquidOnly"));
+            Assert.That(margolus, Does.Contain("IsMargolusAirborneLiquid"));
+            Assert.That(hydrologySrc, Does.Contain("IsPondableRainPixel"));
+            Assert.That(hydrologySrc, Does.Contain("currentCells + 1"));
+            Assert.That(hydrologySrc, Does.Contain("never a hydrostatic rewrite"));
+            Assert.That(hydrologySrc, Does.Not.Contain("material = LiquidPixelId"));
             ComputeShader weatherShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Weather.compute");
             Assert.That(weatherShader.FindKernel("Precipitation"), Is.GreaterThanOrEqualTo(0));
             Assert.That(weatherShader.FindKernel("WaterCycle"), Is.GreaterThanOrEqualTo(0));

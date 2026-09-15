@@ -1954,6 +1954,175 @@ namespace GeneSys.Tests
             });
         }
 
+        [UnityTest]
+        public IEnumerator HydrostaticApplyDoesNotRewriteIceLid()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            host.Config.seed = 33021;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.6f), 10, host.Grid.radialResolution - 12);
+            PaintRockShelf(host, x - 2, x + 2, bedY, 8);
+            for (int dy = 1; dy <= 3; dy++)
+            {
+                Paint(host, x, bedY + dy, MaterialIds.Ice);
+                PaintField(host, x, bedY + dy, 1f, -8f);
+                PaintField(host, x, bedY + dy, 2f, 1f);
+            }
+            for (int dy = 1; dy <= 5; dy++)
+            {
+                Paint(host, x + 1, bedY + dy, MaterialIds.Water);
+                PaintField(host, x + 1, bedY + dy, 1f, 12f);
+                PaintField(host, x + 1, bedY + dy, 2f, 1f);
+            }
+            yield return Step(host, 1);
+
+            yield return Step(host, 16);
+            yield return ReadGpuFields(host, (mats, _, __) =>
+            {
+                for (int dy = 1; dy <= 3; dy++)
+                {
+                    Assert.That(mats[(bedY + dy) * width + x], Is.EqualTo(MaterialIds.Ice),
+                        "Hydrostatic must not rewrite landed Ice into Water or Air.");
+                }
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator HydrostaticGrowsAtMostOneWaterCellPerTick()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            host.Config.seed = 33022;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.6f), 10, height - 14);
+            PaintRockShelf(host, x, x + 1, bedY, 10);
+            for (int xx = x; xx <= x + 1; xx++)
+            {
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+            for (int dy = 1; dy <= 6; dy++)
+            {
+                Paint(host, x, bedY + dy, MaterialIds.Water);
+                PaintField(host, x, bedY + dy, 2f, -100f);
+                PaintField(host, x, bedY + dy, 2f, 1f);
+            }
+            float runoff = host.Config.runoffRate;
+            host.Config.runoffRate = 0f;
+            yield return Step(host, 1);
+            host.Config.runoffRate = runoff;
+
+            yield return Step(host, 1);
+            yield return ReadGpuFields(host, (mats, _, __) =>
+            {
+                int grown = TallestLiquidRun(mats, width, height, x + 1, bedY + 1);
+                Assert.That(grown, Is.LessThanOrEqualTo(1),
+                    $"Empty neighbour spawned a {grown}-cell stack in one hydrostatic apply; growth must be +1 cell.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator AirborneWaterPixelIsNotSoaked()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.infiltrationRate = 4f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.seed = 33023;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            PaintSoakColumn(host, x, y);
+            Paint(host, x, y + 2, MaterialIds.Water);
+            PaintField(host, x, y, 5f, -100f);
+            PaintField(host, x, y + 2, 2f, -100f);
+            PaintField(host, x, y + 2, 2f, 0.85f);
+            yield return Step(host, 1);
+
+            float groundBefore = 0f;
+            float waterBefore = 0f;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[(y + 1) * width + x], Is.EqualTo(MaterialIds.Air));
+                Assert.That(mats[(y + 2) * width + x], Is.EqualTo(MaterialIds.Water));
+                groundBefore = aux[y * width + x].y;
+                waterBefore = states[(y + 2) * width + x].z;
+            });
+
+            yield return Step(host, 12);
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[(y + 2) * width + x], Is.EqualTo(MaterialIds.Water));
+                Assert.That(states[(y + 2) * width + x].z, Is.EqualTo(waterBefore).Within(0.04f));
+                Assert.That(aux[y * width + x].y, Is.EqualTo(groundBefore).Within(0.04f),
+                    "Airborne rain must not soak into soil two cells below.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator PondableRainResistsSoakWhilePondingIsOn()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSoakIsolation(host);
+            host.Config.infiltrationRate = 4f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.pondingRate = 0.85f;
+            host.Config.seed = 33024;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 8, host.Grid.radialResolution - 8);
+            int waterY = y + 1;
+            PaintSoakColumn(host, x, y);
+            Paint(host, x, waterY, MaterialIds.Water);
+            PaintField(host, x, y, 5f, -100f);
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, waterY, 2f, -100f);
+            PaintField(host, x, waterY, 2f, 0.85f);
+            yield return Step(host, 1);
+
+            float waterBefore = 0f;
+            float groundBefore = 0f;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[waterY * width + x], Is.EqualTo(MaterialIds.Water));
+                waterBefore = states[waterY * width + x].z;
+                groundBefore = aux[y * width + x].y;
+            });
+
+            yield return Step(host, 16);
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[waterY * width + x], Is.EqualTo(MaterialIds.Water));
+                Assert.That(states[waterY * width + x].z, Is.GreaterThan(waterBefore - 0.08f),
+                    "A singleton rain pixel should pond instead of soaking away while ponding is on.");
+                Assert.That(aux[y * width + x].y, Is.LessThan(groundBefore + 0.08f));
+            });
+        }
+
         private static float MaxValleySurfaceTemperature(uint[] mats, Vector4[] states, int width, int x, int bedY, int top)
         {
             float max = float.MinValue;

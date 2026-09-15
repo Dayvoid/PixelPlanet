@@ -390,7 +390,12 @@ namespace GeneSys.UI
 
         private static readonly int[] OverlayModes =
         {
-            0, 1, 2, 11, 3, 15, 4, 5, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 23, 28, 29, 30, 31, 32
+            0, 1, 2,
+            11, 27, 6, 7, 3, 14, 15,
+            4, 5, 8, 9, 10, 12, 13,
+            16, 17, 18, 19,
+            20, 23, 25, 26, 21, 22, 24,
+            28, 29, 30, 31, 32
         };
 
         private static int OverlayModeFromChoice(int index) =>
@@ -403,10 +408,12 @@ namespace GeneSys.UI
             {
                 overlay.choices = new List<string>
                 {
-                    "Material", "Temperature", "Pressure", "Composite Water", "Relative Humidity", "Cloud",
+                    "Material", "Temperature", "Pressure",
+                    "Composite Water", "Landed Water", "Vapor", "Groundwater", "Relative Humidity", "Humidity Haze", "Cloud",
                     "Charge", "Wind", "Nutrient/Soil Quality", "Surface Failure Stress", "Toxicity/Calories",
-                    "Vertical Velocity", "Pressure Anomaly", "Mycology",
-                    "Fire", "Oxygen", "Storm Charge", "Flora", "Fauna",
+                    "Vertical Velocity", "Pressure Anomaly",
+                    "Mycology", "Fire", "Oxygen", "Storm Charge",
+                    "Flora", "Fauna", "Grass", "Tree", "Light", "Genome", "Acoustic",
                     "Climate",
                     "Interior Heat/Flow", "Overpressure/Melt", "Tectonic Strain", "Interior Releases"
                 };
@@ -1191,7 +1198,7 @@ namespace GeneSys.UI
             AttachNamedSettingTooltip(root, "speed", nameof(SimulationConfig.simulationSpeed));
             AttachNamedSettingTooltip(root, "overlay",
                 "Overlay",
-                "Chooses which world field the planetoid display color-codes. Material is the default view; Temperature, Pressure, Composite Water, Relative Humidity, Cloud, Wind, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, and the others reveal the systems those settings drive.");
+                "Chooses which world field the planetoid display color-codes. Material is the default view. Composite Water is landed film/pixels (red) plus vapor (green) and groundwater (blue); Landed Water, Vapor, and Groundwater split those reservoirs. Relative Humidity, Cloud, Wind, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, Acoustic, Climate, and the interior overlays reveal the systems those settings drive.");
             AttachNamedSettingTooltip(root, "brush-mode",
                 "Brush Mode",
                 "Selects what left-drag paints. Off does nothing; Material paints geology and Detritus; Life uses the Material field as a type picker for organisms and seeds; otherwise heat, water, pressure, humidity, or ignition. Hold right-click to inspect the cell under the cursor.");
@@ -1935,7 +1942,7 @@ namespace GeneSys.UI
                 {
                     worldMetricsLabel.text =
                         $"Ocean coverage {snapshot.OceanCoverage * 100f:F1}% | Basins {snapshot.BasinCount}\n" +
-                        $"Surface {snapshot.SurfaceWaterMass:F1} | Ground {snapshot.GroundwaterMass:F1} | Vapor {snapshot.VaporMass:F1}";
+                        $"Surface {snapshot.SurfaceWaterMass:F1} | Cloud {snapshot.CloudMass:F1} | Ground {snapshot.GroundwaterMass:F1} | Vapor {snapshot.VaporMass:F1}";
                 }
                 if (simulationStatusLabel != null)
                 {

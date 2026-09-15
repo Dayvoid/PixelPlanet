@@ -169,7 +169,7 @@ Suggested slow cadence (not every fine tick):
 2. **Step coarse** energy + land params (+ optional angular transport)
 3. **Inject** uniforms / bias textures for the upcoming fine weather ticks
 
-Fine order stays as in `WaterPlan.MD` (forcing → continuity → dynamics → transport → water cycle → precip → storm → groundwater → hydrostatics → biology).
+Fine order stays as in `WaterPlan.MD` (forcing → continuity → dynamics → transport → water cycle → precip → storm → liquid Margolus → groundwater → hydrostatics → biology).
 
 ---
 

@@ -187,6 +187,28 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void OverlayDropdownRestoresVaporGroundwaterAndDiagnosticModes()
+        {
+            string ui = File.ReadAllText("Assets/GeneSys/Runtime/UI/SimulationUIController.cs");
+            Assert.That(ui, Does.Contain("\"Vapor\""));
+            Assert.That(ui, Does.Contain("\"Groundwater\""));
+            Assert.That(ui, Does.Contain("\"Landed Water\""));
+            Assert.That(ui, Does.Contain("\"Humidity Haze\""));
+            Assert.That(ui, Does.Contain("\"Light\""));
+            Assert.That(ui, Does.Contain("\"Genome\""));
+            Assert.That(ui, Does.Contain("\"Acoustic\""));
+            Assert.That(ui, Does.Contain("\"Grass\""));
+            Assert.That(ui, Does.Contain("\"Tree\""));
+            string display = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");
+            Assert.That(display, Does.Contain("_OverlayMode == 6"));
+            Assert.That(display, Does.Contain("_OverlayMode == 7"));
+            Assert.That(display, Does.Contain("_OverlayMode == 21"));
+            Assert.That(display, Does.Contain("_OverlayMode == 22"));
+            Assert.That(display, Does.Contain("_OverlayMode == 27"));
+            Assert.That(display, Does.Contain("material == 10u) color = lerp(color, float3(0.55, 0.85, 1.0)"));
+        }
+
+        [Test]
         public void SpeciesColorPalettesAreDistinct()
         {
             // Flora species colors must be distinct

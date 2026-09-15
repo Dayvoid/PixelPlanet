@@ -10,7 +10,7 @@ GeneSys is a Unity-based, GPU-driven planetoid sandbox that couples geology, geo
 ## High-level architecture and system interaction
 
 - **Runtime orchestration:** `Assets/GeneSys/Runtime/Simulation/SimulationHost.cs` boots simulation resources and delegates tick execution to `GpuPassScheduler`.
-- **Simulation loop / pass ordering:** `Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs` runs compute passes in a staged order: geodynamics/tectonics, core heat, volcanism (slow), thermal/eruption/electrical substeps, PhaseChange, Margolus CA, combustion, climate couple, atmospheric loop (light → forcing → continuity → pressure diffusion → dynamics → ash lift → transport → water cycle → precip), storm, groundwater, hydrothermal boil, hydrostatic leveling, slow erosion/detritus, then biology.
+- **Simulation loop / pass ordering:** `Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs` runs compute passes in a staged order: geodynamics/tectonics, core heat, volcanism (slow), thermal/eruption/electrical substeps, PhaseChange, Margolus CA, combustion, climate couple, atmospheric loop (light → forcing → continuity → pressure diffusion → dynamics → ash lift → transport → water cycle → precip), storm, liquid-only Margolus (hydrometeor fall), groundwater, hydrothermal boil, hydrostatic leveling, slow erosion/detritus, then biology.
 - **State model:** `Assets/GeneSys/Runtime/Simulation/Gpu/SimulationResources.cs` maintains ping-ponged textures and buffers for materials, state, flow, aux fields, ecology, combustion, storm, life/fauna/grass/tree/wasp, climate, and geodynamics. There is no mobile-mass / MaCE buffer.
 - **Configuration surface:** `Assets/GeneSys/Runtime/Configuration/SimulationConfig.cs` centralizes worldgen, weather, climate, geodynamics, Margolus transport, ecology, and rendering knobs.
 - **Persistence/versioning:** `Assets/GeneSys/Runtime/Persistence/WorldSnapshotService.cs` snapshots and migrates state up to **version 16** (geodynamics without legacy mobile-mass slices). V14/V15 loads still skip the retired mobile-mass payloads.
@@ -25,7 +25,7 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 | Identity change (stress / karst / collapse → Sediment) | `ErosionAndCollapse` | Relocate cells |
 | Buoyant ash lift | `AshTransport` | Downward ash settle |
 | Pressure-driven magma eruption | `EruptionMotion` | Magma fall / lateral spread |
-| Horizontal free-surface water leveling | Hydrostatic column solver | Vertical Water fall |
+| Horizontal free-surface water leveling | Hydrostatic column solver | Vertical Water fall; Ice rewrite; hydrometeors |
 | Crustal lid kinematics | `TectonicDisplacement` / `TectonicVertical` | Magma, trees, wasps; seismic `aux.w` |
 | Magma / Water / Ice pixel phase flips | `PhaseChange` | Spatial transport |
 | Groundwater boil (`aux.y` → `aux.x`) | `HydrothermalRelease` | Pixel Water→Air boil (`PhaseChange`) |

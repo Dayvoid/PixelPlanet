@@ -345,6 +345,13 @@ namespace GeneSys.Simulation.Gpu
             if (storm != null)
                 DispatchStorm(deltaTime);
 
+            // New hydrometeors exist after Precipitation. Fall them before soak/leveling
+            // so hydrostatic profiles landed vs airborne instead of a mid-air rain shaft.
+            // Skip when nothing can materialize this tick so standing ponds are not
+            // given an extra Margolus pass.
+            if (config.enableMaterialTransport && config.precipitationRate > 1e-8f)
+                DispatchMargolus(deltaTime, liquidOnly: true);
+
             // Soak this tick's rain/ponding, then saturation seeps see the updated water table.
             DispatchPass(hydrology, hydrology.FindKernel("Groundwater"), deltaTime);
             DispatchPass(hydrology, hydrology.FindKernel("HydrothermalRelease"), deltaTime);
@@ -406,7 +413,7 @@ namespace GeneSys.Simulation.Gpu
             resources.Swap();
         }
 
-        private void DispatchMargolus(float deltaTime)
+        private void DispatchMargolus(float deltaTime, bool liquidOnly = false)
         {
             if (margolusTransport == null) return;
             int phaseEven = margolusTransport.FindKernel("MargolusPhaseEven");
@@ -415,25 +422,36 @@ namespace GeneSys.Simulation.Gpu
             int grassOdd = margolusTransport.FindKernel("MargolusGrassOdd");
             if (phaseEven < 0 || phaseOdd < 0 || grassEven < 0 || grassOdd < 0) return;
 
-            BindMargolusPhase(phaseEven, deltaTime);
+            BindMargolusPhase(phaseEven, deltaTime, liquidOnly);
             DispatchMargolusBlocks(margolusTransport, phaseEven);
-            BindMargolusGrass(grassEven, deltaTime);
-            DispatchMargolusBlocks(margolusTransport, grassEven);
+            if (!liquidOnly)
+            {
+                BindMargolusGrass(grassEven, deltaTime);
+                DispatchMargolusBlocks(margolusTransport, grassEven);
+            }
             resources.Swap();
-            resources.SwapGrass();
+            if (!liquidOnly)
+                resources.SwapGrass();
 
-            BindMargolusPhase(phaseOdd, deltaTime);
+            BindMargolusPhase(phaseOdd, deltaTime, liquidOnly);
             DispatchMargolusBlocks(margolusTransport, phaseOdd);
-            BindMargolusGrass(grassOdd, deltaTime);
-            DispatchMargolusBlocks(margolusTransport, grassOdd);
-            resources.Swap();
-            resources.SwapGrass();
+            if (!liquidOnly)
+            {
+                BindMargolusGrass(grassOdd, deltaTime);
+                DispatchMargolusBlocks(margolusTransport, grassOdd);
+                resources.Swap();
+                resources.SwapGrass();
+            }
+            else
+            {
+                resources.Swap();
+            }
         }
 
-        private void BindMargolusPhase(int kernel, float deltaTime)
+        private void BindMargolusPhase(int kernel, float deltaTime, bool liquidOnly = false)
         {
             SetCommon(margolusTransport, kernel, deltaTime);
-            BindMargolusParams(kernel);
+            BindMargolusParams(kernel, liquidOnly);
             BindPassTextures(margolusTransport, kernel);
             margolusTransport.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
             margolusTransport.SetTexture(kernel, "_GrassRead", resources.GrassRead);
@@ -451,13 +469,14 @@ namespace GeneSys.Simulation.Gpu
             margolusTransport.SetTexture(kernel, "_TreeRead", resources.TreeRead);
         }
 
-        private void BindMargolusParams(int kernel)
+        private void BindMargolusParams(int kernel, bool liquidOnly = false)
         {
             margolusTransport.SetVector("_MargolusParams", new Vector4(
                 1f,
                 config.margolusReposeFriction,
                 config.margolusMetricEnable ? 1f : 0f,
-                config.margolusFluidEnable ? config.margolusMagmaLevelingBias : 0f));
+                liquidOnly ? 0f : (config.margolusFluidEnable ? config.margolusMagmaLevelingBias : 0f)));
+            margolusTransport.SetInt("_MargolusLiquidOnly", liquidOnly ? 1 : 0);
         }
 
         private void DispatchMargolusBlocks(ComputeShader shader, int kernel)

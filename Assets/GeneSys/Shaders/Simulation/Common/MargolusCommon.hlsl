@@ -68,7 +68,10 @@ bool IsMargolusFluid(uint material, MaterialGpuData def)
 bool IsMargolusGranular(uint material, MaterialGpuData def)
 {
     if (def.metadata.x == 3.0) return true;
-    return material == 8u || material == 7u || material == 15u || material == 12u || material == FLORA_ALGAE_ID;
+    // Landed Ice piles at its repose instead of sitting as an unowned 1-wide tower.
+    // Airborne Ice still uses AirborneIceCanSlide (unrestricted fall/slide).
+    return material == 8u || material == 7u || material == 15u || material == 12u
+        || material == 10u || material == FLORA_ALGAE_ID;
 }
 
 float MargolusEffectiveDensity(MargolusCell c, MaterialGpuData def)

@@ -49,6 +49,9 @@ namespace GeneSys.Tests
             string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
             Assert.That(scheduler.Contains("margolusTransport"), "GpuPassScheduler.cs should declare margolusTransport");
             Assert.That(scheduler.Contains("DispatchMargolus"), "GpuPassScheduler.cs should implement DispatchMargolus");
+            Assert.That(scheduler.Contains("liquidOnly: true"), "GpuPassScheduler.cs should fall hydrometeors after precipitation");
+            string transport = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
+            Assert.That(transport, Does.Contain("_MargolusLiquidOnly"));
         }
 
         [Test]

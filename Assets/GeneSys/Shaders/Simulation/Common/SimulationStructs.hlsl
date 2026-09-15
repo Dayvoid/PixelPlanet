@@ -87,6 +87,9 @@
 //   AshTransport owns buoyant ash lift only — ash falls via Margolus.
 //   EruptionMotion owns pressure-driven magma eruption only — magma settles via Margolus.
 //   Hydrostatic owns horizontal free-surface Water leveling — Water falls via Margolus.
+//   Hydrometeors (airborne Water/Ice) are Precipitation + Margolus only; hydrostatic
+//   never rewrites Ice. Landed Ice piles as Margolus granular. A liquid-only Margolus
+//   pass runs after Precipitation so new drops fall before groundwater/hydrostatic.
 //   ErosionAndCollapse owns identity changes, epigenic speleogenesis (limestone -> cave void),
 //   speleothem growth, and structural ceiling calving (aux.w >= 1.0 -> unpinned for Margolus drop).
 //   PhaseChange owns every material ID phase flip, including Magma↔Basalt. Retired density-exchange / material-motion kernels do not exist.
@@ -113,12 +116,15 @@
 //   drives updrafts and downdrafts. Heat, vapor, and cloud condensate advect with flow under
 //   a CFL outbound-mass cap.
 // Surface hydrostatic leveling:
-//   After groundwater and precipitation, hydrology profiles each angular column's
-//   atmosphere-connected liquid (film plus contiguous Water pixels), then exchanges mass
-//   across wrapped faces from hydraulic head. Head is substrate radius plus liquid volume.
-//   Film-capable beds keep the fractional remainder; complete cells become Water/Ice pixels.
-//   Terrain saddles block flow; ice lids and enclosed cave water are excluded.
-//   state.y remains atmospheric/material pressure and is never reused as water head.
+//   After precipitation, a liquid-only Margolus fall, groundwater, and hydrothermal
+//   release, hydrology profiles each angular column's atmosphere-connected standing
+//   Water (film plus contiguous Water pixels; airborne hydrometeors skipped), then
+//   exchanges mass across wrapped faces from hydraulic head. Head is substrate radius
+//   plus liquid volume. Film-capable beds keep the fractional remainder; complete cells
+//   become Water pixels (PhaseChange owns freeze). Apply grows at most one Water cell
+//   per tick so flux cannot stamp a tower. Terrain saddles block flow; ice lids and
+//   enclosed cave water are excluded. state.y remains atmospheric/material pressure
+//   and is never reused as water head.
 
 struct MaterialGpuData
 {

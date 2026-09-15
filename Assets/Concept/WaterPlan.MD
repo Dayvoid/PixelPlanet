@@ -29,7 +29,7 @@ Every transfer subtracts from a source reservoir before adding to a destination.
 
 ## Tick order
 
-Material thermal → PhaseChange (pixel Water/Ice/Magma phase only) → Margolus (gravity/repose; Water falls here) → Combustion → LightAttenuation → AtmosphericForcing → Continuity → PressureDiffusion → Dynamics → AshTransport (buoyant lift only) → Transport (advection + lapse) → WaterCycle (evap/condense/dew) → Precipitation → Storm → Groundwater (soak/percolate/seep; leftover Water-pixel mass returns to host film) → HydrothermalRelease (groundwater boil `aux.y` → `aux.x`) → Hydrostatic leveling (horizontal free-surface only) → slow erosion/detritus → biology.
+Material thermal → PhaseChange (pixel Water/Ice/Magma phase only) → Margolus (gravity/repose; Water falls here) → Combustion → LightAttenuation → AtmosphericForcing → Continuity → PressureDiffusion → Dynamics → AshTransport (buoyant lift only) → Transport (advection + lapse) → WaterCycle (evap/condense/dew) → Precipitation → Storm → liquid-only Margolus (new hydrometeors fall) → Groundwater (soak/percolate/seep; leftover Water-pixel mass returns to host film; airborne and pondable rain pixels are not soaked while ponding is on) → HydrothermalRelease (groundwater boil `aux.y` → `aux.x`) → Hydrostatic leveling (horizontal standing Water only; never rewrites Ice; grows at most one Water cell per tick) → slow erosion/detritus → biology.
 
 `springDischargeRate` still drives exposed-host weep. Capillary evaporation of `aux.y` still exists and uses the same Magnus deficit as surface evap, scaled by porosity (the old `capillaryEvaporationFraction` slider is gone).
 

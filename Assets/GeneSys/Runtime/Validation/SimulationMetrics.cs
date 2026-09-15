@@ -18,6 +18,7 @@ namespace GeneSys.Validation
         public float OceanCoverage;
         public int BasinCount;
         public double SurfaceWaterMass;
+        public double CloudMass;
         public double GroundwaterMass;
         public double VaporMass;
         public double TotalTrackedWaterMass;
@@ -135,6 +136,7 @@ namespace GeneSys.Validation
         public float OceanCoverage;
         public int BasinCount;
         public double SurfaceWaterMass;
+        public double CloudMass;
         public double GroundwaterMass;
         public double VaporMass;
         public double TotalTrackedWaterMass;
@@ -173,7 +175,7 @@ namespace GeneSys.Validation
         {
             return
                 $"Grid {AngularResolution}×{RadialResolution} | Ocean {OceanCoverage * 100f:F1}% ({BasinCount} basins)\n" +
-                $"Water  surf {SurfaceWaterMass:F1}  ground {GroundwaterMass:F1}  vapor {VaporMass:F1}  total {TotalTrackedWaterMass:F1}\n" +
+                $"Water  surf {SurfaceWaterMass:F1}  cloud {CloudMass:F1}  ground {GroundwaterMass:F1}  vapor {VaporMass:F1}  total {TotalTrackedWaterMass:F1}\n" +
                 $"Geo  strain {MeanStrain:F3} (peak {MaxStrain:F3})  melt P {MeanOverpressure:F3} (peak {MaxOverpressure:F3})  events {ActiveGeoEvents} (E: {ReleasedGeoEnergy:F1})  moved {KinematicCellsMoved}\n" +
                 $"Atmo  T {MeanTemperature:F1}°  P {MeanPressure:F3}  RH {MeanRelativeHumidity * 100f:F0}%  cloud {CloudCover * 100f:F0}%  wind {MeanWindSpeed:F3}  fire {BurningCellCount} (O2 {MeanOxygen:F2})\n" +
                 $"Life  algae {AlgaeCount}  cricket {CricketAdults} ({CricketEggs} egg)  wasp {WaspAdults} ({WaspEggs} egg)  trees {TreeAnchors} ({TreeTotalPixels} px)";
@@ -241,7 +243,7 @@ namespace GeneSys.Validation
                 pendingRequests--;
                 if (pendingRequests <= 0)
                 {
-                    snapshot.TotalTrackedWaterMass = snapshot.SurfaceWaterMass + snapshot.GroundwaterMass + snapshot.VaporMass;
+                    snapshot.TotalTrackedWaterMass = snapshot.SurfaceWaterMass + snapshot.CloudMass + snapshot.GroundwaterMass + snapshot.VaporMass;
                     snapshot.TotalOrganisms = snapshot.AlgaeCount + snapshot.CricketAdults + snapshot.CricketEggs + snapshot.WaspAdults + snapshot.WaspEggs + snapshot.TreeTotalPixels;
                     try
                     {
@@ -337,6 +339,7 @@ namespace GeneSys.Validation
                     double presSum = 0d;
                     double moistureSum = 0d;
                     double surfWaterSum = 0d;
+                    double cloudMassSum = 0d;
                     int atmoCells = 0;
                     int cloudCells = 0;
                     int sampledCount = 0;
@@ -354,7 +357,10 @@ namespace GeneSys.Validation
                             tempSum += s.x;
                             presSum += s.y;
                             moistureSum += Math.Max(0f, s.z);
-                            surfWaterSum += Math.Max(0d, s.z);
+                            if (isAtmo)
+                                cloudMassSum += Math.Max(0d, s.z);
+                            else
+                                surfWaterSum += Math.Max(0d, s.z);
                             sampledCount++;
 
                             if (isAtmo)
@@ -372,6 +378,7 @@ namespace GeneSys.Validation
                         snapshot.MeanMoisture = (float)(moistureSum / sampledCount);
                     }
                     snapshot.SurfaceWaterMass = surfWaterSum * areaFactor;
+                    snapshot.CloudMass = cloudMassSum * areaFactor;
                     snapshot.CloudCover = atmoCells > 0 ? (float)cloudCells / atmoCells : 0f;
 
                     CheckDone();
@@ -850,7 +857,8 @@ namespace GeneSys.Validation
                     Vector4 state = states[index];
                     Vector4 auxValue = aux[index];
 
-                    metrics.SurfaceWaterMass += Math.Max(0d, state.z);
+                    metrics.SurfaceWaterMass += material == MaterialIds.Air ? 0d : Math.Max(0d, state.z);
+                    metrics.CloudMass += material == MaterialIds.Air ? Math.Max(0d, state.z) : 0d;
                     metrics.GroundwaterMass += Math.Max(0d, auxValue.y);
                     metrics.VaporMass += Math.Max(0d, auxValue.x);
                     if (material == MaterialIds.Air)
@@ -918,7 +926,7 @@ namespace GeneSys.Validation
                 if (oceanAngles[x]) oceanAngleCount++;
             metrics.OceanCoverage = oceanAngleCount / (float)Math.Max(1, width);
             metrics.BasinCount = CountOceanAngleBasins(oceanAngles);
-            metrics.TotalTrackedWaterMass = metrics.SurfaceWaterMass + metrics.GroundwaterMass + metrics.VaporMass;
+            metrics.TotalTrackedWaterMass = metrics.SurfaceWaterMass + metrics.CloudMass + metrics.GroundwaterMass + metrics.VaporMass;
             if (sampleCount > 0)
             {
                 metrics.MeanTemperature = (float)(temperatureSum / sampleCount);

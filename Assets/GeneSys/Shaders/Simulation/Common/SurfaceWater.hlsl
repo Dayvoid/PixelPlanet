@@ -48,6 +48,31 @@ bool IsAirborneLiquid(int2 cell, uint material)
     return false;
 }
 
+// Falling rain/hail. Hydrostatic must not profile, flux, or rewrite these cells.
+bool IsHydrometeor(int2 cell, uint material)
+{
+    return IsAirborneLiquid(cell, material);
+}
+
+// A lone Water pixel on a non-liquid bed is pondable rain. Groundwater soaks stacked
+// standing water, not this drop, while ponding is on so the pixel can stay visible.
+bool IsPondableRainPixel(int2 cell, uint material)
+{
+    if (material != 9u) return false;
+    if (IsAirborneLiquid(cell, material)) return true;
+    if (cell.y + 1 < _GridSize.y)
+    {
+        uint above = M(int2(cell.x, cell.y + 1));
+        if (above == 9u || above == 10u) return false;
+    }
+    if (cell.y > 0)
+    {
+        uint below = M(int2(cell.x, cell.y - 1));
+        if (below == 9u || below == 10u) return false;
+    }
+    return true;
+}
+
 // Atmosphere-connected surface reservoir for one angular column. Ice lids and
 // enclosed cave water are excluded so only the free surface participates.
 // Landed Ice on rock is that lid (volume 0) until PhaseChange thaws it to Water;

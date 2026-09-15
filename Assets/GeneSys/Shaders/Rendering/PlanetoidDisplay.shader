@@ -448,9 +448,12 @@ Shader "GeneSys/Planetoid Display"
                 else if (_OverlayMode == 10) color = float3(saturate(materialProperties.x), saturate(materialProperties.y), 0.1);
                 else if (_OverlayMode == 11)
                 {
-                    color = float3(saturate(atmosphereCarrier ? 0.0 : state.z), saturate(aux.x), saturate(aux.y));
+                    float landed = (material == 9u || material == 10u || !atmosphereCarrier) ? saturate(state.z) : 0.0;
+                    color = float3(landed, saturate(aux.x), saturate(aux.y));
                     if (material == 9u) color = lerp(color, float3(0.15, 0.45, 1.0), 0.55);
-                    if (cloud > 0.05) color = lerp(color, float3(0.85, 0.9, 1.0), saturate(cloud * 0.65));
+                    if (material == 10u) color = lerp(color, float3(0.55, 0.85, 1.0), 0.65);
+                    if (atmosphereCarrier && material != 9u && material != 10u && cloud > 0.05)
+                        color = lerp(color, float3(0.85, 0.9, 1.0), saturate(cloud * 0.65));
                 }
                 else if (_OverlayMode == 12)
                 {
@@ -709,6 +712,13 @@ Shader "GeneSys/Planetoid Display"
                     }
                     else if (material == 134u || material == 135u)
                         color = float3(0.55, 0.12, 0.12);
+                }
+                else if (_OverlayMode == 27)
+                {
+                    float landed = (material == 9u || material == 10u || !atmosphereCarrier) ? saturate(state.z) : 0.0;
+                    color = lerp(float3(0.03, 0.04, 0.06), float3(0.12, 0.52, 1.0), landed);
+                    if (material == 10u)
+                        color = lerp(color, float3(0.7, 0.9, 1.0), 0.55);
                 }
                 else if (_OverlayMode == 28)
                 {

@@ -39,6 +39,7 @@ float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
 float4 _Mechanics;      // x = gravityStrength
 float4 _MargolusParams; // x = gravityBias, y = reposeFriction, z = metricEnable, w = magmaLevelingBias
+int _MargolusLiquidOnly;
 float4 _GrassI;         // root cohesion
 float4 _TreeH;          // root cohesion
 
@@ -95,9 +96,9 @@ float MargolusRootCohesion(int2 cell)
         + (float)CountTreeRootsOnCell(_TreeRead, cell, _GridSize) * saturate(_TreeH.y);
 }
 
-bool AirborneIceCanSlide(int2 cell, uint material)
+bool IsMargolusAirborneLiquid(int2 cell, uint material)
 {
-    if (material != 10u) return false;
+    if (material != 9u && material != 10u) return false;
     int y = cell.y;
     [loop]
     while (y > 0)
@@ -108,6 +109,12 @@ bool AirborneIceCanSlide(int2 cell, uint material)
         y--;
     }
     return false;
+}
+
+bool AirborneIceCanSlide(int2 cell, uint material)
+{
+    if (material != 10u) return false;
+    return IsMargolusAirborneLiquid(cell, material);
 }
 
 bool MargolusCanSlide(int2 cell, uint material, MaterialGpuData def)
@@ -125,6 +132,14 @@ void SwapCells(inout MargolusCell a, inout MargolusCell b)
 bool IsCellPinned(int2 cell, MargolusCell c, MaterialGpuData def)
 {
     if (IsMargolusOpenCarrier(c.material, def)) return false;
+    // Liquid-only pass after precipitation: only airborne Water/Ice may fall.
+    // Standing ponds and ice lids stay put so hydrostatic still owns their surface.
+    if (_MargolusLiquidOnly != 0)
+    {
+        if (c.material == 9u || c.material == 10u)
+            return !IsMargolusAirborneLiquid(cell, c.material);
+        return true;
+    }
     if (IsTreeMaterial(c.material) || IsWaspMaterial(c.material)) return true;
     if (c.material == 2u || c.material == 3u) return true;
     if (c.material == FLORA_ALGAE_ID) return false;
@@ -268,7 +283,7 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
                     SwapI2(g0, g3);
                 }
             }
-            else if (_MargolusParams.w > 0.0)
+            else if (_MargolusLiquidOnly == 0 && _MargolusParams.w > 0.0)
             {
                 if (c0.material == 6u && c1.material == 1u && !pin1 && c0.flow.x > 0.45)
                 {
