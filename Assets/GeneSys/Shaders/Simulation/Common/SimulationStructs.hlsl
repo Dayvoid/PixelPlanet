@@ -83,13 +83,13 @@
 //   Excess above field capacity percolates radially inward, then weeps from exposed hosts.
 //   Hosts hotter than the pressure-adjusted boil point convert aux.y to aux.x.
 // Material transport / cell-motion ownership:
-//   Margolus CA owns gravity and repose settling of movable IDs (granular + fluids).
+//   Margolus CA owns gravity and repose settling of movable IDs (granular + fluids + unpinned/calved rock).
 //   AshTransport owns buoyant ash lift only — ash falls via Margolus.
 //   EruptionMotion owns pressure-driven magma eruption only — magma settles via Margolus.
 //   Hydrostatic owns horizontal free-surface Water leveling — Water falls via Margolus.
-//   ErosionAndCollapse changes identity (stress / karst / unsupported → Sediment) and
-//   never relocates cells. PhaseChange owns every material ID phase flip, including
-//   Magma↔Basalt. Retired density-exchange / material-motion kernels do not exist.
+//   ErosionAndCollapse owns identity changes, epigenic speleogenesis (limestone -> cave void),
+//   speleothem growth, and structural ceiling calving (aux.w >= 1.0 -> unpinned for Margolus drop).
+//   PhaseChange owns every material ID phase flip, including Magma↔Basalt. Retired density-exchange / material-motion kernels do not exist.
 // Every transfer must subtract from a source reservoir before adding to a destination.
 // Neighbor transfers are unsynchronized: a donor and its receiver run as separate threads and
 // each writes only its own cell. So both sides must derive the transferred mass from the same

@@ -207,9 +207,9 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.fieldCapacityFraction)] =
                 "Share of pore space soil keeps against gravity. Higher values hold rain near the surface for plants and evaporation; lower values let excess soak into deeper aquifers.",
             [nameof(SimulationConfig.dissolutionRate)] =
-                "How fast flowing water dissolves non-porous rock into porous cavities. Higher values carve caves, underground rivers, and collapse-prone voids.",
+                "How fast carbonic groundwater dissolves soluble limestone into open cave voids, subterranean rivers, and speleothems. Higher values carve expansive karst networks.",
             [nameof(SimulationConfig.collapseRate)] =
-                "How readily unsupported cavities fail. Higher collapse reshapes caves into sinkholes and can dam or reroute groundwater.",
+                "How readily unsupported cave roofs and rock overhangs calve under gravity and span bending stress. Higher collapse drops ceiling blocks into breakdown piles and opens sinkholes.",
             [nameof(SimulationConfig.erosionRate)] =
                 "How aggressively surface flow strips soil and sediment. Stronger erosion carves channels, delivers nutrient downstream, and can unroof rock.",
             [nameof(SimulationConfig.baseSoilCohesion)] =

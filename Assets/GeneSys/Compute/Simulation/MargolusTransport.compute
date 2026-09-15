@@ -122,6 +122,48 @@ void SwapCells(inout MargolusCell a, inout MargolusCell b)
     b = tmp;
 }
 
+bool IsCellPinned(int2 cell, MargolusCell c, MaterialGpuData def)
+{
+    if (IsMargolusOpenCarrier(c.material, def)) return false;
+    if (IsTreeMaterial(c.material) || IsWaspMaterial(c.material)) return true;
+    if (c.material == 2u || c.material == 3u) return true;
+    if (c.material == FLORA_ALGAE_ID) return false;
+
+    if (IsRockMaterial(c.material))
+    {
+        // Calved rock has failed structurally and is unpinned
+        if (c.aux.w >= 1.0) return false;
+
+        // Compression support: resting on basement or solid rock below
+        if (cell.y <= 0) return true;
+        uint matBelow = _MaterialRead.Load(int3(cell.x, cell.y - 1, 0));
+        if (matBelow == 2u || matBelow == 3u || IsRockMaterial(matBelow))
+            return true;
+
+        // Below is open (air, water, void).
+        // Tension support: hanging from bedrock or uncalved solid rock directly above
+        int aboveY = cell.y + 1;
+        if (aboveY < _GridSize.y)
+        {
+            uint matAbove = _MaterialRead.Load(int3(cell.x, aboveY, 0));
+            if (matAbove == 2u || matAbove == 3u)
+                return true;
+            if (IsRockMaterial(matAbove))
+            {
+                float4 aboveAux = _AuxRead.Load(int3(cell.x, aboveY, 0));
+                if (aboveAux.w < 1.0)
+                    return true;
+            }
+        }
+
+        // Air/void below and air/void above: unsupported rock falls under gravity
+        return false;
+    }
+
+    if (def.physical.y >= 0.75) return true;
+    return false;
+}
+
 void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
 {
     MargolusCell c0 = LoadMargolusCell(p0);
@@ -138,10 +180,10 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
     MaterialGpuData d2 = Mat(c2.material);
     MaterialGpuData d3 = Mat(c3.material);
 
-    bool pin0 = IsMargolusPinned(c0, d0);
-    bool pin1 = IsMargolusPinned(c1, d1);
-    bool pin2 = IsMargolusPinned(c2, d2) || (MargolusRootCohesion(p2) > 0.65);
-    bool pin3 = IsMargolusPinned(c3, d3) || (MargolusRootCohesion(p3) > 0.65);
+    bool pin0 = IsCellPinned(p0, c0, d0);
+    bool pin1 = IsCellPinned(p1, c1, d1);
+    bool pin2 = IsCellPinned(p2, c2, d2) || (MargolusRootCohesion(p2) > 0.65);
+    bool pin3 = IsCellPinned(p3, c3, d3) || (MargolusRootCohesion(p3) > 0.65);
 
     float rho0 = MargolusEffectiveDensity(c0, d0);
     float rho1 = MargolusEffectiveDensity(c1, d1);
@@ -174,7 +216,7 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
                     {
                         slideRight = true;
                     }
-                    else if (IsMargolusGranular(c2.material, d2))
+                    else if (IsMargolusGranular(c2.material, d2) || (IsRockMaterial(c2.material) && c2.aux.w >= 1.0))
                     {
                         float tanRepose = MargolusTanRepose(c2.material, d2) * friction;
                         if (tanRepose * metric <= 2.5)
@@ -193,7 +235,7 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
                     {
                         slideLeft = true;
                     }
-                    else if (IsMargolusGranular(c3.material, d3))
+                    else if (IsMargolusGranular(c3.material, d3) || (IsRockMaterial(c3.material) && c3.aux.w >= 1.0))
                     {
                         float tanRepose = MargolusTanRepose(c3.material, d3) * friction;
                         if (tanRepose * metric <= 2.5)

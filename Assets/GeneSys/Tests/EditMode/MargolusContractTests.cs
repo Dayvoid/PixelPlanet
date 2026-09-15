@@ -97,7 +97,7 @@ namespace GeneSys.Tests
 
             string scheduler = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs");
             Assert.That(scheduler, Does.Contain("resources.SwapGrass()"));
-            Assert.That(scheduler, Does.Contain("_TreeReceiptScale"));
+            Assert.That(scheduler, Does.Contain("_TreeRead"));
         }
 
         [Test]

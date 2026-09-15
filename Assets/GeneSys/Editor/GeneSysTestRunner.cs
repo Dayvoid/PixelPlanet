@@ -109,6 +109,12 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.WorldGenIntegrationTests");
         }
 
+        [MenuItem("Tools/GeneSys/Run Speleogenesis PlayMode Tests")]
+        public static void RunSpeleogenesisPlayMode()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.SpeleogenesisIntegrationTests");
+        }
+
         public static void RunPlayModeGroup(string groupName)
         {
             GeneSysTestObserver.Run(TestMode.PlayMode, groupName);

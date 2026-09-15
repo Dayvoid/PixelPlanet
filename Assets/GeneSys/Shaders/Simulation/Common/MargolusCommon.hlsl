@@ -30,6 +30,11 @@ bool IsMargolusOpenCarrier(uint material, MaterialGpuData def)
     return def.metadata.x == 1.0;
 }
 
+bool IsRockMaterial(uint material)
+{
+    return material == 4u || material == 5u || material == 13u || material == 14u;
+}
+
 bool IsMargolusPinned(MargolusCell c, MaterialGpuData def)
 {
     if (IsMargolusOpenCarrier(c.material, def)) return false;
@@ -41,9 +46,13 @@ bool IsMargolusPinned(MargolusCell c, MaterialGpuData def)
     // Algae films settle with Margolus even though the asset rigidity is solid-ish.
     if (c.material == FLORA_ALGAE_ID) return false;
 
-    // Rigid solids (category Solid or high rigidity) stay put.
+    // Calved or fractured rock (stress >= 1.0) loses structural cohesion and falls.
+    if (IsRockMaterial(c.material) && c.aux.w >= 1.0) return false;
+
+    // Rigid solids (category Solid or high rigidity) stay put by default.
+    // Spatial attachment and unsupported gravity falls are checked in MargolusTransport.
     if (def.physical.y >= 0.75) return true;
-    if (def.metadata.x == 4.0 && (c.material == 4u || c.material == 5u || c.material == 13u || c.material == 14u))
+    if (def.metadata.x == 4.0 && IsRockMaterial(c.material))
         return true;
 
     return false;

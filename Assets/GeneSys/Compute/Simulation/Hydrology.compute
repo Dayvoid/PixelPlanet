@@ -176,8 +176,9 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
             MaterialGpuData aboveDef = D(aboveMaterial);
             if (IsGroundwaterHost(aboveMaterial, aboveDef))
             {
+                float percScale = (aboveMaterial == 15u || material == 15u) ? 0.08 : 1.0;
                 float perc = PercolationAmount(A(above).y, GroundwaterCapacity(aboveDef), groundwaterRead, capacity,
-                    saturate(aboveDef.biology.z), porosity, groundwaterRate, fieldCapacityFraction, _DeltaTime);
+                    saturate(aboveDef.biology.z), porosity, groundwaterRate * percScale, fieldCapacityFraction, _DeltaTime);
                 groundwaterDelta += perc;
                 state.x = MixTemperature(state.x, definition.transport.y, S(above).x, perc, waterHeatCapacity);
             }
@@ -189,13 +190,15 @@ void Groundwater(uint3 id : SV_DispatchThreadID)
             MaterialGpuData belowDef = D(belowMaterial);
             if (IsGroundwaterHost(belowMaterial, belowDef))
             {
+                float percScale = (belowMaterial == 15u || material == 15u) ? 0.08 : 1.0;
                 float perc = PercolationAmount(groundwaterRead, capacity, A(below).y, GroundwaterCapacity(belowDef),
-                    porosity, saturate(belowDef.biology.z), groundwaterRate, fieldCapacityFraction, _DeltaTime);
+                    porosity, saturate(belowDef.biology.z), groundwaterRate * percScale, fieldCapacityFraction, _DeltaTime);
                 groundwaterDelta -= perc;
             }
         }
 
-        float lateralRate = groundwaterRate * 0.35;
+        bool perchedOnClay = (cell.y > 0 && M(cell + int2(0, -1)) == 15u);
+        float lateralRate = perchedOnClay ? (groundwaterRate * 0.7) : (groundwaterRate * 0.35);
         int2 left = cell + int2(-1, 0);
         int2 right = cell + int2(1, 0);
         uint leftMaterial = M(left);
@@ -315,18 +318,93 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
 
     // Continuous linear recovery for sediment-source solids. Sustained loading must
     // exceed surfaceStressRecoveryRate (_Erosion.w) on average to accumulate toward conversion.
-    if (IsHardCrustMaterial(material) || material == 7u || material == 15u)
-        aux.w = max(0.0, aux.w - max(0.0, _Erosion.w) * _DeltaTime);
-
-    if ((IsHardCrustMaterial(material)) && aux.y > 0.55 && definition.metadata.z > 0.5)
+    if (material != 14u || aux.y <= 0.01)
     {
-        float karst = material == 14u ? 1.6 : 1.0;
-        float carve = _Hydrology.z * aux.y * (1.0 - cohesion) * karst * _DeltaTime;
+        if (IsHardCrustMaterial(material) || material == 7u || material == 15u)
+            aux.w = max(0.0, aux.w - max(0.0, _Erosion.w) * _DeltaTime);
+    }
+
+    // Epigenic Karst Dissolution for Limestone (14)
+    if (material == 14u && aux.y > 0.01)
+    {
+        // Carbonic acidity enriched by soil organics, detritus, and roots
+        float organicAcidity = 1.0 + 2.5 * saturate(aux.z);
+        int2 aboveCell = cell + int2(0, 1);
+        uint aboveMat = aboveCell.y < _GridSize.y ? M(aboveCell) : 0u;
+        if (aboveMat == 7u || aboveMat == 131u)
+            organicAcidity += 2.0;
+
+        float karstRate = max(0.001, _Hydrology.z); // config.dissolutionRate
+        float flowBoost = 1.0 + 1.5 * flowEnergy;
+        float carve = karstRate * 8.0 * aux.y * organicAcidity * flowBoost * (1.0 - cohesion * 0.5) * _DeltaTime;
         aux.w += carve;
-        if (aux.w > 1.25)
+
+        // Cumulative dissolution carves an underground cave cavity!
+        if (aux.w >= 1.0)
         {
-            material = 8u;
+            int2 above = cell + int2(0, 1);
+            int2 belowC = cell + int2(0, -1);
+            int leftX = (cell.x - 1 + _GridSize.x) % _GridSize.x;
+            int rightX = (cell.x + 1) % _GridSize.x;
+
+            // Vadose (unsaturated cave air) vs Phreatic (flooded conduit)
+            bool vadose = (above.y < _GridSize.y && M(above) == 1u)
+                       || (belowC.y >= 0 && M(belowC) == 1u)
+                       || M(int2(leftX, cell.y)) == 1u
+                       || M(int2(rightX, cell.y)) == 1u
+                       || aux.y < definition.biology.z * 0.6;
+
+            if (vadose)
+            {
+                material = 1u; // Air-filled cave chamber
+                float releasedWater = aux.y;
+                aux.y = 0.0;
+                state.z += releasedWater * 0.7; // Dripping moisture film
+                aux.x += releasedWater * 0.3;   // Cave air humidity
+            }
+            else
+            {
+                material = 9u; // Water-filled phreatic conduit
+                state.z = max(1.0, aux.y);
+                aux.y = 0.0;
+            }
             aux.w = 0.0;
+            aux.z = saturate(aux.z + 0.08); // Residual mineral fertility
+        }
+    }
+
+    // Speleothem Dripstone Formation in Air-filled Cave Cells
+    if (material == 1u && cell.y > 0 && cell.y < _GridSize.y - 1)
+    {
+        int2 above = cell + int2(0, 1);
+        uint aboveMat = M(above);
+        float4 aboveAux = A(above);
+        float4 aboveState = S(above);
+
+        // Stalactite: dripping saturated water from limestone ceiling precipitates calcite
+        if (aboveMat == 14u && (aboveAux.y > 0.04 || aboveState.z > 0.02))
+        {
+            aux.w += max(0.001, _Hydrology.z) * 0.25 * _DeltaTime;
+            if (aux.w > 1.2)
+            {
+                material = 14u; // Stalactite grows downward
+                aux.w = 0.0;
+                aux.y = 0.05;
+            }
+        }
+
+        // Stalagmite: floor beneath dripping air cell can grow upward
+        int2 below = cell + int2(0, -1);
+        uint belowMat = M(below);
+        if ((belowMat == 14u || belowMat == 4u || belowMat == 8u) && state.z > 0.04)
+        {
+            aux.w += max(0.001, _Hydrology.z) * 0.20 * _DeltaTime;
+            if (aux.w > 1.4)
+            {
+                material = 14u; // Stalagmite grows upward
+                aux.w = 0.0;
+                aux.y = 0.05;
+            }
         }
     }
 
@@ -357,15 +435,45 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    uint below = M(cell + int2(0, -1));
+    uint below = cell.y > 0 ? M(cell + int2(0, -1)) : 2u;
     float seismic = GeodynamicsSeismicEnvelope(cell.x, Radius01(cell.y, _GridSize.y));
-    bool unsupported = below == 0u || below == 1u;
+    bool unsupported = below == 0u || below == 1u || below == 9u;
+
     if (seismic > 0.02 && (exposed || localMoisture > dryThreshold || unsupported || cohesion < 0.55))
         aux.w = saturate(aux.w + seismic * saturate(_Hydrothermal.w) * 0.35 * _DeltaTime);
 
-    if ((material == 4u || material == 7u || material == 14u || material == 15u) && unsupported && cohesion < _Hydrology.w)
+    // Structural Roof Calving on unsupported rock ceilings/overhangs
+    if ((material == 4u || material == 14u || material == 5u) && unsupported)
     {
-        material = 8u;
+        // Evaluate void span
+        int leftX = (cell.x - 1 + _GridSize.x) % _GridSize.x;
+        int rightX = (cell.x + 1) % _GridSize.x;
+        uint belowLeft = cell.y > 0 ? M(int2(leftX, cell.y - 1)) : 2u;
+        uint belowRight = cell.y > 0 ? M(int2(rightX, cell.y - 1)) : 2u;
+
+        bool wideSpan = (belowLeft == 1u || belowLeft == 0u || belowLeft == 9u)
+                     && (belowRight == 1u || belowRight == 0u || belowRight == 9u);
+
+        float spanMultiplier = wideSpan ? 2.5 : 1.0;
+        float gravityStress = _Mechanics.x * definition.physical.x * 0.15;
+        float bendingStress = gravityStress * spanMultiplier * (1.0 - definition.physical.y * 0.7) * _DeltaTime;
+
+        // Higher collapseRate accelerates structural roof failure
+        aux.w += bendingStress * max(0.2, _Hydrology.w * 6.0);
+
+        if (seismic > 0.02)
+            aux.w += seismic * 0.5 * _DeltaTime;
+
+        if (aux.w >= 1.0)
+        {
+            // Ceiling fractures / calvies: aux.w >= 1.0 unpins it in Margolus to drop under gravity
+            aux.w = 1.0;
+        }
+    }
+    else if ((material == 7u || material == 15u) && unsupported && cohesion < _Hydrology.w)
+    {
+        material = 8u; // Soft soils detach into sediment
+        aux.w = 0.0;
     }
 
     Write(cell, material, state, flow, aux, ecology, combustion);
