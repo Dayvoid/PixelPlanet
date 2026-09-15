@@ -289,29 +289,31 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     }
     float pressure = saturate((terrainSurface - radius) * 8.0) * 2.0;
 
+    MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
+    uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
+
     float surfaceWater = 0.0;
     if (material == 9u || IsOceanFillIce(material, ocean, radius, seaLevel))
         surfaceWater = CanonicalStandingWaterMass(id.y, seaLevel);
-    else if (material == 7u && radius > terrainSurface - 0.008)
+    else if ((material == 7u || material == SEDIMENT_ID || material == CLAY_ID || material == 4u || material == 5u || material == LIMESTONE_ID) && radius > terrainSurface - 0.008)
         surfaceWater = ocean * 0.05;
 
+    float capacity = GroundwaterCapacity(definition);
     float groundwaterDepth = saturate(_WorldWaterC.y);
     float groundwater = 0.0;
-    float waterTableBottom = lerp(crustEdge, terrainSurface, 1.0 - groundwaterDepth);
-    if ((material == 4u || material == 7u || material == SEDIMENT_ID || material == LIMESTONE_ID || material == CLAY_ID) && radius >= waterTableBottom && radius <= terrainSurface)
+    float waterTableBottom = lerp(mantleEdge, terrainSurface, 1.0 - groundwaterDepth);
+    if (IsGroundwaterHost(material, definition) && radius >= waterTableBottom && radius <= terrainSurface)
     {
         float base = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed);
-        groundwater = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
-        groundwater *= lerp(0.65, 1.25, ocean);
-        groundwater *= lerp(0.85, 1.15, fault);
+        float saturation = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
+        saturation *= lerp(0.65, 1.25, ocean);
+        saturation *= lerp(0.85, 1.15, fault);
+        groundwater = min(capacity, saturation * capacity);
     }
 
     float vapor = 0.0;
     if (material == 1u && radius >= _AtmosphereStartRadius * 0.95)
         vapor = saturate(_WorldWaterC.x) * VaporSaturation(temperature, _WeatherE.x) * lerp(0.85, 1.15, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
-
-    MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
-    uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
 
     float sporeLoad = 0.0;
     uint traits = 0u;
@@ -452,31 +454,33 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
     }
     float pressure = saturate((terrainSurface - radius) * 8.0) * 2.0;
 
+    MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
+    uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
+
     float surfaceWater = 0.0;
     if (material == 9u || IsOceanFillIce(material, ocean, radius, seaLevel))
         surfaceWater = CanonicalStandingWaterMass(id.y, seaLevel);
-    else if ((material == 7u || material == CLAY_ID || material == SEDIMENT_ID) && radius > terrainSurface - 0.008)
+    else if ((material == 7u || material == CLAY_ID || material == SEDIMENT_ID || material == 4u || material == 5u || material == LIMESTONE_ID) && radius > terrainSurface - 0.008)
         surfaceWater = ocean * 0.05;
     else if (material == ICE_ID)
         surfaceWater = lerp(0.15, 0.85, iceStrength);
 
+    float capacity = GroundwaterCapacity(definition);
     float groundwaterDepth = saturate(_WorldWaterC.y);
     float groundwater = 0.0;
-    float waterTableBottom = lerp(crustEdge, terrainSurface, 1.0 - groundwaterDepth);
-    if ((material == 4u || material == METAL_ID || material == 7u || material == SEDIMENT_ID || material == LIMESTONE_ID || material == CLAY_ID) && radius >= waterTableBottom && radius <= terrainSurface)
+    float waterTableBottom = lerp(mantleEdge, terrainSurface, 1.0 - groundwaterDepth);
+    if (IsGroundwaterHost(material, definition) && radius >= waterTableBottom && radius <= terrainSurface)
     {
         float base = Hash01(id.x * 73856093u + id.y * 19349663u + (uint)_Seed);
-        groundwater = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
-        groundwater *= lerp(0.65, 1.25, ocean);
-        groundwater *= lerp(0.85, 1.15, fault);
+        float saturation = saturate(base * 0.8 + 0.2) * _WorldWaterB.w;
+        saturation *= lerp(0.65, 1.25, ocean);
+        saturation *= lerp(0.85, 1.15, fault);
+        groundwater = min(capacity, saturation * capacity);
     }
 
     float vapor = 0.0;
     if (material == 1u && radius >= _AtmosphereStartRadius * 0.95)
         vapor = saturate(_WorldWaterC.x) * VaporSaturation(temperature, _WeatherE.x) * lerp(0.85, 1.15, Hash01(id.x * 83492791u + (uint)_Seed * 17u));
-
-    MaterialGpuData definition = _MaterialDefinitions[min(material, 255u)];
-    uint shade = PickMaterialShade(definition.metadata.x, id.xy, material, _Seed);
 
     float sporeLoad = 0.0;
     uint traits = 0u;

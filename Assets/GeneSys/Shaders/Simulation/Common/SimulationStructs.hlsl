@@ -318,7 +318,7 @@ bool IsGroundwaterHost(uint material, MaterialGpuData definition)
     if (material == 0u || material == 1u || material == 11u) return false;
     if (material == 2u || material == 3u || material == 6u) return false;
     if (material == 9u || material == 10u) return false;
-    return saturate(definition.biology.z) > 0.05;
+    return saturate(definition.biology.z) > 0.02;
 }
 
 float GroundwaterCapacity(MaterialGpuData definition)
@@ -934,7 +934,8 @@ float TraitModulatedIgnition(float ignitionTemperature, uint traits, float trait
 
 float InfiltrationAmount(float sourceMass, float remainingCapacity, float absorbency, float porosity, float infiltrationRate, float dt)
 {
-    float rate = saturate(absorbency) * saturate(porosity) * max(0.0, infiltrationRate) * max(0.0, dt);
+    float effectivePerm = max(saturate(absorbency) * saturate(porosity), min(saturate(absorbency), saturate(porosity)) * 0.25);
+    float rate = effectivePerm * max(0.0, infiltrationRate) * max(0.0, dt);
     return max(0.0, min(max(0.0, sourceMass), min(max(0.0, remainingCapacity), rate)));
 }
 

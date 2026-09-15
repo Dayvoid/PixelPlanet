@@ -45,6 +45,33 @@ namespace GeneSys.Tests
             Assert.That(done, Is.True);
         }
 
+        private static IEnumerator ReadGpuFields(SimulationHost host, Action<uint[], Vector4[], Vector4[]> consume)
+        {
+            bool done = false;
+            bool failed = false;
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            {
+                if (materialRequest.hasError) { failed = true; done = true; return; }
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                {
+                    if (stateRequest.hasError) { failed = true; done = true; return; }
+                    Vector4[] states = stateRequest.GetData<Vector4>().ToArray();
+                    AsyncGPUReadback.Request(host.Resources.AuxRead, 0, auxRequest =>
+                    {
+                        if (auxRequest.hasError) { failed = true; done = true; return; }
+                        Vector4[] aux = auxRequest.GetData<Vector4>().ToArray();
+                        consume(materials, states, aux);
+                        done = true;
+                    });
+                });
+            });
+            for (int i = 0; i < 240 && !done; i++)
+                yield return null;
+            Assert.That(failed, Is.False);
+            Assert.That(done, Is.True);
+        }
+
         private static int CountMaterial(uint[] materials, uint id) =>
             Array.FindAll(materials, value => value == id).Length;
 
@@ -166,6 +193,84 @@ namespace GeneSys.Tests
             yield return ReadMaterials(host, result => second = result);
 
             Assert.That(second, Is.EqualTo(first));
+        }
+
+        [UnityTest]
+        public IEnumerator RockCellsReceiveGroundwaterWhenWaterTableConfigured()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.ApplyPreset(SimulationPreset.Validation);
+            host.Config.useOgWorldgen = false;
+            host.Config.groundwaterDepth = 0.65f;
+            host.Config.initialGroundwaterSaturation = 0.65f;
+            host.Config.seed = 5150;
+            host.Regenerate();
+            for (int i = 0; i < 8; i++) yield return null;
+
+            uint[] materials = null;
+            Vector4[] aux = null;
+            yield return ReadGpuFields(host, (m, _, a) =>
+            {
+                materials = m;
+                aux = a;
+            });
+
+            int wetGranite = 0;
+            int wetLimestone = 0;
+            for (int i = 0; i < materials.Length; i++)
+            {
+                uint mat = materials[i];
+                float gw = aux[i].y;
+                if (mat == MaterialIds.Granite && gw > 0.005f)
+                {
+                    wetGranite++;
+                    Assert.That(gw, Is.LessThanOrEqualTo(0.081f), "Granite groundwater must not exceed capacity.");
+                }
+                else if (mat == MaterialIds.Limestone && gw > 0.005f)
+                {
+                    wetLimestone++;
+                    Assert.That(gw, Is.LessThanOrEqualTo(0.401f), "Limestone groundwater must not exceed capacity.");
+                }
+            }
+
+            Assert.That(wetGranite, Is.GreaterThan(0), "Granite in the crust water table must receive initial groundwater.");
+            Assert.That(wetLimestone, Is.GreaterThan(0), "Limestone in the crust water table must receive initial groundwater.");
+        }
+
+        [UnityTest]
+        public IEnumerator DryGroundwaterSettingLeavesRockDry()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.ApplyPreset(SimulationPreset.Validation);
+            host.Config.useOgWorldgen = false;
+            host.Config.groundwaterDepth = 0f;
+            host.Config.initialGroundwaterSaturation = 0f;
+            host.Config.seed = 5150;
+            host.Regenerate();
+            for (int i = 0; i < 8; i++) yield return null;
+
+            uint[] materials = null;
+            Vector4[] aux = null;
+            yield return ReadGpuFields(host, (m, _, a) =>
+            {
+                materials = m;
+                aux = a;
+            });
+
+            for (int i = 0; i < materials.Length; i++)
+            {
+                uint mat = materials[i];
+                if (mat == MaterialIds.Granite || mat == MaterialIds.Limestone || mat == MaterialIds.Basalt)
+                {
+                    Assert.That(aux[i].y, Is.EqualTo(0f), "Zero water table setting must generate dry rock.");
+                }
+            }
         }
     }
 }
