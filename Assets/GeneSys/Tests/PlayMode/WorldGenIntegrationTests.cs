@@ -272,5 +272,48 @@ namespace GeneSys.Tests
                 }
             }
         }
+
+        [UnityTest]
+        public IEnumerator WorldGenNeverExposesLimestoneOnPlanetSurface()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.ApplyPreset(SimulationPreset.Validation);
+            host.Config.useOgWorldgen = false;
+            host.Config.limestoneDepositCount = 30;
+            host.Config.seed = 5150;
+            host.Regenerate();
+            for (int i = 0; i < 8; i++) yield return null;
+
+            uint[] materials = null;
+            yield return ReadMaterials(host, result => materials = result);
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int exposedLimestoneCount = 0;
+
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = height - 1; y >= 0; y--)
+                {
+                    uint mat = materials[y * width + x];
+                    if (mat == MaterialIds.Void || mat == MaterialIds.Air || mat == MaterialIds.Water)
+                        continue;
+
+                    if (mat == MaterialIds.Limestone)
+                    {
+                        exposedLimestoneCount++;
+                    }
+                    break;
+                }
+            }
+
+            Assert.That(CountMaterial(materials, MaterialIds.Limestone), Is.GreaterThan(0),
+                "Limestone deposits should still exist in the subterranean crust.");
+            Assert.That(exposedLimestoneCount, Is.EqualTo(0),
+                "Limestone must never be placed on the exposed planet surface (cliffs, hills, or ocean floor) during world generation.");
+        }
     }
 }

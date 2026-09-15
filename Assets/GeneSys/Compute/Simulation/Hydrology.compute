@@ -373,16 +373,19 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    // Speleothem Dripstone Formation in Air-filled Cave Cells
-    if (material == 1u && cell.y > 0 && cell.y < _GridSize.y - 1)
+    // Speleothem Dripstone Formation strictly restricted to enclosed subterranean cave chambers
+    if (material == 1u && cell.y > 1 && cell.y < _GridSize.y - 3)
     {
         int2 above = cell + int2(0, 1);
         uint aboveMat = M(above);
         float4 aboveAux = A(above);
         float4 aboveState = S(above);
 
-        // Stalactite: dripping saturated water from limestone ceiling precipitates calcite
-        if (aboveMat == 14u && (aboveAux.y > 0.04 || aboveState.z > 0.02))
+        // Stalactite: dripping saturated water from limestone ceiling precipitates calcite downward.
+        // Requires solid overburden above the ceiling (not open sky) to ensure it is inside an underground cave.
+        uint aboveOverburden = M(above + int2(0, 1));
+        bool isEnclosedCeiling = aboveOverburden >= 2u && aboveOverburden != 9u && aboveOverburden != 10u;
+        if (aboveMat == 14u && isEnclosedCeiling && (aboveAux.y > 0.04 || aboveState.z > 0.02))
         {
             aux.w += max(0.001, _Hydrology.z) * 0.25 * _DeltaTime;
             if (aux.w > 1.2)
@@ -393,17 +396,46 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             }
         }
 
-        // Stalagmite: floor beneath dripping air cell can grow upward
+        // Stalagmite: floor beneath dripping cave air can only grow upward if there is an
+        // active dripping limestone ceiling directly overhead within the cave chamber.
         int2 below = cell + int2(0, -1);
         uint belowMat = M(below);
-        if ((belowMat == 14u || belowMat == 4u || belowMat == 8u) && state.z > 0.04)
+        if (belowMat == 14u || belowMat == 4u || belowMat == 8u)
         {
-            aux.w += max(0.001, _Hydrology.z) * 0.20 * _DeltaTime;
-            if (aux.w > 1.4)
+            bool hasOverheadLimestoneDrip = false;
+            [unroll]
+            for (int dy = 1; dy <= 8; dy++)
             {
-                material = 14u; // Stalagmite grows upward
-                aux.w = 0.0;
-                aux.y = 0.05;
+                int yProbe = cell.y + dy;
+                if (yProbe >= _GridSize.y - 1) break;
+                uint pMat = M(int2(cell.x, yProbe));
+                if (pMat == 14u)
+                {
+                    float4 pAux = A(int2(cell.x, yProbe));
+                    float4 pState = S(int2(cell.x, yProbe));
+                    uint pOverburden = M(int2(cell.x, yProbe + 1));
+                    if ((pAux.y > 0.02 || pState.z > 0.02) && pOverburden >= 2u && pOverburden != 9u && pOverburden != 10u)
+                    {
+                        hasOverheadLimestoneDrip = true;
+                    }
+                    break;
+                }
+                else if (pMat != 1u)
+                {
+                    // Non-air obstruction (e.g. granite, ice, water) - not an open cave drip path
+                    break;
+                }
+            }
+
+            if (hasOverheadLimestoneDrip && (state.z > 0.005 || aboveState.z > 0.005 || aboveAux.y > 0.02))
+            {
+                aux.w += max(0.001, _Hydrology.z) * 0.20 * _DeltaTime;
+                if (aux.w > 1.4)
+                {
+                    material = 14u; // Stalagmite grows upward
+                    aux.w = 0.0;
+                    aux.y = 0.05;
+                }
             }
         }
     }

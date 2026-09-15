@@ -391,5 +391,132 @@ namespace GeneSys.Tests
 
             RestoreConfig(host);
         }
+
+        [UnityTest]
+        public IEnumerator SurfaceAtmosphericRainNeverSpawnsLimestoneSpeleothems()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSpeleogenesisIsolation(host);
+            host.Config.dissolutionRate = 0.8f;
+            host.Config.seed = 8866;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int midX = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.55f), 10, height - 20);
+
+            // Paint open surface terrain: Granite/Sediment floor at floorY, open Air above for 10 cells
+            for (int dx = -5; dx <= 5; dx++)
+            {
+                Paint(host, midX + dx, floorY, (dx % 2 == 0) ? MaterialIds.Granite : MaterialIds.Sediment);
+                for (int dy = 1; dy <= 10; dy++)
+                    Paint(host, midX + dx, floorY + dy, MaterialIds.Air);
+            }
+
+            // Pour heavy surface water / rain film on surface air cells above the rock/sediment
+            for (int dx = -5; dx <= 5; dx++)
+            {
+                for (int dy = 1; dy <= 4; dy++)
+                    PaintField(host, midX + dx, floorY + dy, 2f, 0.50f); // state.z water film
+            }
+
+            yield return Step(host, 1);
+            yield return Step(host, 25);
+
+            yield return ReadMaterials(host, mats =>
+            {
+                // Verify that zero cells above the floor turned into Limestone
+                for (int dx = -5; dx <= 5; dx++)
+                {
+                    for (int dy = 1; dy <= 10; dy++)
+                    {
+                        uint cellMat = mats[(floorY + dy) * width + (midX + dx)];
+                        Assert.That(cellMat, Is.Not.EqualTo(MaterialIds.Limestone),
+                            $"Open atmospheric air cell at ({midX + dx}, {floorY + dy}) must never transform into Limestone under rain/surface water.");
+                    }
+                }
+            });
+
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator SubterraneanCaveFormsSpeleothemsUnderWeepingCeiling()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureSpeleogenesisIsolation(host);
+            host.Config.dissolutionRate = 0.8f;
+            host.Config.seed = 9977;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int midX = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.55f), 10, height - 20);
+
+            // Construct an enclosed subterranean cave chamber:
+            // Bedrock basement at floorY and caprock at floorY + 4
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                Paint(host, midX + dx, floorY, MaterialIds.Rock);
+                Paint(host, midX + dx, floorY + 4, MaterialIds.Rock); // Overburden caprock
+            }
+            // Abutment side walls
+            for (int dy = 1; dy <= 3; dy++)
+            {
+                Paint(host, midX - 2, floorY + dy, MaterialIds.Rock);
+                Paint(host, midX + 2, floorY + dy, MaterialIds.Rock);
+            }
+
+            // Air cave void at floorY + 1 and floorY + 2
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                Paint(host, midX + dx, floorY + 1, MaterialIds.Air);
+                Paint(host, midX + dx, floorY + 2, MaterialIds.Air);
+            }
+
+            // Weeping limestone ceiling at floorY + 3
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                Paint(host, midX + dx, floorY + 3, MaterialIds.Limestone);
+                PaintField(host, midX + dx, floorY + 3, 5f, 0.40f); // Saturated groundwater aux.y
+            }
+
+            yield return Step(host, 1);
+            yield return Step(host, 30);
+
+            yield return ReadMaterialsAndAux(host, (mats, aux) =>
+            {
+                // Inside the cave chamber, calcite dripstone must form speleothems (stalactite or stalagmite)
+                // or accumulate calcite progress (aux.w > 0.0) in the cave air cells.
+                bool formedSpeleothem = false;
+                bool accumulatedCalcite = false;
+
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    uint stalactiteCell = mats[(floorY + 2) * width + (midX + dx)];
+                    uint stalagmiteCell = mats[(floorY + 1) * width + (midX + dx)];
+                    float stalactiteAuxW = aux[(floorY + 2) * width + (midX + dx)].w;
+                    float stalagmiteAuxW = aux[(floorY + 1) * width + (midX + dx)].w;
+
+                    if (stalactiteCell == MaterialIds.Limestone || stalagmiteCell == MaterialIds.Limestone)
+                        formedSpeleothem = true;
+                    if (stalactiteAuxW > 0.05f || stalagmiteAuxW > 0.05f)
+                        accumulatedCalcite = true;
+                }
+
+                Assert.That(formedSpeleothem || accumulatedCalcite, Is.True,
+                    "Subterranean cave air cells beneath a weeping limestone ceiling must precipitate calcite speleothems.");
+            });
+
+            RestoreConfig(host);
+        }
     }
 }

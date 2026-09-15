@@ -401,10 +401,10 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
         fault = GeodynamicsSeedFault((int)id.x, radius, _WorldGenParams.w);
     fault = max(fault, ocean * 0.15 * step(crustEdge, radius));
 
-    // Stage 1.5: limestone bodies in the granite band (before metal).
+    // Stage 1.5: limestone bodies in the granite band (strictly subterranean host rock for cave systems).
     float limestone = SampleDeposit(angular, radius, mantleEdge, crustEdge,
         max(0, (int)_WorldGenV3A.x), _WorldGenV3A.y, _WorldGenV3A.z, _WorldGenV3A.w, _WorldGenV3B.x, 8807u);
-    if (limestone > 0.0 && material == 4u)
+    if (limestone > 0.0 && material == 4u && radius <= terrainSurface - 0.008 && radius <= crustEdge)
         material = LIMESTONE_ID;
 
     // Stage 1.6: clay lenses in the soil band (before metal).
