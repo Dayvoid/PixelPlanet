@@ -235,11 +235,13 @@ namespace GeneSys.Validation
                                                                     if (treePhys[i].y < -0.01f || treePhys[i].y > 1.01f) { Complete(false, $"Tree hydration out of range at cell {i}."); return; }
                                                                     if (treePhys[i].w < -0.01f || treePhys[i].w > 1.01f) { Complete(false, $"Tree health out of range at cell {i}."); return; }
                                                                 }
-                                                                AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, TreeGenome.TopologySlice, 1, treeTopoRequest =>
+                                                                int topoSlice = treeTex.volumeDepth >= FloraGenome.SliceCount ? FloraGenome.TopologySlice : TreeGenome.TopologySlice;
+                                                                int genSlice = treeTex.volumeDepth >= FloraGenome.SliceCount ? FloraGenome.GenomeSlice : TreeGenome.GenomeSlice;
+                                                                AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, topoSlice, 1, treeTopoRequest =>
                                                                 {
                                                                     if (treeTopoRequest.hasError) { Complete(false, "Tree topology GPU readback failed."); return; }
                                                                     Vector4[] treeTopoBits = treeTopoRequest.GetData<Vector4>().ToArray();
-                                                                    AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, TreeGenome.GenomeSlice, 1, treeGenomeRequest =>
+                                                                    AsyncGPUReadback.Request(treeTex, 0, 0, treeTex.width, 0, treeTex.height, genSlice, 1, treeGenomeRequest =>
                                                                     {
                                                                         if (treeGenomeRequest.hasError) { Complete(false, "Tree genome GPU readback failed."); return; }
                                                                         Vector4[] treeGenomeBits = treeGenomeRequest.GetData<Vector4>().ToArray();
@@ -325,7 +327,8 @@ namespace GeneSys.Validation
                 {
                     Vector4 value = values[i];
                     if (!Finite(value)) { Complete(false, $"Non-finite geodynamics state at cell {i}."); return; }
-                    if (value.y < -0.01f || value.z < -0.01f || value.w < -0.01f)
+                    bool isReservoir = (i % GeneSys.Simulation.Geodynamics.GeodynamicsGrid.StateSlotsPerCell) == GeneSys.Simulation.Geodynamics.GeodynamicsGrid.SlotReservoir;
+                    if (isReservoir && (value.y < -0.01f || value.z < -0.01f || value.w < -0.01f))
                     { Complete(false, $"Negative geodynamics reservoir at cell {i}."); return; }
                 }
                 Complete(true, passedMessage);

@@ -738,7 +738,11 @@ void ApplyHydrostaticColumns(uint3 id : SV_DispatchThreadID)
     int expectedCells;
     float remainder;
     PartitionSurfaceVolume(newVolume, canFilm, expectedCells, remainder);
-    KeepLandedRainPixel(hadPixels, newVolume, expectedCells, remainder);
+    int bedL = (int)round(_WaterColumns[WrapTheta(x - 1, _GridSize.x)].x);
+    int bedR = (int)round(_WaterColumns[WrapTheta(x + 1, _GridSize.x)].x);
+    float stepGrade = max((float)abs(bedY - bedL), (float)abs(bedY - bedR));
+    float slopeFactor = 1.0 / sqrt(1.0 + stepGrade * stepGrade);
+    KeepLandedRainPixel(hadPixels, newVolume, slopeFactor, _HydrologyC.y, expectedCells, remainder);
     int currentCells = hadPixels ? max(0, waterTop - bedY) : 0;
     // Flux can move many cells of volume in one tick. Spawning the whole stack at once
     // is the tower artifact; keep extra mass on film (or the top pixel) and grow by one.

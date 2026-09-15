@@ -204,15 +204,36 @@ void PartitionSurfaceVolume(float volume, bool canFilm, out int cells, out float
     }
 }
 
-// A landed rain pixel should stay visible until the column shrinks below a drop.
-// Film-only beds (no pixel yet) still use exact floor/remainder so thin wetting
+// A landed rain pixel or accumulated precipitation should stay visible as a ponded puddle
+// until the column shrinks below the slope-adjusted ponding capacity.
+// Film-only beds with thin wetting still use exact floor/remainder so light dew/dampness
 // does not spawn a standing cell.
+void KeepLandedRainPixel(bool hadPixels, float volume, float slopeFactor, float pondKnob, inout int cells, inout float remainder)
+{
+    if (cells > 0)
+        return;
+    pondKnob = max(0.0, pondKnob);
+    if (pondKnob <= 1e-4)
+    {
+        if (hadPixels && volume >= PRECIP_MIN_DROP)
+        {
+            cells = 1;
+            remainder = 0.0;
+        }
+        return;
+    }
+    float retentionCap = saturate(pondKnob) * PRECIP_MIN_DROP * slopeFactor;
+    float materializeThreshold = PRECIP_MIN_DROP;
+    if ((hadPixels && volume >= max(0.2, retentionCap * 0.85)) || (volume >= materializeThreshold))
+    {
+        cells = 1;
+        remainder = 0.0;
+    }
+}
+
 void KeepLandedRainPixel(bool hadPixels, float volume, inout int cells, inout float remainder)
 {
-    if (!hadPixels || cells > 0 || volume < PRECIP_MIN_DROP)
-        return;
-    cells = 1;
-    remainder = 0.0;
+    KeepLandedRainPixel(hadPixels, volume, 1.0, 0.0, cells, remainder);
 }
 
 #endif

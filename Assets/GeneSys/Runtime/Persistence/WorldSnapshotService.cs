@@ -38,11 +38,11 @@ namespace GeneSys.Persistence
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
-        private const int PayloadCountV11 = 38;
-        private const int PayloadCountV12 = 41;
-        private const int PayloadCountV14 = 47;
-        private const int PayloadCountV15 = 49;
-        private const int PayloadCountV16 = 43;
+        private const int PayloadCountV11 = PayloadCountV10 + SimulationResources.WaspSliceCount; // 42
+        private const int PayloadCountV12 = PayloadCountV11 + SimulationResources.TreeSliceCount; // 47
+        private const int PayloadCountV14 = PayloadCountV12 + 6; // 53
+        private const int PayloadCountV15 = PayloadCountV14 + 2; // 55
+        private const int PayloadCountV16 = PayloadCountV12 + 2; // 49
 
         private readonly string directoryOverride;
         private string resolvedDirectory;

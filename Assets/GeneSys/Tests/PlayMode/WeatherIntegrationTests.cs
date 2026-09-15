@@ -284,6 +284,20 @@ namespace GeneSys.Tests
             return water;
         }
 
+        private static bool HasSurfaceWaterPixel(uint[] mats, int width, int x, int bedY)
+        {
+            int height = mats.Length / Math.Max(1, width);
+            for (int y = bedY + 1; y < height; y++)
+            {
+                uint id = mats[y * width + x];
+                if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                    return true;
+                if (id != MaterialIds.Air)
+                    break;
+            }
+            return false;
+        }
+
         private static int CountMaterial(uint[] materials, uint materialId)
         {
             int count = 0;
@@ -1391,17 +1405,20 @@ namespace GeneSys.Tests
             for (int i = 0; i < 5; i++) yield return null;
 
             int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
             int x = width / 2;
-            int bedY = SurfaceY(host);
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.62f), 10, height - 10);
             const int cloudBase = 6;
             const int cloudTop = 12;
             for (int dx = -10; dx <= 10; dx++)
             {
                 int xx = host.Grid.WrapTheta(x + dx);
-                Paint(host, xx, bedY - 1, MaterialIds.Rock);
+                Paint(host, xx, bedY - 1, MaterialIds.Mantle);
                 Paint(host, xx, bedY, MaterialIds.Rock);
-                for (int y = bedY + 1; y <= bedY + cloudTop + 1; y++)
+                for (int y = bedY + 1; y < height; y++)
                     Paint(host, xx, y, MaterialIds.Air);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
             }
             yield return Step(host, 1);
             for (int dy = cloudBase; dy <= cloudTop; dy++)
@@ -1431,6 +1448,86 @@ namespace GeneSys.Tests
                     "Landed rain should remain as a local pond instead of vanishing.");
                 Assert.That(local, Is.GreaterThan(far + 0.35f),
                     "Shallow rain must not sheet across a dry shelf in a few dozen ticks.");
+                bool hasPixel = false;
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    if (HasSurfaceWaterPixel(mats, width, host.Grid.WrapTheta(x + dx), bedY))
+                        hasPixel = true;
+                }
+                Assert.That(hasPixel, Is.True, "Landed rain should materialize as a visible surface water pixel.");
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator HeavyRainAccumulatesVisibleWaterPixelsOnSurface()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            DisableWeatherNoise(host);
+            host.Config.evaporationRate = 0f;
+            host.Config.condensationRate = 0f;
+            host.Config.dewRate = 0f;
+            host.Config.springDischargeRate = 0f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.vaporPressureScale = 0f;
+            host.Config.windStrength = 0f;
+            host.Config.atmosphericAdvectionRate = 0f;
+            host.Config.vaporDiffusionRate = 0f;
+            host.Config.atmosphericBuoyancy = 0f;
+            host.Config.verticalBuoyancyStrength = 0f;
+            host.Config.cloudRetainMass = 0.05f;
+            host.Config.runoffRate = 0.45f;
+            host.Config.pondingRate = 0.85f;
+            host.Config.gravityStrength = 1f;
+            host.Config.slowPassInterval = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.62f), 10, height - 10);
+            const int cloudBase = 4;
+            const int cloudTop = 10;
+            for (int dx = -10; dx <= 10; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, bedY - 1, MaterialIds.Mantle);
+                Paint(host, xx, bedY, MaterialIds.Soil);
+                for (int y = bedY + 1; y < height; y++)
+                    Paint(host, xx, y, MaterialIds.Air);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+            yield return Step(host, 1);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                for (int dy = cloudBase; dy <= cloudTop; dy++)
+                {
+                    PaintField(host, xx, bedY + dy, 6f, -100f);
+                    PaintField(host, xx, bedY + dy, 2f, -100f);
+                    PaintField(host, xx, bedY + dy, 2f, 1.2f);
+                }
+            }
+            yield return Step(host, 1);
+
+            host.Config.precipitationRate = 2.0f;
+            yield return Step(host, 36);
+
+            yield return ReadFields(host, (mats, states, aux, _) =>
+            {
+                bool rainZoneHasPixel = false;
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    if (HasSurfaceWaterPixel(mats, width, xx, bedY))
+                        rainZoneHasPixel = true;
+                }
+                Assert.That(rainZoneHasPixel, Is.True,
+                    "Heavy rain must accumulate visible surface water pixels where precipitation falls.");
             });
         }
 
@@ -1446,6 +1543,7 @@ namespace GeneSys.Tests
             host.Config.dewRate = 0f;
             host.Config.vaporPressureScale = 0f;
             host.Config.windStrength = 0.8f;
+            host.Config.prevailingWind = 1.0f;
             host.Config.atmosphericAdvectionRate = 0f;
             host.Config.vaporDiffusionRate = 0f;
             host.Config.atmosphericBuoyancy = 0f;
@@ -1461,15 +1559,19 @@ namespace GeneSys.Tests
             for (int i = 0; i < 5; i++) yield return null;
 
             int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
             int x = width / 2;
-            int bedY = SurfaceY(host);
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(height * 0.62f), 10, height - 10);
             const int fall = 14;
             for (int dx = -4; dx <= 4; dx++)
             {
                 int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, bedY - 1, MaterialIds.Mantle);
                 Paint(host, xx, bedY, MaterialIds.Rock);
                 for (int y = bedY + 1; y <= bedY + fall + 2; y++)
                     Paint(host, xx, y, MaterialIds.Air);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
             }
             yield return Step(host, 1);
             for (int dy = fall - 2; dy <= fall; dy++)
@@ -1477,6 +1579,7 @@ namespace GeneSys.Tests
                 PaintField(host, x, bedY + dy, 6f, -100f);
                 PaintField(host, x, bedY + dy, 2f, -100f);
                 PaintField(host, x, bedY + dy, 2f, 0.9f);
+                PaintField(host, x, bedY + dy, 13f, 1.0f);
             }
             yield return Step(host, 1);
 
@@ -1768,13 +1871,18 @@ namespace GeneSys.Tests
             int width = host.Grid.angularResolution;
             int x = width / 2;
             int cloudY = AtmosphereY(host);
-            int floorY = cloudY - 4;
+            int floorY = cloudY - 6;
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                int xx = host.Grid.WrapTheta(x + dx);
+                Paint(host, xx, floorY - 1, MaterialIds.Mantle);
+            }
             PaintAirChamber(host, x - 1, x + 1, floorY + 1, cloudY);
             yield return Step(host, 1);
 
             yield return ReadFields(host, (_, __, aux, ___) =>
             {
-                for (int dy = 0; dy <= 4; dy++)
+                for (int dy = 0; dy <= 6; dy++)
                 for (int dx = -1; dx <= 1; dx++)
                 {
                     float vapor = aux[(floorY + dy) * width + (x + dx)].x;
@@ -1826,28 +1934,32 @@ namespace GeneSys.Tests
             host.Config.condensationRate = 0f;
             host.Config.dewRate = 0f;
             host.Config.gravityStrength = 1f;
-            yield return Step(host, 8);
 
-            yield return ReadFields(host, (mats, _, __, ___) =>
+            int laterY = -1;
+            for (int step = 0; step < 8 && (laterY < 0 || laterY >= formedY); step++)
             {
-                int laterY = -1;
-                for (int dx = -1; dx <= 1 && laterY < 0; dx++)
+                yield return Step(host, 1);
+                yield return ReadFields(host, (mats, _, __, ___) =>
                 {
-                    int xx = host.Grid.WrapTheta(x + dx);
-                    for (int y = floorY; y <= cloudY; y++)
+                    for (int dx = -1; dx <= 1; dx++)
                     {
-                        uint id = mats[y * width + xx];
-                        if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                        int xx = host.Grid.WrapTheta(x + dx);
+                        for (int y = floorY + 1; y <= cloudY; y++)
                         {
-                            laterY = y;
-                            break;
+                            uint id = mats[y * width + xx];
+                            if (id == MaterialIds.Water || id == MaterialIds.Ice)
+                            {
+                                laterY = y;
+                                break;
+                            }
                         }
                     }
-                }
-                Assert.That(laterY, Is.GreaterThan(0));
-                Assert.That(laterY, Is.LessThan(formedY), "Materialized rain should fall under gravity.");
-                Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
-            });
+                    Assert.That(CountMaterial(mats, MaterialIds.Vapor), Is.EqualTo(0));
+                });
+            }
+
+            Assert.That(laterY, Is.GreaterThan(0));
+            Assert.That(laterY, Is.LessThan(formedY), "Materialized rain should fall under gravity.");
         }
 
         [UnityTest]

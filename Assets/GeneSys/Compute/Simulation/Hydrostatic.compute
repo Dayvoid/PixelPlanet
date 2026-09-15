@@ -74,6 +74,7 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
 
     bool leftDonates = delta > 0.0;
     float donorHead = leftDonates ? headL : headR;
+    float recvHead = leftDonates ? headR : headL;
     float donorVol = leftDonates ? volL : volR;
     float recvVol = leftDonates ? volR : volL;
     int recvBed = leftDonates ? bedR : bedL;
@@ -93,29 +94,42 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    float donorDepth = max(0.0, donorHead - donorBedTop);
-    float pond = max(0.0, _HydrologyC.y);
-    float retention = donorDepth < 0.999 ? saturate(pond * 0.15) : 0.0;
-    float mobility = max(0.0, _HydrologyC.x) * (1.0 - retention);
-    // A landed rain pixel is depth 1. Pond it on dry ground and into other shallow
-    // puddles; only merge at full runoff once the receiver is already a standing body.
-    bool rainScale = donorDepth <= 1.0 + 1e-4;
-    bool shallowRecv = recvVol < 1.0 - 1e-4;
-    if (pond > 1e-6 && rainScale)
+    float donorSurplus = max(0.0, donorHead - saddle);
+    float recvSurplus = max(0.0, recvHead - saddle);
+    bool standingWaterCoupled = (recvHead > saddle + 1e-5);
+
+    float amount = 0.0;
+    if (standingWaterCoupled)
     {
-        if (recvVol < 0.12)
-            mobility *= lerp(0.012, 0.08, saturate(donorDepth));
-        else if (donorDepth < 0.999 || shallowRecv)
-            mobility *= lerp(0.22, 0.65, saturate(pond * 0.25));
+        // Both columns have water surfaces above the saddle: true hydrostatic pressure leveling
+        // of a continuous standing water body (lake/ocean).
+        float effectiveDelta = donorSurplus - recvSurplus;
+        if (effectiveDelta > 1e-5)
+        {
+            float mobility = max(0.0, _HydrologyC.x);
+            amount = effectiveDelta * 0.5 * min(0.9, mobility * _DeltaTime * 8.0);
+            amount = min(amount, donorVol * 0.35);
+            amount = min(amount, effectiveDelta * 0.5);
+        }
     }
-    // A face may move at most half the head difference; beyond that the pair overshoots and
-    // trades the imbalance back next iteration. Cap below the marginal value so the shortest
-    // wavelength decays instead of ringing forever once the solver relaxes many times a tick.
-    float amount = abs(delta) * 0.5 * min(0.9, mobility * _DeltaTime * 8.0);
-    amount = min(amount, donorVol * 0.35);
-    amount = min(amount, abs(delta) * 0.5);
-    if (pond > 1e-6 && rainScale && shallowRecv)
-        amount = min(amount, max(0.0, donorVol - PRECIP_MIN_DROP) * 0.5);
+    else
+    {
+        // Receiver is below the terrain saddle lip: this is overland runoff or water spilling
+        // down a step/slope. Driving head is the water surplus above the weir, NOT the canyon depth.
+        float stepGrade = (float)abs(bedL - bedR);
+        float slopeFactor = 1.0 / sqrt(1.0 + stepGrade * stepGrade);
+        float pondKnob = max(0.0, _HydrologyC.y);
+        float retentionCap = (pondKnob > 1e-4) ? (saturate(pondKnob) * PRECIP_MIN_DROP * slopeFactor) : 0.0;
+        float movable = max(0.0, donorSurplus - retentionCap);
+        if (movable > 1e-6)
+        {
+            float runoffSpeed = max(0.0, _HydrologyC.x);
+            float slopeBoost = 1.0 + min(3.0, stepGrade * 0.5);
+            float spillRate = min(0.35, runoffSpeed * _DeltaTime * slopeBoost * 0.25);
+            amount = min(movable * 0.5, movable * spillRate);
+        }
+    }
+
     float sky = max(0.0, (float)(_GridSize.y - recvBed - 1) - recvVol);
     amount = min(amount, sky);
     if (amount <= 1e-8)

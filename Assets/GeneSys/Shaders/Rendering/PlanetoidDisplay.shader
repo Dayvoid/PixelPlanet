@@ -334,6 +334,24 @@ Shader "GeneSys/Planetoid Display"
 
                 if (_OverlayMode == 0)
                 {
+                    if (material == 9u)
+                    {
+                        float waterMass = saturate(state.z);
+                        int2 belowCell = cell + int2(0, -1);
+                        if (belowCell.y >= 0)
+                        {
+                            uint belowMat = _MaterialTex.Load(int3(belowCell, 0));
+                            if (belowMat != 9u && belowMat != 10u && belowMat != 0u && belowMat != 1u)
+                            {
+                                float4 bedColor = _Palette.Load(int3((int)belowMat, 0, 0));
+                                float depthAlpha = smoothstep(0.2, 1.0, waterMass);
+                                float3 puddleColor = lerp(bedColor.rgb * 0.65 + float3(0.04, 0.14, 0.32), baseColor.rgb, depthAlpha);
+                                puddleColor += float3(0.08, 0.12, 0.18) * (1.0 - depthAlpha);
+                                color = puddleColor;
+                            }
+                        }
+                    }
+
                     float myco = saturate(ecology.y);
                     if (material == 7u && myco > 0.001)
                         color = lerp(color, float3(0.10, 0.32, 0.11), myco);
