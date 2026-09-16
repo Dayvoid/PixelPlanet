@@ -143,22 +143,26 @@ bool IsCellPinned(int2 cell, MargolusCell c, MaterialGpuData def)
             return !IsMargolusAirborneLiquid(cell, c.material);
         return true;
     }
-    // Singleton landed rain/melt stays put so hydrostatic can pond it. Stacked
-    // standing Water may still slide; landed Ice stays granular.
+    // Singleton landed rain/melt on a free surface stays put so hydrostatic can pond it.
+    // Stacked standing Water may still slide. Buried singleton Water stays unpinned so
+    // denser granular solids can sink through it (sandwiched pixels bubble upward).
+    // Landed Ice stays granular.
     if (c.material == 9u && !IsMargolusAirborneLiquid(cell, c.material))
     {
         bool stacked = false;
+        bool freeSurface = true;
         if (cell.y + 1 < _GridSize.y)
         {
             uint above = _MaterialRead.Load(int3(cell.x, cell.y + 1, 0));
             stacked = above == 9u || above == 10u;
+            freeSurface = IsMargolusOpenCarrier(above, Mat(above));
         }
         if (!stacked && cell.y > 0)
         {
             uint below = _MaterialRead.Load(int3(cell.x, cell.y - 1, 0));
             stacked = below == 9u || below == 10u;
         }
-        if (!stacked)
+        if (!stacked && freeSurface)
             return true;
     }
     if (IsTreeMaterial(c.material) || IsAnyFaunaMaterial(c.material)) return true;

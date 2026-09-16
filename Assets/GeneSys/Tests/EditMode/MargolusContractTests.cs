@@ -104,6 +104,16 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void MargolusPinsFreeSurfaceSingletonWaterButNotBuriedWater()
+        {
+            string shader = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
+            Assert.That(shader, Does.Contain("bool freeSurface = true;"));
+            Assert.That(shader, Does.Contain("freeSurface = IsMargolusOpenCarrier(above, Mat(above));"));
+            Assert.That(shader, Does.Contain("if (!stacked && freeSurface)"));
+            Assert.That(shader, Does.Contain("Buried singleton Water stays unpinned"));
+        }
+
+        [Test]
         public void MargolusPinsFaunaOrganismsSeparatelyFromAlgae()
         {
             string common = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");

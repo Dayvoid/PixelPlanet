@@ -101,6 +101,8 @@ namespace GeneSys.Tests
             string margolus = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
             Assert.That(margolus, Does.Contain("_MargolusLiquidOnly"));
             Assert.That(margolus, Does.Contain("IsMargolusAirborneLiquid"));
+            Assert.That(margolus, Does.Contain("freeSurface = IsMargolusOpenCarrier(above, Mat(above));"));
+            Assert.That(margolus, Does.Contain("if (!stacked && freeSurface)"));
             Assert.That(hydrologySrc, Does.Contain("IsPondableRainPixel"));
             Assert.That(hydrologySrc, Does.Contain("currentCells + 1"));
             Assert.That(hydrologySrc, Does.Contain("never a hydrostatic rewrite"));

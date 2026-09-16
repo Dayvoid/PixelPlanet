@@ -44,6 +44,58 @@ namespace GeneSys.Tests
             Assert.That(done, Is.True);
         }
 
+        private static IEnumerator ReadMaterialsAndState(SimulationHost host, Action<uint[], Vector4[]> consume)
+        {
+            bool done = false;
+            bool failed = false;
+            Exception caught = null;
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            {
+                if (materialRequest.hasError) { failed = true; done = true; return; }
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                {
+                    if (stateRequest.hasError) { failed = true; done = true; return; }
+                    try
+                    {
+                        consume(materials, stateRequest.GetData<Vector4>().ToArray());
+                    }
+                    catch (Exception ex)
+                    {
+                        caught = ex;
+                    }
+                    finally
+                    {
+                        done = true;
+                    }
+                });
+            });
+            for (int i = 0; i < 240 && !done; i++)
+                yield return null;
+            Assert.That(failed, Is.False);
+            Assert.That(done, Is.True);
+            if (caught != null)
+                throw caught;
+        }
+
+        private static void PaintField(SimulationHost host, int x, int y, float mode, float amount)
+        {
+            host.QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = new Vector2Int(x, y),
+                radius = 0,
+                materialId = MaterialIds.Void,
+                values = new Vector4(mode, amount, 0f, 0f)
+            });
+        }
+
+        private static void PaintWaterMass(SimulationHost host, int x, int y, float mass)
+        {
+            Paint(host, x, y, MaterialIds.Water);
+            PaintField(host, x, y, 2f, -100f);
+            PaintField(host, x, y, 2f, mass);
+        }
+
         private static int Index(SimulationHost host, int x, int y) => y * host.Grid.angularResolution + x;
 
         private static void Paint(SimulationHost host, int x, int y, uint materialId)
@@ -232,6 +284,101 @@ namespace GeneSys.Tests
             yield return ReadMaterials(host, mats => afterMats = mats);
             for (int y = floorY; y <= floorY + 5; y++)
                 Assert.That(afterMats[Index(host, x, y)], Is.EqualTo(MaterialIds.Water));
+        }
+
+        [UnityTest]
+        public IEnumerator SandwichedWaterPixelBubblesAboveSoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusDensitySort(host);
+
+            int x = CrustX(host, 2);
+            int floorY = CrustFloorY(host);
+            yield return PrepareColumn(host, x, floorY, floorY + 2, () =>
+            {
+                Paint(host, x, floorY, MaterialIds.Soil);
+                Paint(host, x, floorY + 1, MaterialIds.Water);
+                Paint(host, x, floorY + 2, MaterialIds.Soil);
+            });
+
+            yield return Step(host, 24);
+
+            uint[] after = null;
+            yield return ReadMaterials(host, mats => after = mats);
+            Assert.That(after[Index(host, x, floorY + 2)], Is.EqualTo(MaterialIds.Water));
+            Assert.That(after[Index(host, x, floorY)], Is.EqualTo(MaterialIds.Soil));
+            Assert.That(after[Index(host, x, floorY + 1)], Is.EqualTo(MaterialIds.Soil));
+        }
+
+        [UnityTest]
+        public IEnumerator SandwichedPartialWaterPixelBubblesAboveSoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusDensitySort(host);
+
+            int x = CrustX(host, 6);
+            int floorY = CrustFloorY(host);
+            yield return PrepareColumn(host, x, floorY, floorY + 2, () =>
+            {
+                Paint(host, x, floorY, MaterialIds.Soil);
+                PaintWaterMass(host, x, floorY + 1, 0.4f);
+                Paint(host, x, floorY + 2, MaterialIds.Soil);
+            });
+
+            yield return Step(host, 24);
+
+            uint[] after = null;
+            Vector4[] states = null;
+            yield return ReadMaterialsAndState(host, (mats, st) => { after = mats; states = st; });
+            Assert.That(after[Index(host, x, floorY + 2)], Is.EqualTo(MaterialIds.Water));
+            Assert.That(states[Index(host, x, floorY + 2)].z, Is.EqualTo(0.4f).Within(0.05f));
+            Assert.That(after[Index(host, x, floorY)], Is.EqualTo(MaterialIds.Soil));
+            Assert.That(after[Index(host, x, floorY + 1)], Is.EqualTo(MaterialIds.Soil));
+        }
+
+        [UnityTest]
+        public IEnumerator SingletonSurfaceWaterDoesNotMargolusSlideOffSoil()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureMargolusDensitySort(host);
+
+            int x = CrustX(host, 7) & ~1;
+            int y0 = CrustFloorY(host) & ~1;
+            for (int dx = -1; dx <= 2; dx++)
+            {
+                Paint(host, x + dx, y0 - 1, MaterialIds.Core);
+                for (int y = y0 + 2; y <= y0 + 6; y++)
+                    Paint(host, x + dx, y, MaterialIds.Air);
+            }
+            Paint(host, x - 1, y0, MaterialIds.Core);
+            Paint(host, x - 1, y0 + 1, MaterialIds.Core);
+            Paint(host, x, y0, MaterialIds.Soil);
+            Paint(host, x, y0 + 1, MaterialIds.Water);
+            Paint(host, x + 1, y0, MaterialIds.Air);
+            Paint(host, x + 1, y0 + 1, MaterialIds.Air);
+            Paint(host, x + 2, y0, MaterialIds.Air);
+            Paint(host, x + 2, y0 + 1, MaterialIds.Air);
+            yield return Step(host, 1);
+
+            uint[] before = null;
+            yield return ReadMaterials(host, mats => before = mats);
+            Assert.That(before[Index(host, x, y0 + 1)], Is.EqualTo(MaterialIds.Water));
+            Assert.That(before[Index(host, x, y0)], Is.EqualTo(MaterialIds.Soil));
+
+            yield return Step(host, 16);
+
+            uint[] after = null;
+            yield return ReadMaterials(host, mats => after = mats);
+            Assert.That(after[Index(host, x, y0 + 1)], Is.EqualTo(MaterialIds.Water),
+                "Free-surface singleton rain must stay pinned so hydrostatic can pond it.");
+            Assert.That(after[Index(host, x + 1, y0)], Is.Not.EqualTo(MaterialIds.Water));
+            Assert.That(after[Index(host, x + 1, y0 + 1)], Is.Not.EqualTo(MaterialIds.Water));
         }
     }
 }
