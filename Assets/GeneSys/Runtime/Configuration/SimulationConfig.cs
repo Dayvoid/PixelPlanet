@@ -581,6 +581,8 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float coreHeatGlow = 1f;
         [Range(0.5f, 2f)] public float coreVisualScale = 1f;
         [Min(0f)] public float uiFadeDelay = 8f;
+        [Range(0, 1)] public int enableTransitionScenes = 0;
+        [Range(0.25f, 3f)] public float transitionSpeed = 1f;
 
         [Header("Tools and validation")]
         [Range(1, 64)] public int brushRadius = 5;
@@ -1076,6 +1078,8 @@ namespace GeneSys.Configuration
             coreHeatGlow = Mathf.Max(0f, coreHeatGlow);
             coreVisualScale = Mathf.Clamp(coreVisualScale, 0.5f, 2f);
             uiFadeDelay = Mathf.Max(0f, uiFadeDelay);
+            enableTransitionScenes = enableTransitionScenes != 0 ? 1 : 0;
+            transitionSpeed = Mathf.Clamp(transitionSpeed, 0.25f, 3f);
             geodynamicsAngularBins = Mathf.Clamp(geodynamicsAngularBins, 16, 128);
             geodynamicsRadialBins = Mathf.Clamp(geodynamicsRadialBins, 8, 32);
             geodynamicsPeriodTicks = Mathf.Clamp(geodynamicsPeriodTicks, 1, 64);

@@ -44,6 +44,7 @@ namespace GeneSys.Rendering
         private bool hasGlobeCameraState;
         private Camera visionCamera;
         private RenderTexture visionTarget;
+        private bool planetVisible = true;
 
         public const float MinOrthographicSize = 0.75f;
         public const float MaxOrthographicSize = 20f;
@@ -56,6 +57,7 @@ namespace GeneSys.Rendering
         public Material RuntimeMaterial => displayMaterial;
         /// <summary>When set, returns true if world zoom/pan should ignore the pointer (e.g. over UI).</summary>
         public Func<Vector2, bool> ShouldBlockWorldInput { get; set; }
+        public bool CinematicCameraActive { get; set; }
 
         public void Initialize(SimulationResources state, MaterialRegistry registry, PolarGridDefinition definition)
             => Initialize(state, registry, definition, null, null);
@@ -132,10 +134,27 @@ namespace GeneSys.Rendering
             displayMaterial.SetFloat("_AtmosphereStartRadius", grid.atmosphereStartRadius);
             displayMaterial.SetInt("_OverlayMode", OverlayMode);
             PushGraphicsUniforms();
+            planetVisible = true;
             meshRenderer.sharedMaterial = displayMaterial;
             meshRenderer.sortingOrder = 50;
             meshRenderer.enabled = true;
             RefreshTextures();
+        }
+
+        public void SetPlanetVisible(bool visible)
+        {
+            planetVisible = visible;
+            if (meshRenderer == null) meshRenderer = GetComponent<MeshRenderer>();
+            if (meshRenderer != null)
+                meshRenderer.enabled = visible && displayMaterial != null && resources != null && resources.IsCreated;
+        }
+
+        public void SetCinematicCamera(Vector3 position, float orthographicSize)
+        {
+            if (targetCamera == null) return;
+            targetCamera.orthographicSize = Mathf.Clamp(orthographicSize, MinOrthographicSize, MaxOrthographicSize);
+            Vector3 current = targetCamera.transform.position;
+            targetCamera.transform.position = new Vector3(position.x, position.y, current.z);
         }
 
         public void SetOverlay(int mode)
@@ -167,6 +186,7 @@ namespace GeneSys.Rendering
             if (resources == null || !resources.IsCreated || displayMaterial == null) return;
             RefreshTextures();
             PushGraphicsUniforms();
+            if (CinematicCameraActive) return;
             HandleCamera();
             if (cameraViewMode == CameraViewMode.ProbeFollow)
                 ApplyProbeFollow();
@@ -457,7 +477,7 @@ namespace GeneSys.Rendering
         private void OnEnable()
         {
             if (meshRenderer != null && displayMaterial != null && resources != null && resources.IsCreated)
-                meshRenderer.enabled = true;
+                meshRenderer.enabled = planetVisible;
         }
 
         private void OnDestroy()

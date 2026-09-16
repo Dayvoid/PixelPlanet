@@ -60,6 +60,10 @@ namespace GeneSys.Simulation
         private int ticksUntilLifeBurst;
         private bool warnedMissingSprite;
         private bool thrusterUnavailable;
+        private bool cinematicOverride;
+        private Vector3 cinematicLocalPosition;
+        private float cinematicRotationZ;
+        private float thrusterBoost = 1f;
 
         public ProbeAction ActiveAction => action;
         public ProbeFlightMode FlightMode => flightMode;
@@ -78,6 +82,31 @@ namespace GeneSys.Simulation
         }
 
         public float ProbeAngle01 => orbitAngle01;
+        public bool CinematicOverride => cinematicOverride;
+
+        public void SetCinematicPose(Vector3 localPosition, float rotationZ, float thrusterMultiplier)
+        {
+            cinematicOverride = true;
+            cinematicLocalPosition = localPosition;
+            cinematicRotationZ = rotationZ;
+            thrusterBoost = Mathf.Max(0f, thrusterMultiplier);
+        }
+
+        public void SetThrusterBoost(float multiplier) => thrusterBoost = Mathf.Max(0f, multiplier);
+
+        public void ClearCinematicOverride()
+        {
+            cinematicOverride = false;
+            thrusterBoost = 1f;
+        }
+
+        public static Vector3 CinematicOrbitPosition(float probeAngle01, float orbitRadius, float radiusScale)
+        {
+            float orbit = Mathf.Clamp(orbitRadius, 0.8f, 2f);
+            float radius = 0.5f * orbit * Mathf.Max(0.01f, radiusScale);
+            Vector2 direction = ProbeDirectionFromAngle01(probeAngle01);
+            return new Vector3(direction.x * radius, direction.y * radius, -0.05f);
+        }
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer planetoidDisplay)
         {
@@ -247,12 +276,15 @@ namespace GeneSys.Simulation
 
         private void LateUpdate()
         {
-            ProcessSimTicks();
+            if (!cinematicOverride)
+                ProcessSimTicks();
             SyncPose();
         }
 
         private void ResetRuntimeState()
         {
+            cinematicOverride = false;
+            thrusterBoost = 1f;
             flightMode = ProbeFlightMode.Clockwise;
             lastTravelMode = ProbeFlightMode.Clockwise;
             lifeSeedActive = false;
@@ -485,19 +517,26 @@ namespace GeneSys.Simulation
             if (host == null || host.Config == null) return;
 
             SimulationConfig config = host.Config;
-            float orbit = Mathf.Clamp(config.probeOrbitRadius, 0.8f, 2f);
-            float radius = 0.5f * orbit;
-            Vector2 direction = ProbeDirectionFromAngle01(ProbeAngle01);
-
             probeRoot.localPosition = Vector3.zero;
             probeRoot.localRotation = Quaternion.identity;
             probeRenderer.sprite = probeSprite;
             probeRenderer.enabled = probeSprite != null;
             bool reverseTravel = lastTravelMode == ProbeFlightMode.Counterclockwise;
-            probeRenderer.transform.localPosition = new Vector3(direction.x * radius, direction.y * radius, -0.05f);
             probeRenderer.transform.localScale = SpriteLocalScale(config.probeSpriteScale, reverseTravel);
-            probeRenderer.transform.localRotation = Quaternion.Euler(0f, 0f,
-                SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset, reverseTravel));
+            if (cinematicOverride)
+            {
+                probeRenderer.transform.localPosition = cinematicLocalPosition;
+                probeRenderer.transform.localRotation = Quaternion.Euler(0f, 0f, cinematicRotationZ);
+            }
+            else
+            {
+                float orbit = Mathf.Clamp(config.probeOrbitRadius, 0.8f, 2f);
+                float radius = 0.5f * orbit;
+                Vector2 direction = ProbeDirectionFromAngle01(ProbeAngle01);
+                probeRenderer.transform.localPosition = new Vector3(direction.x * radius, direction.y * radius, -0.05f);
+                probeRenderer.transform.localRotation = Quaternion.Euler(0f, 0f,
+                    SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset, reverseTravel));
+            }
             UpdateThruster(config);
         }
 
@@ -518,7 +557,10 @@ namespace GeneSys.Simulation
             }
 
             var emission = thrusterSystem.emission;
-            float rate = flightMode == ProbeFlightMode.Stopped ? ThrusterIdleRate : ThrusterFlightRate;
+            float boost = Mathf.Max(0f, thrusterBoost);
+            float rate = cinematicOverride
+                ? ThrusterFlightRate * Mathf.Max(1f, boost)
+                : (flightMode == ProbeFlightMode.Stopped ? ThrusterIdleRate : ThrusterFlightRate) * boost;
             emission.rateOverTime = rate * Mathf.Max(0f, config.probeThrusterStrength);
 
             if (!thrusterSystem.isPlaying)

@@ -60,6 +60,7 @@ namespace GeneSys.Tools
         private void Update()
         {
             if (host == null || !host.IsReady || Mouse.current == null) return;
+            if (display != null && display.CinematicCameraActive) return;
             Vector2 pointer = Mouse.current.position.ReadValue();
             if (ui != null && ui.IsPointerOverUi(pointer)) return;
 

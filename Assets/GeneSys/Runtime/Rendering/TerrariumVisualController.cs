@@ -63,6 +63,10 @@ namespace GeneSys.Rendering
         private Vector2 nebulaSpawnExtents;
         private float lastSpawnAspect = -1f;
         private bool built;
+        private bool planetContextVisible = true;
+        private bool journeyDriftActive;
+        private Vector2 starJourneyVelocity;
+        private Vector2 nebulaJourneyVelocity;
 
         public const float DefaultStarfieldZoomFollow = 0.82f;
         public const float DefaultNebulaZoomFollow = 0.38f;
@@ -76,8 +80,37 @@ namespace GeneSys.Rendering
             display = planetoidDisplay;
             if (targetCamera == null)
                 targetCamera = display != null ? display.TargetCamera : Camera.main;
+            planetContextVisible = true;
+            journeyDriftActive = false;
+            starJourneyVelocity = Vector2.zero;
+            nebulaJourneyVelocity = Vector2.zero;
             EnsureBuilt();
             ApplySettings(forceRebuildParticles: true);
+        }
+
+        public void SetPlanetContextVisible(bool visible)
+        {
+            planetContextVisible = visible;
+            if (!built) return;
+            if (!visible)
+            {
+                if (atmosphereRenderer != null) atmosphereRenderer.gameObject.SetActive(false);
+                if (atmosphereRendererSecondary != null) atmosphereRendererSecondary.gameObject.SetActive(false);
+                if (solarRoot != null) solarRoot.gameObject.SetActive(false);
+                if (coreRoot != null) coreRoot.gameObject.SetActive(false);
+                return;
+            }
+
+            if (host != null && host.IsReady)
+                ApplySettings(forceRebuildParticles: false);
+        }
+
+        public void SetJourneyDrift(Vector2 starVelocity, Vector2 nebulaVelocity)
+        {
+            starJourneyVelocity = starVelocity;
+            nebulaJourneyVelocity = nebulaVelocity;
+            journeyDriftActive = starVelocity.sqrMagnitude > 1e-8f || nebulaVelocity.sqrMagnitude > 1e-8f;
+            ApplyJourneyVelocities();
         }
 
         /// <summary>
@@ -264,8 +297,9 @@ namespace GeneSys.Rendering
             SimulationConfig config = host.Config;
             bool starsEnabled = config.enableStarfield != 0 && config.starfieldStrength > 0.001f;
             bool nebulaEnabled = config.enableNebula != 0 && config.nebulaStrength > 0.001f;
-            bool glowEnabled = config.enableAtmosphereGlow != 0 && config.atmosphereGlowStrength > 0.001f;
-            bool solarEnabled = config.enableSolarBody != 0 &&
+            bool glowEnabled = planetContextVisible &&
+                               config.enableAtmosphereGlow != 0 && config.atmosphereGlowStrength > 0.001f;
+            bool solarEnabled = planetContextVisible && config.enableSolarBody != 0 &&
                                 (config.solarBodyStrength > 0.001f || config.solarCoronaStrength > 0.001f);
             float aspect = GetCameraAspect();
             bool aspectChanged = lastSpawnAspect > 0f &&
@@ -363,7 +397,8 @@ namespace GeneSys.Rendering
                 }
             }
 
-            bool coreEnabled = config.enableCoreVisual != 0 && config.coreVisualStrength > 0.001f;
+            bool coreEnabled = planetContextVisible &&
+                               config.enableCoreVisual != 0 && config.coreVisualStrength > 0.001f;
             if (coreRoot != null)
             {
                 coreRoot.gameObject.SetActive(coreEnabled);
@@ -415,6 +450,8 @@ namespace GeneSys.Rendering
             starSystem.SetCustomParticleData(customDataScratch, ParticleSystemCustomData.Custom1);
             starSystem.Play(true);
             UpdateBackdropZoom();
+            if (journeyDriftActive)
+                ApplyJourneyVelocities();
         }
 
         private void RebuildNebula(int count)
@@ -441,6 +478,8 @@ namespace GeneSys.Rendering
             nebulaSystem.SetParticles(particles, count);
             nebulaSystem.Play(true);
             UpdateBackdropZoom();
+            if (journeyDriftActive)
+                ApplyJourneyVelocities();
         }
 
         private void UpdateSolarPose()
@@ -480,6 +519,27 @@ namespace GeneSys.Rendering
             UpdateBackdropZoom();
             if (nebulaSystem != null && nebulaSystem.gameObject.activeSelf)
                 ClampParticlesToSpawnField(nebulaSystem, nebulaSpawnExtents);
+            if (journeyDriftActive && starSystem != null && starSystem.gameObject.activeSelf)
+                ClampParticlesToSpawnField(starSystem, starSpawnExtents);
+        }
+
+        private void ApplyJourneyVelocities()
+        {
+            ApplyParticleVelocity(starSystem, starJourneyVelocity);
+            ApplyParticleVelocity(nebulaSystem, nebulaJourneyVelocity);
+        }
+
+        private static void ApplyParticleVelocity(ParticleSystem system, Vector2 velocity)
+        {
+            if (system == null) return;
+            int count = system.particleCount;
+            if (count <= 0) return;
+            var particles = new ParticleSystem.Particle[count];
+            system.GetParticles(particles, count);
+            var vel = new Vector3(velocity.x, velocity.y, 0f);
+            for (int i = 0; i < count; i++)
+                particles[i].velocity = vel;
+            system.SetParticles(particles, count);
         }
 
         private void UpdateBackdropZoom()
@@ -597,6 +657,10 @@ namespace GeneSys.Rendering
             lastStarCount = -1;
             lastNebulaCount = -1;
             lastSpawnAspect = -1f;
+            planetContextVisible = true;
+            journeyDriftActive = false;
+            starJourneyVelocity = Vector2.zero;
+            nebulaJourneyVelocity = Vector2.zero;
             starSpawnExtents = default;
             nebulaSpawnExtents = default;
             SafeDestroy(starMaterial);

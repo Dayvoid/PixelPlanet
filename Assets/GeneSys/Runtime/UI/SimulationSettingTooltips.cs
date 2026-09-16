@@ -971,6 +971,10 @@ namespace GeneSys.UI
                 "Multiplier on the visual extent of the molten metal core quad relative to the planetary core boundary. Visual only.",
             [nameof(SimulationConfig.uiFadeDelay)] =
                 "Seconds after the last inspect refresh or probe HUD idle before chrome fades. Inspect info fades out completely; probe controls fade to about 10% opacity and return on mouse-over.",
+            [nameof(SimulationConfig.enableTransitionScenes)] =
+                "Development toggle. When on, boot, regenerate, and world load play a probe travel hold (zoomed thrusters and drifting stars) before returning to orbit. Off keeps instant generation and loads.",
+            [nameof(SimulationConfig.transitionSpeed)] =
+                "How quickly the travel cinematic zooms and moves. 1 is the authored pace; higher values shorten depart and approach.",
 
             [nameof(SimulationConfig.brushRadius)] =
                 "Radius of the paint/inspect brush in cells. Larger brushes edit more geology, water, and ecology at once.",

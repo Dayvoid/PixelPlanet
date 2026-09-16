@@ -43,6 +43,7 @@ namespace GeneSys.Simulation
 
         private GpuPassScheduler scheduler;
         private readonly WorldScenarioDirector scenarioDirector = new();
+        private SceneTransitionDirector transitions;
         private long lastPerformanceTick;
         private double dispatchMilliseconds;
         private int dispatchSamples;
@@ -57,6 +58,7 @@ namespace GeneSys.Simulation
         public double LastTickMilliseconds => scheduler?.LastTickMilliseconds ?? 0d;
         public OrganismHistoryLog OrganismHistory { get; } = new();
         public ProbeController Probe => probe;
+        public bool TransitionScenesEnabled => config != null && config.enableTransitionScenes != 0;
         public SimulationTools Tools => tools;
         public PolarGridDefinition Grid => Resources?.Grid ?? config.grid;
         public RenderTexture MaterialField => Resources?.MaterialRead;
@@ -79,7 +81,36 @@ namespace GeneSys.Simulation
 
         private void Start()
         {
+            if (TransitionScenesEnabled)
+            {
+                Initialize(true, generateWorld: false);
+                if (!IsReady) return;
+                StartCoroutine(EnsureTransitionDirector().PlayBoot(GenerateWorldOnly));
+                return;
+            }
+
             Initialize();
+        }
+
+        public SceneTransitionDirector EnsureTransitionDirector()
+        {
+            if (transitions == null)
+                transitions = GetComponent<SceneTransitionDirector>();
+            if (transitions == null)
+                transitions = gameObject.AddComponent<SceneTransitionDirector>();
+            transitions.Bind(this, display, probe, visuals);
+            return transitions;
+        }
+
+        public void GenerateWorldOnly()
+        {
+            if (scheduler == null) return;
+            scheduler.GenerateWorld();
+            OrganismHistory.Clear();
+            Clock.Reset();
+            if (config != null)
+                scenarioDirector.Bind(config.worldScenario);
+            validator?.ResetBaseline();
         }
 
         public void RestoreDefaultSettings()
@@ -97,7 +128,7 @@ namespace GeneSys.Simulation
 
         public void Initialize() => Initialize(true);
 
-        private void Initialize(bool bindUi)
+        private void Initialize(bool bindUi, bool generateWorld = true)
         {
             Shutdown();
             if (!SystemInfo.supportsComputeShaders)
@@ -127,7 +158,8 @@ namespace GeneSys.Simulation
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
             scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, combustion: combustion, storm: storm, climate: climate, geodynamics: geodynamics, margolusTransport: margolusTransport, rockChunks: rockChunks);
-            scheduler.GenerateWorld();
+            if (generateWorld)
+                scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
             scenarioDirector.Bind(config.worldScenario);
@@ -151,6 +183,7 @@ namespace GeneSys.Simulation
         private void Update()
         {
             if (!IsReady) return;
+            if (transitions != null && transitions.IsActive) return;
             int advanced = Clock.Advance(Time.unscaledDeltaTime, config.ticksPerSecond, TickOnce);
             if (advanced <= 0) return;
             scheduler.DrainOrganismHistory(OrganismHistory);

@@ -64,6 +64,7 @@ namespace GeneSys.UI
             nameof(SimulationConfig.enableSolarBody),
             nameof(SimulationConfig.enableCoreVisual),
             nameof(SimulationConfig.enableProbeThruster),
+            nameof(SimulationConfig.enableTransitionScenes),
             nameof(SimulationConfig.enableMaterialTransport),
             nameof(SimulationConfig.enableRockChunks),
             nameof(SimulationConfig.margolusMetricEnable),
@@ -194,6 +195,10 @@ namespace GeneSys.UI
         private Toggle aiVerboseCrewLogsField;
         private Label aiStatusLabel;
         private bool suppressingAiSettings;
+        private Button regenerateButton;
+        private Button toolsLoadButton;
+        private Button worldLoadButton;
+        private bool worldOpsInteractable = true;
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer renderer, SimulationTools simulationTools)
         {
@@ -241,17 +246,24 @@ namespace GeneSys.UI
             worldMetricsLabel = root.Q<Label>("world-metrics");
             simulationStatusLabel = root.Q<Label>("simulation-status");
             playButton = root.Q<Button>("play");
+            regenerateButton = root.Q<Button>("regenerate");
+            toolsLoadButton = root.Q<Button>("load");
+            worldLoadButton = root.Q<Button>("world-load");
 
             root.Q<Button>("play")?.RegisterCallback<ClickEvent>(_ => { host.Clock.Toggle(); RefreshPlayLabel(); });
             root.Q<Button>("step")?.RegisterCallback<ClickEvent>(_ => host.Clock.RequestStep());
-            root.Q<Button>("regenerate")?.RegisterCallback<ClickEvent>(_ =>
+            regenerateButton?.RegisterCallback<ClickEvent>(_ =>
             {
-                host.Regenerate();
-                RefreshWorldMetrics(force: true);
-                RefreshHistory(force: true);
+                RequestWorldWork(
+                    () => host.Regenerate(),
+                    () =>
+                    {
+                        RefreshWorldMetrics(force: true);
+                        RefreshHistory(force: true);
+                    });
             });
             root.Q<Button>("save")?.RegisterCallback<ClickEvent>(_ => SaveSnapshot());
-            root.Q<Button>("load")?.RegisterCallback<ClickEvent>(_ => LoadSnapshot());
+            toolsLoadButton?.RegisterCallback<ClickEvent>(_ => LoadSnapshot());
             root.Q<Button>("validate")?.RegisterCallback<ClickEvent>(_ => validator?.ValidateNow());
             root.Q<Button>("restore-defaults")?.RegisterCallback<ClickEvent>(_ => RestoreDefaultSettings(root));
             root.Q<Button>("save-preset")?.RegisterCallback<ClickEvent>(_ => ShowSavePresetDialog());
@@ -907,6 +919,7 @@ namespace GeneSys.UI
 
         private void ShowWorldLoadDialog()
         {
+            if (IsTransitionLocked()) return;
             worldDialogIsSave = false;
             if (worldDialogTitle != null) worldDialogTitle.text = "Load World";
             if (worldConfirm != null) worldConfirm.text = "Load";
@@ -969,18 +982,24 @@ namespace GeneSys.UI
             }
 
             string name = worldNames[index];
-            if (!snapshots.Load(host, snapshots.GetPath(name)))
-            {
-                SetWorldError("File not found, invalid snapshot, or grid size does not match current world");
-                return;
-            }
-
-            currentWorldFileName = name;
-            RefreshWorldSaveButton();
-            RefreshHistory(force: true);
-            RefreshWorldMetrics(force: true);
             HideWorldDialog();
-            SetWorldStatus($"Loaded world: {name}");
+            bool loaded = false;
+            RequestWorldWork(
+                () => loaded = snapshots.Load(host, snapshots.GetPath(name)),
+                () =>
+                {
+                    if (!loaded)
+                    {
+                        SetWorldStatus("Load failed: file missing, invalid snapshot, or grid size does not match.");
+                        return;
+                    }
+
+                    currentWorldFileName = name;
+                    RefreshWorldSaveButton();
+                    RefreshHistory(force: true);
+                    RefreshWorldMetrics(force: true);
+                    SetWorldStatus($"Loaded world: {name}");
+                });
         }
 
         private void SaveCurrentWorld()
@@ -1128,7 +1147,21 @@ namespace GeneSys.UI
                     control.RegisterValueChangedCallback(evt =>
                     {
                         int index = control.choices.IndexOf(evt.newValue);
-                        if (index >= 0) host.ApplyWorldScenario((WorldScenario)index);
+                        if (index < 0) return;
+                        if (IsTransitionLocked())
+                        {
+                            int current = Mathf.Clamp((int)host.Config.worldScenario, 0, control.choices.Count - 1);
+                            control.SetValueWithoutNotify(control.choices[current]);
+                            return;
+                        }
+
+                        RequestWorldWork(
+                            () => host.ApplyWorldScenario((WorldScenario)index),
+                            () =>
+                            {
+                                RefreshWorldMetrics(force: true);
+                                RefreshHistory(force: true);
+                            });
                     });
                     AddSettingControl(container, control, field.Name);
                 }
@@ -1140,8 +1173,19 @@ namespace GeneSys.UI
                 }
                 else if (ToggleSettingsFields.Contains(field.Name) && field.FieldType == typeof(int))
                 {
-                    var control = new Toggle(Humanize(field.Name)) { value = (int)field.GetValue(host.Config) != 0 };
+                    var control = new Toggle(SettingLabel(field.Name)) { value = (int)field.GetValue(host.Config) != 0 };
                     control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue ? 1 : 0));
+                    AddSettingControl(container, control, field.Name);
+                }
+                else if (field.Name == nameof(SimulationConfig.transitionSpeed) && field.FieldType == typeof(float))
+                {
+                    var control = new Slider(SettingLabel(field.Name), 0.25f, 3f)
+                    {
+                        name = field.Name,
+                        value = (float)field.GetValue(host.Config),
+                        showInputField = true
+                    };
+                    control.RegisterValueChangedCallback(evt => field.SetValue(host.Config, evt.newValue));
                     AddSettingControl(container, control, field.Name);
                 }
                 else if (field.FieldType == typeof(float))
@@ -1377,6 +1421,8 @@ namespace GeneSys.UI
             if (fieldName == nameof(SimulationConfig.useOgWorldgen)) return "Use OG Worldgen";
             if (fieldName == nameof(SimulationConfig.uiFadeDelay)) return "UI Fade Delay";
             if (fieldName == nameof(SimulationConfig.worldScenario)) return "Scenario";
+            if (fieldName == nameof(SimulationConfig.enableTransitionScenes)) return "Transition Scenes";
+            if (fieldName == nameof(SimulationConfig.transitionSpeed)) return "Transition Speed";
             return Humanize(fieldName);
         }
 
@@ -1399,6 +1445,8 @@ namespace GeneSys.UI
 
         private void Update()
         {
+            if (initialized && host != null)
+                RefreshWorldOpsInteractable();
             if (!initialized || host == null || statusLabel == null) return;
             if (!string.IsNullOrEmpty(worldStatusMessage) && Time.unscaledTime < worldStatusUntil)
                 statusLabel.text = worldStatusMessage;
@@ -1975,12 +2023,69 @@ namespace GeneSys.UI
         private void SaveSnapshot() => snapshots.Save(host, SnapshotPath, ok => Debug.Log(ok ? $"Saved {SnapshotPath}" : "Snapshot save failed."));
         private void LoadSnapshot()
         {
-            if (!snapshots.Load(host, SnapshotPath))
+            bool loaded = false;
+            RequestWorldWork(
+                () => loaded = snapshots.Load(host, SnapshotPath),
+                () =>
+                {
+                    if (!loaded)
+                    {
+                        Debug.LogWarning("Snapshot load failed or grid preset differs.");
+                        return;
+                    }
+
+                    RefreshHistory(force: true);
+                });
+        }
+
+        private void RequestWorldWork(Action work, Action after)
+        {
+            if (work == null) return;
+            if (host != null && host.TransitionScenesEnabled)
             {
-                Debug.LogWarning("Snapshot load failed or grid preset differs.");
-                return;
+                SceneTransitionDirector director = host.EnsureTransitionDirector();
+                if (director != null && director.IsActive)
+                    return;
+                if (director != null)
+                {
+                    SetWorldOpsEnabled(false);
+                    StartCoroutine(RunWorldWork(director, work, after));
+                    return;
+                }
             }
-            RefreshHistory(force: true);
+
+            work();
+            after?.Invoke();
+        }
+
+        private IEnumerator RunWorldWork(SceneTransitionDirector director, Action work, Action after)
+        {
+            yield return director.PlayAround(work);
+            after?.Invoke();
+            SetWorldOpsEnabled(true);
+        }
+
+        private bool IsTransitionLocked()
+        {
+            if (host == null) return false;
+            SceneTransitionDirector director = host.GetComponent<SceneTransitionDirector>();
+            return director != null && director.IsActive;
+        }
+
+        private void RefreshWorldOpsInteractable()
+        {
+            bool enabled = !IsTransitionLocked();
+            if (enabled == worldOpsInteractable) return;
+            SetWorldOpsEnabled(enabled);
+        }
+
+        private void SetWorldOpsEnabled(bool enabled)
+        {
+            worldOpsInteractable = enabled;
+            regenerateButton?.SetEnabled(enabled);
+            toolsLoadButton?.SetEnabled(enabled);
+            worldLoadButton?.SetEnabled(enabled);
+            document?.rootVisualElement?.Q<DropdownField>(nameof(SimulationConfig.worldScenario))?.SetEnabled(enabled);
         }
     }
 }
