@@ -3,6 +3,7 @@ using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Rendering;
 using GeneSys.Simulation.Gpu;
+using GeneSys.Simulation.Scenarios;
 using GeneSys.Simulation.Topology;
 using GeneSys.Tools;
 using GeneSys.UI;
@@ -41,6 +42,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ProbeController probe;
 
         private GpuPassScheduler scheduler;
+        private readonly WorldScenarioDirector scenarioDirector = new();
         private long lastPerformanceTick;
         private double dispatchMilliseconds;
         private int dispatchSamples;
@@ -128,6 +130,7 @@ namespace GeneSys.Simulation
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
+            scenarioDirector.Bind(config.worldScenario);
             lastPerformanceTick = 0;
             dispatchMilliseconds = 0d;
             dispatchSamples = 0;
@@ -148,7 +151,7 @@ namespace GeneSys.Simulation
         private void Update()
         {
             if (!IsReady) return;
-            int advanced = Clock.Advance(Time.unscaledDeltaTime, config.ticksPerSecond, scheduler.Step);
+            int advanced = Clock.Advance(Time.unscaledDeltaTime, config.ticksPerSecond, TickOnce);
             if (advanced <= 0) return;
             scheduler.DrainOrganismHistory(OrganismHistory);
             dispatchMilliseconds += scheduler.LastTickMilliseconds;
@@ -169,13 +172,22 @@ namespace GeneSys.Simulation
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
+            scenarioDirector.Bind(config.worldScenario);
             validator?.ResetBaseline();
+        }
+
+        public void ApplyWorldScenario(WorldScenario scenario)
+        {
+            if (config == null) return;
+            config.worldScenario = scenario;
+            if (IsReady) Regenerate();
+            else scenarioDirector.Bind(scenario);
         }
 
         public void Step(float deltaTime)
         {
             if (!IsReady) return;
-            scheduler.Step(deltaTime);
+            TickOnce(deltaTime);
             scheduler.DrainOrganismHistory(OrganismHistory);
         }
 
@@ -185,7 +197,14 @@ namespace GeneSys.Simulation
             scheduler?.SetTickIndex((int)Mathf.Min(int.MaxValue, tick));
             OrganismHistory.Clear();
             scheduler?.ResetOrganismHistoryCounter();
+            scenarioDirector.Sync(tick);
             validator?.ResetBaseline();
+        }
+
+        private void TickOnce(float deltaTime)
+        {
+            scenarioDirector.Advance(this, Clock.TickCount + 1);
+            scheduler.Step(deltaTime);
         }
 
         public void RebuildClimate()

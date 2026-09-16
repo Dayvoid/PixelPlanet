@@ -27,6 +27,8 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.useOgWorldgen)] =
                 "Uses the original concentric worldgen instead of V2. Disables metal veins and ice caps, producing simpler layered crust, mantle, and soil at the cost of coastal and ore variety.",
 
+            [nameof(SimulationConfig.worldScenario)] =
+                "Internal worldgen and event-timeline preset. Sandbox uses the menu values as-is. Other scenarios overlay generation and optional timed events without rewriting the sliders on this page.",
             [nameof(SimulationConfig.coreRatio)] =
                 "Radial share of molten core during worldgen. A thicker core stores more heat and mantle pressure, feeding volcanism, hydrothermal vents, and deep temperature gradients.",
             [nameof(SimulationConfig.mantleRatio)] =

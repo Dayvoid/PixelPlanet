@@ -6,6 +6,7 @@ using GeneSys.Materials;
 using GeneSys.Simulation.Climate;
 using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.RockChunks;
+using GeneSys.Simulation.Scenarios;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -155,20 +156,22 @@ namespace GeneSys.Simulation.Gpu
                 UnityEngine.Debug.LogError($"GeneSys: {kernelName} kernel missing. Reimport WorldGeneration.compute and fix shader compile errors.");
                 return;
             }
+            WorldScenarioWorldgen worldgen = WorldScenarioOverlays.Resolve(config);
             SetCommon(worldGeneration, kernel, 0f);
             worldGeneration.SetInt("_Seed", config.seed);
-            worldGeneration.SetVector("_LayerRatios", new Vector4(config.coreRatio, config.mantleRatio, config.crustRatio, config.soilRatio));
-            worldGeneration.SetVector("_WorldGenParams", new Vector4(config.borderNoise, config.protrusionChance, 0f, config.tectonicFaultSeedCount));
-            worldGeneration.SetVector("_WorldWaterA", new Vector4(config.targetOceanCoverage, config.minOceanBasins, config.maxOceanBasins, config.seaLevelRadius));
-            worldGeneration.SetVector("_WorldWaterB", new Vector4(config.basinDepth, config.terrainRelief, config.coastRoughness, config.initialGroundwaterSaturation));
-            worldGeneration.SetVector("_WorldWaterC", new Vector4(config.initialAtmosphericHumidity, config.groundwaterDepth, config.frozenOceans ? 1f : 0f, 0f));
+            worldGeneration.SetVector("_LayerRatios", new Vector4(config.coreRatio, config.mantleRatio, config.crustRatio, worldgen.SoilRatio));
+            worldGeneration.SetVector("_WorldGenParams", new Vector4(worldgen.BorderNoise, config.protrusionChance, 0f, config.tectonicFaultSeedCount));
+            worldGeneration.SetVector("_WorldWaterA", new Vector4(worldgen.TargetOceanCoverage, config.minOceanBasins, config.maxOceanBasins, config.seaLevelRadius));
+            worldGeneration.SetVector("_WorldWaterB", new Vector4(config.basinDepth, config.terrainRelief, config.coastRoughness, worldgen.InitialGroundwaterSaturation));
+            worldGeneration.SetVector("_WorldWaterC", new Vector4(worldgen.InitialAtmosphericHumidity, config.groundwaterDepth, config.frozenOceans ? 1f : 0f, 0f));
+            worldGeneration.SetVector("_MycologyA", new Vector4(worldgen.MycologyInitialSporeLoad, config.mycologyRareStrainChance, config.mycologyAirTransportRate, config.mycologyWaterTransportRate));
             if (!config.useOgWorldgen)
             {
                 worldGeneration.SetVector("_WorldGenV2A", new Vector4(config.metalVeinCount, config.metalVeinMinSize, config.metalVeinMaxSize, config.metalVeinProtrusionChance));
                 worldGeneration.SetVector("_WorldGenV2B", new Vector4(config.metalVeinProtrusionDistance, config.iceCapRadius, config.iceCapHeight, config.iceCapRadiusVariation));
                 worldGeneration.SetVector("_WorldGenV2C", new Vector4(config.iceCapHeightVariation, 0f, 0f, 0f));
                 worldGeneration.SetVector("_WorldGenV3A", new Vector4(config.limestoneDepositCount, config.limestoneDepositMinSize, config.limestoneDepositMaxSize, config.limestoneDepositProtrusionChance));
-                worldGeneration.SetVector("_WorldGenV3B", new Vector4(config.limestoneDepositProtrusionDistance, config.clayDepositCount, config.clayDepositMinSize, config.clayDepositMaxSize));
+                worldGeneration.SetVector("_WorldGenV3B", new Vector4(config.limestoneDepositProtrusionDistance, worldgen.ClayDepositCount, config.clayDepositMinSize, config.clayDepositMaxSize));
                 worldGeneration.SetVector("_WorldGenV3C", new Vector4(config.clayDepositProtrusionChance, config.clayDepositProtrusionDistance, 0f, 0f));
             }
             worldGeneration.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
@@ -180,7 +183,7 @@ namespace GeneSys.Simulation.Gpu
             {
                 resources.ClearFlora();
                 int seedFlora = flora.FindKernel("SeedFlora");
-                if (seedFlora >= 0)
+                if (seedFlora >= 0 && !worldgen.SkipBiologySeed)
                 {
                     SetCommon(flora, seedFlora, 0f);
                     flora.SetBuffer(seedFlora, "_MaterialDefinitions", materialBuffer);

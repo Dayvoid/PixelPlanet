@@ -105,8 +105,10 @@ int GetBasinCount()
 
 float OceanMask(uint theta)
 {
-    int basinCount = GetBasinCount();
     float coverage = saturate(_WorldWaterA.x);
+    if (coverage <= 0.001) return 0.0;
+    if (coverage >= 0.999) return 1.0;
+    int basinCount = GetBasinCount();
     float halfWidth = coverage / max(1.0, 2.0 * basinCount);
     halfWidth = max(halfWidth, 0.04);
     float angular = (theta + 0.5) / max(1.0, (float)_GridSize.x);

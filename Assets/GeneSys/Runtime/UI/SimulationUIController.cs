@@ -8,6 +8,7 @@ using GeneSys.Materials;
 using GeneSys.Persistence;
 using GeneSys.Rendering;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Scenarios;
 using GeneSys.Tools;
 using GeneSys.Validation;
 using UnityEngine;
@@ -1115,6 +1116,22 @@ namespace GeneSys.UI
                     });
                     AddSettingControl(container, control, field.Name);
                 }
+                else if (field.FieldType == typeof(WorldScenario))
+                {
+                    int selected = (int)field.GetValue(host.Config);
+                    var control = new DropdownField(SettingLabel(field.Name))
+                    {
+                        name = field.Name,
+                        choices = new List<string>(WorldScenarioLabels.Choices),
+                        index = Mathf.Clamp(selected, 0, WorldScenarioLabels.Choices.Length - 1)
+                    };
+                    control.RegisterValueChangedCallback(evt =>
+                    {
+                        int index = control.choices.IndexOf(evt.newValue);
+                        if (index >= 0) host.ApplyWorldScenario((WorldScenario)index);
+                    });
+                    AddSettingControl(container, control, field.Name);
+                }
                 else if (field.Name == nameof(SimulationConfig.useOgWorldgen) && field.FieldType == typeof(bool))
                 {
                     var control = new Toggle(SettingLabel(field.Name)) { value = (bool)field.GetValue(host.Config) };
@@ -1359,6 +1376,7 @@ namespace GeneSys.UI
         {
             if (fieldName == nameof(SimulationConfig.useOgWorldgen)) return "Use OG Worldgen";
             if (fieldName == nameof(SimulationConfig.uiFadeDelay)) return "UI Fade Delay";
+            if (fieldName == nameof(SimulationConfig.worldScenario)) return "Scenario";
             return Humanize(fieldName);
         }
 

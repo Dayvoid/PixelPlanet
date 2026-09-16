@@ -1,4 +1,5 @@
 using System.Reflection;
+using GeneSys.Simulation.Scenarios;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -28,6 +29,7 @@ namespace GeneSys.Configuration
         public bool useOgWorldgen = false;
 
         [Header("World generation")]
+        public WorldScenario worldScenario = WorldScenario.Sandbox;
         [Range(0.05f, 0.5f)] public float coreRatio = 0.24f;
         [Range(0.05f, 0.6f)] public float mantleRatio = 0.38f;
         [Range(0.01f, 0.25f)] public float crustRatio = 0.13f;
