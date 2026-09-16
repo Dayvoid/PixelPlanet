@@ -70,6 +70,15 @@ namespace GeneSys.Tests
             Assert.That(material.materialId, Is.EqualTo(MaterialIds.Detritus));
             Assert.That(material.values.x, Is.EqualTo(0f));
 
+            Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Material, MaterialIds.Water, cell, 1, 1f, out var water, out grass), Is.True);
+            Assert.That(water.materialId, Is.EqualTo(MaterialIds.Water));
+            Assert.That(water.values.x, Is.EqualTo(0f));
+            Assert.That(water.values.y, Is.EqualTo(1f));
+
+            Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Material, MaterialIds.Ice, cell, 1, 1f, out var ice, out grass), Is.True);
+            Assert.That(ice.materialId, Is.EqualTo(MaterialIds.Ice));
+            Assert.That(ice.values.y, Is.EqualTo(1f));
+
             Assert.That(SimulationTools.TryBuildBrushCommand(BrushMode.Life, MaterialIds.Algae, cell, 0, 1.5f, out var algae, out grass), Is.True);
             Assert.That(grass, Is.False);
             Assert.That(algae.values.x, Is.EqualTo(14f));

@@ -150,6 +150,27 @@ namespace GeneSys.Tests
             FreezeWorld(host);
         }
 
+        private static IEnumerator ReadMaterialsAndState(SimulationHost host, Action<uint[], Vector4[]> consume)
+        {
+            bool done = false;
+            bool failed = false;
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            {
+                if (materialRequest.hasError) { failed = true; done = true; return; }
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                {
+                    if (stateRequest.hasError) { failed = true; done = true; return; }
+                    consume(materials, stateRequest.GetData<Vector4>().ToArray());
+                    done = true;
+                });
+            });
+            for (int i = 0; i < 240 && !done; i++)
+                yield return null;
+            Assert.That(failed, Is.False);
+            Assert.That(done, Is.True);
+        }
+
         private static IEnumerator ReadMaterialsAndEcology(SimulationHost host, Action<uint[], Vector4[]> consume)
         {
             bool done = false;
@@ -221,6 +242,60 @@ namespace GeneSys.Tests
                 painted = materials[Index(host, x, y)];
             });
             Assert.That(painted, Is.EqualTo(MaterialIds.Detritus));
+        }
+
+        [UnityTest]
+        public IEnumerator MaterialBrushWaterSurvivesOnRockSurface()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.gravityStrength = 1f;
+            host.Config.infiltrationRate = 0f;
+            host.Config.groundwaterRate = 0f;
+            host.Config.runoffRate = 0.45f;
+            host.Config.pondingRate = 0.85f;
+            host.Config.hydrostaticIterations = 32;
+            host.Config.phaseHysteresis = 0.02f;
+            int x = DayX(host);
+            int y = SurfaceY(host);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                Paint(host, x + dx, y - 1, MaterialIds.Mantle);
+                Paint(host, x + dx, y, MaterialIds.Rock);
+                Paint(host, x + dx, y + 1, MaterialIds.Air);
+                Paint(host, x + dx, y + 2, MaterialIds.Air);
+            }
+            yield return Step(host, 1);
+
+            Assert.That(SimulationTools.TryBuildBrushCommand(
+                BrushMode.Material, MaterialIds.Water, new Vector2Int(host.Grid.WrapTheta(x), y + 1), 0, 1f,
+                out var command, out bool grassSeed), Is.True);
+            Assert.That(grassSeed, Is.False);
+            host.QueueBrush(command);
+            yield return Step(host, 8);
+
+            uint painted = 0;
+            float local = 0f;
+            yield return ReadMaterialsAndState(host, (materials, states) =>
+            {
+                painted = materials[Index(host, x, y + 1)];
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    int xx = host.Grid.WrapTheta(x + dx);
+                    uint bed = materials[Index(host, xx, y)];
+                    if (bed != MaterialIds.Water && bed != MaterialIds.Ice)
+                        local += Mathf.Max(0f, states[Index(host, xx, y)].z);
+                    uint above = materials[Index(host, xx, y + 1)];
+                    if (above == MaterialIds.Water || above == MaterialIds.Ice)
+                        local += Mathf.Max(0f, states[Index(host, xx, y + 1)].z);
+                }
+            });
+            Assert.That(painted, Is.EqualTo(MaterialIds.Water),
+                "Material-brush Water must stay visible on rock instead of collapsing on contact.");
+            Assert.That(local, Is.GreaterThan(0.7f),
+                "Material-brush Water must initialize a full-cell mass that stays as a local pond.");
         }
 
         [UnityTest]

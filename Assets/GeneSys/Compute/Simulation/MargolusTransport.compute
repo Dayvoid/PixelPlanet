@@ -143,6 +143,24 @@ bool IsCellPinned(int2 cell, MargolusCell c, MaterialGpuData def)
             return !IsMargolusAirborneLiquid(cell, c.material);
         return true;
     }
+    // Singleton landed rain/melt stays put so hydrostatic can pond it. Stacked
+    // standing Water may still slide; landed Ice stays granular.
+    if (c.material == 9u && !IsMargolusAirborneLiquid(cell, c.material))
+    {
+        bool stacked = false;
+        if (cell.y + 1 < _GridSize.y)
+        {
+            uint above = _MaterialRead.Load(int3(cell.x, cell.y + 1, 0));
+            stacked = above == 9u || above == 10u;
+        }
+        if (!stacked && cell.y > 0)
+        {
+            uint below = _MaterialRead.Load(int3(cell.x, cell.y - 1, 0));
+            stacked = below == 9u || below == 10u;
+        }
+        if (!stacked)
+            return true;
+    }
     if (IsTreeMaterial(c.material) || IsWaspMaterial(c.material)) return true;
     if (c.material == 2u || c.material == 3u) return true;
     if (c.material == FLORA_ALGAE_ID) return false;

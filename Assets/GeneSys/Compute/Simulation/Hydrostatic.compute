@@ -132,6 +132,14 @@ void ComputeHydrostaticFaceFlux(uint3 id : SV_DispatchThreadID)
 
     float sky = max(0.0, (float)(_GridSize.y - recvBed - 1) - recvVol);
     amount = min(amount, sky);
+    // A landed rain/melt pixel is depth 1. Once a neighbor picks up any film, later
+    // iterations treat the pair as a coupled lake and sheet the drop away. Cap outflow
+    // so ponding cannot dissolve a visible pixel into sub-threshold film.
+    float donorDepth = max(0.0, donorHead - donorBedTop);
+    bool rainScale = donorDepth <= 1.0 + 1e-4;
+    bool shallowRecv = recvVol < 1.0 - 1e-4;
+    if (max(0.0, _HydrologyC.y) > 1e-6 && rainScale && shallowRecv)
+        amount = min(amount, max(0.0, donorVol - PRECIP_MIN_DROP) * 0.5);
     if (amount <= 1e-8)
     {
         _WaterFaceFlux[left] = 0;

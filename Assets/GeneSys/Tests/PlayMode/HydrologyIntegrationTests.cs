@@ -2008,6 +2008,75 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator LandedIceMeltLeavesStandingWaterOnRock()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureHydrostaticIsolation(host);
+            host.Config.seed = 33025;
+            host.Config.gravityStrength = 1f;
+            host.Config.runoffRate = 0.45f;
+            host.Config.pondingRate = 0.85f;
+            host.Config.hydrostaticIterations = 32;
+            host.Config.phaseHysteresis = 0.02f;
+            host.Config.enableMaterialTransport = true;
+            // PhaseChange is gated on thermalRate; keep conduction tiny so the heat stamp melts Ice.
+            host.Config.thermalRate = 0.001f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int bedY = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 10, host.Grid.radialResolution - 10);
+            int x0 = x - 10;
+            int x1 = x + 10;
+            PaintRockShelf(host, x0, x1, bedY, 6);
+            for (int xx = x0; xx <= x1; xx++)
+            {
+                PaintField(host, xx, bedY, 1f, 15f);
+                PaintField(host, xx, bedY, 2f, -100f);
+                PaintField(host, xx, bedY, 5f, -100f);
+            }
+            Paint(host, x, bedY + 1, MaterialIds.Ice);
+            PaintField(host, x, bedY + 1, 1f, -5f);
+            PaintField(host, x, bedY + 1, 2f, -100f);
+            PaintField(host, x, bedY + 1, 2f, 1f);
+            yield return Step(host, 1);
+
+            double massBefore = 0d;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[(bedY + 1) * width + x], Is.EqualTo(MaterialIds.Ice));
+                massBefore = TrackedWater(states, aux);
+            });
+
+            PaintField(host, x, bedY + 1, 1f, 40f);
+            yield return Step(host, 8);
+
+            float local = 0f;
+            float far = 0f;
+            yield return ReadGpuFields(host, (mats, states, aux) =>
+            {
+                Assert.That(mats[(bedY + 1) * width + x], Is.EqualTo(MaterialIds.Water),
+                    "Melted Ice on rock must remain a visible Water pixel.");
+                Assert.That(states[(bedY + 1) * width + x].z, Is.GreaterThan(0.4f));
+                for (int dx = -2; dx <= 2; dx++)
+                    local += ColumnSurfaceWater(mats, states, width, host.Grid.WrapTheta(x + dx), bedY);
+                for (int i = 0; i < 2; i++)
+                {
+                    int side = i == 0 ? -9 : 9;
+                    far += ColumnSurfaceWater(mats, states, width, host.Grid.WrapTheta(x + side), bedY);
+                }
+                Assert.That(TrackedWater(states, aux), Is.EqualTo(massBefore).Within(0.08d));
+            });
+            Assert.That(local, Is.GreaterThan(0.7f),
+                "Meltwater must stay as a local pond instead of vanishing on contact.");
+            Assert.That(local, Is.GreaterThan(far + 0.35f),
+                "Meltwater must not sheet across a dry shelf in one hydrostatic tick.");
+        }
+
+        [UnityTest]
         public IEnumerator HydrostaticGrowsAtMostOneWaterCellPerTick()
         {
             SceneManager.LoadScene("Terrarium");

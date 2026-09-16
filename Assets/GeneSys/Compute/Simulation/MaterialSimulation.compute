@@ -129,6 +129,10 @@ void ApplyEdits(uint3 id : SV_DispatchThreadID)
                 state.x = 15.0;
             else if (material == 10u && state.x >= 0.0)
                 state.x = -4.0;
+            // Material-brush Water/Ice stamps pass a full-cell mass in values.y. Test paints
+            // that only flip the ID leave existing state.z alone.
+            if ((material == 9u || material == 10u) && command.values.y > 0.0)
+                state.z = max(state.z, command.values.y);
             if (IsFloraMaterial(material) && life.y <= 1e-6)
             {
                 genome = RandomFloraGenome((uint2)cell, _Seed, _Tick);

@@ -131,6 +131,8 @@ namespace GeneSys.Tools
                 BrushMode.Pressure => new Vector4(3f, strength, 0f, 0f),
                 BrushMode.Humidity => new Vector4(6f, strength, 0f, 0f),
                 BrushMode.Ignite => new Vector4(9f, strength, 0f, 0f),
+                BrushMode.Material when selectedMaterialId == MaterialIds.Water
+                    || selectedMaterialId == MaterialIds.Ice => new Vector4(0f, 1f, 0f, 0f),
                 BrushMode.Life when selectedMaterialId == MaterialIds.Cricket || selectedMaterialId == MaterialIds.CricketEgg
                     || selectedMaterialId == MaterialIds.Wasp || selectedMaterialId == MaterialIds.WaspEgg => Vector4.zero,
                 BrushMode.Life when selectedMaterialId == BrushSelectionIds.MycoSpores =>
