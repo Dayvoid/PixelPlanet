@@ -1234,14 +1234,18 @@ namespace GeneSys.Tests
             host.Config.tectonicEarthquakeThreshold = 2f;
             host.Config.hydrothermalReleaseThreshold = 2f;
             host.Config.tectonicCooldownTicks = 80;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.geodynamicsPressureBuildRate = 0f;
+            host.Config.geodynamicsHeatCoupling = 0f;
             QuietSurface(host);
+            host.Config.geodynamicsPeriodTicks = 1;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;
 
             int angular = host.Config.geodynamicsAngularBins / 2;
             int radial = Mathf.Max(2, host.Config.geodynamicsRadialBins / 3);
             ForceVolcanicRelease(host, angular, radial, 0.95f, 0.18f);
-            yield return Step(host, 24);
+            yield return Step(host, 120);
 
             Vector4[] state = null;
             Vector4[] events = null;
@@ -1252,6 +1256,46 @@ namespace GeneSys.Tests
             Assert.That(events[eventIndex].y, Is.LessThan(0.2f));
             Assert.That(events[eventIndex].w, Is.LessThan(0.05f));
             Assert.That(state[kinIndex].w, Is.GreaterThan(0f));
+            RestoreDefaults(host);
+        }
+
+        [UnityTest]
+        public IEnumerator VolcanicReleaseStaysFundedAcrossManyTicksBeforeExhaust()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 9101;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.geodynamicsPeriodTicks = 1;
+            host.Config.volcanicReleaseThreshold = 2f;
+            host.Config.tectonicEarthquakeThreshold = 2f;
+            host.Config.hydrothermalReleaseThreshold = 2f;
+            host.Config.tectonicCooldownTicks = 80;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.geodynamicsPressureBuildRate = 0f;
+            host.Config.geodynamicsHeatCoupling = 0f;
+            QuietSurface(host);
+            host.Config.geodynamicsPeriodTicks = 1;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int angular = host.Config.geodynamicsAngularBins / 2;
+            int radial = Mathf.Max(2, host.Config.geodynamicsRadialBins / 3);
+            ForceVolcanicRelease(host, angular, radial, 1f, 0.5f);
+            yield return Step(host, 48);
+
+            Vector4[] events = null;
+            yield return ReadGeodynamics(host, (_, ev) => events = ev);
+            int eventIndex = GeodynamicsGrid.EventIndex(angular, radial, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins);
+            Assert.That(events[eventIndex].y, Is.GreaterThan(0.2f), "A funded vent must stay active long enough for a column to keep growing.");
+            Assert.That(events[eventIndex].w, Is.GreaterThan(0.08f));
+
+            yield return Step(host, 800);
+            yield return ReadGeodynamics(host, (_, ev) => events = ev);
+            Assert.That(events[eventIndex].y, Is.LessThan(0.2f), "The chamber budget must still exhaust instead of erupting forever.");
+            Assert.That(events[eventIndex].w, Is.LessThan(0.05f));
             RestoreDefaults(host);
         }
 
@@ -1457,6 +1501,98 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator ForcedDeepReleaseGrowsOutwardConduit()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.ApplyPreset(SimulationPreset.Validation);
+            RestoreDefaults(host);
+            host.Config.seed = 4242;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.geodynamicsPeriodTicks = 10000;
+            host.Config.slowPassInterval = 1;
+            host.Config.volcanicMeltRate = 4f;
+            host.Config.volcanicMagmaFractionLimit = 1f;
+            host.Config.extrusionRate = 2f;
+            host.Config.volcanicReleaseThreshold = 2f;
+            host.Config.tectonicEarthquakeThreshold = 2f;
+            host.Config.hydrothermalReleaseThreshold = 2f;
+            host.Config.thermalRate = 0f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.eruptionDriveScale = 0f;
+            host.Config.enableRockChunks = false;
+            host.Config.validationIntervalTicks = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int angularBins = host.Config.geodynamicsAngularBins;
+            int radialBins = host.Config.geodynamicsRadialBins;
+            int angular = angularBins / 2;
+            int radial = Mathf.Max(1, radialBins / 8);
+            int outer = Mathf.Min(radialBins - 3, radial + Mathf.Max(3, radialBins / 5));
+            GeodynamicsGrid.ThetaRange(angular, width, angularBins, out int x0, out int x1);
+            GeodynamicsGrid.RadialRange(radial, height, host.Grid.atmosphereStartRadius, radialBins, out int y0, out int y1);
+            GeodynamicsGrid.RadialRange(outer, height, host.Grid.atmosphereStartRadius, radialBins, out int yOuter0, out int yOuter1);
+            int x = (x0 + x1 - 1) / 2;
+            int yInner = (y0 + y1 - 1) / 2;
+            int yOuter = (yOuter0 + yOuter1 - 1) / 2;
+
+            var geoState = new Vector4[GeodynamicsGrid.StateBufferCount()];
+            host.Resources.GeodynamicsStateRead.GetData(geoState);
+            int res = GeodynamicsGrid.StateIndex(angular, radial, GeodynamicsGrid.SlotReservoir, angularBins, radialBins);
+            int kin = GeodynamicsGrid.StateIndex(angular, radial, GeodynamicsGrid.SlotKinematics, angularBins, radialBins);
+            Vector4 reservoir = geoState[res];
+            reservoir.y = 0.9f;
+            geoState[res] = reservoir;
+            Vector4 kinematics = geoState[kin];
+            kinematics.z = 0.85f;
+            geoState[kin] = kinematics;
+            host.Resources.GeodynamicsStateRead.SetData(geoState);
+            host.Resources.GeodynamicsStateWrite.SetData(geoState);
+            ForceVolcanicRelease(host, angular, radial, 1f, 0.35f);
+
+            int yMin = Mathf.Min(yInner, yOuter);
+            int yMax = Mathf.Max(yInner, yOuter);
+            for (int yy = yMin; yy <= yMax; yy++)
+            {
+                for (int dx = -4; dx <= 4; dx++)
+                {
+                    int xx = ((x + dx) % width + width) % width;
+                    Paint(host, xx, yy, MaterialIds.Mantle);
+                    PaintField(host, xx, yy, 1f, 900f);
+                }
+            }
+
+            yield return Step(host, 48);
+
+            uint[] after = null;
+            yield return ReadMaterials(host, mats => after = mats);
+            int magmaAbove = 0;
+            int magmaInner = 0;
+            for (int yy = yMin; yy <= yMax; yy++)
+            {
+                for (int dx = -5; dx <= 5; dx++)
+                {
+                    int xx = ((x + dx) % width + width) % width;
+                    if (after[yy * width + xx] != MaterialIds.Magma) continue;
+                    if (yy >= yOuter0) magmaAbove++;
+                    if (yy < y1) magmaInner++;
+                }
+            }
+
+            Assert.That(magmaInner, Is.GreaterThan(0), "Deep funded melt should still start near the release.");
+            Assert.That(magmaAbove, Is.GreaterThan(0),
+                "A rising column must convert mantle outward of the event bin, not only at the core.");
+            RestoreDefaults(host);
+            host.ApplyPreset(SimulationPreset.Standard);
+            yield return null;
+        }
+
+        [UnityTest]
         public IEnumerator ExtremeVolcanismStaysAtOrBelowSafetyLimit()
         {
             SceneManager.LoadScene("Terrarium");
@@ -1477,6 +1613,7 @@ namespace GeneSys.Tests
             host.Config.tectonicCooldownTicks = 16;
             host.Config.volcanicMeltRate = 4f;
             host.Config.volcanicMagmaFractionLimit = 0.12f;
+            host.Config.enableRockChunks = false;
             host.Config.validationIntervalTicks = 100000;
             host.Regenerate();
             for (int i = 0; i < 5; i++) yield return null;

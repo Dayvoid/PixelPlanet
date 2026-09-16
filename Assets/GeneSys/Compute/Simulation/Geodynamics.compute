@@ -185,7 +185,8 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     overpressure += build * upwell * (0.25 + headroom) * dt;
     overpressure += saturate(thermal) * 0.015 * dt * headroom;
     float venting = ((int)round(ev.x) == 2) ? saturate(ev.y) : 0.0;
-    overpressure -= leak * overpressure * (0.45 + saturate(prevKin.z) + melt * 0.85 + venting * 1.4) * dt;
+    // Long-lived vents should tap the chamber, not dump it in a couple of seconds.
+    overpressure -= leak * overpressure * (0.45 + saturate(prevKin.z) + melt * 0.85 + venting * 0.28) * dt;
     overpressure = saturate(overpressure);
 
     float strain = saturate(prevRes.z);
@@ -209,9 +210,9 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     {
         if (ev.z < 1e-4)
             ev.z = max(ev.w, ev.y);
-        float discharge = (0.16 + saturate(prevKin.z) * 0.28 + melt * 0.12) * dt;
+        float discharge = (0.04 + saturate(prevKin.z) * 0.02 + melt * 0.012) * dt;
         ev.w = max(0.0, ev.w - discharge);
-        ev.y = saturate(ev.w / max(0.05, ev.z));
+        ev.y = saturate(ev.w / max(0.08, ev.z));
         if (ev.w < 0.008 || ev.y < 0.03)
         {
             refractory = max(refractory, max(16.0, _GeodynamicsC.w) / max(1.0, _TicksPerSecond));
@@ -258,7 +259,7 @@ void SelectEvents(uint3 id : SV_DispatchThreadID)
     float4 aggregate = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, cell.y)];
 
     float quakeScore = res.z * (1.0 - res.w * 0.65);
-    float volcanoScore = GeodynamicsVolcanoScore(res, kin);
+    float volcanoScore = GeodynamicsVolcanoScoreAt(res, kin, cell.y);
     float hydroScore = saturate(aggregate.w * 4.0) * saturate(res.x * 0.05 + kin.z);
     float quakeT = max(0.1, _GeodynamicsC.x);
     float volcanoT = max(0.1, _GeodynamicsD.z);
@@ -291,8 +292,8 @@ void SelectEvents(uint3 id : SV_DispatchThreadID)
     float4 upKinN = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, min(rBins - 1, cell.y + 1), 1)];
     if (type == 2)
     {
-        neighborMax = max(max(GeodynamicsVolcanoScore(left, leftKinN), GeodynamicsVolcanoScore(right, rightKinN)),
-            max(GeodynamicsVolcanoScore(down, downKinN), GeodynamicsVolcanoScore(up, upKinN)));
+        neighborMax = max(max(GeodynamicsVolcanoScoreAt(left, leftKinN, cell.y), GeodynamicsVolcanoScoreAt(right, rightKinN, cell.y)),
+            max(GeodynamicsVolcanoScoreAt(down, downKinN, max(0, cell.y - 1)), GeodynamicsVolcanoScoreAt(up, upKinN, min(rBins - 1, cell.y + 1))));
     }
     if (type == 3)
     {
@@ -404,6 +405,8 @@ void CommitEvent(uint3 id : SV_DispatchThreadID)
         float bestScore = 0.0;
         int bestType = 0;
         float bestStored = 0.0;
+        float peak = 0.0;
+        float budget = 0.0;
         [loop]
         for (int a = 0; a < aBins; a++)
         {
@@ -441,12 +444,16 @@ void CommitEvent(uint3 id : SV_DispatchThreadID)
             res.z = saturate(res.z - spent);
         else if (type == 2)
             res.y = saturate(res.y - spent);
-        kin.z = saturate(kin.z + spent * 0.2);
+        kin.z = saturate(kin.z + (type == 2 ? max(0.18, spent * 0.55) : spent * 0.2));
         if (type != 2)
             kin.w = max(kin.w, max(16.0, _GeodynamicsC.w) / max(1.0, _TicksPerSecond));
         _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 0)] = res;
         _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 1)] = kin;
-        _GeodynamicsEvents[bestIndex] = float4((float)type, saturate(spent / max(0.05, release)), 0.0, spent);
+        // Volcanic budget tracks chamber pressure so the column stays funded after the
+        // initial kick. Earthquakes keep the short spent-pulse encoding.
+        peak = type == 2 ? max(0.2, saturate(stored)) : saturate(spent / max(0.05, release));
+        budget = type == 2 ? peak : spent;
+        _GeodynamicsEvents[bestIndex] = float4((float)type, peak, type == 2 ? peak : 0.0, budget);
         GeoMarkAngular(occupied, bestA);
         committed++;
         activeCount++;

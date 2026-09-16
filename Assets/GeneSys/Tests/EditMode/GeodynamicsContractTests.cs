@@ -150,9 +150,13 @@ namespace GeneSys.Tests
             Assert.That(geoHlsl, Does.Contain("GeodynamicsSampleReservoir"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsAngularCoord"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsVolcanoScore"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsVolcanoScoreAt"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsRisingColumn"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsNearestVolcanic"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsSafetyThrottle"));
             Assert.That(geoHlsl, Does.Not.Contain("step(0.97, pocket)"));
-            Assert.That(geology, Does.Contain("MaterialPhaseLatentDelta"));
+            Assert.That(geology, Does.Contain("injection"));
+            Assert.That(geology, Does.Contain("effectiveSolidus"));
             Assert.That(geology, Does.Contain("IsEruptionPermeable"));
             Assert.That(geology, Does.Not.Contain("eventMelt"));
             Assert.That(geology, Does.Not.Contain("state.x = max(state.x, 950"));
@@ -168,6 +172,9 @@ namespace GeneSys.Tests
             Assert.That(geodynamics, Does.Contain("maxConcurrent"));
             Assert.That(geodynamics, Does.Contain("GeoNearOccupied"));
             Assert.That(geodynamics, Does.Contain("headroom"));
+            Assert.That(geodynamics, Does.Contain("float peak"));
+            Assert.That(geodynamics, Does.Contain("0.04 + saturate(prevKin.z)"));
+            Assert.That(geology, Does.Contain("coolScale"));
             Assert.That(scheduler, Does.Contain("config.volcanicMeltRate"));
             Assert.That(scheduler, Does.Contain("config.volcanicMagmaFractionLimit"));
 

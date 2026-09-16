@@ -172,7 +172,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.volcanicReleaseThreshold)] =
                 "Melt-overpressure score a sector must exceed as a local maximum before a volcanic release envelope is created.",
             [nameof(SimulationConfig.volcanicReleaseFraction)] =
-                "Share of stored melt overpressure spent when a volcanic release fires. Kept low so vents pulse instead of draining the mantle.",
+                "Share of stored melt overpressure removed when a volcanic release ignites. The vent then continues on remaining chamber budget until that slowly discharges, so this does not instantly end the eruption.",
             [nameof(SimulationConfig.volcanicMeltRate)] =
                 "How quickly a funded conduit converts hot, decompressed mantle into magma. This is a per-cell rate, not an instant bin flip, so dikes grow over many ticks.",
             [nameof(SimulationConfig.volcanicMagmaFractionLimit)] =

@@ -64,10 +64,11 @@ float4 ReadCombustion(int2 cell) { return _CombustionRead.Load(int3(Cell(cell), 
 float4 ReadLife(int2 cell) { return SampleLife(_LifeGenomeRead, Cell(cell)); }
 uint4 ReadGenome(int2 cell) { return SampleGenome(_LifeGenomeRead, Cell(cell)); }
 
-bool IsEruptionPermeable(uint material, float weakness)
+bool IsEruptionPermeable(uint material, float weakness, float dike)
 {
     if (IsSoftCrustMaterial(material)) return true;
     if (IsHardCrustMaterial(material) && weakness > 0.28) return true;
+    if (material == 3u && (dike > 0.14 || weakness > 0.20)) return true;
     return false;
 }
 
@@ -110,7 +111,10 @@ float ColumnBurden(int2 magmaCell, out float groundwater)
         if (IsOpenCell(above)) continue;
         float radius = Radius01(probe.y, _GridSize.y);
         float weakness = GeodynamicsFaultWeakness(probe.x, radius);
-        if (!IsEruptionPermeable(above, weakness)) break;
+        float dike = GeodynamicsDikeNucleation(probe.x, radius);
+        if (above == 3u && (dike > 0.14 || weakness > 0.20))
+            continue;
+        if (!IsEruptionPermeable(above, weakness, dike)) break;
         burden += CellBurden(above, weakness);
         groundwater += max(0.0, ReadAux(probe).y);
     }
@@ -157,7 +161,9 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
 
     if (mantle || magma)
     {
-        float feed = overpressure * (0.15 + volcanic * 1.1) * (1.0 - radius);
+        float depthKeep = lerp(0.48, 1.0, saturate((_AtmosphereStartRadius - radius) / max(0.18, _AtmosphereStartRadius)));
+        float transmitted = max(overpressure, volcanic * 0.72 + dike * 0.22);
+        float feed = transmitted * (0.20 + volcanic * 0.95) * depthKeep;
         feed = min(feed, 1.6);
         float rate = saturate(_Volcanic.x * (0.2 + volcanic) * _DeltaTime);
         state.y += (feed - state.y) * rate;
@@ -169,22 +175,26 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
 
     if (mantle && safety < 0.999)
     {
-        float conduit = saturate(dike * (0.75 + volcanic * 0.4) + volcanic * 0.12);
+        float conduit = saturate(dike * (0.88 + volcanic * 0.35));
         MaterialGpuData mantleDef = D(3u);
         float solidus = mantleDef.phase.x;
-        float superheat = saturate((state.x - solidus + 40.0) / 180.0);
-        float decompression = saturate(pressureGradient * 2.0);
-        float drive = conduit * (0.35 + overpressure) * (0.25 + superheat) * (0.4 + decompression);
+        float effectiveSolidus = max(380.0, solidus - conduit * 260.0 - overpressure * 110.0);
+        float superheat = saturate((state.x - effectiveSolidus + 40.0) / 180.0);
+        float decompression = saturate(pressureGradient * 2.0 + conduit * 0.45);
+        float injection = saturate(conduit * (0.55 + overpressure * 0.5) * (0.5 + decompression));
+        float drive = conduit * (0.45 + overpressure * 0.55) * max(0.35 + superheat, injection);
         drive *= 1.0 - safety;
         float meltRate = max(0.0, _Volcanic.w) * drive;
-        float pMelt = 1.0 - exp(-meltRate * max(0.0, _DeltaTime));
+        float pMelt = 1.0 - exp(-meltRate * max(0.0, _DeltaTime) * 6.0);
         float roll = Hash01((uint)cell.x * 73856093u + (uint)cell.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed);
-        if (conduit > 0.18 && superheat > 0.05 && roll < pMelt)
+        if (conduit > 0.14 && drive > 0.03 && roll < pMelt)
         {
             material = 6u;
             magma = true;
             float heatCapacity = EffectiveCellHeatCapacity(mantleDef, state, aux, D(9u).transport.y, false);
             state.x -= MaterialPhaseLatentDelta(mantleDef.motion.x, _WeatherE.w, heatCapacity);
+            MaterialGpuData magmaDef = D(6u);
+            state.x = max(state.x, magmaDef.phase.x + 36.0);
             state.y = max(0.0, state.y - _Volcanic.x * _DeltaTime * 0.35);
             flow.y += _Volcanic.x * MagmaMobility(state.x, _Volcanic.z) * (0.25 + volcanic) * _DeltaTime;
         }
@@ -194,7 +204,10 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     {
         // Volcanic cooling sink only. Magma↔Basalt ID flips are owned by PhaseChange
         // (Magma melt 700 °C, Basalt melt 780 °C = intentional hysteresis).
-        state.x -= _Volcanic.y * _DeltaTime * (radius > _AtmosphereStartRadius ? 3.0 : 1.0);
+        // Funded conduits stay insulated so a pulse can climb before the magma freezes.
+        float buried = saturate(1.0 - volcanic * 0.85 - dike * 0.65);
+        float coolScale = radius > _AtmosphereStartRadius ? 3.0 : lerp(0.22, 1.0, buried);
+        state.x -= _Volcanic.y * coolScale * _DeltaTime;
     }
 
     WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
@@ -222,8 +235,10 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
     }
 
     // Destination side: permeable lid claiming magma from below.
-    float destWeakness = GeodynamicsFaultWeakness(cell.x, Radius01(cell.y, _GridSize.y));
-    if (IsEruptionPermeable(material, destWeakness) && cell.y > 0)
+    float destRadius = Radius01(cell.y, _GridSize.y);
+    float destWeakness = GeodynamicsFaultWeakness(cell.x, destRadius);
+    float destDike = GeodynamicsDikeNucleation(cell.x, destRadius);
+    if (IsEruptionPermeable(material, destWeakness, destDike) && cell.y > 0)
     {
         int2 below = cell + int2(0, -1);
         uint belowMat = ReadMaterial(below);
@@ -276,8 +291,10 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
     {
         int2 above = cell + int2(0, 1);
         uint aboveMat = ReadMaterial(above);
-        float aboveWeakness = GeodynamicsFaultWeakness(above.x, Radius01(above.y, _GridSize.y));
-        if (IsEruptionPermeable(aboveMat, aboveWeakness))
+        float aboveRadius = Radius01(above.y, _GridSize.y);
+        float aboveWeakness = GeodynamicsFaultWeakness(above.x, aboveRadius);
+        float aboveDike = GeodynamicsDikeNucleation(above.x, aboveRadius);
+        if (IsEruptionPermeable(aboveMat, aboveWeakness, aboveDike))
         {
             float4 aboveState = ReadState(above);
             float2 aboveFlow = ReadFlow(above);
