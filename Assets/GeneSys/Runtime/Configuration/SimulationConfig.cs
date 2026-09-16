@@ -200,6 +200,8 @@ namespace GeneSys.Configuration
         [Range(8, 32)] public int rockChunkMaxConcurrent = 32;
         [Range(8, 96)] public int rockChunkMaxCells = 96;
         [Range(2, 16)] public int rockChunkMinCells = 3;
+        [Range(0.25f, 4f)] public float rockChunkTipRate = 1f;
+        [Range(32, 400)] public int rockChunkMaxFlightTicks = 160;
 
         [Header("Solar and weather")]
         [Min(1f)] public float dayLengthSeconds = 180f;
@@ -1134,6 +1136,8 @@ namespace GeneSys.Configuration
             rockChunkMaxConcurrent = Mathf.Clamp(rockChunkMaxConcurrent, 8, 32);
             rockChunkMaxCells = Mathf.Clamp(rockChunkMaxCells, 8, 96);
             rockChunkMinCells = Mathf.Clamp(rockChunkMinCells, 2, Mathf.Min(16, rockChunkMaxCells));
+            rockChunkTipRate = Mathf.Clamp(rockChunkTipRate, 0.25f, 4f);
+            rockChunkMaxFlightTicks = Mathf.Clamp(rockChunkMaxFlightTicks, 32, 400);
         }
     }
 }

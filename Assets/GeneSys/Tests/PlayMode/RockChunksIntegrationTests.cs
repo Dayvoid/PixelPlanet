@@ -130,6 +130,35 @@ namespace GeneSys.Tests
             return count;
         }
 
+        private static int CountDistinctColumns(uint[] mats, int width, int x0, int x1, int y0, int y1, uint id)
+        {
+            int cols = 0;
+            for (int x = x0; x <= x1; x++)
+            {
+                int wx = x;
+                while (wx < 0) wx += width;
+                wx %= width;
+                for (int y = y0; y <= y1; y++)
+                {
+                    if (mats[y * width + wx] == id)
+                    {
+                        cols++;
+                        break;
+                    }
+                }
+            }
+            return cols;
+        }
+
+        private static void PaintAirRect(SimulationHost host, int x, int floorY, int height, int halfWidth)
+        {
+            for (int y = floorY + 1; y <= floorY + height; y++)
+            {
+                for (int dx = -halfWidth; dx <= halfWidth; dx++)
+                    Paint(host, x + dx, y, MaterialIds.Air);
+            }
+        }
+
         private static void PaintAirShaft(SimulationHost host, int x, int floorY, int height)
         {
             for (int y = floorY + 1; y <= floorY + height; y++)
@@ -160,7 +189,7 @@ namespace GeneSys.Tests
 
             for (int dx = -8; dx <= 8; dx++)
                 Paint(host, x + dx, floorY, MaterialIds.Rock);
-            PaintAirShaft(host, x, floorY, 8);
+            PaintAirRect(host, x, floorY, 8, 8);
             for (int y = floorY + 2; y <= floorY + 7; y++)
                 Paint(host, x, y, MaterialIds.Granite);
 
@@ -171,10 +200,13 @@ namespace GeneSys.Tests
             {
                 int stillInColumn = CountInColumn(mats, width, x, floorY + 2, floorY + 7, MaterialIds.Granite);
                 int nearby = CountRect(mats, width, x - 8, x + 8, floorY + 1, floorY + 8, MaterialIds.Granite);
+                int spread = CountDistinctColumns(mats, width, x - 8, x + 8, floorY + 1, floorY + 2, MaterialIds.Granite);
                 Assert.That(stillInColumn, Is.LessThan(4),
                     "A granite pillar that lost its base must tip out of its original angular column instead of stacking in place.");
                 Assert.That(nearby, Is.GreaterThanOrEqualTo(4),
                     "Tipped pillar mass must remain nearby as granite after settling.");
+                Assert.That(spread, Is.GreaterThanOrEqualTo(3),
+                    "A tipped pillar must occupy at least three angular columns along the floor instead of stacking in one column.");
             });
 
             RestoreConfig(host);
@@ -219,6 +251,137 @@ namespace GeneSys.Tests
                 int remaining = CountInColumn(mats, width, x, floorY + 2, floorY + 7, MaterialIds.Granite);
                 Assert.That(remaining, Is.LessThan(6),
                     "By tick 40 the held pillar must have begun moving under chunk rotation or fall.");
+            });
+
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator FloatingRockColumnDoesNotDuplicateWhenFalling()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureIsolation(host);
+            host.Config.seed = 7715;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.55f), 12, height - 28);
+
+            for (int dx = -8; dx <= 8; dx++)
+                Paint(host, x + dx, floorY, MaterialIds.Basalt);
+            for (int y = floorY + 1; y <= floorY + 12; y++)
+            {
+                for (int dx = -8; dx <= 8; dx++)
+                    Paint(host, x + dx, y, MaterialIds.Air);
+            }
+            for (int y = floorY + 6; y <= floorY + 11; y++)
+                Paint(host, x, y, MaterialIds.Granite);
+
+            yield return Step(host, 1);
+            yield return Step(host, 90);
+
+            yield return ReadMaterials(host, mats =>
+            {
+                int originalBand = CountInColumn(mats, width, x, floorY + 6, floorY + 11, MaterialIds.Granite);
+                int inShaft = CountRect(mats, width, x - 8, x + 8, floorY + 1, floorY + 12, MaterialIds.Granite);
+                Assert.That(originalBand, Is.LessThanOrEqualTo(1),
+                    "A floating granite column must leave its original cells as it falls; at most the heel may remain.");
+                Assert.That(inShaft, Is.GreaterThanOrEqualTo(4),
+                    "Fallen chunk mass must remain in the shaft as granite.");
+                Assert.That(inShaft, Is.LessThanOrEqualTo(6),
+                    "Falling must vacate source cells instead of copying the column downward.");
+            });
+
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator DetachedPillarLandsThenLiesHorizontal()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureIsolation(host);
+            host.Config.seed = 7716;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.55f), 12, height - 28);
+
+            for (int dx = -10; dx <= 10; dx++)
+                Paint(host, x + dx, floorY, MaterialIds.Basalt);
+            PaintAirRect(host, x, floorY, 12, 10);
+            for (int y = floorY + 3; y <= floorY + 8; y++)
+                Paint(host, x, y, MaterialIds.Granite);
+
+            yield return Step(host, 1);
+            yield return Step(host, 90);
+
+            yield return ReadMaterials(host, mats =>
+            {
+                int inShaft = CountRect(mats, width, x - 10, x + 10, floorY + 1, floorY + 12, MaterialIds.Granite);
+                int originalCol = CountInColumn(mats, width, x, floorY + 3, floorY + 8, MaterialIds.Granite);
+                int spread = CountDistinctColumns(mats, width, x - 10, x + 10, floorY + 1, floorY + 2, MaterialIds.Granite);
+                Assert.That(inShaft, Is.EqualTo(6),
+                    "A detached pillar must conserve granite while falling and tipping.");
+                Assert.That(originalCol, Is.LessThanOrEqualTo(2),
+                    "After landing, the pillar must leave its original column instead of stacking in place.");
+                Assert.That(spread, Is.GreaterThanOrEqualTo(4),
+                    "A landed pillar must lie across at least four angular columns along the floor.");
+            });
+
+            RestoreConfig(host);
+        }
+
+        [UnityTest]
+        public IEnumerator DetachedFlatSlabFallsWithoutTipping()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureIsolation(host);
+            host.Config.seed = 7717;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            int x = width / 2;
+            int floorY = Mathf.Clamp(Mathf.RoundToInt(height * 0.55f), 12, height - 24);
+
+            for (int dx = -8; dx <= 8; dx++)
+                Paint(host, x + dx, floorY, MaterialIds.Basalt);
+            PaintAirRect(host, x, floorY, 8, 8);
+            for (int dx = 0; dx <= 5; dx++)
+                Paint(host, x + dx, floorY + 3, MaterialIds.Granite);
+
+            yield return Step(host, 1);
+            yield return Step(host, 60);
+
+            yield return ReadMaterials(host, mats =>
+            {
+                int onFloor = 0;
+                int stillOriginal = 0;
+                for (int dx = 0; dx <= 5; dx++)
+                {
+                    int wx = (x + dx) % width;
+                    if (mats[(floorY + 1) * width + wx] == MaterialIds.Granite)
+                        onFloor++;
+                    if (mats[(floorY + 3) * width + wx] == MaterialIds.Granite)
+                        stillOriginal++;
+                }
+                Assert.That(onFloor, Is.EqualTo(6),
+                    "A flat slab must drop onto the floor under its original columns instead of tipping.");
+                Assert.That(stillOriginal, Is.EqualTo(0),
+                    "The slab must vacate its original row after falling.");
             });
 
             RestoreConfig(host);

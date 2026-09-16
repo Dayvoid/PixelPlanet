@@ -18,6 +18,8 @@
 #define ROCK_FLAG_DETACHED 2u
 #define ROCK_FLAG_HINGED 4u
 #define ROCK_FLAG_SETTLING 8u
+#define ROCK_FLAG_GROUNDED 16u
+#define ROCK_HALF_PI 1.57079632679
 
 #define ROCK_HEADER_EMPTY 0u
 #define ROCK_HEADER_SEARCHING 1u
@@ -51,15 +53,15 @@ struct RockChunkHeader
     float restPivotX;
     float restPivotY;
     float lastDAngle;
-    float pad0;
+    float lastPivotDrop;
     int biasSign;
     uint collision;
     uint halfStepUsed;
     uint ageInFlight;
-    uint pad1;
-    uint pad2;
-    uint pad3;
-    uint pad4;
+    uint bottomMinOffU;
+    uint bottomMaxOffU;
+    uint maxY;
+    uint selfConflict;
 };
 
 struct RockChunkMember
@@ -194,6 +196,17 @@ bool HasRockNeighbor(int2 cell, int2 size, Texture2D<uint> materials)
     if (cell.y > 0 && IsRockMaterial(materials.Load(int3(n2, 0)))) return true;
     if (cell.y < size.y - 1 && IsRockMaterial(materials.Load(int3(n3, 0)))) return true;
     return false;
+}
+
+bool RockChunkIsTall(RockChunkHeader h)
+{
+    uint packedHeel = h.heelPacked == 0x7FFFFFFFu ? h.seedPacked : h.heelPacked;
+    int heelY = (int)(packedHeel >> 16);
+    int height = max(1, (int)h.maxY - heelY + 1);
+    int width = 1;
+    if (h.bottomMinOffU != 0x7FFFFFFFu && h.bottomMaxOffU >= h.bottomMinOffU)
+        width = max(1, (int)h.bottomMaxOffU - (int)h.bottomMinOffU + 1);
+    return height >= width;
 }
 
 bool RockShouldHoldForChunk(int2 cell, uint material, float auxW, uint packed, int2 size, Texture2D<uint> materials)

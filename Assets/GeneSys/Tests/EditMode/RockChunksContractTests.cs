@@ -43,6 +43,8 @@ namespace GeneSys.Tests
             Assert.That(config.rockChunkMaxConcurrent, Is.EqualTo(32));
             Assert.That(config.rockChunkMaxCells, Is.EqualTo(96));
             Assert.That(config.rockChunkMinCells, Is.EqualTo(3));
+            Assert.That(config.rockChunkTipRate, Is.EqualTo(1f));
+            Assert.That(config.rockChunkMaxFlightTicks, Is.EqualTo(160));
 
             config.rockChunkMaxSearchTicks = 1;
             config.rockChunkHopsPerTick = 0;
@@ -50,6 +52,8 @@ namespace GeneSys.Tests
             config.rockChunkMaxConcurrent = 100;
             config.rockChunkMaxCells = 4;
             config.rockChunkMinCells = 1;
+            config.rockChunkTipRate = 0.01f;
+            config.rockChunkMaxFlightTicks = 8;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
 
             Assert.That(config.rockChunkMaxSearchTicks, Is.EqualTo(2));
@@ -58,6 +62,8 @@ namespace GeneSys.Tests
             Assert.That(config.rockChunkMaxConcurrent, Is.EqualTo(32));
             Assert.That(config.rockChunkMaxCells, Is.EqualTo(8));
             Assert.That(config.rockChunkMinCells, Is.EqualTo(2));
+            Assert.That(config.rockChunkTipRate, Is.EqualTo(0.25f));
+            Assert.That(config.rockChunkMaxFlightTicks, Is.EqualTo(32));
             Object.DestroyImmediate(config);
         }
 

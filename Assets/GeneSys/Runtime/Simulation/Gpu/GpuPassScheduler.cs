@@ -555,6 +555,8 @@ namespace GeneSys.Simulation.Gpu
             rockChunks.SetInt("_RockChunkMinCells", config.rockChunkMinCells);
             rockChunks.SetInt("_RockChunkMaxConcurrent", config.rockChunkMaxConcurrent);
             rockChunks.SetInt("_RockChunkEnabled", config.enableRockChunks ? 1 : 0);
+            rockChunks.SetFloat("_RockChunkTipRate", config.rockChunkTipRate);
+            rockChunks.SetInt("_RockChunkMaxFlightTicks", config.rockChunkMaxFlightTicks);
             rockChunks.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
             rockChunks.SetTexture(kernel, "_StateRead", resources.StateRead);
             rockChunks.SetTexture(kernel, "_FlowRead", resources.FlowRead);

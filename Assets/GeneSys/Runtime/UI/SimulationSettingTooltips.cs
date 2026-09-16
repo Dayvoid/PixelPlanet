@@ -258,6 +258,10 @@ namespace GeneSys.UI
                 "Largest rigid child a search may capture. Bigger overhangs above this limit stay with Margolus so a whole mountain cannot become one spinning slab.",
             [nameof(SimulationConfig.rockChunkMinCells)] =
                 "Smallest connected rock body that tips as a chunk. Isolated one- and two-cell debris still fall with Margolus.",
+            [nameof(SimulationConfig.rockChunkTipRate)] =
+                "How quickly a grounded or hinged chunk rotates about its heel. 1 is one cell of tip per tick at the rim; higher values topple pillars faster.",
+            [nameof(SimulationConfig.rockChunkMaxFlightTicks)] =
+                "Maximum ticks a chunk may stay in flight before it is stamped in place. Detached pillars fall first, then tip until they lie flat or hit this cap.",
 
             [nameof(SimulationConfig.dayLengthSeconds)] =
                 "Orbital period of the solar body in simulated seconds. Shorter days cycle heating, winds, and day/night lighting faster; longer days deepen thermal contrasts.",

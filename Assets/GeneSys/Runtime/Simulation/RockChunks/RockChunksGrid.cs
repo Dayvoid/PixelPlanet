@@ -22,6 +22,7 @@ namespace GeneSys.Simulation.RockChunks
         public const uint FlagDetached = 2u;
         public const uint FlagHinged = 4u;
         public const uint FlagSettling = 8u;
+        public const uint FlagGrounded = 16u;
 
         public static int MemberBufferCount() => MaxSlots * MaxCellsPerChunk;
 
@@ -51,15 +52,15 @@ namespace GeneSys.Simulation.RockChunks
             public float restPivotX;
             public float restPivotY;
             public float lastDAngle;
-            public float pad0;
+            public float lastPivotDrop;
             public int biasSign;
             public uint collision;
             public uint halfStepUsed;
             public uint ageInFlight;
-            public uint pad1;
-            public uint pad2;
-            public uint pad3;
-            public uint pad4;
+            public uint bottomMinOffU;
+            public uint bottomMaxOffU;
+            public uint maxY;
+            public uint selfConflict;
         }
 
         [StructLayout(LayoutKind.Sequential, Size = MemberStride)]
