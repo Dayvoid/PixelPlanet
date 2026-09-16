@@ -171,6 +171,10 @@ namespace GeneSys.UI
                 "Melt-overpressure score a sector must exceed as a local maximum before a volcanic release envelope is created.",
             [nameof(SimulationConfig.volcanicReleaseFraction)] =
                 "Share of stored melt overpressure spent when a volcanic release fires. Kept low so vents pulse instead of draining the mantle.",
+            [nameof(SimulationConfig.volcanicMeltRate)] =
+                "How quickly a funded conduit converts hot, decompressed mantle into magma. This is a per-cell rate, not an instant bin flip, so dikes grow over many ticks.",
+            [nameof(SimulationConfig.volcanicMagmaFractionLimit)] =
+                "Emergency ceiling on interior magma fraction. New mantle and crust melting throttles as the world approaches this value and stops at the limit. Existing magma still moves, cools, and freezes. Raise to 1 to allow deliberate global-meltdown experiments.",
             [nameof(SimulationConfig.eruptionDriveScale)] =
                 "Master mix for fine-grid eruption motion. At 0, magma stays put; raising it enables burden breakthrough, ash blasts, and column flow.",
             [nameof(SimulationConfig.eruptionPressureStrength)] =

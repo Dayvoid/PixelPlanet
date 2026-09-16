@@ -113,6 +113,8 @@ namespace GeneSys.Configuration
         [Range(0f, 2f)] public float magmaViscosity = 0.5f;
         [Range(0.1f, 2f)] public float volcanicReleaseThreshold = 0.78f;
         [Range(0.05f, 0.25f)] public float volcanicReleaseFraction = 0.2f;
+        [Range(0f, 4f)] public float volcanicMeltRate = 0.28f;
+        [Range(0.05f, 1f)] public float volcanicMagmaFractionLimit = 0.2f;
 
         [Header("Eruption")]
         [FormerlySerializedAs("magmaEruption")]
@@ -1098,6 +1100,8 @@ namespace GeneSys.Configuration
             volcanicCoolingRate = Mathf.Max(0f, volcanicCoolingRate);
             volcanicReleaseThreshold = Mathf.Max(0.1f, volcanicReleaseThreshold);
             volcanicReleaseFraction = Mathf.Clamp(volcanicReleaseFraction, 0.05f, 0.25f);
+            volcanicMeltRate = Mathf.Max(0f, volcanicMeltRate);
+            volcanicMagmaFractionLimit = Mathf.Clamp(volcanicMagmaFractionLimit, 0.05f, 1f);
             eruptionDriveScale = Mathf.Clamp01(eruptionDriveScale);
             hydrothermalNutrientRate = Mathf.Max(0f, hydrothermalNutrientRate);
             hydrothermalNutrientYield = Mathf.Max(0f, hydrothermalNutrientYield);

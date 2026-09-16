@@ -98,6 +98,8 @@ MonoBehaviour:
   magmaViscosity: 0.5
   volcanicReleaseThreshold: 0.78
   volcanicReleaseFraction: 0.2
+  volcanicMeltRate: 0.28
+  volcanicMagmaFractionLimit: 0.2
   eruptionDriveScale: 0.55
   eruptionPressureStrength: 3
   eruptionFlowStrength: 5

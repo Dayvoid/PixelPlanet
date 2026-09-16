@@ -19,6 +19,9 @@ namespace GeneSys.Simulation.Geodynamics
         public const int EventTypeHydrothermal = 3;
         public const int MaxEventSeeds = 8;
         public const int EventSeedStride = 16;
+        public const int StatsSlotCount = 4;
+        public const int StatsCommitted = 0;
+        public const int StatsActive = 1;
 
         public static int ClampAngularBins(int bins) => Mathf.Clamp(bins, MinAngularBins, MaxAngularBins);
 
@@ -87,5 +90,7 @@ namespace GeneSys.Simulation.Geodynamics
         public static int EventBufferCount() => MaxAngularBins * MaxRadialBins;
 
         public static int ColumnBufferCount() => MaxAngularBins * MaxRadialBins;
+
+        public static int StatsBufferCount() => StatsSlotCount;
     }
 }

@@ -145,7 +145,7 @@ namespace GeneSys.Simulation.Gpu
             GeodynamicsStateRead = CreateStructuredBuffer(GeodynamicsGrid.StateBufferCount());
             GeodynamicsStateWrite = CreateStructuredBuffer(GeodynamicsGrid.StateBufferCount());
             GeodynamicsEvents = CreateStructuredBuffer(GeodynamicsGrid.EventBufferCount());
-            GeodynamicsEventCounter = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.Structured);
+            GeodynamicsEventCounter = CreateStructuredBuffer(GeodynamicsGrid.StatsBufferCount());
             RockSupportRead = CreateTexture("GeneSys RockSupport A", GraphicsFormat.R32_UInt);
             RockSupportWrite = CreateTexture("GeneSys RockSupport B", GraphicsFormat.R32_UInt);
             RockChunkClaims = CreateTexture("GeneSys RockChunk Claims", GraphicsFormat.R32_UInt);
@@ -187,7 +187,7 @@ namespace GeneSys.Simulation.Gpu
                 GeodynamicsStateWrite.SetData(new Vector4[GeodynamicsGrid.StateBufferCount()]);
             if (GeodynamicsEvents != null)
                 GeodynamicsEvents.SetData(new Vector4[GeodynamicsGrid.EventBufferCount()]);
-            GeodynamicsEventCounter?.SetData(new uint[1]);
+            GeodynamicsEventCounter?.SetData(new Vector4[GeodynamicsGrid.StatsBufferCount()]);
         }
 
         public void ClearRockChunks()

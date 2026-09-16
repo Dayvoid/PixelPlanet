@@ -46,6 +46,8 @@ namespace GeneSys.Tests
                 ReleasedGeoEnergy = 14.2f,
                 AffectedGeoArcFraction = 0.06f,
                 KinematicCellsMoved = 7,
+                MagmaCount = 12,
+                SafetyThrottle = 0.25f,
                 TotalOrganisms = 193,
                 AlgaeCount = 120,
                 CricketAdults = 45,
@@ -80,6 +82,8 @@ namespace GeneSys.Tests
             Assert.That(formatted, Does.Contain("peak 0.450"));
             Assert.That(formatted, Does.Contain("events 2"));
             Assert.That(formatted, Does.Contain("E: 14.2"));
+            Assert.That(formatted, Does.Contain("magma 12"));
+            Assert.That(formatted, Does.Contain("safety 0.25"));
             Assert.That(formatted, Does.Contain("moved 7"));
 
             // Verify Atmosphere

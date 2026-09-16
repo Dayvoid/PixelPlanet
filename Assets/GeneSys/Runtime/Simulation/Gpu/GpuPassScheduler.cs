@@ -802,7 +802,7 @@ namespace GeneSys.Simulation.Gpu
 
             if (!init && config.geodynamicsLayerEnable)
             {
-                resources.GeodynamicsEventCounter.SetData(new uint[1]);
+                resources.GeodynamicsEventCounter.SetData(new Vector4[GeodynamicsGrid.StatsBufferCount()]);
                 BindGeodynamicsPass(select, deltaTime);
                 DispatchGeodynamicsGrid(geodynamics, select);
                 if (geodynamics.HasKernel("CommitEvent"))
@@ -835,6 +835,8 @@ namespace GeneSys.Simulation.Gpu
                 return;
             shader.SetBuffer(kernel, "_GeodynamicsState", resources.GeodynamicsStateRead);
             shader.SetBuffer(kernel, "_GeodynamicsEvents", resources.GeodynamicsEvents);
+            if (resources.GeodynamicsEventCounter != null)
+                shader.SetBuffer(kernel, "_GeodynamicsEventCounter", resources.GeodynamicsEventCounter);
         }
 
         private void DispatchGeodynamicsGrid(ComputeShader shader, int kernel)
@@ -895,14 +897,14 @@ namespace GeneSys.Simulation.Gpu
                 config.tectonicCoseismicScale,
                 config.crustRatio,
                 config.tectonicIsostasyScale,
-                0f));
+                config.volcanicMagmaFractionLimit));
             shader.SetFloat("_TectonicCrustRatio", config.crustRatio);
             shader.SetFloat("_TectonicIsostasyScale", config.tectonicIsostasyScale);
             shader.SetVector("_Volcanic", new Vector4(
                 config.extrusionRate,
                 config.volcanicCoolingRate,
                 config.magmaViscosity,
-                0f));
+                config.volcanicMeltRate));
             shader.SetVector("_Hydrothermal", new Vector4(
                 config.hydrothermalNutrientRate,
                 config.hydrothermalNutrientYield,

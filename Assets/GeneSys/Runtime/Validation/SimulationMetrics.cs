@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Simulation.Topology;
 using UnityEngine;
@@ -125,6 +126,30 @@ namespace GeneSys.Validation
         public float ReleasedEnergy;
         public float AffectedAngularFraction;
         public int KinematicCellsMoved;
+        public float GlobalMeltFraction;
+        public float UpperInteriorMeltFraction;
+        public float SafetyThrottle;
+        public int CommittedEventCount;
+        public int ActiveVolcanicCount;
+        public bool HasNonFinite;
+        public bool SafetyHardCap;
+    }
+
+    public struct WorldGeologyMetrics
+    {
+        public int MagmaCount;
+        public int BasaltCount;
+        public int MantleCount;
+        public int AshCount;
+        public int InteriorMagmaCount;
+        public int UpperInteriorMagmaCount;
+        public int SurfaceMagmaCount;
+        public int MagmaCreationDelta;
+        public float PeakTemperature;
+        public float MagmaFraction;
+        public float UpperInteriorMagmaFraction;
+        public bool SafetyThrottleEngaged;
+        public bool SafetyHardCap;
         public bool HasNonFinite;
     }
 
@@ -162,6 +187,13 @@ namespace GeneSys.Validation
         public float AffectedGeoArcFraction;
         public int KinematicCellsMoved;
 
+        public int MagmaCount;
+        public int InteriorMagmaCount;
+        public int SurfaceMagmaCount;
+        public float PeakTemperature;
+        public float SafetyThrottle;
+        public bool SafetyHardCap;
+
         public int TotalOrganisms;
         public int AlgaeCount;
         public int CricketAdults;
@@ -176,7 +208,7 @@ namespace GeneSys.Validation
             return
                 $"Grid {AngularResolution}×{RadialResolution} | Ocean {OceanCoverage * 100f:F1}% ({BasinCount} basins)\n" +
                 $"Water  surf {SurfaceWaterMass:F1}  cloud {CloudMass:F1}  ground {GroundwaterMass:F1}  vapor {VaporMass:F1}  total {TotalTrackedWaterMass:F1}\n" +
-                $"Geo  strain {MeanStrain:F3} (peak {MaxStrain:F3})  melt P {MeanOverpressure:F3} (peak {MaxOverpressure:F3})  events {ActiveGeoEvents} (E: {ReleasedGeoEnergy:F1})  moved {KinematicCellsMoved}\n" +
+                $"Geo  strain {MeanStrain:F3} (peak {MaxStrain:F3})  melt P {MeanOverpressure:F3} (peak {MaxOverpressure:F3})  events {ActiveGeoEvents} (E: {ReleasedGeoEnergy:F1})  magma {MagmaCount}  safety {SafetyThrottle:F2}  moved {KinematicCellsMoved}\n" +
                 $"Atmo  T {MeanTemperature:F1}°  P {MeanPressure:F3}  RH {MeanRelativeHumidity * 100f:F0}%  cloud {CloudCover * 100f:F0}%  wind {MeanWindSpeed:F3}  fire {BurningCellCount} (O2 {MeanOxygen:F2})\n" +
                 $"Life  algae {AlgaeCount}  cricket {CricketAdults} ({CricketEggs} egg)  wasp {WaspAdults} ({WaspEggs} egg)  trees {TreeAnchors} ({TreeTotalPixels} px)";
         }
@@ -211,6 +243,7 @@ namespace GeneSys.Validation
             RenderTexture treeTex = host.Resources.TreeRead;
             ComputeBuffer geoState = host.Resources.GeodynamicsStateRead;
             ComputeBuffer geoEvents = host.Resources.GeodynamicsEvents;
+            ComputeBuffer geoStats = host.Resources.GeodynamicsEventCounter;
 
             if (materialTex == null || stateTex == null || auxTex == null || flowTex == null || combustionTex == null)
             {
@@ -234,6 +267,8 @@ namespace GeneSys.Validation
             if (hasGeoState) pendingRequests++;
             bool hasGeoEvents = geoEvents != null && (host.Config == null || host.Config.geodynamicsLayerEnable);
             if (hasGeoEvents) pendingRequests++;
+            bool hasGeoStats = geoStats != null && (host.Config == null || host.Config.geodynamicsLayerEnable);
+            if (hasGeoStats) pendingRequests++;
 
             bool failed = false;
 
@@ -304,6 +339,8 @@ namespace GeneSys.Validation
                     snapshot.BasinCount = CountOceanAngleBasins(oceanCols);
 
                     int algae = 0, crickets = 0, cricketEggs = 0, wasps = 0, waspEggs = 0, treePx = 0;
+                    int magma = 0, interiorMagma = 0, surfaceMagma = 0;
+                    float atmosphereStart = grid.atmosphereStartRadius;
                     for (int i = 0; i < cellCount; i++)
                     {
                         uint m = materials[i];
@@ -313,6 +350,16 @@ namespace GeneSys.Validation
                         else if (m == MaterialIds.Wasp) wasps++;
                         else if (m == MaterialIds.WaspEgg) waspEggs++;
                         else if (m == MaterialIds.Wood || m == MaterialIds.Leaf) treePx++;
+                        else if (m == MaterialIds.Magma)
+                        {
+                            magma++;
+                            int y = height > 0 ? i / width : 0;
+                            float r = grid.Radius01(y);
+                            if (r >= atmosphereStart - 0.04f)
+                                surfaceMagma++;
+                            else
+                                interiorMagma++;
+                        }
                     }
                     snapshot.AlgaeCount = algae;
                     snapshot.CricketAdults = crickets;
@@ -320,6 +367,9 @@ namespace GeneSys.Validation
                     snapshot.WaspAdults = wasps;
                     snapshot.WaspEggs = waspEggs;
                     snapshot.TreeTotalPixels = treePx;
+                    snapshot.MagmaCount = magma;
+                    snapshot.InteriorMagmaCount = interiorMagma;
+                    snapshot.SurfaceMagmaCount = surfaceMagma;
 
                     CheckDone();
                 });
@@ -343,6 +393,7 @@ namespace GeneSys.Validation
                     int atmoCells = 0;
                     int cloudCells = 0;
                     int sampledCount = 0;
+                    float peakTemperature = float.NegativeInfinity;
 
                     float atmoStart = grid.atmosphereStartRadius;
                     for (int y = 0; y < height; y += sampleStride)
@@ -355,6 +406,7 @@ namespace GeneSys.Validation
                             if (idx >= cellCount) continue;
                             Vector4 s = states[idx];
                             tempSum += s.x;
+                            peakTemperature = Mathf.Max(peakTemperature, s.x);
                             presSum += s.y;
                             moistureSum += Math.Max(0f, s.z);
                             if (isAtmo)
@@ -380,6 +432,8 @@ namespace GeneSys.Validation
                     snapshot.SurfaceWaterMass = surfWaterSum * areaFactor;
                     snapshot.CloudMass = cloudMassSum * areaFactor;
                     snapshot.CloudCover = atmoCells > 0 ? (float)cloudCells / atmoCells : 0f;
+                    if (float.IsFinite(peakTemperature))
+                        snapshot.PeakTemperature = peakTemperature;
 
                     CheckDone();
                 });
@@ -629,6 +683,33 @@ namespace GeneSys.Validation
                         catch (Exception ex)
                         {
                             Debug.LogError($"[MeasureStatusSampledAsync] GeodynamicsEvents error: {ex}");
+                            OnFailed();
+                        }
+                    });
+                }
+                catch { OnFailed(); }
+            }
+
+            if (hasGeoStats)
+            {
+                try
+                {
+                    AsyncGPUReadback.Request(geoStats, statsReq =>
+                    {
+                        try
+                        {
+                            if (statsReq.hasError || failed) { OnFailed(); return; }
+                            NativeArray<Vector4> stats = statsReq.GetData<Vector4>();
+                            if (stats.Length > 0)
+                            {
+                                snapshot.SafetyThrottle = Mathf.Clamp01(stats[0].w);
+                                snapshot.SafetyHardCap = stats[0].w >= 0.999f;
+                            }
+                            CheckDone();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"[MeasureStatusSampledAsync] GeodynamicsStats error: {ex}");
                             OnFailed();
                         }
                     });
@@ -1351,6 +1432,7 @@ namespace GeneSys.Validation
 
             ComputeBuffer state = host.Resources.GeodynamicsStateRead;
             ComputeBuffer events = host.Resources.GeodynamicsEvents;
+            ComputeBuffer stats = host.Resources.GeodynamicsEventCounter;
             Action fail = () => completed?.Invoke(default);
             try
             {
@@ -1370,9 +1452,74 @@ namespace GeneSys.Validation
                             return;
                         }
                         Vector4[] eventValues = eventRequest.GetData<Vector4>().ToArray();
-                        completed?.Invoke(ComputeGeodynamicsMetrics(reservoirs, eventValues,
+                        WorldGeodynamicsMetrics metrics = ComputeGeodynamicsMetrics(reservoirs, eventValues,
                             host.Config != null ? host.Config.geodynamicsAngularBins : 64,
-                            host.Config != null ? host.Config.geodynamicsRadialBins : 16));
+                            host.Config != null ? host.Config.geodynamicsRadialBins : 16);
+                        if (stats == null)
+                        {
+                            completed?.Invoke(metrics);
+                            return;
+                        }
+                        AsyncGPUReadback.Request(stats, statsRequest =>
+                        {
+                            if (statsRequest.hasError)
+                            {
+                                completed?.Invoke(metrics);
+                                return;
+                            }
+                            ApplyGeodynamicsStats(ref metrics, statsRequest.GetData<Vector4>().ToArray());
+                            completed?.Invoke(metrics);
+                        });
+                    });
+                });
+            }
+            catch (Exception)
+            {
+                fail();
+            }
+        }
+
+        public static void MeasureGeologyAsync(SimulationHost host, Action<WorldGeologyMetrics> completed)
+        {
+            if (host == null || !host.IsReady || host.Resources?.MaterialRead == null)
+            {
+                completed?.Invoke(default);
+                return;
+            }
+
+            PolarGridDefinition grid = host.Grid;
+            ComputeBuffer stats = host.Resources.GeodynamicsEventCounter;
+            Action fail = () => completed?.Invoke(default);
+            try
+            {
+                AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+                {
+                    if (materialRequest.hasError)
+                    {
+                        fail();
+                        return;
+                    }
+                    uint[] materials = materialRequest.GetData<uint>().ToArray();
+                    AsyncGPUReadback.Request(host.Resources.StateRead, 0, stateRequest =>
+                    {
+                        if (stateRequest.hasError)
+                        {
+                            fail();
+                            return;
+                        }
+                        Vector4[] states = stateRequest.GetData<Vector4>().ToArray();
+                        WorldGeologyMetrics metrics = ComputeGeologyMetrics(grid, materials, states);
+                        if (stats == null)
+                        {
+                            completed?.Invoke(metrics);
+                            return;
+                        }
+                        AsyncGPUReadback.Request(stats, statsRequest =>
+                        {
+                            if (!statsRequest.hasError)
+                                ApplyGeologyStats(ref metrics, statsRequest.GetData<Vector4>().ToArray());
+                            completed?.Invoke(metrics);
+                        });
                     });
                 });
             }
@@ -1412,6 +1559,8 @@ namespace GeneSys.Validation
                         metrics.ActiveEventCount++;
                         metrics.ReleasedEnergy += Mathf.Max(0f, events[eventIndex].w);
                         activeAngles[a] = true;
+                        if (Mathf.RoundToInt(events[eventIndex].x) == GeodynamicsGrid.EventTypeVolcanic)
+                            metrics.ActiveVolcanicCount++;
                     }
                 }
             }
@@ -1441,6 +1590,82 @@ namespace GeneSys.Validation
                 stateNative.Dispose();
                 eventsNative.Dispose();
             }
+        }
+
+        public static WorldGeologyMetrics ComputeGeologyMetrics(PolarGridDefinition grid, uint[] materials, Vector4[] states)
+        {
+            var metrics = new WorldGeologyMetrics();
+            if (grid.angularResolution <= 0 || grid.radialResolution <= 0 || materials == null)
+                return metrics;
+            int width = grid.angularResolution;
+            int height = grid.radialResolution;
+            int count = Math.Min(materials.Length, width * height);
+            int interiorCells = 0;
+            int upperCells = 0;
+            float atmosphere = grid.atmosphereStartRadius;
+            float upperStart = atmosphere * 0.72f;
+            for (int i = 0; i < count; i++)
+            {
+                int y = i / width;
+                float radius = grid.Radius01(y);
+                uint material = materials[i];
+                if (material == MaterialIds.Magma)
+                {
+                    metrics.MagmaCount++;
+                    if (radius >= atmosphere - 0.04f)
+                        metrics.SurfaceMagmaCount++;
+                    else
+                    {
+                        metrics.InteriorMagmaCount++;
+                        if (radius >= upperStart)
+                            metrics.UpperInteriorMagmaCount++;
+                    }
+                }
+                else if (material == MaterialIds.Basalt) metrics.BasaltCount++;
+                else if (material == MaterialIds.Mantle) metrics.MantleCount++;
+                else if (material == MaterialIds.Ash) metrics.AshCount++;
+
+                if (radius < atmosphere)
+                {
+                    interiorCells++;
+                    if (radius >= upperStart)
+                        upperCells++;
+                }
+                if (states != null && i < states.Length)
+                {
+                    float temperature = states[i].x;
+                    if (!float.IsFinite(temperature) || !float.IsFinite(states[i].y))
+                        metrics.HasNonFinite = true;
+                    metrics.PeakTemperature = Mathf.Max(metrics.PeakTemperature, temperature);
+                }
+            }
+
+            metrics.MagmaFraction = interiorCells > 0 ? metrics.InteriorMagmaCount / (float)interiorCells : 0f;
+            metrics.UpperInteriorMagmaFraction = upperCells > 0 ? metrics.UpperInteriorMagmaCount / (float)upperCells : 0f;
+            return metrics;
+        }
+
+        private static void ApplyGeodynamicsStats(ref WorldGeodynamicsMetrics metrics, Vector4[] stats)
+        {
+            if (stats == null || stats.Length == 0) return;
+            metrics.CommittedEventCount = Mathf.Max(0, Mathf.RoundToInt(stats[0].x));
+            metrics.GlobalMeltFraction = Mathf.Max(0f, stats[0].y);
+            metrics.UpperInteriorMeltFraction = Mathf.Max(0f, stats[0].z);
+            metrics.SafetyThrottle = Mathf.Clamp01(stats[0].w);
+            metrics.SafetyHardCap = stats[0].w >= 0.999f;
+            if (stats.Length > 1)
+                metrics.ActiveVolcanicCount = Mathf.Max(metrics.ActiveVolcanicCount, Mathf.RoundToInt(stats[1].x));
+        }
+
+        private static void ApplyGeologyStats(ref WorldGeologyMetrics metrics, Vector4[] stats)
+        {
+            if (stats == null || stats.Length == 0) return;
+            metrics.SafetyThrottleEngaged = stats[0].w > 0.02f;
+            metrics.SafetyHardCap = stats[0].w >= 0.999f;
+            if (stats[0].y > 0f)
+                metrics.MagmaFraction = Mathf.Max(metrics.MagmaFraction, stats[0].y);
+            if (stats[0].z > 0f)
+                metrics.UpperInteriorMagmaFraction = Mathf.Max(metrics.UpperInteriorMagmaFraction, stats[0].z);
         }
 
         private static bool Finite(Vector4 value) =>

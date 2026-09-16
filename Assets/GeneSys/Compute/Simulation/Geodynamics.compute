@@ -24,11 +24,11 @@ float4 _WorldGenParams;
 
 #define GENESYS_GEODYNAMICS_STATE_RW 1
 #define GENESYS_GEODYNAMICS_EVENTS_RW 1
+#define GENESYS_GEODYNAMICS_STATS_RW 1
 #include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 
 RWStructuredBuffer<float4> _GeodynamicsStateWrite;
 RWStructuredBuffer<float4> _GeodynamicsColumns;
-RWStructuredBuffer<uint> _GeodynamicsEventCounter;
 
 int2 GeoCell(uint3 id)
 {
@@ -179,10 +179,13 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     float targetMelt = max(aggregate.z, residual);
     melt = saturate(lerp(melt, targetMelt, saturate(0.22 * dt)));
     melt = saturate(melt + saturate(thermal) * 0.02 * dt);
+    float headroom = saturate(1.0 - melt);
+    float upwell = max(0.0, flow.y) + saturate(thermal);
     float overpressure = max(0.0, prevRes.y);
-    overpressure += build * melt * dt;
-    overpressure += saturate(thermal) * 0.02 * dt;
-    overpressure -= leak * overpressure * (0.45 + saturate(prevKin.z)) * dt;
+    overpressure += build * upwell * (0.25 + headroom) * dt;
+    overpressure += saturate(thermal) * 0.015 * dt * headroom;
+    float venting = ((int)round(ev.x) == 2) ? saturate(ev.y) : 0.0;
+    overpressure -= leak * overpressure * (0.45 + saturate(prevKin.z) + melt * 0.85 + venting * 1.4) * dt;
     overpressure = saturate(overpressure);
 
     float strain = saturate(prevRes.z);
@@ -201,12 +204,29 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     weakness = saturate(weakness);
 
     float refractory = max(0.0, prevKin.w - dt);
-    if (ev.y > 0.02)
-        ev.w = saturate(ev.w);
-    ev.z += dt;
-    ev.y *= exp(-1.8 * dt);
-    if (ev.y < 0.02)
-        ev = 0.0;
+    int evType = (int)round(ev.x);
+    if (evType == 2 && (ev.y > 0.02 || ev.w > 0.0))
+    {
+        if (ev.z < 1e-4)
+            ev.z = max(ev.w, ev.y);
+        float discharge = (0.16 + saturate(prevKin.z) * 0.28 + melt * 0.12) * dt;
+        ev.w = max(0.0, ev.w - discharge);
+        ev.y = saturate(ev.w / max(0.05, ev.z));
+        if (ev.w < 0.008 || ev.y < 0.03)
+        {
+            refractory = max(refractory, max(16.0, _GeodynamicsC.w) / max(1.0, _TicksPerSecond));
+            ev = 0.0;
+        }
+    }
+    else
+    {
+        if (ev.y > 0.02)
+            ev.w = saturate(ev.w);
+        ev.z += dt;
+        ev.y *= exp(-1.8 * dt);
+        if (ev.y < 0.02)
+            ev = 0.0;
+    }
 
     float4 reservoir = float4(thermal, overpressure, strain, melt);
     float4 kinematics = float4(flow, weakness, refractory);
@@ -238,7 +258,7 @@ void SelectEvents(uint3 id : SV_DispatchThreadID)
     float4 aggregate = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, cell.y)];
 
     float quakeScore = res.z * (1.0 - res.w * 0.65);
-    float volcanoScore = res.y * res.w * (0.35 + kin.z);
+    float volcanoScore = GeodynamicsVolcanoScore(res, kin);
     float hydroScore = saturate(aggregate.w * 4.0) * saturate(res.x * 0.05 + kin.z);
     float quakeT = max(0.1, _GeodynamicsC.x);
     float volcanoT = max(0.1, _GeodynamicsD.z);
@@ -265,19 +285,24 @@ void SelectEvents(uint3 id : SV_DispatchThreadID)
 
     float neighborMax = max(max(left.z * (1.0 - left.w * 0.65), right.z * (1.0 - right.w * 0.65)),
         max(down.z * (1.0 - down.w * 0.65), up.z * (1.0 - up.w * 0.65)));
+    float4 leftKinN = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x - 1, cell.y, 1)];
+    float4 rightKinN = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x + 1, cell.y, 1)];
+    float4 downKinN = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, max(0, cell.y - 1), 1)];
+    float4 upKinN = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, min(rBins - 1, cell.y + 1), 1)];
     if (type == 2)
-        neighborMax = max(max(left.y * left.w, right.y * right.w), max(down.y * down.w, up.y * up.w));
+    {
+        neighborMax = max(max(GeodynamicsVolcanoScore(left, leftKinN), GeodynamicsVolcanoScore(right, rightKinN)),
+            max(GeodynamicsVolcanoScore(down, downKinN), GeodynamicsVolcanoScore(up, upKinN)));
+    }
     if (type == 3)
     {
         float4 leftAgg = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x - 1, cell.y)];
         float4 rightAgg = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x + 1, cell.y)];
         float4 downAgg = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, max(0, cell.y - 1))];
         float4 upAgg = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, min(rBins - 1, cell.y + 1))];
-        float4 leftKin = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x - 1, cell.y, 1)];
-        float4 rightKin = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x + 1, cell.y, 1)];
         neighborMax = max(max(
-            saturate(leftAgg.w * 4.0) * saturate(left.x * 0.05 + leftKin.z),
-            saturate(rightAgg.w * 4.0) * saturate(right.x * 0.05 + rightKin.z)),
+            saturate(leftAgg.w * 4.0) * saturate(left.x * 0.05 + leftKinN.z),
+            saturate(rightAgg.w * 4.0) * saturate(right.x * 0.05 + rightKinN.z)),
             max(saturate(downAgg.w * 4.0) * saturate(down.x * 0.05),
                 saturate(upAgg.w * 4.0) * saturate(up.x * 0.05)));
     }
@@ -289,6 +314,35 @@ void SelectEvents(uint3 id : SV_DispatchThreadID)
     _GeodynamicsEvents[GeodynamicsEventIndex(cell.x, cell.y)] = float4((float)type, 0.0, score + tie * 0.001, stored);
 }
 
+void GeoMarkAngular(inout uint4 bits, int a)
+{
+    uint word = (uint)(a >> 5);
+    uint bit = (uint)(a & 31);
+    if (word == 0) bits.x |= 1u << bit;
+    else if (word == 1) bits.y |= 1u << bit;
+    else if (word == 2) bits.z |= 1u << bit;
+    else bits.w |= 1u << bit;
+}
+
+bool GeoTestAngular(uint4 bits, int a)
+{
+    uint word = (uint)(a >> 5);
+    uint bit = (uint)(a & 31);
+    uint lane = word == 0 ? bits.x : (word == 1 ? bits.y : (word == 2 ? bits.z : bits.w));
+    return (lane & (1u << bit)) != 0;
+}
+
+bool GeoNearOccupied(uint4 bits, int a, int aBins, int minSep)
+{
+    [loop]
+    for (int d = 1 - minSep; d <= minSep - 1; d++)
+    {
+        if (GeoTestAngular(bits, GeodynamicsWrapBin(a + d, aBins)))
+            return true;
+    }
+    return false;
+}
+
 [numthreads(1, 1, 1)]
 void CommitEvent(uint3 id : SV_DispatchThreadID)
 {
@@ -298,31 +352,107 @@ void CommitEvent(uint3 id : SV_DispatchThreadID)
 
     int aBins = GeodynamicsAngularBins();
     int rBins = GeodynamicsRadialBins();
-    int bestA = -1;
-    int bestR = -1;
-    float bestScore = 0.0;
-    int bestIndex = -1;
-    int bestType = 0;
-    float bestStored = 0.0;
+    int maxConcurrent = clamp((int)round(_GeodynamicsD.x), 1, 8);
+    float footprint = max(0.01, _GeodynamicsC.z);
+    int minSep = max(1, (int)ceil(footprint * (float)aBins));
+    int upperStart = max(0, rBins - max(2, rBins / 4));
+
+    int activeCount = 0;
+    int activeVolcanic = 0;
+    int activeQuake = 0;
+    int activeHydro = 0;
+    float meltSum = 0.0;
+    float upperMeltSum = 0.0;
+    int counted = 0;
+    int upperCount = 0;
+    uint4 occupied = 0;
+
     [loop]
     for (int a = 0; a < aBins; a++)
     {
         for (int r = 0; r < rBins; r++)
         {
-            int index = GeodynamicsEventIndex(a, r);
-            float4 ev = _GeodynamicsEvents[index];
-            if (ev.y > 0.05 || ev.z <= 0.0 || (int)round(ev.x) <= 0)
-                continue;
-            if (ev.z > bestScore)
+            float4 col = _GeodynamicsColumns[GeodynamicsEventIndex(a, r)];
+            meltSum += saturate(col.z);
+            counted++;
+            if (r >= upperStart)
             {
-                bestScore = ev.z;
-                bestA = a;
-                bestR = r;
-                bestIndex = index;
-                bestType = (int)round(ev.x);
-                bestStored = ev.w;
+                upperMeltSum += saturate(col.z);
+                upperCount++;
+            }
+            float4 ev = _GeodynamicsEvents[GeodynamicsEventIndex(a, r)];
+            if (ev.y > 0.05)
+            {
+                activeCount++;
+                GeoMarkAngular(occupied, a);
+                int t = (int)round(ev.x);
+                if (t == 2) activeVolcanic++;
+                else if (t == 1) activeQuake++;
+                else if (t == 3) activeHydro++;
             }
         }
+    }
+
+    int remaining = max(0, maxConcurrent - activeCount);
+    int committed = 0;
+    [loop]
+    for (int n = 0; n < remaining; n++)
+    {
+        int bestA = -1;
+        int bestR = -1;
+        int bestIndex = -1;
+        float bestScore = 0.0;
+        int bestType = 0;
+        float bestStored = 0.0;
+        [loop]
+        for (int a = 0; a < aBins; a++)
+        {
+            if (GeoNearOccupied(occupied, a, aBins, minSep))
+                continue;
+            for (int r = 0; r < rBins; r++)
+            {
+                int index = GeodynamicsEventIndex(a, r);
+                float4 ev = _GeodynamicsEvents[index];
+                if (ev.y > 0.05 || ev.z <= 0.0 || (int)round(ev.x) <= 0)
+                    continue;
+                if (ev.z > bestScore)
+                {
+                    bestScore = ev.z;
+                    bestA = a;
+                    bestR = r;
+                    bestIndex = index;
+                    bestType = (int)round(ev.x);
+                    bestStored = ev.w;
+                }
+            }
+        }
+        if (bestIndex < 0)
+            break;
+
+        int type = bestType > 0 ? bestType : 1;
+        float stored = bestStored;
+        float4 res = _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 0)];
+        float4 kin = _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 1)];
+        float release = clamp(_GeodynamicsC.y, 0.05, 0.25);
+        if (type == 2)
+            release = clamp(_GeodynamicsD.w, 0.05, 0.25);
+        float spent = saturate(stored) * release;
+        if (type == 1)
+            res.z = saturate(res.z - spent);
+        else if (type == 2)
+            res.y = saturate(res.y - spent);
+        kin.z = saturate(kin.z + spent * 0.2);
+        if (type != 2)
+            kin.w = max(kin.w, max(16.0, _GeodynamicsC.w) / max(1.0, _TicksPerSecond));
+        _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 0)] = res;
+        _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 1)] = kin;
+        _GeodynamicsEvents[bestIndex] = float4((float)type, saturate(spent / max(0.05, release)), 0.0, spent);
+        GeoMarkAngular(occupied, bestA);
+        committed++;
+        activeCount++;
+        if (type == 2) activeVolcanic++;
+        else if (type == 1) activeQuake++;
+        else if (type == 3) activeHydro++;
     }
 
     [loop]
@@ -337,24 +467,17 @@ void CommitEvent(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    if (bestIndex < 0)
-        return;
+    float globalMelt = counted > 0 ? meltSum / (float)counted : 0.0;
+    float upperMelt = upperCount > 0 ? upperMeltSum / (float)upperCount : 0.0;
+    float limit = clamp(_GeodynamicsL.w, 0.05, 1.0);
+    float soft = limit * 0.8;
+    float meltForSafety = max(globalMelt, upperMelt);
+    float safety = 0.0;
+    if (meltForSafety >= limit)
+        safety = 1.0;
+    else if (meltForSafety > soft)
+        safety = saturate((meltForSafety - soft) / max(1e-4, limit - soft));
 
-    int type = bestType > 0 ? bestType : 1;
-    float stored = bestStored;
-    float4 res = _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 0)];
-    float4 kin = _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 1)];
-    float release = clamp(_GeodynamicsC.y, 0.05, 0.25);
-    if (type == 2)
-        release = clamp(_GeodynamicsD.w, 0.05, 0.25);
-    float spent = saturate(stored) * release;
-    if (type == 1)
-        res.z = saturate(res.z - spent);
-    else if (type == 2)
-        res.y = saturate(res.y - spent);
-    kin.z = saturate(kin.z + spent * 0.2);
-    kin.w = max(kin.w, max(16.0, _GeodynamicsC.w) / max(1.0, _TicksPerSecond));
-    _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 0)] = res;
-    _GeodynamicsStateWrite[GeodynamicsStateIndex(bestA, bestR, 1)] = kin;
-    _GeodynamicsEvents[bestIndex] = float4((float)type, saturate(spent / max(0.05, release)), 0.0, spent);
+    _GeodynamicsEventCounter[0] = float4((float)committed, globalMelt, upperMelt, safety);
+    _GeodynamicsEventCounter[1] = float4((float)activeVolcanic, (float)activeQuake, (float)activeHydro, limit);
 }

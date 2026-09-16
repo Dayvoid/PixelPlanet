@@ -19,14 +19,22 @@ float4 _GeodynamicsB; // heatCoupling, strainGain, strainTransfer, faultHealing
 float4 _GeodynamicsC; // earthquakeThreshold, releaseFraction, footprint, cooldownTicks
 float4 _GeodynamicsD; // maxConcurrent, surfaceCoupling, volcanicThreshold, volcanicReleaseFraction
 float4 _GeodynamicsK; // kinematicCoupling, upliftScale, convergenceScale, displacementScale
-float4 _GeodynamicsL; // coseismicScale, crustRatio, isostasyScale, unused
+float4 _GeodynamicsL; // coseismicScale, crustRatio, isostasyScale, magmaFractionLimit
 #ifndef GENESYS_VOLCANIC_DECLARED
 #define GENESYS_VOLCANIC_DECLARED
-float4 _Volcanic; // extrusionRate, coolingRate, magmaViscosity, unused
+float4 _Volcanic; // extrusionRate, coolingRate, magmaViscosity, meltRate
 #endif
 #ifndef GENESYS_HYDROTHERMAL_DECLARED
 #define GENESYS_HYDROTHERMAL_DECLARED
 float4 _Hydrothermal; // heatTransfer, nutrientYield, releaseThreshold, surfaceCoupling
+#endif
+#ifndef GENESYS_GEODYNAMICS_STATS_DECLARED
+#define GENESYS_GEODYNAMICS_STATS_DECLARED
+#ifdef GENESYS_GEODYNAMICS_STATS_RW
+RWStructuredBuffer<float4> _GeodynamicsEventCounter;
+#else
+StructuredBuffer<float4> _GeodynamicsEventCounter;
+#endif
 #endif
 
 int GeodynamicsAngularBins()
@@ -96,6 +104,61 @@ float4 GeodynamicsEvent(int angularBin, int radialBin)
     return _GeodynamicsEvents[GeodynamicsEventIndex(angularBin, radialBin)];
 }
 
+float GeodynamicsAngularCoord(int theta)
+{
+    int bins = GeodynamicsAngularBins();
+    int width = max(1, _GridSize.x);
+    theta = WrapTheta(theta, width);
+    return ((float)theta + 0.5) * (float)bins / (float)width;
+}
+
+float GeodynamicsRadialCoord(float radius01)
+{
+    int bins = GeodynamicsRadialBins();
+    float outer = max(0.05, _AtmosphereStartRadius);
+    float t = saturate(radius01 / outer);
+    return clamp(t * (float)bins, 0.0, (float)bins - 1e-4);
+}
+
+float4 GeodynamicsSampleLattice(int slot, int theta, float radius01)
+{
+    float af = GeodynamicsAngularCoord(theta);
+    float rf = GeodynamicsRadialCoord(radius01);
+    int a0 = (int)floor(af);
+    int r0 = (int)floor(rf);
+    float ta = frac(af);
+    float tr = saturate(rf - (float)r0);
+    int r1 = min(r0 + 1, GeodynamicsRadialBins() - 1);
+    float4 v00 = slot == 0 ? GeodynamicsReservoir(a0, r0) : GeodynamicsKinematics(a0, r0);
+    float4 v10 = slot == 0 ? GeodynamicsReservoir(a0 + 1, r0) : GeodynamicsKinematics(a0 + 1, r0);
+    float4 v01 = slot == 0 ? GeodynamicsReservoir(a0, r1) : GeodynamicsKinematics(a0, r1);
+    float4 v11 = slot == 0 ? GeodynamicsReservoir(a0 + 1, r1) : GeodynamicsKinematics(a0 + 1, r1);
+    return lerp(lerp(v00, v10, ta), lerp(v01, v11, ta), tr);
+}
+
+float4 GeodynamicsSampleReservoir(int theta, float radius01)
+{
+    return GeodynamicsSampleLattice(0, theta, radius01);
+}
+
+float4 GeodynamicsSampleKinematics(int theta, float radius01)
+{
+    return GeodynamicsSampleLattice(1, theta, radius01);
+}
+
+float GeodynamicsSafetyThrottle()
+{
+    if (_GeodynamicsFlags.x < 0.5)
+        return 0.0;
+    return saturate(_GeodynamicsEventCounter[0].w);
+}
+
+float GeodynamicsVolcanoScore(float4 res, float4 kin)
+{
+    float heatDrive = saturate(res.x * 0.25 + max(0.0, kin.y) * 0.5);
+    return saturate(res.y) * (0.35 + heatDrive) * (0.25 + saturate(kin.z) + saturate(res.w));
+}
+
 float GeodynamicsEnabled()
 {
     return _GeodynamicsFlags.x;
@@ -112,11 +175,15 @@ float GeodynamicsEnvelopeAt(int theta, float radius01, int eventType)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    int a0 = GeodynamicsAngularBin(theta);
-    int r0 = GeodynamicsRadialBin(radius01);
+    float af = GeodynamicsAngularCoord(theta);
+    float rf = GeodynamicsRadialCoord(radius01);
+    int a0 = (int)floor(af);
+    int r0 = clamp((int)floor(rf), 0, GeodynamicsRadialBins() - 1);
     int aBins = GeodynamicsAngularBins();
     int rBins = GeodynamicsRadialBins();
     float footprint = max(0.01, _GeodynamicsC.z);
+    float angSpan = max(0.45, footprint * (float)aBins);
+    float radSpan = max(0.65, 0.28 * (float)rBins);
     float best = 0.0;
     [unroll]
     for (int da = -2; da <= 2; da++)
@@ -128,9 +195,10 @@ float GeodynamicsEnvelopeAt(int theta, float radius01, int eventType)
             float4 ev = GeodynamicsEvent(ab, rb);
             if ((int)round(ev.x) != eventType)
                 continue;
-            float ang = GeodynamicsAngularDistance(a0, ab);
-            float rad = abs((float)(r0 - rb)) / max(1.0, (float)rBins);
-            float falloff = saturate(1.0 - ang / footprint) * saturate(1.0 - rad / 0.35);
+            float dang = abs(af - ((float)ab + 0.5));
+            dang = min(dang, (float)aBins - dang);
+            float drad = abs(rf - ((float)rb + 0.5));
+            float falloff = saturate(1.0 - dang / angSpan) * saturate(1.0 - drad / radSpan);
             best = max(best, saturate(ev.y) * falloff);
         }
     }
@@ -141,42 +209,42 @@ float GeodynamicsOverpressure(int theta, float radius01)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    return saturate(GeodynamicsReservoir(GeodynamicsAngularBin(theta), GeodynamicsRadialBin(radius01)).y);
+    return saturate(GeodynamicsSampleReservoir(theta, radius01).y);
 }
 
 float GeodynamicsStrain(int theta, float radius01)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    return saturate(GeodynamicsReservoir(GeodynamicsAngularBin(theta), GeodynamicsRadialBin(radius01)).z);
+    return saturate(GeodynamicsSampleReservoir(theta, radius01).z);
 }
 
 float GeodynamicsMeltFraction(int theta, float radius01)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    return saturate(GeodynamicsReservoir(GeodynamicsAngularBin(theta), GeodynamicsRadialBin(radius01)).w);
+    return saturate(GeodynamicsSampleReservoir(theta, radius01).w);
 }
 
 float GeodynamicsThermalAnomaly(int theta, float radius01)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    return GeodynamicsReservoir(GeodynamicsAngularBin(theta), GeodynamicsRadialBin(radius01)).x;
+    return GeodynamicsSampleReservoir(theta, radius01).x;
 }
 
 float GeodynamicsFaultWeakness(int theta, float radius01)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    return saturate(GeodynamicsKinematics(GeodynamicsAngularBin(theta), GeodynamicsRadialBin(radius01)).z);
+    return saturate(GeodynamicsSampleKinematics(theta, radius01).z);
 }
 
 float2 GeodynamicsFlow(int theta, float radius01)
 {
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
-    return GeodynamicsKinematics(GeodynamicsAngularBin(theta), GeodynamicsRadialBin(radius01)).xy;
+    return GeodynamicsSampleKinematics(theta, radius01).xy;
 }
 
 float GeodynamicsVolcanicEnvelope(int theta, float radius01)
@@ -189,26 +257,39 @@ float GeodynamicsDikeNucleation(int theta, float radius01)
     if (_GeodynamicsFlags.x < 0.5)
         return 0.0;
     float weakness = GeodynamicsFaultWeakness(theta, radius01);
-    if (weakness < 0.35)
+    float volcanic = GeodynamicsVolcanicEnvelope(theta, radius01);
+    if (weakness < 0.18 && volcanic < 0.04)
         return 0.0;
+
     int aBins = GeodynamicsAngularBins();
-    int width = max(1, _GridSize.x);
-    int bin = GeodynamicsAngularBin(theta);
-    int start = (int)((uint)bin * (uint)width / (uint)aBins);
-    int endExclusive = (int)((uint)(bin + 1) * (uint)width / (uint)aBins);
-    int span = max(1, endExclusive - start);
-    float u = ((float)(theta - start) + 0.5) / (float)span;
-    uint radKey = (uint)floor(radius01 * 36.0);
-    float meander = sin(radius01 * 22.0 + Hash01((uint)bin * 509u + (uint)_Seed) * 6.28318530718) * 0.32;
-    meander += (Hash01((uint)bin * 374761u + radKey * 127u + (uint)_Seed) - 0.5) * 0.22;
-    float center = saturate(0.5 + meander);
-    float filament = saturate((0.24 - abs(u - center)) / 0.24);
-    float gap = Hash01((uint)bin * 19349663u + radKey * 83492791u + (uint)_Seed);
-    if (gap < 0.3)
-        filament = 0.0;
-    float pocket = Hash01((uint)theta * 73856093u + radKey * 6151u + (uint)_Seed);
-    filament = max(filament, step(0.97, pocket) * 0.7);
-    return saturate(weakness * filament) * step(0.1, radius01) * step(radius01, _AtmosphereStartRadius - 0.03);
+    float af = GeodynamicsAngularCoord(theta);
+    int a0 = (int)floor(af);
+    int r0 = GeodynamicsRadialBin(radius01);
+    int bestA = a0;
+    float bestY = volcanic;
+    [unroll]
+    for (int da = -2; da <= 2; da++)
+    {
+        int ab = GeodynamicsWrapBin(a0 + da, aBins);
+        float4 ev = GeodynamicsEvent(ab, r0);
+        if ((int)round(ev.x) == 2 && ev.y >= bestY)
+        {
+            bestY = ev.y;
+            bestA = ab;
+        }
+    }
+
+    float meander = sin(radius01 * 18.0 + Hash01((uint)bestA * 509u + (uint)_Seed) * 6.28318530718) * 0.28;
+    meander += sin(radius01 * 41.0 + Hash01((uint)bestA * 374761u + (uint)_Seed) * 6.28318530718) * 0.10;
+    float centerAf = (float)bestA + 0.5 + meander;
+    float dang = abs(af - centerAf);
+    dang = min(dang, (float)aBins - dang);
+    float halfWidth = 0.22 + volcanic * 0.08;
+    float filament = saturate((halfWidth - dang) / max(0.04, halfWidth));
+    float edge = Hash01((uint)theta * 73856093u + (uint)floor(radius01 * 96.0) * 19349663u + (uint)_Seed);
+    filament *= lerp(0.78, 1.0, edge);
+    float active = max(weakness * 0.55, volcanic);
+    return saturate(active * filament) * step(0.1, radius01) * step(radius01, _AtmosphereStartRadius - 0.03);
 }
 
 float GeodynamicsSeismicEnvelope(int theta, float radius01)

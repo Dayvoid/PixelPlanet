@@ -73,6 +73,12 @@ namespace GeneSys.Editor
             GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.StressVaporReproTests");
         }
 
+        [MenuItem("Tools/GeneSys/Run Stress Volcanism Repro Test")]
+        public static void RunStressVolcanismRepro()
+        {
+            GeneSysTestObserver.Run(TestMode.PlayMode, "GeneSys.Tests.StressVolcanismReproTests");
+        }
+
         [MenuItem("Tools/GeneSys/Run Margolus EditMode Tests")]
         public static void RunMargolusEditMode()
         {

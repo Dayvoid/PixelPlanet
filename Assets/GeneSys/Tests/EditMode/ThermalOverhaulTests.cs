@@ -69,6 +69,8 @@ namespace GeneSys.Tests
             Assert.That(volcanism, Does.Contain("state.x -= _Volcanic.y"));
             Assert.That(volcanism, Does.Not.Contain("material = 5u;"));
             Assert.That(volcanism, Does.Not.Contain("state.x < 780"));
+            Assert.That(volcanism, Does.Not.Contain("state.x = max(state.x, 950"));
+            Assert.That(volcanism, Does.Contain("MaterialPhaseLatentDelta"));
 
             string phase = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute");
             Assert.That(phase, Does.Contain("MaterialPhaseLatentDelta"));

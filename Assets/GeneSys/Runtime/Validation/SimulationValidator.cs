@@ -1,6 +1,7 @@
 using System;
 using GeneSys.Materials;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.Gpu;
 using Unity.Collections;
 using UnityEngine;
@@ -327,11 +328,62 @@ namespace GeneSys.Validation
                 {
                     Vector4 value = values[i];
                     if (!Finite(value)) { Complete(false, $"Non-finite geodynamics state at cell {i}."); return; }
-                    bool isReservoir = (i % GeneSys.Simulation.Geodynamics.GeodynamicsGrid.StateSlotsPerCell) == GeneSys.Simulation.Geodynamics.GeodynamicsGrid.SlotReservoir;
+                    bool isReservoir = (i % GeodynamicsGrid.StateSlotsPerCell) == GeodynamicsGrid.SlotReservoir;
                     if (isReservoir && (value.y < -0.01f || value.z < -0.01f || value.w < -0.01f))
                     { Complete(false, $"Negative geodynamics reservoir at cell {i}."); return; }
                 }
-                Complete(true, passedMessage);
+
+                ComputeBuffer stats = host.Resources.GeodynamicsEventCounter;
+                if (stats == null || host.Resources.MaterialRead == null || host.Resources.StateRead == null)
+                {
+                    Complete(true, passedMessage);
+                    return;
+                }
+
+                AsyncGPUReadback.Request(stats, statsRequest =>
+                {
+                    if (statsRequest.hasError) { Complete(false, "Geodynamics stats GPU readback failed."); return; }
+                    Vector4[] statsValues = statsRequest.GetData<Vector4>().ToArray();
+                    float safety = statsValues.Length > 0 ? Mathf.Clamp01(statsValues[0].w) : 0f;
+                    float latticeMelt = statsValues.Length > 0 ? Mathf.Max(0f, statsValues[0].y) : 0f;
+                    float upperMelt = statsValues.Length > 0 ? Mathf.Max(0f, statsValues[0].z) : 0f;
+                    float limit = host.Config != null ? host.Config.volcanicMagmaFractionLimit : 0.2f;
+                    AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+                    {
+                        if (materialRequest.hasError) { Complete(false, "Material GPU readback failed."); return; }
+                        uint[] materials = materialRequest.GetData<uint>().ToArray();
+                        AsyncGPUReadback.Request(host.Resources.StateRead, 0, cellStateRequest =>
+                        {
+                            if (cellStateRequest.hasError) { Complete(false, "State GPU readback failed."); return; }
+                            Vector4[] cellState = cellStateRequest.GetData<Vector4>().ToArray();
+                            WorldGeologyMetrics geology = SimulationMetrics.ComputeGeologyMetrics(host.Grid, materials, cellState);
+                            if (geology.HasNonFinite || !float.IsFinite(geology.PeakTemperature))
+                            {
+                                Complete(false, "Non-finite geology state.");
+                                return;
+                            }
+                            float coreBound = (host.Config != null ? host.Config.coreTemperature : 1500f)
+                                + Mathf.Max(0f, host.Config != null ? host.Config.corePulseHeat : 0f) + 400f;
+                            if (geology.PeakTemperature > coreBound)
+                            {
+                                Complete(false, $"Peak temperature {geology.PeakTemperature:F0}°C exceeds geothermal bound {coreBound:F0}°C.");
+                                return;
+                            }
+                            float melt = Mathf.Max(latticeMelt, geology.MagmaFraction);
+                            float upper = Mathf.Max(upperMelt, geology.UpperInteriorMagmaFraction);
+                            if (melt > limit + 0.01f || upper > limit + 0.01f)
+                            {
+                                Complete(false, $"Magma fraction {Mathf.Max(melt, upper):P1} exceeds volcanicMagmaFractionLimit {limit:P0}.");
+                                return;
+                            }
+
+                            string message = passedMessage;
+                            if (safety > 0.02f)
+                                message += $" Volcanism safety throttle {safety:F2} (melt {melt:P1} / limit {limit:P0}).";
+                            Complete(true, message);
+                        });
+                    });
+                });
             });
         }
 

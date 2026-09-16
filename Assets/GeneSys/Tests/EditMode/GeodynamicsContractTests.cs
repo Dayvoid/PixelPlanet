@@ -43,6 +43,8 @@ namespace GeneSys.Tests
             Assert.That(config.geodynamicsRadialBins, Is.EqualTo(16));
             Assert.That(config.tectonicReleaseFraction, Is.LessThanOrEqualTo(0.25f));
             Assert.That(config.volcanicReleaseFraction, Is.LessThanOrEqualTo(0.25f));
+            Assert.That(config.volcanicMeltRate, Is.GreaterThan(0f).And.LessThanOrEqualTo(4f));
+            Assert.That(config.volcanicMagmaFractionLimit, Is.InRange(0.05f, 1f));
             Assert.That(config.tectonicEventFootprint, Is.LessThanOrEqualTo(0.1f));
             Assert.That(config.tectonicMaxConcurrentEvents, Is.EqualTo(2));
             Assert.That(config.tectonicKinematicCoupling, Is.EqualTo(0.15f).Within(0.0001f));
@@ -53,10 +55,12 @@ namespace GeneSys.Tests
             config.tectonicReleaseFraction = 0.9f;
             config.geodynamicsAngularBins = 4;
             config.tectonicKinematicCoupling = 2f;
+            config.volcanicMagmaFractionLimit = 4f;
             typeof(SimulationConfig).GetMethod("OnValidate", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(config, null);
             Assert.That(config.tectonicReleaseFraction, Is.LessThanOrEqualTo(0.25f));
             Assert.That(config.geodynamicsAngularBins, Is.InRange(16, 128));
             Assert.That(config.tectonicKinematicCoupling, Is.InRange(0f, 1f));
+            Assert.That(config.volcanicMagmaFractionLimit, Is.InRange(0.05f, 1f));
             Object.DestroyImmediate(config);
         }
 
@@ -101,6 +105,7 @@ namespace GeneSys.Tests
             Assert.That(resources.GeodynamicsEventCounter, Is.Not.Null);
             Assert.That(resources.GeodynamicsStateRead.count, Is.EqualTo(GeodynamicsGrid.StateBufferCount()));
             Assert.That(resources.GeodynamicsEvents.count, Is.EqualTo(GeodynamicsGrid.EventBufferCount()));
+            Assert.That(resources.GeodynamicsEventCounter.count, Is.EqualTo(GeodynamicsGrid.StatsBufferCount()));
 
             string swap = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/SimulationResources.cs");
             Assert.That(swap, Does.Contain("SwapGeodynamics"));
@@ -142,19 +147,36 @@ namespace GeneSys.Tests
 
             string geoHlsl = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/Geodynamics.hlsl");
             Assert.That(geoHlsl, Does.Contain("GeodynamicsDikeNucleation"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsSampleReservoir"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsAngularCoord"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsVolcanoScore"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsSafetyThrottle"));
+            Assert.That(geoHlsl, Does.Not.Contain("step(0.97, pocket)"));
+            Assert.That(geology, Does.Contain("MaterialPhaseLatentDelta"));
+            Assert.That(geology, Does.Contain("IsEruptionPermeable"));
+            Assert.That(geology, Does.Not.Contain("eventMelt"));
+            Assert.That(geology, Does.Not.Contain("state.x = max(state.x, 950"));
+            Assert.That(geology, Does.Not.Contain("forcedUp"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsVerticalDrive"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsAngularDrive"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsKinematicTriggered"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsKinematicSpacing"));
-            Assert.That(geology, Does.Not.Contain("forcedUp"));
             Assert.That(geology, Does.Not.Contain("forcedDown"));
             Assert.That(geoHlsl, Does.Not.Contain("GeodynamicsFaultWeakness(theta, radius01) * 0.55"));
+
+            string geodynamics = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Geodynamics.compute");
+            Assert.That(geodynamics, Does.Contain("maxConcurrent"));
+            Assert.That(geodynamics, Does.Contain("GeoNearOccupied"));
+            Assert.That(geodynamics, Does.Contain("headroom"));
+            Assert.That(scheduler, Does.Contain("config.volcanicMeltRate"));
+            Assert.That(scheduler, Does.Contain("config.volcanicMagmaFractionLimit"));
 
             string hydrology = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
             Assert.That(hydrology, Does.Contain("HydrothermalRelease"));
             Assert.That(hydrology, Does.Contain("GeodynamicsSeismicEnvelope"));
 
             string phase = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MaterialSimulation.compute");
+            Assert.That(phase, Does.Contain("if (material == 3u || (geologyToMagma"));
             Assert.That(phase, Does.Not.Contain("GroundwaterBoilMass"));
         }
 
@@ -164,8 +186,8 @@ namespace GeneSys.Tests
             string snapshot = File.ReadAllText("Assets/GeneSys/Runtime/Persistence/WorldSnapshotService.cs");
             Assert.That(snapshot, Does.Contain("private const int Version15 = 15;"));
             Assert.That(snapshot, Does.Contain("private const int Version16 = 16;"));
-            Assert.That(snapshot, Does.Contain("private const int PayloadCountV15 = 49;"));
-            Assert.That(snapshot, Does.Contain("private const int PayloadCountV16 = 43;"));
+            Assert.That(snapshot, Does.Contain("private const int PayloadCountV15 = PayloadCountV14 + 2;"));
+            Assert.That(snapshot, Does.Contain("private const int PayloadCountV16 = PayloadCountV12 + 2;"));
             Assert.That(snapshot, Does.Contain("RequestGeodynamicsBatch"));
             Assert.That(snapshot, Does.Contain("ApplyLegacyGeologyJsonAliases"));
             Assert.That(snapshot, Does.Contain("RebuildGeodynamics(true)"));

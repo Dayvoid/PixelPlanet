@@ -313,15 +313,22 @@ void StepMargolusBlock(int2 p0, int2 p1, int2 p2, int2 p3)
             }
             else if (_MargolusLiquidOnly == 0 && _MargolusParams.w > 0.0)
             {
-                if (c0.material == 6u && c1.material == 1u && !pin1 && c0.flow.x > 0.45)
+                bool magmaLeft = c0.material == 6u && c1.material == 1u && !pin1;
+                bool magmaRight = c1.material == 6u && c0.material == 1u && !pin0;
+                if (magmaLeft || magmaRight)
                 {
-                    SwapCells(c0, c1);
-                    SwapI2(g0, g1);
-                }
-                else if (c1.material == 6u && c0.material == 1u && !pin0 && c1.flow.x < -0.45)
-                {
-                    SwapCells(c0, c1);
-                    SwapI2(g0, g1);
+                    float magmaTemp = magmaLeft ? c0.state.x : c1.state.x;
+                    float magmaFlowX = magmaLeft ? c0.flow.x : c1.flow.x;
+                    float superheat = saturate((magmaTemp - 700.0) / 250.0);
+                    float bias = saturate(_MargolusParams.w * (0.35 + superheat));
+                    float flowAssist = saturate(abs(magmaFlowX) * 0.55);
+                    float chance = bias * (0.22 + superheat * 0.7 + flowAssist);
+                    uint hashVal = (uint)p0.x * 73856093u ^ (uint)p0.y * 19349663u ^ (uint)_Tick * 83492791u;
+                    if (Hash01(hashVal) < chance)
+                    {
+                        SwapCells(c0, c1);
+                        SwapI2(g0, g1);
+                    }
                 }
             }
         }

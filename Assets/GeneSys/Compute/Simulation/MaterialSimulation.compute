@@ -54,6 +54,7 @@ float4 _PressureB; // gas, fluid, porous, rigid diffusivities
 float4 _ThermalA; // moistureBoost, pressureEffect, coreTemperature, coreHeatRate
 float4 _MycologyA; // initialSporeLoad, rareStrainChance, airTransport, waterTransport
 float4 _GrassI; // seedAtWorldgen, cohesionBonus, detritusNutrient, detritusMoisture
+StructuredBuffer<float4> _GeodynamicsEventCounter;
 
 uint ReadMaterial(int2 cell) { cell = ClampCell(cell, _GridSize); return _MaterialRead.Load(int3(cell, 0)); }
 float4 ReadState(int2 cell) { cell = ClampCell(cell, _GridSize); return _StateRead.Load(int3(cell, 0)); }
@@ -296,6 +297,13 @@ void PhaseChange(uint3 id : SV_DispatchThreadID)
     }
     else if (liquidId > 0u && material != liquidId && state.x > definition.phase.x + hysteresis)
     {
+        bool geologyToMagma = liquidId == 6u &&
+            (material == 4u || material == 5u || material == 14u || IsSoftCrustMaterial(material));
+        if (material == 3u || (geologyToMagma && _GeodynamicsEventCounter[0].w >= 0.999))
+        {
+            WriteCell(cell, material, state, flow, aux, ecology, combustion, life, genome);
+            return;
+        }
         float melted = max(0.0, state.z);
         material = liquidId;
         if (liquidId == 9u)

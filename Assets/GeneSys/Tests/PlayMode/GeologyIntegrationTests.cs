@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using GeneSys.Materials;
 using GeneSys.Simulation;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Simulation.Gpu;
 using GeneSys.Validation;
 using NUnit.Framework;
@@ -24,6 +26,8 @@ namespace GeneSys.Tests
             host.Config.geodynamicsPressureBuildRate = 0.35f;
             host.Config.tectonicStrainGain = 0.12f;
             host.Config.extrusionRate = 0.4f;
+            host.Config.volcanicMeltRate = 0.28f;
+            host.Config.volcanicMagmaFractionLimit = 0.2f;
             host.Config.validationIntervalTicks = 1000;
             host.Config.slowPassInterval = 4;
         }
@@ -320,6 +324,344 @@ namespace GeneSys.Tests
             host.Config.coreTemperature = 1500f;
             host.Config.phaseHysteresis = 0.02f;
             host.Config.latentHeatScale = 0.35f;
+        }
+
+        [UnityTest]
+        public IEnumerator VolcanismMantleMeltPaysLatentHeat()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 9201;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.geodynamicsPeriodTicks = 10000;
+            host.Config.slowPassInterval = 1;
+            host.Config.volcanicMeltRate = 4f;
+            host.Config.extrusionRate = 1f;
+            host.Config.volcanicCoolingRate = 0f;
+            host.Config.thermalRate = 0f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.eruptionDriveScale = 0f;
+            host.Config.latentHeatScale = 0.35f;
+            host.Config.validationIntervalTicks = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.32f), 6, host.Grid.radialResolution - 8);
+            int angular = GeodynamicsGrid.AngularBinOf(width / 2, width, host.Config.geodynamicsAngularBins);
+            int radial = GeodynamicsGrid.RadialBinOf((float)y / Mathf.Max(1, host.Grid.radialResolution - 1),
+                host.Grid.atmosphereStartRadius, host.Config.geodynamicsRadialBins);
+            GeodynamicsGrid.ThetaRange(angular, width, host.Config.geodynamicsAngularBins, out int x0, out int x1);
+            int x = (x0 + x1 - 1) / 2;
+
+            var events = new Vector4[GeodynamicsGrid.EventBufferCount()];
+            host.Resources.GeodynamicsEvents.GetData(events);
+            events[GeodynamicsGrid.EventIndex(angular, radial, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins)] =
+                new Vector4(GeodynamicsGrid.EventTypeVolcanic, 0.95f, 0.2f, 0.2f);
+            host.Resources.GeodynamicsEvents.SetData(events);
+
+            var geoState = new Vector4[GeodynamicsGrid.StateBufferCount()];
+            host.Resources.GeodynamicsStateRead.GetData(geoState);
+            int res = GeodynamicsGrid.StateIndex(angular, radial, GeodynamicsGrid.SlotReservoir, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins);
+            int kin = GeodynamicsGrid.StateIndex(angular, radial, GeodynamicsGrid.SlotKinematics, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins);
+            Vector4 reservoir = geoState[res];
+            reservoir.y = 0.8f;
+            geoState[res] = reservoir;
+            Vector4 kinematics = geoState[kin];
+            kinematics.z = 0.8f;
+            geoState[kin] = kinematics;
+            host.Resources.GeodynamicsStateRead.SetData(geoState);
+            host.Resources.GeodynamicsStateWrite.SetData(geoState);
+
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                for (int dy = -2; dy <= 2; dy++)
+                {
+                    Paint(host, x + dx, y + dy, MaterialIds.Mantle);
+                    PaintHeat(host, x + dx, y + dy, 1100f);
+                }
+            }
+            host.Config.volcanicMeltRate = 0f;
+            yield return Step(host, 1);
+
+            var beforeTemps = new Dictionary<int, float>();
+            yield return ReadMaterialsAndState(host, (mats, states) =>
+            {
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    for (int dy = -2; dy <= 2; dy++)
+                    {
+                        int xx = ((x + dx) % width + width) % width;
+                        int i = (y + dy) * width + xx;
+                        Assert.That(mats[i], Is.EqualTo(MaterialIds.Mantle));
+                        beforeTemps[i] = states[i].x;
+                    }
+                }
+            });
+            host.Config.volcanicMeltRate = 4f;
+            yield return Step(host, 48);
+
+            int melted = 0;
+            float drop = 0f;
+            yield return ReadMaterialsAndState(host, (mats, states) =>
+            {
+                foreach (KeyValuePair<int, float> pair in beforeTemps)
+                {
+                    if (mats[pair.Key] != MaterialIds.Magma) continue;
+                    melted++;
+                    drop = Mathf.Max(drop, pair.Value - states[pair.Key].x);
+                }
+            });
+            Assert.That(melted, Is.GreaterThan(0), "A funded conduit should convert at least one hot mantle cell.");
+            Assert.That(drop, Is.GreaterThan(4f));
+        }
+
+        [UnityTest]
+        public IEnumerator MagmaHardCapStopsNewMantleMelt()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 9202;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.geodynamicsPeriodTicks = 10000;
+            host.Config.slowPassInterval = 1;
+            host.Config.volcanicMeltRate = 4f;
+            host.Config.extrusionRate = 2f;
+            host.Config.volcanicCoolingRate = 0f;
+            host.Config.thermalRate = 0f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.eruptionDriveScale = 0f;
+            host.Config.volcanicMagmaFractionLimit = 0.05f;
+            host.Config.validationIntervalTicks = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.32f), 6, host.Grid.radialResolution - 8);
+            int angular = GeodynamicsGrid.AngularBinOf(width / 2, width, host.Config.geodynamicsAngularBins);
+            int radial = GeodynamicsGrid.RadialBinOf((float)y / Mathf.Max(1, host.Grid.radialResolution - 1),
+                host.Grid.atmosphereStartRadius, host.Config.geodynamicsRadialBins);
+            GeodynamicsGrid.ThetaRange(angular, width, host.Config.geodynamicsAngularBins, out int x0, out int x1);
+            int x = (x0 + x1 - 1) / 2;
+
+            var events = new Vector4[GeodynamicsGrid.EventBufferCount()];
+            events[GeodynamicsGrid.EventIndex(angular, radial, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins)] =
+                new Vector4(GeodynamicsGrid.EventTypeVolcanic, 1f, 0.2f, 0.2f);
+            host.Resources.GeodynamicsEvents.SetData(events);
+
+            var geoState = new Vector4[GeodynamicsGrid.StateBufferCount()];
+            host.Resources.GeodynamicsStateRead.GetData(geoState);
+            int res = GeodynamicsGrid.StateIndex(angular, radial, GeodynamicsGrid.SlotReservoir, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins);
+            int kin = GeodynamicsGrid.StateIndex(angular, radial, GeodynamicsGrid.SlotKinematics, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins);
+            Vector4 reservoir = geoState[res];
+            reservoir.y = 0.9f;
+            geoState[res] = reservoir;
+            Vector4 kinematics = geoState[kin];
+            kinematics.z = 0.8f;
+            geoState[kin] = kinematics;
+            host.Resources.GeodynamicsStateRead.SetData(geoState);
+            host.Resources.GeodynamicsStateWrite.SetData(geoState);
+
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    Paint(host, x + dx, y + dy, MaterialIds.Mantle);
+                    PaintHeat(host, x + dx, y + dy, 1200f);
+                }
+            }
+
+            var stats = new Vector4[GeodynamicsGrid.StatsBufferCount()];
+            stats[0] = new Vector4(0f, 0.2f, 0.2f, 1f);
+            stats[1] = new Vector4(0f, 0f, 0f, 0.05f);
+            for (int i = 0; i < 40; i++)
+            {
+                host.Resources.GeodynamicsEventCounter.SetData(stats);
+                yield return Step(host, 1);
+            }
+
+            int melted = 0;
+            yield return ReadMaterials(host, mats =>
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int xx = ((x + dx) % width + width) % width;
+                        if (mats[(y + dy) * width + xx] == MaterialIds.Magma)
+                            melted++;
+                    }
+                }
+            });
+            Assert.That(melted, Is.EqualTo(0), "Hard safety cap must block new mantle-to-magma conversion.");
+        }
+
+        [UnityTest]
+        public IEnumerator VolcanismPressureRelaxesTowardBoundedTarget()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            host.Clock.SetRunning(false);
+            host.Config.seed = 9204;
+            host.Config.geodynamicsLayerEnable = true;
+            host.Config.geodynamicsPeriodTicks = 10000;
+            host.Config.slowPassInterval = 1;
+            host.Config.volcanicMeltRate = 0f;
+            host.Config.extrusionRate = 4f;
+            host.Config.volcanicCoolingRate = 0f;
+            host.Config.thermalRate = 0f;
+            host.Config.coreHeatRate = 0f;
+            host.Config.eruptionDriveScale = 0f;
+            host.Config.pressureRate = 0f;
+            host.Config.pressureDiffusionRate = 0f;
+            host.Config.validationIntervalTicks = 100000;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.32f), 6, host.Grid.radialResolution - 8);
+            int angular = GeodynamicsGrid.AngularBinOf(width / 2, width, host.Config.geodynamicsAngularBins);
+            int radial = GeodynamicsGrid.RadialBinOf((float)y / Mathf.Max(1, host.Grid.radialResolution - 1),
+                host.Grid.atmosphereStartRadius, host.Config.geodynamicsRadialBins);
+            GeodynamicsGrid.ThetaRange(angular, width, host.Config.geodynamicsAngularBins, out int x0, out int x1);
+            int x = (x0 + x1 - 1) / 2;
+
+            var events = new Vector4[GeodynamicsGrid.EventBufferCount()];
+            events[GeodynamicsGrid.EventIndex(angular, radial, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins)] =
+                new Vector4(GeodynamicsGrid.EventTypeVolcanic, 1f, 0.2f, 0.2f);
+            host.Resources.GeodynamicsEvents.SetData(events);
+            var geoState = new Vector4[GeodynamicsGrid.StateBufferCount()];
+            host.Resources.GeodynamicsStateRead.GetData(geoState);
+            int res = GeodynamicsGrid.StateIndex(angular, radial, GeodynamicsGrid.SlotReservoir, host.Config.geodynamicsAngularBins, host.Config.geodynamicsRadialBins);
+            Vector4 reservoir = geoState[res];
+            reservoir.y = 1f;
+            geoState[res] = reservoir;
+            host.Resources.GeodynamicsStateRead.SetData(geoState);
+            host.Resources.GeodynamicsStateWrite.SetData(geoState);
+
+            Paint(host, x, y, MaterialIds.Magma);
+            PaintHeat(host, x, y, 1000f);
+            PaintPressure(host, x, y, -100f);
+            yield return Step(host, 1);
+            PaintPressure(host, x, y, 8f);
+            yield return Step(host, 12);
+
+            float pressure = -1f;
+            yield return ReadMaterialsAndState(host, (mats, states) =>
+            {
+                int i = y * width + x;
+                Assert.That(mats[i], Is.EqualTo(MaterialIds.Magma));
+                pressure = states[i].y;
+            });
+            Assert.That(pressure, Is.GreaterThan(0.05f));
+            Assert.That(pressure, Is.LessThanOrEqualTo(1.7f));
+        }
+
+        [UnityTest]
+        public IEnumerator HotMobileLavaSpreadsWiderThanViscousBlast()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHost();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            ConfigureEruptionDefaults(host);
+            host.Config.seed = 9203;
+            host.Config.gravityStrength = 1f;
+            host.Config.enableMaterialTransport = true;
+            host.Config.margolusFluidEnable = true;
+            host.Config.margolusMagmaLevelingBias = 2f;
+            host.Config.magmaViscosity = 0.05f;
+            host.Config.magmaEruption = 0f;
+            host.Config.volcanicCooling = 0.02f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            int width = host.Grid.angularResolution;
+            int x = width / 2;
+            int y = Mathf.Clamp(Mathf.RoundToInt(host.Grid.radialResolution * 0.62f), 10, host.Grid.radialResolution - 12);
+            for (int dx = -8; dx <= 8; dx++)
+            {
+                Paint(host, x + dx, y - 1, MaterialIds.Rock);
+                Paint(host, x + dx, y, MaterialIds.Air);
+                Paint(host, x + dx, y + 1, MaterialIds.Air);
+                Paint(host, x + dx, y + 2, MaterialIds.Air);
+            }
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                Paint(host, x + dx, y, MaterialIds.Magma);
+                PaintHeat(host, x + dx, y, 1100f);
+            }
+            yield return Step(host, 24);
+
+            int shieldWidth = 0;
+            int shieldHeight = 0;
+            int shieldAsh = 0;
+            yield return ReadMaterials(host, mats => MeasureEdifice(mats, width, x, y, out shieldWidth, out shieldHeight, out shieldAsh));
+
+            ConfigureEruptionDefaults(host);
+            host.Config.gravityStrength = 1f;
+            host.Config.enableMaterialTransport = true;
+            host.Config.margolusMagmaLevelingBias = 0.05f;
+            host.Config.magmaViscosity = 1.8f;
+            host.Config.magmaEruption = 1f;
+            host.Config.eruptionBlastThreshold = 0.35f;
+            host.Config.volcanicCooling = 0.35f;
+            host.Regenerate();
+            for (int i = 0; i < 5; i++) yield return null;
+
+            for (int dx = -8; dx <= 8; dx++)
+            {
+                Paint(host, x + dx, y - 1, MaterialIds.Rock);
+                Paint(host, x + dx, y, MaterialIds.Sediment);
+                Paint(host, x + dx, y + 1, MaterialIds.Sediment);
+                Paint(host, x + dx, y + 2, MaterialIds.Air);
+            }
+            Paint(host, x, y, MaterialIds.Magma);
+            PaintHeat(host, x, y, 760f);
+            PaintPressure(host, x, y, 14f);
+            PaintGroundwater(host, x, y + 1, 0.6f);
+            yield return Step(host, 24);
+
+            int coneWidth = 0;
+            int coneHeight = 0;
+            int coneAsh = 0;
+            yield return ReadMaterials(host, mats => MeasureEdifice(mats, width, x, y, out coneWidth, out coneHeight, out coneAsh));
+
+            float shieldAspect = shieldHeight / Mathf.Max(1f, shieldWidth);
+            float coneAspect = coneHeight / Mathf.Max(1f, coneWidth);
+            Assert.That(shieldWidth, Is.GreaterThanOrEqualTo(coneWidth),
+                $"Hot mobile lava should travel farther laterally. shield={shieldWidth}x{shieldHeight} cone={coneWidth}x{coneHeight}");
+            Assert.That(coneAspect, Is.GreaterThanOrEqualTo(shieldAspect - 0.05f));
+            Assert.That(coneAsh, Is.GreaterThanOrEqualTo(shieldAsh));
+        }
+
+        private static void MeasureEdifice(uint[] materials, int width, int centerX, int baseY, out int span, out int height, out int ash)
+        {
+            int minX = centerX;
+            int maxX = centerX;
+            int maxY = baseY;
+            ash = 0;
+            int heightLimit = materials.Length / Mathf.Max(1, width);
+            for (int y = Mathf.Max(0, baseY - 2); y < Mathf.Min(heightLimit, baseY + 8); y++)
+            {
+                for (int dx = -12; dx <= 12; dx++)
+                {
+                    int x = ((centerX + dx) % width + width) % width;
+                    uint m = materials[y * width + x];
+                    if (m == MaterialIds.Ash) ash++;
+                    if (m != MaterialIds.Magma && m != MaterialIds.Basalt && m != MaterialIds.Ash)
+                        continue;
+                    minX = Mathf.Min(minX, centerX + dx);
+                    maxX = Mathf.Max(maxX, centerX + dx);
+                    maxY = Mathf.Max(maxY, y);
+                }
+            }
+            span = Mathf.Max(1, maxX - minX + 1);
+            height = Mathf.Max(1, maxY - baseY + 1);
         }
 
         private static void PaintSupportedColumn(SimulationHost host, int x, int y, uint surfaceMaterial)
