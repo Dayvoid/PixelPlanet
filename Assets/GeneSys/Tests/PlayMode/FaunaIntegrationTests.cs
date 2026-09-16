@@ -71,6 +71,52 @@ namespace GeneSys.Tests
             yield return null;
         }
 
+        private static IEnumerator ReadFaunaKinematics(SimulationHost host,
+            Action<uint[], Vector4[], Vector4[], FaunaGenome.Packed[]> consume)
+        {
+            bool done = false;
+            bool failed = false;
+            Exception consumeError = null;
+            AsyncGPUReadback.Request(host.Resources.MaterialRead, 0, materialRequest =>
+            {
+                if (materialRequest.hasError) { failed = true; done = true; return; }
+                uint[] materials = materialRequest.GetData<uint>().ToArray();
+                AsyncGPUReadback.Request(host.Resources.FaunaRead, 0, 0, host.Resources.FaunaRead.width, 0, host.Resources.FaunaRead.height, 0, 1, vitalsRequest =>
+                {
+                    if (vitalsRequest.hasError) { failed = true; done = true; return; }
+                    Vector4[] vitals = vitalsRequest.GetData<Vector4>().ToArray();
+                    AsyncGPUReadback.Request(host.Resources.FaunaRead, 0, 0, host.Resources.FaunaRead.width, 0, host.Resources.FaunaRead.height, 1, 1, motionRequest =>
+                    {
+                        if (motionRequest.hasError) { failed = true; done = true; return; }
+                        Vector4[] motion = motionRequest.GetData<Vector4>().ToArray();
+                        AsyncGPUReadback.Request(host.Resources.FaunaRead, 0, 0, host.Resources.FaunaRead.width, 0, host.Resources.FaunaRead.height, 2, 1, genomeRequest =>
+                        {
+                            if (genomeRequest.hasError) { failed = true; done = true; return; }
+                            Vector4[] bits = genomeRequest.GetData<Vector4>().ToArray();
+                            var genomes = new FaunaGenome.Packed[bits.Length];
+                            for (int i = 0; i < bits.Length; i++)
+                                genomes[i] = FaunaGenome.FromFloatBits(bits[i]);
+                            try
+                            {
+                                consume(materials, vitals, motion, genomes);
+                            }
+                            catch (Exception exception)
+                            {
+                                consumeError = exception;
+                            }
+                            done = true;
+                        });
+                    });
+                });
+            });
+            for (int i = 0; i < 240 && !done; i++)
+                yield return null;
+            Assert.That(failed, Is.False);
+            Assert.That(done, Is.True);
+            if (consumeError != null)
+                throw consumeError;
+        }
+
         private static IEnumerator ReadWorldAndFauna(SimulationHost host,
             Action<uint[], Vector4[], Vector4[], FaunaGenome.Packed[], Vector2[]> consume)
         {
@@ -183,17 +229,87 @@ namespace GeneSys.Tests
             host.Config.faunaDecisionInterval = 1;
             host.Config.faunaMateCooldownTicks = 400;
             host.Config.faunaReproduceCooldownTicks = 800;
+            host.Config.faunaSurvivalTempMin = -80f;
+            host.Config.faunaSurvivalTempMax = 160f;
+            host.Config.precipitationRate = 0f;
         }
 
-        private static void StampSurface(SimulationHost host, int x, int y)
+        private static void StampSurface(SimulationHost host, int x, int y, int halfWidth = 12)
         {
-            for (int dx = -6; dx <= 6; dx++)
+            for (int dx = -halfWidth; dx <= halfWidth; dx++)
             {
-                Paint(host, x + dx, y - 1, MaterialIds.Rock);
-                Paint(host, x + dx, y, MaterialIds.Soil);
+                for (int dy = -4; dy <= 0; dy++)
+                {
+                    uint id = dy <= -2 ? MaterialIds.Core : MaterialIds.Rock;
+                    Paint(host, x + dx, y + dy, id);
+                }
                 Paint(host, x + dx, y + 1, MaterialIds.Air);
                 Paint(host, x + dx, y + 2, MaterialIds.Air);
             }
+        }
+
+        private static void StampAirColumn(SimulationHost host, int x, int y, int height, int halfWidth = 12)
+        {
+            StampSurface(host, x, y, halfWidth);
+            int top = host.Grid.radialResolution - 1;
+            int airTop = Mathf.Max(y + height, top);
+            int airHalf = Mathf.Min(4, halfWidth);
+            for (int dx = -airHalf; dx <= airHalf; dx++)
+            {
+                for (int yy = y + 1; yy <= airTop; yy++)
+                    Paint(host, x + dx, yy, MaterialIds.Air);
+            }
+        }
+
+        private static void EnableMaCAMovementIsolation(SimulationHost host)
+        {
+            host.Config.enableMaterialTransport = true;
+            host.Config.margolusSubsteps = 1;
+            host.Config.geodynamicsLayerEnable = false;
+            host.Config.enableRockChunks = false;
+            host.Config.faunaHopImpulse = 0f;
+            host.Config.faunaWanderRate = 0f;
+            host.Config.faunaDecisionInterval = 1;
+            host.Config.faunaMaintenanceRate = 0f;
+            host.Config.faunaHydrationDrain = 0f;
+            host.Config.faunaHatchTicksMin = 5000;
+            host.Config.faunaHatchTicksMax = 5000;
+            host.Config.gravityStrength = 1f;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.faunaSurvivalTempMin = -80f;
+            host.Config.faunaSurvivalTempMax = 160f;
+            host.Config.precipitationRate = 0f;
+        }
+
+        private static int AngularDelta(SimulationHost host, int a, int b)
+        {
+            int width = host.Grid.angularResolution;
+            int d = Mathf.Abs(a - b);
+            return Mathf.Min(d, width - d);
+        }
+
+        private static bool FindMaterialInBand(SimulationHost host, uint[] materials, uint id,
+            int centerX, int yMin, int yMax, int radius, out int foundX, out int foundY)
+        {
+            foundX = -1;
+            foundY = -1;
+            int height = host.Grid.radialResolution;
+            int lo = Mathf.Clamp(yMin, 0, height - 1);
+            int hi = Mathf.Clamp(yMax, 0, height - 1);
+            for (int y = hi; y >= lo; y--)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    int x = host.Grid.WrapTheta(centerX + dx);
+                    if (materials[Index(host, x, y)] == id)
+                    {
+                        foundX = x;
+                        foundY = y;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static int CountMaterial(uint[] materials, uint id)
@@ -302,48 +418,221 @@ namespace GeneSys.Tests
             int origin = 28;
 
             FreezeWorld(host);
+            host.Config.seed = 9001;
             yield return ResetWorld(host);
+            EnableMaCAMovementIsolation(host);
             host.Config.faunaHopImpulse = 5f;
             host.Config.faunaHopCost = 0f;
             host.Config.faunaWanderRate = 8f;
             host.Config.faunaDecisionInterval = 1;
             host.Config.faunaDryMass = 0.2f;
-            StampSurface(host, origin, y);
+            StampSurface(host, origin, y, 24);
             Paint(host, origin, y + 1, MaterialIds.Cricket);
-            yield return Step(host, 24);
+            yield return Step(host, 40);
             int strongX = origin;
-            yield return ReadWorldAndFauna(host, (materials, _, _, _, _) =>
+            int strongY = y + 1;
+            yield return ReadFaunaKinematics(host, (materials, _, _, _) =>
             {
-                int found = FindMaterialX(host, materials, MaterialIds.Cricket, y + 1);
-                if (found < 0) found = FindMaterialX(host, materials, MaterialIds.Cricket, y + 2);
-                strongX = found;
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.Cricket, origin, y, y + 6, 24, out strongX, out strongY), Is.True);
             });
 
+            host.Config.seed = 9001;
             host.Regenerate();
             for (int i = 0; i < 8; i++) yield return null;
             FreezeWorld(host);
+            EnableMaCAMovementIsolation(host);
             host.Config.faunaHopImpulse = 0.15f;
             host.Config.faunaHopCost = 0f;
             host.Config.faunaWanderRate = 8f;
             host.Config.faunaDecisionInterval = 1;
             host.Config.faunaDryMass = 0.2f;
-            StampSurface(host, origin, y);
+            StampSurface(host, origin, y, 24);
             Paint(host, origin, y + 1, MaterialIds.Cricket);
-            yield return Step(host, 24);
+            yield return Step(host, 40);
             int weakX = origin;
-            yield return ReadWorldAndFauna(host, (materials, _, _, _, _) =>
+            int weakY = y + 1;
+            yield return ReadFaunaKinematics(host, (materials, _, _, _) =>
             {
-                int found = FindMaterialX(host, materials, MaterialIds.Cricket, y + 1);
-                if (found < 0) found = FindMaterialX(host, materials, MaterialIds.Cricket, y + 2);
-                weakX = found;
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.Cricket, origin, y, y + 6, 24, out weakX, out weakY), Is.True);
             });
 
-            int width = host.Grid.angularResolution;
-            int strongDelta = Mathf.Min(Mathf.Abs(strongX - origin), width - Mathf.Abs(strongX - origin));
-            int weakDelta = Mathf.Min(Mathf.Abs(weakX - origin), width - Mathf.Abs(weakX - origin));
-            Assert.That(strongDelta, Is.GreaterThanOrEqualTo(weakDelta));
-            Assert.That(strongX, Is.GreaterThanOrEqualTo(0));
-            Assert.That(weakX, Is.GreaterThanOrEqualTo(0));
+            int strongDelta = AngularDelta(host, strongX, origin) + Mathf.Abs(strongY - (y + 1));
+            int weakDelta = AngularDelta(host, weakX, origin) + Mathf.Abs(weakY - (y + 1));
+            Assert.That(strongDelta, Is.GreaterThanOrEqualTo(1),
+                $"strong hop stayed put at ({strongX},{strongY}) origin=({origin},{y + 1})");
+            Assert.That(strongDelta, Is.GreaterThan(weakDelta),
+                $"strongDelta={strongDelta} weakDelta={weakDelta} strong=({strongX},{strongY}) weak=({weakX},{weakY})");
+        }
+
+        [UnityTest]
+        public IEnumerator UnsupportedAdultFallsOntoSupportWithMaCAEnabled()
+        {
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            FreezeWorld(host);
+            yield return ResetWorld(host);
+            EnableMaCAMovementIsolation(host);
+            int x = 40;
+            int y = SurfaceY(host);
+            int startY = y + 6;
+            StampAirColumn(host, x, y, 8);
+            yield return Step(host, 1);
+            Paint(host, x, startY, MaterialIds.Cricket);
+            yield return Step(host, 3);
+
+            uint airborne = 0;
+            float vy = 0f;
+            yield return ReadFaunaKinematics(host, (materials, _, motion, genomes) =>
+            {
+                Assert.That(materials[Index(host, x, startY)], Is.EqualTo(MaterialIds.Cricket));
+                airborne = FaunaGenome.Behavior(genomes[Index(host, x, startY)]);
+                vy = motion[Index(host, x, startY)].y;
+            });
+            Assert.That(airborne, Is.EqualTo(FaunaGenome.BehaviorAirborne));
+            Assert.That(vy, Is.LessThan(-0.01f));
+
+            yield return Step(host, 120);
+            int landedX = -1;
+            int landedY = -1;
+            uint landedBehavior = 0;
+            yield return ReadFaunaKinematics(host, (materials, _, motion, genomes) =>
+            {
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.Cricket, x, y, startY, 8, out landedX, out landedY), Is.True,
+                    "The falling cricket should still exist above the stamped surface.");
+                landedBehavior = FaunaGenome.Behavior(genomes[Index(host, landedX, landedY)]);
+                Assert.That(materials[Index(host, x, startY)], Is.Not.EqualTo(MaterialIds.Cricket),
+                    "An unsupported cricket must leave its original mid-air cell.");
+            });
+            Assert.That(landedY, Is.LessThan(startY - 2));
+            Assert.That(landedY, Is.EqualTo(y + 1));
+            Assert.That(landedBehavior, Is.EqualTo(FaunaGenome.BehaviorIdle));
+        }
+
+        [UnityTest]
+        public IEnumerator HighAltitudeEggFallsWithoutReseeding()
+        {
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            FreezeWorld(host);
+            yield return ResetWorld(host);
+            EnableMaCAMovementIsolation(host);
+            int x = 48;
+            int y = SurfaceY(host);
+            int startY = y + 6;
+            StampAirColumn(host, x, y, 8);
+            yield return Step(host, 1);
+            Paint(host, x, startY, MaterialIds.CricketEgg);
+            yield return Step(host, 3);
+
+            uint lineage = 0;
+            float hatchAt = 0f;
+            yield return ReadFaunaKinematics(host, (materials, vitals, _, genomes) =>
+            {
+                int i = Index(host, x, startY);
+                Assert.That(materials[i], Is.EqualTo(MaterialIds.CricketEgg));
+                Assert.That(FaunaGenome.Stage(genomes[i]), Is.EqualTo(FaunaGenome.StageEgg));
+                lineage = FaunaGenome.Lineage(genomes[i]);
+                hatchAt = vitals[i].w;
+            });
+
+            yield return Step(host, 120);
+            yield return ReadFaunaKinematics(host, (materials, vitals, _, genomes) =>
+            {
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.CricketEgg, x, y, startY, 8, out int eggX, out int eggY), Is.True);
+                int i = Index(host, eggX, eggY);
+                Assert.That(eggY, Is.LessThan(startY - 2));
+                Assert.That(materials[Index(host, x, startY)], Is.Not.EqualTo(MaterialIds.CricketEgg));
+                Assert.That(FaunaGenome.Stage(genomes[i]), Is.EqualTo(FaunaGenome.StageEgg));
+                Assert.That(FaunaGenome.Lineage(genomes[i]), Is.EqualTo(lineage));
+                Assert.That(vitals[i].w, Is.EqualTo(hatchAt).Within(0.01f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator HoppedCricketFollowsGravityArcAndLands()
+        {
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            FreezeWorld(host);
+            host.Config.seed = 4242;
+            yield return ResetWorld(host);
+            EnableMaCAMovementIsolation(host);
+            host.Config.faunaHopImpulse = 3f;
+            host.Config.faunaHopCost = 0f;
+            host.Config.faunaWanderRate = 8f;
+            host.Config.faunaDryMass = 0.2f;
+            int x = 56;
+            int y = SurfaceY(host);
+            StampAirColumn(host, x, y, 8, 40);
+            yield return Step(host, 1);
+            Paint(host, x, y + 1, MaterialIds.Cricket);
+            yield return Step(host, 16);
+
+            int midX = x;
+            int midY = y + 1;
+            uint midBehavior = 0;
+            yield return ReadFaunaKinematics(host, (materials, _, motion, genomes) =>
+            {
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.Cricket, x, y, y + 12, 40, out midX, out midY), Is.True,
+                    "A launched cricket should still exist near the hop origin.");
+                midBehavior = FaunaGenome.Behavior(genomes[Index(host, midX, midY)]);
+                Assert.That(midX != x || midY != y + 1, Is.True, "A launched cricket should leave its source cell.");
+            });
+            Assert.That(midBehavior, Is.EqualTo(FaunaGenome.BehaviorAirborne).Or.EqualTo(FaunaGenome.BehaviorIdle));
+
+            host.Config.faunaWanderRate = 0f;
+            host.Config.faunaHopImpulse = 0f;
+            yield return Step(host, 140);
+            yield return ReadFaunaKinematics(host, (materials, _, motion, genomes) =>
+            {
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.Cricket, x, y, y + 12, 48, out int endX, out int endY), Is.True);
+                Assert.That(endY, Is.EqualTo(y + 1),
+                    $"Ballistic hop should return to support at y={y + 1}, ended at ({endX},{endY}) mid=({midX},{midY}).");
+                Assert.That(FaunaGenome.Behavior(genomes[Index(host, endX, endY)]), Is.EqualTo(FaunaGenome.BehaviorIdle));
+                Assert.That(Mathf.Abs(motion[Index(host, endX, endY)].y), Is.LessThan(0.05f));
+            });
+        }
+
+        [UnityTest]
+        public IEnumerator HorizontalMotionDoesNotCancelRadialFall()
+        {
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            FreezeWorld(host);
+            host.Config.seed = 777;
+            yield return ResetWorld(host);
+            EnableMaCAMovementIsolation(host);
+            host.Config.faunaHopImpulse = 8f;
+            host.Config.faunaHopCost = 0f;
+            host.Config.faunaWanderRate = 0f;
+            host.Config.faunaHungerThreshold = 0.99f;
+            host.Config.faunaFullThreshold = 1f;
+            host.Config.faunaInitialCalories = 0.2f;
+            host.Config.faunaDryMass = 0.2f;
+            int x = 64;
+            int y = SurfaceY(host);
+            StampAirColumn(host, x, y, 8, 24);
+            Paint(host, x + 3, y + 1, MaterialIds.Algae);
+            yield return Step(host, 1);
+            Paint(host, x, y + 1, MaterialIds.Cricket);
+            yield return Step(host, 24);
+            int midX = x;
+            int midY = y + 1;
+            yield return ReadFaunaKinematics(host, (materials, _, _, genomes) =>
+            {
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.Cricket, x, y, y + 8, 16, out midX, out midY), Is.True);
+                Assert.That(FaunaGenome.Behavior(genomes[Index(host, midX, midY)]), Is.EqualTo(FaunaGenome.BehaviorAirborne));
+                Assert.That(AngularDelta(host, midX, x), Is.GreaterThanOrEqualTo(1),
+                    "Foraging should produce tangential travel so both axes accumulate.");
+            });
+
+            yield return Step(host, 80);
+            yield return ReadFaunaKinematics(host, (materials, _, _, _) =>
+            {
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.Cricket, x, y, y + 8, 24, out int endX, out int endY), Is.True);
+                Assert.That(endY, Is.EqualTo(y + 1),
+                    $"Tangential travel must not erase radial descent. mid=({midX},{midY}) end=({endX},{endY})");
+            });
         }
 
         [UnityTest]

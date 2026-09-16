@@ -128,11 +128,13 @@ The left/right hemisphere approach should be adopted when developing behavior tr
 - one surface-adjacent cell is one organism; fauna state is a 4-slice Tex2DArray swapped like Storm so `WriteCell` stays at the DX11 8-UAV cap
 - slice 0 = calories, hydration, age ticks, cooldown; slice 1 = velocity + sub-cell accumulators; slice 2 = 12 genes + `stage|behavior|generation|lineage`; slice 3 = retained partner genome (`w != 0` when valid)
 - stages: `EGG`, `JUVENILE`, `ADULT`, `DEAD`; behaviors: `Idle`, `Wander`, `Forage`, `MateSeek`, `Flee`, `Airborne`
-- hops integrate ballistically every tick; launch impulse is strength / effective mass (dry mass + calories + moisture) scaled by support rigidity and wetness, then steered by wind drag
+- hops integrate ballistically every tick; unsupported adults are forced airborne so gravity still applies; launch impulse is strength / effective mass (dry mass + calories + moisture) scaled by support rigidity and wetness, then steered by wind drag
+- airborne adults and falling eggs may transit open air cells; laying, hatching rest, and final landing still require support immediately below
 - feeding claims adjacent algae (`life.w` / biomass gradient); the winning cricket destroys the algae pixel and takes calories plus moisture
 - typed acoustic field (RG32F, not `state.y`): R = feeding calls, G = mating calls; full crickets ignore feeding, juveniles/cooldown adults ignore mating
 - adults reproduce after `faunaMaturityTicks` (default 2000); asexual clone if no partner, otherwise per-locus mix, then mutation; clutch 2–4 eggs hashed to a 1000–1500 tick hatch
-- eggs exchange moisture, desiccate, burn, and can be wind-displaced through the same claim system
+- eggs exchange moisture, desiccate, burn, fall under gravity when unsupported, and can be wind-displaced through the same claim system
+- Margolus pins cricket/egg pixels (shared fauna predicate) so CA settling cannot separate a material ID from fauna sidecar slices
 - Life brush paints cricket/egg when those materials are selected; worldgen fauna seeding is off by default
 - snapshots are Version9 with fauna slices + both acoustic temporal fields; older snapshots load with cleared fauna/acoustics
 

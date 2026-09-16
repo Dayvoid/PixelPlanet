@@ -21,12 +21,13 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 
 | Process | Owner | Does not do |
 | --- | --- | --- |
-| Gravity / repose settling of movable IDs | Margolus CA | Horizontal Water leveling |
+| Gravity / repose settling of movable IDs | Margolus CA | Horizontal Water leveling; cricket/egg occupancy |
+| Cricket / egg ballistic hops, unsupported falls, and landing | `Fauna.compute` | Generic material settling |
 | Identity change (stress / karst / collapse → Sediment) | `ErosionAndCollapse` | Relocate cells |
 | Buoyant ash lift | `AshTransport` | Downward ash settle |
 | Pressure-driven magma eruption | `EruptionMotion` | Magma fall / lateral spread |
 | Horizontal free-surface water leveling | Hydrostatic column solver | Vertical Water fall; Ice rewrite; hydrometeors |
-| Crustal lid kinematics | `TectonicDisplacement` / `TectonicVertical` | Magma, trees, wasps; seismic `aux.w` |
+| Crustal lid kinematics | `TectonicDisplacement` / `TectonicVertical` | Magma, trees, wasps, crickets; seismic `aux.w` |
 | Magma / Water / Ice pixel phase flips | `PhaseChange` | Spatial transport |
 | Groundwater boil (`aux.y` → `aux.x`) | `HydrothermalRelease` | Pixel Water→Air boil (`PhaseChange`) |
 
@@ -35,13 +36,13 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 | System | Status | Evidence | Notes |
 | --- | --- | --- | --- |
 | Core GPU simulation pipeline and pass scheduler | **Mature** | `SimulationHost.cs`, `GpuPassScheduler.cs`, `SimulationResources.cs` | End-to-end tick loop with explicit pass sequencing, sub-stepping, and dedicated resources for all major domains. |
-| Material transport (MaCA Margolus CA) | **Mature** | `MargolusTransport.compute`, `MargolusCommon.hlsl`, `MargolusContractTests.cs`, `Margolus*.cs` (PlayMode) | Discrete $2 \times 2$ block CA. Exact pixel conservation ($N(t) \equiv N(0)$), polar metric $\gamma(y)$, toroidal seam wrap. Gated by `enableMaterialTransport`. MaCE / `_MaceMobileDisplay` / `useLegacyTransport` are gone. |
+| Material transport (MaCA Margolus CA) | **Mature** | `MargolusTransport.compute`, `MargolusCommon.hlsl`, `MargolusContractTests.cs`, `Margolus*.cs` (PlayMode) | Discrete $2 \times 2$ block CA. Exact pixel conservation ($N(t) \equiv N(0)$), polar metric $\gamma(y)$, toroidal seam wrap. Gated by `enableMaterialTransport`. Organism IDs (`IsAnyFaunaMaterial`, trees) are pinned so sidecar state is not orphaned. MaCE / `_MaceMobileDisplay` / `useLegacyTransport` are gone. |
 | Polar-grid world generation and material seeding | **Mature** | `WorldGeneration.compute`, `GpuPassScheduler.GenerateWorld`, `WorldGenIntegrationTests.cs`, `MargolusWorldGenStabilityTests.cs` | V2 worldgen with pre-relaxed talus aprons, exposed granite cliff faces, continental shelf marine sedimentation. |
 | Hydrology + water mass contract | **Mature** | `Assets/Concept/WaterPlan.MD`, `HydrologyIntegrationTests.cs`, `WeatherIntegrationTests.cs` | Conservation posture around evaporation/condensation/precipitation/infiltration/hydrostatic. Groundwater boil lives in `HydrothermalRelease`. |
 | Atmospheric/weather dynamics | **Mature** | `Weather.compute`, `WeatherIntegrationTests.cs` | Buoyancy, lapse, advection, pressure diffusion, precipitation, seam wrapping, conservation checks. |
 | Geology & Geodynamics | **Mature** | `Geology.compute`, `Geodynamics.compute`, `GeodynamicsContractTests.cs`, `GeodynamicsIntegrationTests.cs`, snapshot v16 | Angular/radial lattice plus lid kinematics (v5): relative buoyancy, isostatic restoring, directional block shear, water-riding columns. Magma freeze is owned by `PhaseChange`. GPU move-counting is omitted (D3D11 8-UAV cap on Geology kernels). |
 | Combustion and storm/lightning | **In progress** | `Combustion.compute`, `Storm.compute`, integration tests | Dedicated fields and pass chain exist; balancing continues. |
-| Biology (mycology, flora, fauna, grass, trees, wasps) | **In progress** | Dedicated compute + PlayMode coverage | Multiple trophic layers; speciation goals remain open. Grass slots ride Margolus soil swaps. |
+| Biology (mycology, flora, fauna, grass, trees, wasps) | **In progress** | Dedicated compute + PlayMode coverage | Multiple trophic layers; speciation goals remain open. Grass slots ride Margolus soil swaps. Crickets and eggs stay Margolus-pinned; `Fauna.compute` owns hops, unsupported falls, and landing. |
 | Climate coarse layer | **Mature (C0–C3)** | `Climate.compute`, `DispatchClimate`, `ClimateIntegrationTests.cs` | Coarse T/albedo/moisture/wind injectors are live (`ClimateWindBias`, `ClimateSurfaceAbsorb`, `ClimateBucketScale`, `ClimateInsolationScale`). Fine layer remains the only water-mass ledger. |
 | Snapshot persistence/migration | **Mature** | `WorldSnapshotService.cs` | Current write version 16. V14/V15 mobile-mass slices are skipped on load. |
 | AI crew / LLM-driven tooling | **In progress** | `Assets/GeneSys/Runtime/AI/*`, `AiCrewTests.cs` | Settings, tool registry, prompt queue, and client for in-editor inspection. |

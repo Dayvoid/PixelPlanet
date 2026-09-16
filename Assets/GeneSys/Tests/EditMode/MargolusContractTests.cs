@@ -104,6 +104,19 @@ namespace GeneSys.Tests
         }
 
         [Test]
+        public void MargolusPinsFaunaOrganismsSeparatelyFromAlgae()
+        {
+            string common = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");
+            Assert.That(common, Does.Contain("IsAnyFaunaMaterial(c.material)"));
+            Assert.That(common, Does.Contain("FLORA_ALGAE_ID) return false"));
+
+            string shader = File.ReadAllText("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
+            Assert.That(shader, Does.Contain("IsAnyFaunaMaterial(c.material)"));
+            Assert.That(shader, Does.Not.Contain("_FaunaRead"));
+            Assert.That(shader, Does.Not.Contain("_FaunaWrite"));
+        }
+
+        [Test]
         public void MargolusUnpinsAlgaeAndCopiesUnifiedFloraSlices()
         {
             string common = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");

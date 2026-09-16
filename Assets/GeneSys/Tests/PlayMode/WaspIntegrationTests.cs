@@ -245,14 +245,14 @@ namespace GeneSys.Tests
             Vector4 motion = Vector4.zero;
             var genome = default(FaunaGenome.Packed);
             var cargo = new FaunaGenome.Packed[WaspGenome.CargoSlots];
-            yield return ReadSlice(host.Resources.WaspRead, WaspGenome.VitalsSlice, data => vitals = data[idx]);
-            yield return ReadSlice(host.Resources.WaspRead, WaspGenome.MotionSlice, data => motion = data[idx]);
-            yield return ReadSlice(host.Resources.WaspRead, WaspGenome.GenomeSlice,
+            yield return ReadSlice(host.Resources.WaspRead, FaunaGenome.WaspVitalsSlice, data => vitals = data[idx]);
+            yield return ReadSlice(host.Resources.WaspRead, FaunaGenome.WaspMotionSlice, data => motion = data[idx]);
+            yield return ReadSlice(host.Resources.WaspRead, FaunaGenome.WaspGenomeSlice,
                 data => genome = WaspGenome.Sanitize(WaspGenome.FromFloatBits(data[idx])));
             for (int slot = 0; slot < WaspGenome.CargoSlots; slot++)
             {
                 int capture = slot;
-                yield return ReadSlice(host.Resources.WaspRead, WaspGenome.CargoSlice + capture,
+                yield return ReadSlice(host.Resources.WaspRead, FaunaGenome.WaspCargoSlice + capture,
                     data => cargo[capture] = WaspGenome.FromFloatBits(data[idx]));
             }
             consume(vitals, motion, genome, cargo);

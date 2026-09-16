@@ -161,7 +161,7 @@ bool IsCellPinned(int2 cell, MargolusCell c, MaterialGpuData def)
         if (!stacked)
             return true;
     }
-    if (IsTreeMaterial(c.material) || IsWaspMaterial(c.material)) return true;
+    if (IsTreeMaterial(c.material) || IsAnyFaunaMaterial(c.material)) return true;
     if (c.material == 2u || c.material == 3u) return true;
     if (c.material == FLORA_ALGAE_ID) return false;
 

@@ -26,6 +26,13 @@ Suggested entry template:
 
 ---
 
+## 2026-09-15 — Restore cricket ballistic gravity after MaCA
+
+- **Systems:** Fauna (crickets/eggs), Margolus pinning, fauna PlayMode coverage
+- **What changed:** Explicitly pin cricket/egg (and other fauna) IDs in Margolus so CA swaps cannot orphan sidecar state. `Fauna.compute` now lets airborne adults and unsupported eggs transit open air, forces idle organisms into airborne physics when support disappears, and consumes only the cell-step axis that actually moved.
+- **Why/impact:** After the MaCE→MaCA transition, occupancy still required support on every destination, so crickets could not fall through air and gravity never ran unless a hop had already started. Probe-seeded eggs and unsupported adults can fall and land again while MaCA continues to own terrain.
+- **Evidence:** `Fauna.compute`, `MargolusCommon.hlsl`, `MargolusTransport.compute`, `FaunaIntegrationTests.cs`, `MargolusContractTests.cs`.
+
 ## 2026-09-14 — Precipitation cloud-base threshold is relative to retain mass
 
 - **Systems:** Weather / precipitation, water-phase tests, settings tooltips.
