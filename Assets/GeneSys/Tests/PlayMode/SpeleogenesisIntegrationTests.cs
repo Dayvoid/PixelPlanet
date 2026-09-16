@@ -523,7 +523,7 @@ namespace GeneSys.Tests
             }
 
             yield return Step(host, 1);
-            yield return Step(host, 30);
+            yield return Step(host, 100);
 
             yield return ReadMaterialsAndAux(host, (mats, aux) =>
             {

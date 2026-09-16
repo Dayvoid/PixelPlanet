@@ -182,6 +182,13 @@ float WorldgenCoreTemperature()
     return _ThermalA.z > 0.0 ? _ThermalA.z : 1500.0;
 }
 
+float WorldgenGeothermalTemperature(float radius, float terrainSurface)
+{
+    float depthFrac = saturate(radius / max(0.001, terrainSurface));
+    float surfaceAir = _WeatherG.x > 0.0 ? _WeatherG.x : 15.0;
+    return lerp(WorldgenCoreTemperature(), surfaceAir, depthFrac);
+}
+
 float IceCapHumpStrength(uint theta, float radius, float terrainSurface, float poleAngle)
 {
     float capRadius = max(0.01, _WorldGenV2B.y);
@@ -275,7 +282,7 @@ void GenerateWorld(uint3 id : SV_DispatchThreadID)
     float fault = GeodynamicsFaultWeakness((int)id.x, radius);
     if (fault <= 1e-4)
         fault = GeodynamicsSeedFault((int)id.x, radius, _WorldGenParams.w);
-    float temperature = lerp(WorldgenCoreTemperature(), 15.0, saturate(radius));
+    float temperature = WorldgenGeothermalTemperature(radius, terrainSurface);
     if (material == 9u) temperature = lerp(4.0, 18.0, saturate((seaLevel - radius) / max(0.01, seaLevel - terrainSurface)));
     else if (IsOceanFillIce(material, ocean, radius, seaLevel)) temperature = OceanIceTemperature(radius, seaLevel, terrainSurface);
     else if (material == 1u)
@@ -440,7 +447,7 @@ void GenerateWorldV2(uint3 id : SV_DispatchThreadID)
         // Keep thin ocean-floor soil/sediment from stage 1.
     }
 
-    float temperature = lerp(WorldgenCoreTemperature(), 15.0, saturate(radius));
+    float temperature = WorldgenGeothermalTemperature(radius, terrainSurface);
     if (material == 9u) temperature = lerp(4.0, 18.0, saturate((seaLevel - radius) / max(0.01, seaLevel - terrainSurface)));
     else if (IsOceanFillIce(material, ocean, radius, seaLevel)) temperature = OceanIceTemperature(radius, seaLevel, terrainSurface);
     else if (material == ICE_ID) temperature = lerp(-18.0, -2.0, saturate((radius - terrainSurface) / max(0.001, _WorldGenV2B.z)));

@@ -41,6 +41,9 @@ namespace GeneSys.Tests
             Assert.That(worldgen, Does.Contain("LIMESTONE_ID"));
             Assert.That(worldgen, Does.Contain("CLAY_ID"));
             Assert.That(worldgen, Does.Contain("WorldgenCoreTemperature"));
+            Assert.That(worldgen, Does.Contain("WorldgenGeothermalTemperature"));
+            Assert.That(worldgen, Does.Contain("depthFrac"));
+            Assert.That(worldgen, Does.Not.Contain("lerp(WorldgenCoreTemperature(), 15.0, saturate(radius))"));
         }
 
         [Test]

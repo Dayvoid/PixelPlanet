@@ -103,6 +103,16 @@ void Write(int2 cell, uint material, float4 state, float2 flow, float4 aux, floa
     WriteLifeGenome(_LifeGenomeWrite, cell, SampleLife(_LifeGenomeRead, cell), SampleGenome(_LifeGenomeRead, cell));
 }
 
+bool NeighborOpensVadose(int2 n)
+{
+    if (n.y < 0 || n.y >= _GridSize.y) return false;
+    uint nm = M(n);
+    if (nm == 1u || nm == 7u) return true;
+    if (nm == 4u || nm == 5u)
+        return A(n).y < GroundwaterCapacity(D(nm));
+    return false;
+}
+
 [numthreads(8, 8, 1)]
 void Groundwater(uint3 id : SV_DispatchThreadID)
 {
@@ -340,7 +350,7 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
 
         float karstRate = max(0.001, _Hydrology.z); // config.dissolutionRate
         float flowBoost = 1.0 + 1.5 * flowEnergy;
-        float carve = karstRate * 8.0 * aux.y * organicAcidity * flowBoost * (1.0 - cohesion * 0.5) * _DeltaTime;
+        float carve = karstRate * 7.5 * (aux.y + 0.02) * organicAcidity * flowBoost * (1.0 - cohesion * 0.5) * _DeltaTime;
         aux.w += carve;
 
         // Cumulative dissolution carves an underground cave cavity!
@@ -352,11 +362,11 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             int rightX = (cell.x + 1) % _GridSize.x;
 
             // Vadose (unsaturated cave air) vs Phreatic (flooded conduit)
-            bool vadose = (above.y < _GridSize.y && M(above) == 1u)
-                       || (belowC.y >= 0 && M(belowC) == 1u)
-                       || M(int2(leftX, cell.y)) == 1u
-                       || M(int2(rightX, cell.y)) == 1u
-                       || aux.y < definition.biology.z * 0.6;
+            bool vadose = NeighborOpensVadose(above)
+                       || NeighborOpensVadose(belowC)
+                       || NeighborOpensVadose(int2(leftX, cell.y))
+                       || NeighborOpensVadose(int2(rightX, cell.y))
+                       || aux.y < definition.biology.z * 0.85;
 
             if (vadose)
             {
@@ -374,6 +384,8 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
             }
             aux.w = 0.0;
             aux.z = saturate(aux.z + 0.08); // Residual mineral fertility
+            Write(cell, material, state, flow, aux, ecology, combustion);
+            return;
         }
     }
 
@@ -389,9 +401,9 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
         // Requires solid overburden above the ceiling (not open sky) to ensure it is inside an underground cave.
         uint aboveOverburden = M(above + int2(0, 1));
         bool isEnclosedCeiling = aboveOverburden >= 2u && aboveOverburden != 9u && aboveOverburden != 10u;
-        if (aboveMat == 14u && isEnclosedCeiling && (aboveAux.y > 0.04 || aboveState.z > 0.02))
+        if (aboveMat == 14u && isEnclosedCeiling && (aboveAux.y > 0.08 || aboveState.z > 0.04))
         {
-            aux.w += max(0.001, _Hydrology.z) * 0.25 * _DeltaTime;
+            aux.w += max(0.001, _Hydrology.z) * 0.015 * _DeltaTime;
             if (aux.w > 1.2)
             {
                 material = 14u; // Stalactite grows downward
@@ -431,9 +443,9 @@ void ErosionAndCollapse(uint3 id : SV_DispatchThreadID)
                 }
             }
 
-            if (hasOverheadLimestoneDrip && (state.z > 0.005 || aboveState.z > 0.005 || aboveAux.y > 0.02))
+            if (hasOverheadLimestoneDrip && (state.z > 0.01 || aboveState.z > 0.02 || aboveAux.y > 0.04))
             {
-                aux.w += max(0.001, _Hydrology.z) * 0.20 * _DeltaTime;
+                aux.w += max(0.001, _Hydrology.z) * 0.010 * _DeltaTime;
                 if (aux.w > 1.4)
                 {
                     material = 14u; // Stalagmite grows upward
