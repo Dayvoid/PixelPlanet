@@ -328,6 +328,17 @@ namespace GeneSys.Simulation
             });
         }
 
+        public void QueueRandomMycoSpores(Vector2Int cell, int radius, float sporeLoad)
+        {
+            QueueBrush(new GpuPassScheduler.BrushCommand
+            {
+                center = cell,
+                radius = Mathf.Max(0, radius),
+                materialId = MaterialIds.Void,
+                values = new Vector4(7f, sporeLoad, 0f, BrushSelectionIds.MycoRandomTraitSentinel)
+            });
+        }
+
         public void QueueFloraSeed(Vector2Int cell, int radius, float sporeLoad)
         {
             QueueBrush(new GpuPassScheduler.BrushCommand

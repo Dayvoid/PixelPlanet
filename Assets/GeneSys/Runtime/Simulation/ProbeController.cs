@@ -24,6 +24,16 @@ namespace GeneSys.Simulation
         Stopped
     }
 
+    public enum LifeSeedDrop
+    {
+        AlgaeSpores,
+        CricketEgg,
+        WaspEgg,
+        MycoSpores,
+        GrassSeed,
+        TreeSprout
+    }
+
     /// <summary>
     /// Clockwise orbiter opposite the sun. HUD hold actions deposit at the outer sim ring ahead of its path.
     /// </summary>
@@ -35,10 +45,24 @@ namespace GeneSys.Simulation
         public const float FollowLockBearingDegrees = 90f;
         public const float DefaultEnergyMax = 100f;
         public static readonly Vector3 ThrusterLocalOffset = new(-0.12f, 0f, 0.01f);
+        public static readonly LifeSeedDrop[] LifeSeedRotation =
+        {
+            LifeSeedDrop.AlgaeSpores,
+            LifeSeedDrop.CricketEgg,
+            LifeSeedDrop.WaspEgg,
+            LifeSeedDrop.MycoSpores,
+            LifeSeedDrop.GrassSeed,
+            LifeSeedDrop.TreeSprout
+        };
 
         private const int ThrusterSortingOrder = 59;
+        private const int LifeSeedSortingOrder = 58;
         private const float ThrusterFlightRate = 56f;
         private const float ThrusterIdleRate = 8f;
+        private const float LifeSeedBellyFactor = 0.12f;
+        private const float LifeSeedPulseSeconds = 0.35f;
+        private const float LifeSeedIdleRate = 14f;
+        private const float LifeSeedPulseRate = 80f;
 
         [SerializeField] private SimulationHost host;
         [SerializeField] private PlanetoidDisplayRenderer display;
@@ -49,6 +73,8 @@ namespace GeneSys.Simulation
         private ParticleSystem thrusterSystem;
         private Material thrusterMaterial;
         private Texture2D thrusterTexture;
+        private ParticleSystem lifeSeedSystem;
+        private Material lifeSeedMaterial;
         private ProbeAction action;
         private ProbeFlightMode flightMode = ProbeFlightMode.Clockwise;
         private ProbeFlightMode lastTravelMode = ProbeFlightMode.Clockwise;
@@ -58,6 +84,8 @@ namespace GeneSys.Simulation
         private long lastProcessedTick;
         private int pendingLifeSeeds;
         private int ticksUntilLifeBurst;
+        private int lifeSeedCursor;
+        private float lifeSeedPulseEnd;
         private bool warnedMissingSprite;
         private bool thrusterUnavailable;
         private bool cinematicOverride;
@@ -212,10 +240,38 @@ namespace GeneSys.Simulation
             return min + (int)(x % (uint)(max - min + 1));
         }
 
-        public static bool LifeSeedSpawnsFlora(long tick, int spawnIndex)
+        public static LifeSeedDrop LifeSeedAt(int index)
         {
-            uint x = HashTick(tick, (uint)spawnIndex * 0x85EBCA6Bu + 1u);
-            return (x & 1u) == 0u;
+            int count = LifeSeedRotation.Length;
+            int wrapped = index % count;
+            if (wrapped < 0) wrapped += count;
+            return LifeSeedRotation[wrapped];
+        }
+
+        public static void QueueLifeSeedDrop(SimulationHost host, Vector2Int cell, LifeSeedDrop drop, float sporeLoad)
+        {
+            if (host == null) return;
+            switch (drop)
+            {
+                case LifeSeedDrop.AlgaeSpores:
+                    host.QueueFloraSeed(cell, 0, sporeLoad);
+                    break;
+                case LifeSeedDrop.CricketEgg:
+                    host.QueueFaunaSeed(cell, 0, MaterialIds.CricketEgg);
+                    break;
+                case LifeSeedDrop.WaspEgg:
+                    host.QueueWaspSeed(cell, 0, MaterialIds.WaspEgg);
+                    break;
+                case LifeSeedDrop.MycoSpores:
+                    host.QueueRandomMycoSpores(cell, 0, sporeLoad);
+                    break;
+                case LifeSeedDrop.GrassSeed:
+                    host.QueueGrassSeed(cell, 0);
+                    break;
+                case LifeSeedDrop.TreeSprout:
+                    host.QueueTreeSprout(cell, 0);
+                    break;
+            }
         }
 
         public Vector3 LocalOrbitPosition
@@ -290,6 +346,8 @@ namespace GeneSys.Simulation
             lifeSeedActive = false;
             pendingLifeSeeds = 0;
             ticksUntilLifeBurst = 0;
+            lifeSeedCursor = 0;
+            lifeSeedPulseEnd = 0f;
             action = ProbeAction.None;
             if (host != null && host.Config != null)
             {
@@ -363,11 +421,10 @@ namespace GeneSys.Simulation
             if (pendingLifeSeeds > 0)
             {
                 Vector2Int cell = AimCell(host.Grid);
-                if (LifeSeedSpawnsFlora(lastProcessedTick, pendingLifeSeeds))
-                    host.QueueFloraSeed(cell, 0, config.probeLifeSeedSporeLoad);
-                else
-                    host.QueueFaunaSeed(cell, 0, MaterialIds.CricketEgg);
+                QueueLifeSeedDrop(host, cell, LifeSeedAt(lifeSeedCursor), config.probeLifeSeedSporeLoad);
+                lifeSeedCursor++;
                 pendingLifeSeeds--;
+                lifeSeedPulseEnd = Time.unscaledTime + LifeSeedPulseSeconds;
             }
 
             if (ticksUntilLifeBurst > 0)
@@ -379,6 +436,7 @@ namespace GeneSys.Simulation
             if (probeRenderer != null && probeRoot != null)
             {
                 EnsureThrusterBuilt();
+                EnsureLifeSeedBuilt();
                 return;
             }
             if (display == null) display = FindFirstObjectByType<PlanetoidDisplayRenderer>();
@@ -404,6 +462,7 @@ namespace GeneSys.Simulation
             }
 
             EnsureThrusterBuilt();
+            EnsureLifeSeedBuilt();
         }
 
         private void EnsureThrusterBuilt()
@@ -511,6 +570,100 @@ namespace GeneSys.Simulation
             thrusterSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         }
 
+        private void EnsureLifeSeedBuilt()
+        {
+            if (lifeSeedSystem != null) return;
+            if (probeRoot == null || thrusterUnavailable || thrusterTexture == null) return;
+
+            Shader shader = thrusterMaterial != null ? thrusterMaterial.shader : Shader.Find("GeneSys/Space Particle");
+            if (shader == null) return;
+
+            lifeSeedMaterial = new Material(shader)
+            {
+                name = "GeneSys Probe Life Seed",
+                mainTexture = thrusterTexture,
+                enableInstancing = true,
+                hideFlags = HideFlags.DontSave
+            };
+            lifeSeedMaterial.SetFloat("_Mode", 0f);
+            lifeSeedMaterial.SetFloat("_Softness", 2.2f);
+            lifeSeedMaterial.SetFloat("_TwinkleStrength", 0.15f);
+            lifeSeedMaterial.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.45f));
+
+            var go = new GameObject("Probe Life Seed") { hideFlags = HideFlags.DontSave };
+            go.transform.SetParent(probeRoot, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+
+            lifeSeedSystem = go.AddComponent<ParticleSystem>();
+            var renderer = go.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = lifeSeedMaterial;
+            renderer.renderMode = ParticleSystemRenderMode.Billboard;
+            renderer.alignment = ParticleSystemRenderSpace.View;
+            renderer.allowRoll = true;
+            renderer.enableGPUInstancing = true;
+            renderer.sortingOrder = LifeSeedSortingOrder;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.lightProbeUsage = LightProbeUsage.Off;
+            renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+
+            var main = lifeSeedSystem.main;
+            main.loop = true;
+            main.playOnAwake = false;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+            main.maxParticles = 128;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.14f, 0.26f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.018f, 0.04f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.0012f, 0.0024f);
+            main.startColor = new ParticleSystem.MinMaxGradient(Color.white);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            main.gravityModifier = 0f;
+            main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+            main.useUnscaledTime = true;
+
+            var emission = lifeSeedSystem.emission;
+            emission.enabled = true;
+            emission.rateOverTime = LifeSeedIdleRate;
+
+            var shape = lifeSeedSystem.shape;
+            shape.enabled = true;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 16f;
+            shape.radius = 0.001f;
+            shape.radiusThickness = 1f;
+            shape.length = 0.002f;
+            shape.rotation = Vector3.zero;
+
+            var colorOverLifetime = lifeSeedSystem.colorOverLifetime;
+            colorOverLifetime.enabled = true;
+            var gradient = new Gradient();
+            gradient.SetKeys(
+                new[]
+                {
+                    new GradientColorKey(new Color(0.85f, 1f, 0.7f), 0f),
+                    new GradientColorKey(new Color(0.35f, 0.95f, 0.4f), 0.4f),
+                    new GradientColorKey(new Color(0.1f, 0.55f, 0.2f), 1f)
+                },
+                new[]
+                {
+                    new GradientAlphaKey(0.9f, 0f),
+                    new GradientAlphaKey(0.65f, 0.45f),
+                    new GradientAlphaKey(0f, 1f)
+                });
+            colorOverLifetime.color = new ParticleSystem.MinMaxGradient(gradient);
+
+            var sizeOverLifetime = lifeSeedSystem.sizeOverLifetime;
+            sizeOverLifetime.enabled = true;
+            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+                new Keyframe(0f, 1f),
+                new Keyframe(1f, 0.2f)));
+
+            lifeSeedSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+
         private void UpdateProbePose()
         {
             if (probeRoot == null || probeRenderer == null || display == null) return;
@@ -538,6 +691,7 @@ namespace GeneSys.Simulation
                     SpriteRotationZ(ProbeAngle01, config.probeSpriteRotationOffset, reverseTravel));
             }
             UpdateThruster(config);
+            UpdateLifeSeed(config);
         }
 
         private void UpdateThruster(SimulationConfig config)
@@ -565,6 +719,53 @@ namespace GeneSys.Simulation
 
             if (!thrusterSystem.isPlaying)
                 thrusterSystem.Play(true);
+        }
+
+        private void UpdateLifeSeed(SimulationConfig config)
+        {
+            if (lifeSeedSystem == null || probeRenderer == null) return;
+
+            bool enabled = lifeSeedActive && probeSprite != null;
+            if (!enabled)
+            {
+                if (lifeSeedSystem.isPlaying)
+                    lifeSeedSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                return;
+            }
+
+            Vector3 probeLocal = probeRenderer.transform.localPosition;
+            Vector2 radial = new Vector2(probeLocal.x, probeLocal.y);
+            if (radial.sqrMagnitude < 1e-8f) radial = Vector2.right;
+            radial.Normalize();
+            var inward = new Vector3(-radial.x, -radial.y, 0f);
+            float belly = LifeSeedBellyFactor * Mathf.Clamp(config.probeSpriteScale, 0.01f, 1f);
+            lifeSeedSystem.transform.localPosition = new Vector3(
+                probeLocal.x + inward.x * belly,
+                probeLocal.y + inward.y * belly,
+                probeLocal.z);
+            lifeSeedSystem.transform.localRotation = Quaternion.LookRotation(inward, Vector3.forward);
+
+            float pulse = 0f;
+            float now = Time.unscaledTime;
+            if (lifeSeedPulseEnd > now)
+                pulse = Mathf.Clamp01((lifeSeedPulseEnd - now) / LifeSeedPulseSeconds);
+            pulse = pulse * pulse * (3f - 2f * pulse);
+
+            var emission = lifeSeedSystem.emission;
+            emission.rateOverTime = Mathf.Lerp(LifeSeedIdleRate, LifeSeedPulseRate, pulse);
+
+            float sizeScale = Mathf.Lerp(1f, 1.85f, pulse);
+            var main = lifeSeedSystem.main;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.0012f * sizeScale, 0.0024f * sizeScale);
+
+            if (lifeSeedMaterial != null)
+            {
+                float alpha = Mathf.Lerp(0.45f, 1f, pulse);
+                lifeSeedMaterial.SetColor("_BaseColor", new Color(1f, 1f, 1f, alpha));
+            }
+
+            if (!lifeSeedSystem.isPlaying)
+                lifeSeedSystem.Play(true);
         }
 
         private static Texture2D CreateSoftDiscTexture(int size)
@@ -605,6 +806,10 @@ namespace GeneSys.Simulation
 
         public void Teardown()
         {
+            SafeDestroy(lifeSeedMaterial);
+            lifeSeedMaterial = null;
+            lifeSeedSystem = null;
+
             SafeDestroy(thrusterMaterial);
             SafeDestroy(thrusterTexture);
             thrusterMaterial = null;

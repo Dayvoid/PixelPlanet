@@ -1290,7 +1290,7 @@ namespace GeneSys.UI
                 "Hold to raise temperatures at the outer ring ahead of the probe. Heating the column warms atmosphere and surface along the heading.");
             AttachNamedSettingTooltip(root, "probe-action-life",
                 "Life Seed",
-                "Toggle to drop mixed dormant organisms from the probe aim cell: algae spores and cricket eggs, one per tick in small bursts about every three seconds.");
+                "Toggle to drop dormant seeds and spores from the probe aim cell. Each drop advances through algae spores, cricket eggs, wasp eggs, myco spores, grass seeds, and tree sprouts, one per tick in small bursts about every three seconds.");
             AttachNamedSettingTooltip(root, "probe-steer-left",
                 "Reverse Probe",
                 "Flies the probe counterclockwise. Deposits stay ahead of the new heading, and the sprite faces along reverse travel.");

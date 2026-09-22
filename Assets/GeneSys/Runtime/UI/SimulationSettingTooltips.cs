@@ -1038,13 +1038,13 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.probeEnergyRegenPerSecond)] =
                 "Energy restored per simulation second while no tool is active and the probe is not stopped. Scales with tick rate and sim speed; pause and hold-station both freeze regen.",
             [nameof(SimulationConfig.probeLifeSeedIntervalSeconds)] =
-                "Simulation seconds between life-seed bursts while the plants toggle is on. Each burst drops 1-5 mixed dormant organisms one tick apart from the probe aim cell.",
+                "Simulation seconds between life-seed bursts while the plants toggle is on. Each burst drops 1-5 dormant seeds one tick apart from the probe aim cell, continuing the organism rotation.",
             [nameof(SimulationConfig.probeLifeSeedMinCount)] =
-                "Minimum organisms in a life-seed burst. Each spawn is independently an algae spore or a cricket egg.",
+                "Minimum seeds in a life-seed burst. Each spawn is the next organism in the rotation: algae spores, cricket eggs, wasp eggs, myco spores, grass seeds, then tree sprouts.",
             [nameof(SimulationConfig.probeLifeSeedMaxCount)] =
-                "Maximum organisms in a life-seed burst. Spawns are sequential ticks, not a same-tick clump.",
+                "Maximum seeds in a life-seed burst. Spawns are sequential ticks, not a same-tick clump, and each one advances the rotation.",
             [nameof(SimulationConfig.probeLifeSeedSporeLoad)] =
-                "Spore load written when life seed drops flora. Eggs use the cricket-egg material instead of this value.",
+                "Spore load written when life seed drops algae or myco spores. Eggs, grass seeds, and tree sprouts use their own seed paths instead of this value.",
         };
 
         public static bool TryGet(string fieldName, out string tooltip)

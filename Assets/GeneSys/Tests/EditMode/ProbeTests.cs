@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Topology;
 using GeneSys.UI;
@@ -178,7 +179,7 @@ namespace GeneSys.Tests
         }
 
         [Test]
-        public void LifeSeedBurstMixesFloraAndFaunaWithoutClumpingCounts()
+        public void LifeSeedBurstCyclesEveryOrganismThenWraps()
         {
             for (int i = 0; i < 64; i++)
             {
@@ -186,15 +187,20 @@ namespace GeneSys.Tests
                 Assert.That(count, Is.InRange(1, 5));
             }
 
-            bool sawFlora = false;
-            bool sawFauna = false;
-            for (int i = 0; i < 32; i++)
-            {
-                if (ProbeController.LifeSeedSpawnsFlora(i, 1)) sawFlora = true;
-                else sawFauna = true;
-            }
-            Assert.That(sawFlora, Is.True);
-            Assert.That(sawFauna, Is.True);
+            int cycle = ProbeController.LifeSeedRotation.Length;
+            Assert.That(cycle, Is.EqualTo(6));
+            var seen = new HashSet<LifeSeedDrop>();
+            for (int i = 0; i < cycle; i++)
+                Assert.That(seen.Add(ProbeController.LifeSeedAt(i)), Is.True);
+
+            Assert.That(ProbeController.LifeSeedAt(0), Is.EqualTo(LifeSeedDrop.AlgaeSpores));
+            Assert.That(ProbeController.LifeSeedAt(1), Is.EqualTo(LifeSeedDrop.CricketEgg));
+            Assert.That(ProbeController.LifeSeedAt(2), Is.EqualTo(LifeSeedDrop.WaspEgg));
+            Assert.That(ProbeController.LifeSeedAt(3), Is.EqualTo(LifeSeedDrop.MycoSpores));
+            Assert.That(ProbeController.LifeSeedAt(4), Is.EqualTo(LifeSeedDrop.GrassSeed));
+            Assert.That(ProbeController.LifeSeedAt(5), Is.EqualTo(LifeSeedDrop.TreeSprout));
+            Assert.That(ProbeController.LifeSeedAt(cycle), Is.EqualTo(LifeSeedDrop.AlgaeSpores));
+            Assert.That(ProbeController.LifeSeedAt(-1), Is.EqualTo(LifeSeedDrop.TreeSprout));
         }
     }
 }
