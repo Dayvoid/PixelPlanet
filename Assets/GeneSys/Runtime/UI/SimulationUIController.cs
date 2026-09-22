@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text;
 using GeneSys.AI;
 using GeneSys.Configuration;
 using GeneSys.Materials;
@@ -127,6 +128,7 @@ namespace GeneSys.UI
         private bool hasInspection;
         private bool envInspectExpanded;
         private bool lifeInspectExpanded;
+        private const float InspectPresenceEpsilon = 0.01f;
         private Label worldMetricsLabel;
         private Label simulationStatusLabel;
         private Button playButton;
@@ -1602,60 +1604,277 @@ namespace GeneSys.UI
         {
             GeneSys.Materials.MaterialDefinition definition = host.MaterialRegistry.Get((int)inspection.materialId);
             string materialName = definition != null ? definition.displayName : inspection.materialId.ToString();
-            string header =
-                $"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\n" +
-                $"Material: {materialName}\n" +
-                $"T {inspection.state.x:F2}  P {inspection.state.y:F3}";
-            if (!expanded) return header;
-            return header +
-                   $"\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\n" +
-                   $"Vapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\n" +
-                   $"Nutrient {inspection.aux.z:F3}  Surface Stress {inspection.aux.w:F3}\n" +
-                   $"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n" +
-                   $"Light {inspection.light:F3}\n" +
-                   $"Climate bin {inspection.climateBin}  T {inspection.climateMemory.x:F2}  albedo {inspection.climateMemory.w:F2}\n" +
-                   $"Wet {inspection.climateMemory.z:F2}  U {inspection.climateLand.x:F2}  bucket {inspection.climateLand.z:F2}";
+            var text = new StringBuilder();
+            text.Append($"Cell θ:{inspection.cell.x} r:{inspection.cell.y}\n");
+            text.Append($"Material: {materialName}\n");
+            text.Append($"T {inspection.state.x:F2}  P {inspection.state.y:F3}");
+            if (!expanded) return text.ToString();
+            text.Append($"\nWater {inspection.state.z:F3}  Charge {inspection.state.w:F3}\n");
+            text.Append($"Vapor {inspection.aux.x:F3}  Ground {inspection.aux.y:F3}\n");
+            text.Append($"Nutrient {inspection.aux.z:F3}  Surface Stress {inspection.aux.w:F3}\n");
+            text.Append($"Wind θ {inspection.flow.x:F3}  r {inspection.flow.y:F3}\n");
+            text.Append($"Light {inspection.light:F3}\n");
+            text.Append($"Climate bin {inspection.climateBin}  T {inspection.climateMemory.x:F2}  albedo {inspection.climateMemory.w:F2}\n");
+            text.Append($"Wet {inspection.climateMemory.z:F2}  U {inspection.climateLand.x:F2}  bucket {inspection.climateLand.z:F2}");
+            AppendInspectLine(text, line =>
+            {
+                AppendInspectStat(line, "O2", inspection.combustion.x, "F3");
+                AppendInspectStat(line, "Flame", inspection.combustion.y, "F3");
+                AppendInspectStat(line, "Soot", inspection.combustion.z, "F3");
+                AppendInspectStat(line, "Ignite", inspection.combustion.w, "F3");
+            });
+            AppendInspectLine(text, line =>
+            {
+                AppendInspectStat(line, "Storm Q", inspection.storm.x, "F3");
+                AppendInspectStat(line, "Bolt", inspection.storm.y, "F3");
+                AppendInspectStat(line, "Flash", inspection.storm.z, "F3");
+                AppendInspectStat(line, "Break", inspection.storm.w, "F3");
+            });
+            return text.ToString();
         }
 
         private string FormatLifeInspection(CellInspection inspection, bool expanded)
         {
             float floraGeneRange = host.Config != null ? host.Config.floraGeneExpressionRange : 0.45f;
             float faunaGeneRange = host.Config != null ? host.Config.faunaGeneExpressionRange : 0.45f;
-            string header =
-                $"Spores {inspection.ecology.x:F3}  Myco {inspection.ecology.y:F3}\n" +
-                $"Strain {MycologyTraits.Describe(MycologyTraits.FromFloat(inspection.ecology.z))}\n" +
-                $"Stage {FloraGenome.DescribeStage(FloraGenome.Stage(inspection.genome))}  gen {FloraGenome.Generation(inspection.genome)}  toxin {FloraGenome.ToxinDose(inspection.genome)}";
-            if (!expanded) return header;
-            return header +
-                   $"\nO2 {inspection.combustion.x:F3}  Flame {inspection.combustion.y:F3}\n" +
-                   $"Soot {inspection.combustion.z:F3}  Ignite {inspection.combustion.w:F3}\n" +
-                   $"Storm Q {inspection.storm.x:F3}  Bolt {inspection.storm.y:F3}\n" +
-                   $"Flash {inspection.storm.z:F3}  Break {inspection.storm.w:F3}\n" +
-                   $"Flora spores {inspection.life.x:F3}  biomass {inspection.life.y:F3}\n" +
-                   $"Energy {inspection.life.z:F3}  exudate {inspection.life.w:F3}\n" +
-                   FloraGenome.DescribeGenes(inspection.genome, floraGeneRange) + "\n" +
-                   $"Fauna cal {inspection.faunaVitals.x:F3}  hyd {inspection.faunaVitals.y:F3}  age {inspection.faunaVitals.z:F0}  cd {inspection.faunaVitals.w:F0}\n" +
-                   $"Fauna {FaunaGenome.DescribeStage(FaunaGenome.Stage(inspection.faunaGenome))} / {FaunaGenome.DescribeBehavior(FaunaGenome.Behavior(inspection.faunaGenome))}  gen {FaunaGenome.Generation(inspection.faunaGenome)}\n" +
-                   $"Call feed {inspection.acoustic.x:F3}  mate {inspection.acoustic.y:F3}\n" +
-                   FaunaGenome.DescribeGenes(inspection.faunaGenome, faunaGeneRange) +
-                   FormatGrassInspection(inspection, host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f) +
-                   FormatWaspInspection(inspection, host.Config != null ? host.Config.waspGeneExpressionRange : 0.45f) +
-                   FormatTreeInspection(inspection, host.Config != null ? host.Config.treeGeneExpressionRange : 0.45f);
+            float grassGeneRange = host.Config != null ? host.Config.grassGeneExpressionRange : 0.45f;
+            float waspGeneRange = host.Config != null ? host.Config.waspGeneExpressionRange : 0.45f;
+            float treeGeneRange = host.Config != null ? host.Config.treeGeneExpressionRange : 0.45f;
+            var text = new StringBuilder();
+            AppendInspectSection(text, FormatMycoInspection(inspection));
+            AppendInspectSection(text, FormatAlgaeInspection(inspection, expanded, floraGeneRange));
+            AppendInspectSection(text, FormatCricketInspection(inspection, expanded, faunaGeneRange));
+            AppendInspectSection(text, FormatGrassInspection(inspection, expanded, grassGeneRange));
+            AppendInspectSection(text, FormatWaspInspection(inspection, expanded, waspGeneRange));
+            AppendInspectSection(text, FormatTreeInspection(inspection, expanded, treeGeneRange));
+            return text.Length == 0 ? "No life" : text.ToString();
         }
 
-        private static string FormatWaspInspection(CellInspection inspection, float expressionRange)
+        private static bool HasInspectMass(float value) => Mathf.Abs(value) >= InspectPresenceEpsilon;
+
+        private static bool HasInspectValue(float value, string format) =>
+            format == "F0" ? Mathf.Abs(value) >= 0.5f : HasInspectMass(value);
+
+        private static bool HasMyco(CellInspection inspection) =>
+            HasInspectMass(inspection.ecology.x) || HasInspectMass(inspection.ecology.y);
+
+        private static bool HasAlgae(CellInspection inspection) =>
+            HasInspectMass(inspection.life.x)
+            || HasInspectMass(inspection.life.y)
+            || FloraGenome.Stage(inspection.genome) != FloraGenome.StageEmpty;
+
+        private static bool HasCricket(CellInspection inspection) =>
+            FaunaGenome.Stage(inspection.faunaGenome) != FaunaGenome.StageEmpty;
+
+        private static bool HasWasp(CellInspection inspection) =>
+            WaspGenome.Stage(inspection.waspGenome) != WaspGenome.StageEmpty;
+
+        private static bool HasTree(CellInspection inspection) =>
+            TreeGenome.Stage(inspection.treeGenome) != TreeGenome.StageEmpty
+            || inspection.treeTopology.X != 0;
+
+        private static int CountLivingGrass(CellInspection inspection, out uint singleStage)
         {
+            singleStage = GrassGenome.StageEmpty;
+            int count = 0;
+            if (inspection.grassGenomes == null) return 0;
+            for (int slot = 0; slot < inspection.grassGenomes.Length; slot++)
+            {
+                uint stage = GrassGenome.Stage(inspection.grassGenomes[slot]);
+                if (!GrassGenome.IsLivingStage(stage)) continue;
+                count++;
+                singleStage = stage;
+            }
+            return count;
+        }
+
+        private static void AppendInspectStat(StringBuilder line, string label, float value, string format)
+        {
+            if (!HasInspectValue(value, format)) return;
+            if (line.Length > 0) line.Append("  ");
+            line.Append(label);
+            line.Append(' ');
+            line.Append(value.ToString(format));
+        }
+
+        private static void AppendInspectToken(StringBuilder line, string token)
+        {
+            if (string.IsNullOrEmpty(token)) return;
+            if (line.Length > 0) line.Append("  ");
+            line.Append(token);
+        }
+
+        private static void AppendInspectLine(StringBuilder text, Action<StringBuilder> write)
+        {
+            var line = new StringBuilder();
+            write(line);
+            AppendInspectSection(text, line.ToString());
+        }
+
+        private static void AppendInspectSection(StringBuilder text, string section)
+        {
+            if (string.IsNullOrEmpty(section)) return;
+            if (text.Length > 0) text.Append('\n');
+            text.Append(section);
+        }
+
+        private static string FormatNonNeutralGenes(string[] names, Func<int, byte> decode, float expressionRange)
+        {
+            var text = new StringBuilder();
+            for (int i = 0; i < names.Length; i++)
+            {
+                float pct = (decode(i) / 255f - 0.5f) * 2f * expressionRange * 100f;
+                string rounded = pct.ToString("F0");
+                if (rounded == "0" || rounded == "-0") continue;
+                if (text.Length > 0) text.Append("  ");
+                text.Append(names[i]);
+                text.Append(' ');
+                if (pct >= 0f) text.Append('+');
+                text.Append(rounded);
+                text.Append('%');
+            }
+            return text.ToString();
+        }
+
+        private static string FormatMycoInspection(CellInspection inspection)
+        {
+            if (!HasMyco(inspection)) return "";
+            var line = new StringBuilder("Myco");
+            if (HasInspectMass(inspection.ecology.y))
+            {
+                line.Append(' ');
+                line.Append(inspection.ecology.y.ToString("F2"));
+            }
+            if (HasInspectMass(inspection.ecology.x))
+            {
+                line.Append("  spores ");
+                line.Append(inspection.ecology.x.ToString("F2"));
+            }
+            uint traits = MycologyTraits.FromFloat(inspection.ecology.z);
+            if (traits != MycologyTraits.Basic)
+            {
+                line.Append("  ");
+                line.Append(MycologyTraits.Describe(traits));
+            }
+            return line.ToString();
+        }
+
+        private static string FormatAlgaeInspection(CellInspection inspection, bool expanded, float expressionRange)
+        {
+            if (!HasAlgae(inspection)) return "";
+            uint stage = FloraGenome.Stage(inspection.genome);
+            var text = new StringBuilder("Algae");
+            if (stage != FloraGenome.StageEmpty)
+            {
+                text.Append(' ');
+                text.Append(FloraGenome.DescribeStage(stage));
+            }
+            if (!expanded)
+            {
+                if (HasInspectMass(inspection.life.y))
+                {
+                    text.Append("  bio ");
+                    text.Append(inspection.life.y.ToString("F2"));
+                }
+                else if (stage == FloraGenome.StageEmpty && HasInspectMass(inspection.life.x))
+                {
+                    text.Append(" spores ");
+                    text.Append(inspection.life.x.ToString("F2"));
+                }
+                return text.ToString();
+            }
+
+            text.Append("  gen ");
+            text.Append(FloraGenome.Generation(inspection.genome));
+            text.Append("  lin ");
+            text.Append(FloraGenome.Lineage(inspection.genome));
+            uint toxin = FloraGenome.ToxinDose(inspection.genome);
+            if (toxin != 0)
+            {
+                text.Append("  toxin ");
+                text.Append(toxin);
+            }
+            AppendInspectLine(text, stats =>
+            {
+                AppendInspectStat(stats, "spores", inspection.life.x, "F3");
+                AppendInspectStat(stats, "bio", inspection.life.y, "F3");
+                AppendInspectStat(stats, "energy", inspection.life.z, "F3");
+                AppendInspectStat(stats, "exudate", inspection.life.w, "F3");
+            });
+            AppendInspectSection(text, FormatNonNeutralGenes(
+                FloraGenome.GeneNames, i => FloraGenome.DecodeGene(inspection.genome, i), expressionRange));
+            return text.ToString();
+        }
+
+        private static string FormatCricketInspection(CellInspection inspection, bool expanded, float expressionRange)
+        {
+            if (!HasCricket(inspection)) return "";
+            uint stage = FaunaGenome.Stage(inspection.faunaGenome);
+            uint behavior = FaunaGenome.Behavior(inspection.faunaGenome);
+            var text = new StringBuilder("Cricket ");
+            text.Append(FaunaGenome.DescribeStage(stage));
+            if (behavior != FaunaGenome.BehaviorIdle)
+            {
+                text.Append("  ");
+                text.Append(FaunaGenome.DescribeBehavior(behavior));
+            }
+            if (!expanded) return text.ToString();
+
+            text.Append("  gen ");
+            text.Append(FaunaGenome.Generation(inspection.faunaGenome));
+            text.Append("  lin ");
+            text.Append(FaunaGenome.Lineage(inspection.faunaGenome));
+            AppendInspectLine(text, stats =>
+            {
+                AppendInspectStat(stats, "cal", inspection.faunaVitals.x, "F3");
+                AppendInspectStat(stats, "hyd", inspection.faunaVitals.y, "F3");
+                AppendInspectStat(stats, "age", inspection.faunaVitals.z, "F0");
+                AppendInspectStat(stats, "cd", inspection.faunaVitals.w, "F0");
+            });
+            AppendInspectLine(text, stats =>
+            {
+                AppendInspectStat(stats, "Call feed", inspection.acoustic.x, "F3");
+                AppendInspectStat(stats, "mate", inspection.acoustic.y, "F3");
+            });
+            AppendInspectSection(text, FormatNonNeutralGenes(
+                FaunaGenome.GeneNames, i => FaunaGenome.DecodeGene(inspection.faunaGenome, i), expressionRange));
+            return text.ToString();
+        }
+
+        private static string FormatWaspInspection(CellInspection inspection, bool expanded, float expressionRange)
+        {
+            if (!HasWasp(inspection)) return "";
             uint stage = WaspGenome.Stage(inspection.waspGenome);
-            if (!WaspGenome.IsLivingStage(stage)) return "";
-            var text = new System.Text.StringBuilder();
-            text.Append($"\nWasp {WaspGenome.DescribeStage(stage)} / {WaspGenome.DescribeBehavior(WaspGenome.Behavior(inspection.waspGenome))}");
-            text.Append($" gen {WaspGenome.Generation(inspection.waspGenome)} lin {WaspGenome.Lineage(inspection.waspGenome)}");
-            text.Append($"\n  cal {inspection.waspVitals.x:F3}  hyd {inspection.waspVitals.y:F3}  age {inspection.waspVitals.z:F0}  cd {inspection.waspVitals.w:F0}");
-            text.Append($"\n  vel θ {inspection.waspMotion.x:F3}  r {inspection.waspMotion.y:F3}");
+            uint behavior = WaspGenome.Behavior(inspection.waspGenome);
+            var text = new StringBuilder("Wasp ");
+            text.Append(WaspGenome.DescribeStage(stage));
+            if (behavior != WaspGenome.BehaviorIdle)
+            {
+                text.Append("  ");
+                text.Append(WaspGenome.DescribeBehavior(behavior));
+            }
+            if (!expanded) return text.ToString();
+
+            text.Append("  gen ");
+            text.Append(WaspGenome.Generation(inspection.waspGenome));
+            text.Append("  lin ");
+            text.Append(WaspGenome.Lineage(inspection.waspGenome));
+            AppendInspectLine(text, stats =>
+            {
+                AppendInspectStat(stats, "cal", inspection.waspVitals.x, "F3");
+                AppendInspectStat(stats, "hyd", inspection.waspVitals.y, "F3");
+                AppendInspectStat(stats, "age", inspection.waspVitals.z, "F0");
+                AppendInspectStat(stats, "cd", inspection.waspVitals.w, "F0");
+            });
+            AppendInspectLine(text, stats =>
+            {
+                AppendInspectStat(stats, "vel θ", inspection.waspMotion.x, "F3");
+                AppendInspectStat(stats, "r", inspection.waspMotion.y, "F3");
+            });
             if (inspection.waspCargo != null)
             {
                 int carried = 0;
-                var lineages = new System.Text.StringBuilder();
+                var lineages = new StringBuilder();
                 for (int slot = 0; slot < inspection.waspCargo.Length; slot++)
                 {
                     if (!WaspGenome.CargoValid(inspection.waspCargo[slot])) continue;
@@ -1663,27 +1882,61 @@ namespace GeneSys.UI
                     lineages.Append(WaspGenome.CargoLineage(inspection.waspCargo[slot]));
                     carried++;
                 }
-                text.Append($"\n  pollen {carried}/{inspection.waspCargo.Length}");
-                if (carried > 0) text.Append($"  donors {lineages}");
+                if (carried > 0)
+                {
+                    text.Append("\n  pollen ");
+                    text.Append(carried);
+                    text.Append('/');
+                    text.Append(inspection.waspCargo.Length);
+                    text.Append("  donors ");
+                    text.Append(lineages);
+                }
             }
-            text.Append($"\n  {WaspGenome.DescribeGenes(inspection.waspGenome, expressionRange)}");
+            AppendInspectSection(text, FormatNonNeutralGenes(
+                WaspGenome.GeneNames, i => WaspGenome.DecodeGene(inspection.waspGenome, i), expressionRange));
             return text.ToString();
         }
 
-        private static string FormatTreeInspection(CellInspection inspection, float expressionRange)
+        private static string FormatTreeInspection(CellInspection inspection, bool expanded, float expressionRange)
         {
+            if (!HasTree(inspection)) return "";
             uint stage = TreeGenome.Stage(inspection.treeGenome);
-            if (stage == TreeGenome.StageEmpty && inspection.treeTopology.X == 0) return "";
             uint role = TreeGenome.Role(inspection.treeTopology.Z);
-            var text = new System.Text.StringBuilder();
-            text.Append($"\nTree {TreeGenome.DescribeStage(stage)} / {TreeGenome.DescribeRole(role)}");
-            text.Append($" gen {TreeGenome.Generation(inspection.treeGenome)} lin {TreeGenome.Lineage(inspection.treeGenome)}");
-            text.Append($"\n  energy {inspection.treePhysiology.x:F2}  hyd {inspection.treePhysiology.y:F2}  nut {inspection.treePhysiology.z:F2}  hp {inspection.treePhysiology.w:F2}");
-            text.Append($"\n  owner {inspection.treeTopology.X}  parent {inspection.treeTopology.Y}  flags {TreeGenome.Flags(inspection.treeTopology.Z)}");
-            float timer = System.BitConverter.Int32BitsToSingle(unchecked((int)inspection.treeTopology.W));
-            if (role == TreeGenome.RoleLeaf || stage == TreeGenome.StageDead)
-                text.Append($"  timer {timer:F0}");
-            text.Append($"\n  {TreeGenome.DescribeGenes(inspection.treeGenome, expressionRange)}");
+            var text = new StringBuilder("Tree ");
+            text.Append(TreeGenome.DescribeStage(stage));
+            if (role != TreeGenome.RoleNone)
+            {
+                text.Append(" / ");
+                text.Append(TreeGenome.DescribeRole(role));
+            }
+            if (!expanded) return text.ToString();
+
+            text.Append("  gen ");
+            text.Append(TreeGenome.Generation(inspection.treeGenome));
+            text.Append("  lin ");
+            text.Append(TreeGenome.Lineage(inspection.treeGenome));
+            AppendInspectLine(text, stats =>
+            {
+                AppendInspectStat(stats, "energy", inspection.treePhysiology.x, "F2");
+                AppendInspectStat(stats, "hyd", inspection.treePhysiology.y, "F2");
+                AppendInspectStat(stats, "nut", inspection.treePhysiology.z, "F2");
+                AppendInspectStat(stats, "hp", inspection.treePhysiology.w, "F2");
+            });
+            AppendInspectLine(text, stats =>
+            {
+                if (inspection.treeTopology.X != 0)
+                    AppendInspectToken(stats, "owner " + inspection.treeTopology.X);
+                if (inspection.treeTopology.Y != 0)
+                    AppendInspectToken(stats, "parent " + inspection.treeTopology.Y);
+                uint flags = TreeGenome.Flags(inspection.treeTopology.Z);
+                if (flags != 0)
+                    AppendInspectToken(stats, "flags " + flags);
+                float timer = BitConverter.Int32BitsToSingle(unchecked((int)inspection.treeTopology.W));
+                if ((role == TreeGenome.RoleLeaf || stage == TreeGenome.StageDead) && HasInspectValue(timer, "F0"))
+                    AppendInspectToken(stats, "timer " + timer.ToString("F0"));
+            });
+            AppendInspectSection(text, FormatNonNeutralGenes(
+                TreeGenome.GeneNames, i => TreeGenome.DecodeGene(inspection.treeGenome, i), expressionRange));
             return text.ToString();
         }
 
@@ -1692,25 +1945,54 @@ namespace GeneSys.UI
             if (playButton != null) playButton.text = host.Clock.IsRunning ? "Pause" : "Play";
         }
 
-        private static string FormatGrassInspection(CellInspection inspection, float expressionRange)
+        private static string FormatGrassInspection(CellInspection inspection, bool expanded, float expressionRange)
         {
-            if (inspection.grassGenomes == null || inspection.grassLife == null) return "";
-            var text = new System.Text.StringBuilder();
+            int living = CountLivingGrass(inspection, out uint singleStage);
+            if (living == 0) return "";
+            if (!expanded)
+                return living == 1
+                    ? "Grass " + GrassGenome.DescribeStage(singleStage)
+                    : "Grass ×" + living;
+
+            var text = new StringBuilder();
             for (int slot = 0; slot < inspection.grassGenomes.Length; slot++)
             {
                 GrassGenome.Packed genome = inspection.grassGenomes[slot];
                 uint stage = GrassGenome.Stage(genome);
                 if (!GrassGenome.IsLivingStage(stage)) continue;
-                Vector4 life = inspection.grassLife[slot];
+                Vector4 life = inspection.grassLife != null && slot < inspection.grassLife.Length
+                    ? inspection.grassLife[slot] : Vector4.zero;
                 Vector4 timing = inspection.grassTiming != null && slot < inspection.grassTiming.Length
                     ? inspection.grassTiming[slot] : Vector4.zero;
                 uint flags = GrassGenome.TimingFlags(timing.w);
-                text.Append($"\nGrass {slot} {GrassGenome.DescribeStage(stage)} gen {GrassGenome.Generation(genome)} lin {GrassGenome.Lineage(genome)}");
-                text.Append($"\n  bio {life.x:F2}  energy {life.y:F2}  hyd {life.z:F2}  nectar {life.w:F2}");
-                text.Append($"\n  roots {GrassGenome.RootMask(flags)}  flower {(GrassGenome.IsFlowering(flags) ? "open" : "idle")}  pollen {(GrassGenome.IsPollinated(flags) ? "yes" : "no")}");
-                if (inspection.grassDonors != null && slot < inspection.grassDonors.Length && GrassGenome.HasDonor(inspection.grassDonors[slot]))
-                    text.Append($"\n  donor lin {GrassGenome.Lineage(inspection.grassDonors[slot])}");
-                text.Append($"\n  {GrassGenome.DescribeGenes(genome, expressionRange)}");
+                var slotText = new StringBuilder("Grass ");
+                slotText.Append(slot);
+                slotText.Append(' ');
+                slotText.Append(GrassGenome.DescribeStage(stage));
+                slotText.Append("  gen ");
+                slotText.Append(GrassGenome.Generation(genome));
+                slotText.Append("  lin ");
+                slotText.Append(GrassGenome.Lineage(genome));
+                AppendInspectLine(slotText, stats =>
+                {
+                    AppendInspectStat(stats, "bio", life.x, "F2");
+                    AppendInspectStat(stats, "energy", life.y, "F2");
+                    AppendInspectStat(stats, "hyd", life.z, "F2");
+                    AppendInspectStat(stats, "nectar", life.w, "F2");
+                });
+                AppendInspectLine(slotText, stats =>
+                {
+                    uint roots = GrassGenome.RootMask(flags);
+                    if (roots != 0) AppendInspectToken(stats, "roots " + roots);
+                    if (GrassGenome.IsFlowering(flags)) AppendInspectToken(stats, "flower open");
+                    if (GrassGenome.IsPollinated(flags)) AppendInspectToken(stats, "pollen yes");
+                });
+                if (inspection.grassDonors != null && slot < inspection.grassDonors.Length &&
+                    GrassGenome.HasDonor(inspection.grassDonors[slot]))
+                    AppendInspectSection(slotText, "donor lin " + GrassGenome.Lineage(inspection.grassDonors[slot]));
+                AppendInspectSection(slotText, FormatNonNeutralGenes(
+                    GrassGenome.GeneNames, i => GrassGenome.DecodeGene(genome, i), expressionRange));
+                AppendInspectSection(text, slotText.ToString());
             }
             return text.ToString();
         }
