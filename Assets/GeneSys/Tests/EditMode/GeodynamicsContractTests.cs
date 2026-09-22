@@ -51,6 +51,11 @@ namespace GeneSys.Tests
             Assert.That(config.tectonicUpliftScale, Is.EqualTo(1f).Within(0.0001f));
             Assert.That(config.tectonicDisplacementScale, Is.EqualTo(0.5f).Within(0.0001f));
             Assert.That(config.tectonicIsostasyScale, Is.EqualTo(2f).Within(0.0001f));
+            Assert.That(config.mantleLayerEnable, Is.True);
+            Assert.That(config.mantleConvectionCells, Is.InRange(2, 8));
+            Assert.That(config.mantlePlumeHeat, Is.GreaterThan(0f).And.LessThanOrEqualTo(2f));
+            Assert.That(config.geothermalSurfaceGain, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(config.eruptionTephraFraction, Is.InRange(0f, 1f));
             Assert.That(config.eruptionDriveScale, Is.InRange(0.2f, 0.8f));
             config.tectonicReleaseFraction = 0.9f;
             config.geodynamicsAngularBins = 4;
@@ -106,6 +111,9 @@ namespace GeneSys.Tests
             Assert.That(resources.GeodynamicsStateRead.count, Is.EqualTo(GeodynamicsGrid.StateBufferCount()));
             Assert.That(resources.GeodynamicsEvents.count, Is.EqualTo(GeodynamicsGrid.EventBufferCount()));
             Assert.That(resources.GeodynamicsEventCounter.count, Is.EqualTo(GeodynamicsGrid.StatsBufferCount()));
+            Assert.That(GeodynamicsGrid.StateSlotsPerCell, Is.EqualTo(3));
+            Assert.That(resources.MantleFieldRead, Is.Not.Null);
+            Assert.That(resources.MantleFieldWrite, Is.Not.Null);
 
             string swap = File.ReadAllText("Assets/GeneSys/Runtime/Simulation/Gpu/SimulationResources.cs");
             Assert.That(swap, Does.Contain("SwapGeodynamics"));
@@ -113,7 +121,7 @@ namespace GeneSys.Tests
 
             ComputeShader shader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Geodynamics.compute");
             Assert.That(shader, Is.Not.Null);
-            foreach (string kernel in new[] { "InitializeFaults", "AggregateInterior", "StepGeodynamics", "SelectEvents", "CommitEvent" })
+            foreach (string kernel in new[] { "InitializeFaults", "InitializeMantle", "AggregateInterior", "StepGeodynamics", "SelectEvents", "CommitEvent" })
                 Assert.That(shader.FindKernel(kernel), Is.GreaterThanOrEqualTo(0), kernel);
 
             ComputeShader geology = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Geology.compute");
@@ -153,7 +161,10 @@ namespace GeneSys.Tests
             Assert.That(geoHlsl, Does.Contain("GeodynamicsVolcanoScoreAt"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsRisingColumn"));
             Assert.That(geoHlsl, Does.Contain("GeodynamicsNearestVolcanic"));
-            Assert.That(geoHlsl, Does.Contain("GeodynamicsSafetyThrottle"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsPlume"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsLidBase"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsGeothermalFlux"));
+            Assert.That(geoHlsl, Does.Contain("GeodynamicsSampleMantle"));
             Assert.That(geoHlsl, Does.Not.Contain("step(0.97, pocket)"));
             Assert.That(geology, Does.Contain("injection"));
             Assert.That(geology, Does.Contain("effectiveSolidus"));
@@ -176,7 +187,8 @@ namespace GeneSys.Tests
             Assert.That(geodynamics, Does.Contain("0.04 + saturate(prevKin.z)"));
             Assert.That(geology, Does.Contain("coolScale"));
             Assert.That(scheduler, Does.Contain("config.volcanicMeltRate"));
-            Assert.That(scheduler, Does.Contain("config.volcanicMagmaFractionLimit"));
+            Assert.That(scheduler, Does.Contain("DispatchMantleConduits"));
+            Assert.That(scheduler, Does.Contain("config.mantlePlumeHeat"));
 
             string hydrology = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Hydrology.compute");
             Assert.That(hydrology, Does.Contain("HydrothermalRelease"));
@@ -193,8 +205,11 @@ namespace GeneSys.Tests
             string snapshot = File.ReadAllText("Assets/GeneSys/Runtime/Persistence/WorldSnapshotService.cs");
             Assert.That(snapshot, Does.Contain("private const int Version15 = 15;"));
             Assert.That(snapshot, Does.Contain("private const int Version16 = 16;"));
+            Assert.That(snapshot, Does.Contain("private const int Version17 = 17;"));
             Assert.That(snapshot, Does.Contain("private const int PayloadCountV15 = PayloadCountV14 + 2;"));
             Assert.That(snapshot, Does.Contain("private const int PayloadCountV16 = PayloadCountV12 + 2;"));
+            Assert.That(snapshot, Does.Contain("private const int PayloadCountV17 = PayloadCountV16;"));
+            Assert.That(snapshot, Does.Contain("ExpandLegacyState"));
             Assert.That(snapshot, Does.Contain("RequestGeodynamicsBatch"));
             Assert.That(snapshot, Does.Contain("ApplyLegacyGeologyJsonAliases"));
             Assert.That(snapshot, Does.Contain("RebuildGeodynamics(true)"));
@@ -208,7 +223,8 @@ namespace GeneSys.Tests
             Assert.That(display, Does.Contain("_OverlayMode >= 29"));
             Assert.That(GeodynamicsVisuals.HeatFlowOverlay, Is.EqualTo(29));
             Assert.That(GeodynamicsVisuals.ReleaseOverlay, Is.EqualTo(32));
-            Assert.That(GeodynamicsVisuals.MaxOverlayMode, Is.EqualTo(32));
+            Assert.That(GeodynamicsVisuals.MantleOverlay, Is.EqualTo(33));
+            Assert.That(GeodynamicsVisuals.MaxOverlayMode, Is.EqualTo(33));
 
             string renderer = File.ReadAllText("Assets/GeneSys/Runtime/Rendering/PlanetoidDisplayRenderer.cs");
             Assert.That(renderer, Does.Contain("GeodynamicsVisuals.MaxOverlayMode"));

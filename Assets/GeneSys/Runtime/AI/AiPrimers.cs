@@ -141,6 +141,8 @@ namespace GeneSys.AI
         public const string PlanetaryPrimer =
             "Thermal: solarIntensity {solarIntensity}, coreHeatRate {coreHeatRate}, surfaceAirTemperature {surfaceAirTemperature}, thermalRate {thermalRate}. " +
             "state.x is cell temperature.\n" +
+            "Mantle: mantleLayerEnable {mantleLayerEnable}, mantlePlumeHeat {mantlePlumeHeat}, geothermalSurfaceGain {geothermalSurfaceGain}, geothermalClimateGain {geothermalClimateGain}. " +
+            "Overlay 33 is plume/lid/geoflux; Tephra (16) is explosive ejecta; magma tubes live in MantleField.\n" +
             "Hydrology: evaporationRate {evaporationRate}, condensationRate {condensationRate}, precipitationRate {precipitationRate}, " +
             "infiltrationRate {infiltrationRate}, groundwaterRate {groundwaterRate}, runoffRate {runoffRate}. " +
             "state.z surface water, aux.x vapor, aux.y groundwater, aux.z nutrients.\n" +

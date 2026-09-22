@@ -609,7 +609,7 @@ namespace GeneSys.Validation
                             {
                                 for (int r = 0; r < radBins; r++)
                                 {
-                                    int stateIndex = ((a * radBins) + r) * 2;
+                                    int stateIndex = ((a * radBins) + r) * GeodynamicsGrid.StateSlotsPerCell;
                                     if (stateIndex + 1 >= stateValues.Length) continue;
                                     Vector4 reservoir = stateValues[stateIndex];
                                     Vector4 kinematics = stateValues[stateIndex + 1];
@@ -1541,7 +1541,7 @@ namespace GeneSys.Validation
             {
                 for (int r = 0; r < radialBins; r++)
                 {
-                    int stateIndex = ((a * radialBins) + r) * 2;
+                    int stateIndex = ((a * radialBins) + r) * GeodynamicsGrid.StateSlotsPerCell;
                     if (stateIndex + 1 >= state.Length) continue;
                     Vector4 reservoir = state[stateIndex];
                     Vector4 kinematics = state[stateIndex + 1];

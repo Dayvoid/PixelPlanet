@@ -1,6 +1,6 @@
 # Situation Report
 
-**Date:** 2026-09-15  
+**Date:** 2026-09-21  
 **Project:** GeneSys / PixelPlanet living planetoid simulation
 
 ## Project overview
@@ -10,12 +10,12 @@ GeneSys is a Unity-based, GPU-driven planetoid sandbox that couples geology, geo
 ## High-level architecture and system interaction
 
 - **Runtime orchestration:** `Assets/GeneSys/Runtime/Simulation/SimulationHost.cs` boots simulation resources and delegates tick execution to `GpuPassScheduler`.
-- **Simulation loop / pass ordering:** `Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs` runs compute passes in a staged order: geodynamics/tectonics, core heat, volcanism (slow), thermal/eruption/electrical substeps, PhaseChange, Margolus CA, combustion, climate couple, atmospheric loop (light → forcing → continuity → pressure diffusion → dynamics → ash lift → transport → water cycle → precip), storm, liquid-only Margolus (hydrometeor fall), groundwater, hydrothermal boil, hydrostatic leveling, slow erosion/detritus, then biology.
-- **State model:** `Assets/GeneSys/Runtime/Simulation/Gpu/SimulationResources.cs` maintains ping-ponged textures and buffers for materials, state, flow, aux fields, ecology, combustion, storm, life/fauna/grass/tree/wasp, climate, and geodynamics. There is no mobile-mass / MaCE buffer.
-- **Configuration surface:** `Assets/GeneSys/Runtime/Configuration/SimulationConfig.cs` centralizes worldgen, weather, climate, geodynamics, Margolus transport, ecology, and rendering knobs.
-- **Persistence/versioning:** `Assets/GeneSys/Runtime/Persistence/WorldSnapshotService.cs` snapshots and migrates state up to **version 16** (geodynamics without legacy mobile-mass slices). V14/V15 loads still skip the retired mobile-mass payloads.
+- **Simulation loop / pass ordering:** `Assets/GeneSys/Runtime/Simulation/Gpu/GpuPassScheduler.cs` runs compute passes in a staged order: geodynamics/tectonics + mantle conduits, core heat, volcanism (slow), thermal/eruption/electrical substeps, PhaseChange, Margolus CA, combustion, climate couple, atmospheric loop (light → forcing → continuity → pressure diffusion → dynamics → ash lift → transport → water cycle → precip), storm, liquid-only Margolus (hydrometeor fall), groundwater, hydrothermal boil, hydrostatic leveling, slow erosion/detritus, then biology.
+- **State model:** `Assets/GeneSys/Runtime/Simulation/Gpu/SimulationResources.cs` maintains ping-ponged textures and buffers for materials, state, flow, aux fields, ecology, combustion, storm, life/fauna/grass/tree/wasp, climate, geodynamics (3 slots/cell), and MantleField conduit memory. There is no mobile-mass / MaCE buffer.
+- **Configuration surface:** `Assets/GeneSys/Runtime/Configuration/SimulationConfig.cs` centralizes worldgen, weather, climate, geodynamics, mantle, Margolus transport, ecology, and rendering knobs.
+- **Persistence/versioning:** `Assets/GeneSys/Runtime/Persistence/WorldSnapshotService.cs` snapshots and migrates state up to **version 17** (3-slot geodynamics lattice; MantleField rebuilt on load). V15/V16 2-slot lattices expand into slot 2 on load. V14/V15 loads still skip the retired mobile-mass payloads.
 
-At a system level, weather/hydrology own the water-energy ledger; geology and geodynamics own melt creation, tectonic kinematics, and buoyant ash lift; Margolus CA owns gravity/repose settling of movable cells; hydrostatic owns horizontal free-surface water leveling; combustion and storm convert local state into heat/pressure/electrical impulses; biology consumes and modifies local resources; climate injects coarse wind/albedo/bucket envelopes into the fine stack.
+At a system level, weather/hydrology own the water-energy ledger; geology and geodynamics own melt creation, tectonic kinematics, drifting mantle convection, and buoyant ash lift; Margolus CA owns gravity/repose settling of movable cells; hydrostatic owns horizontal free-surface water leveling; combustion and storm convert local state into heat/pressure/electrical impulses; biology consumes and modifies local resources; climate injects coarse wind/albedo/bucket envelopes into the fine stack; mantle injects geothermal flux and magma-tube memory.
 
 ### Cell-motion ownership
 
@@ -40,11 +40,11 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 | Polar-grid world generation and material seeding | **Mature** | `WorldGeneration.compute`, `GpuPassScheduler.GenerateWorld`, `WorldGenIntegrationTests.cs`, `MargolusWorldGenStabilityTests.cs` | V2 worldgen with pre-relaxed talus aprons, exposed granite cliff faces, continental shelf marine sedimentation. |
 | Hydrology + water mass contract | **Mature** | `Assets/Concept/WaterPlan.MD`, `HydrologyIntegrationTests.cs`, `WeatherIntegrationTests.cs` | Conservation posture around evaporation/condensation/precipitation/infiltration/hydrostatic. Groundwater boil lives in `HydrothermalRelease`. |
 | Atmospheric/weather dynamics | **Mature** | `Weather.compute`, `WeatherIntegrationTests.cs` | Buoyancy, lapse, advection, pressure diffusion, precipitation, seam wrapping, conservation checks. |
-| Geology & Geodynamics | **Mature** | `Geology.compute`, `Geodynamics.compute`, `GeodynamicsContractTests.cs`, `GeodynamicsIntegrationTests.cs`, snapshot v16 | Angular/radial lattice plus lid kinematics (v5): relative buoyancy, isostatic restoring, directional block shear, water-riding columns. Magma freeze is owned by `PhaseChange`. GPU move-counting is omitted (D3D11 8-UAV cap on Geology kernels). |
+| Geology & Geodynamics | **Mature** | `Geology.compute`, `Geodynamics.compute`, `Mantle.compute`, `GeodynamicsContractTests.cs`, `MantleContractTests.cs`, `GeodynamicsIntegrationTests.cs`, `MantleIntegrationTests.cs`, snapshot v17 | Angular/radial lattice plus lid kinematics (v5) and mantle slot 2 (plume, lidBase, conduitNet, geoFlux). Magma freeze is owned by `PhaseChange`. GPU move-counting is omitted (D3D11 8-UAV cap on Geology kernels; `Mantle.compute` writes conduit memory in-place). Tephra (ID 16) is explosive ejecta. |
 | Combustion and storm/lightning | **In progress** | `Combustion.compute`, `Storm.compute`, integration tests | Dedicated fields and pass chain exist; balancing continues. |
 | Biology (mycology, flora, fauna, grass, trees, wasps) | **In progress** | Dedicated compute + PlayMode coverage | Multiple trophic layers; speciation goals remain open. Grass slots ride Margolus soil swaps. Crickets and eggs stay Margolus-pinned; `Fauna.compute` owns hops, unsupported falls, and landing. |
 | Climate coarse layer | **Mature (C0–C3)** | `Climate.compute`, `DispatchClimate`, `ClimateIntegrationTests.cs` | Coarse T/albedo/moisture/wind injectors are live (`ClimateWindBias`, `ClimateSurfaceAbsorb`, `ClimateBucketScale`, `ClimateInsolationScale`). Fine layer remains the only water-mass ledger. |
-| Snapshot persistence/migration | **Mature** | `WorldSnapshotService.cs` | Current write version 16. V14/V15 mobile-mass slices are skipped on load. |
+| Snapshot persistence/migration | **Mature** | `WorldSnapshotService.cs` | Current write version 17. V15/V16 2-slot geodynamics payloads expand into 3 slots; MantleField is cleared and rebuilt. V14/V15 mobile-mass slices are skipped on load. |
 | AI crew / LLM-driven tooling | **In progress** | `Assets/GeneSys/Runtime/AI/*`, `AiCrewTests.cs` | Settings, tool registry, prompt queue, and client for in-editor inspection. |
 
 ## Current simulation capabilities vs missing pieces for realism/life-seeding readiness
@@ -55,7 +55,7 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 - Procedural planetoid generation with layered geology, seeded basins/oceans/ice/deposits, and pre-relaxed granular talus aprons.
 - Multi-pass atmospheric + hydrology loop with explicit water-accounting conventions.
 - Groundwater, hydrothermal release, and hydrostatic leveling mechanics beyond simple falling-fluid behavior.
-- Planetary geodynamics layer with radial/angular stress tracking, fault ruptures, and deep mantle thermal plumes.
+- Planetary geodynamics layer with radial/angular stress tracking, fault ruptures, drifting mantle convection, geothermal surface/climate coupling, and persistent magma-tube memory.
 - Coupled fire and storm systems that interact with heat/pressure/water pathways.
 - Multiple biological subsystems (fungal, plant, insect/pollinator/predator-like roles) integrated into the same world state.
 - Hybrid cell-motion ownership: Margolus settles, specialized kernels keep only non-gravitational drive.
@@ -89,6 +89,7 @@ At a system level, weather/hydrology own the water-energy ledger; geology and ge
 - `Assets/ProjectHistory.md`
 - `Assets/Concept/WaterPlan.MD`
 - `Assets/Concept/ClimatePlan.MD`
+- `Assets/Concept/VolcanismPlan.MD`
 - `Assets/Concept/GrassPlan.MD`
 - `Assets/Concept/Archive/MaCEPlan.MD` *(superseded)*
 - `Assets/Concept/Archive/MaCE_SedimentPilot.MD` *(superseded)*

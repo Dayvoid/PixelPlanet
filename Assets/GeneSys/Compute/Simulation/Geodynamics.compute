@@ -1,4 +1,5 @@
 #pragma kernel InitializeFaults
+#pragma kernel InitializeMantle
 #pragma kernel AggregateInterior
 #pragma kernel StepGeodynamics
 #pragma kernel SelectEvents
@@ -10,12 +11,14 @@
 Texture2D<uint> _MaterialRead;
 Texture2D<float4> _StateRead;
 Texture2D<float4> _AuxRead;
+Texture2D<float4> _MantleFieldRead;
 StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
 
 int2 _GridSize;
 int _Tick;
 int _Seed;
 float _DeltaTime;
+#define GENESYS_TICKS_PER_SECOND_DECLARED 1
 float _TicksPerSecond;
 float _PlayableInnerRadius;
 float _AtmosphereStartRadius;
@@ -62,10 +65,22 @@ void GeoRadialRange(int bin, out int start, out int endExclusive)
         endExclusive = min(height, start + 1);
 }
 
-float GeoReferenceTemperature(float radius01)
+float GeoReferenceTemperature(float radius01, float plume)
 {
     float coreT = _ThermalA.z > 0.0 ? _ThermalA.z : 1500.0;
-    return lerp(coreT, 15.0, saturate(radius01));
+    float heat = GeodynamicsMantleEnabled() > 0.5 ? max(0.0, _MantleA.w) : 0.0;
+    return lerp(coreT, 15.0, saturate(radius01)) + plume * heat * 40.0;
+}
+
+float4 SeedMantleSlot(int2 cell, float radius01)
+{
+    float plume = GeodynamicsMantleEnabled() > 0.5 ? GeodynamicsPlumePatternAt(cell.x, cell.y) : 0.0;
+    float defaultLid = GeodynamicsDefaultLidBase();
+    float lidBase = clamp(defaultLid + plume * 0.06 * max(0.05, _AtmosphereStartRadius),
+        0.12 * max(0.05, _AtmosphereStartRadius), 0.95 * max(0.05, _AtmosphereStartRadius));
+    float thickness = saturate((_AtmosphereStartRadius - lidBase) / max(0.05, _AtmosphereStartRadius));
+    float geoFlux = saturate(max(0.0, plume) * 0.55 + (1.0 - thickness) * 0.35);
+    return float4(plume, lidBase, 0.0, geoFlux);
 }
 
 [numthreads(8, 8, 1)]
@@ -87,7 +102,21 @@ void InitializeFaults(uint3 id : SV_DispatchThreadID)
     float4 kinematics = float4(0.0, 0.0, fault, 0.0);
     _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 0)] = reservoir;
     _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 1)] = kinematics;
+    _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 2)] = SeedMantleSlot(cell, radius01);
     _GeodynamicsEvents[GeodynamicsEventIndex(cell.x, cell.y)] = 0.0;
+}
+
+[numthreads(8, 8, 1)]
+void InitializeMantle(uint3 id : SV_DispatchThreadID)
+{
+    int2 cell = GeoCell(id);
+    if (!GeoInBounds(cell)) return;
+    float4 reservoir = _GeodynamicsState[GeodynamicsStateIndex(cell.x, cell.y, 0)];
+    float4 kinematics = _GeodynamicsState[GeodynamicsStateIndex(cell.x, cell.y, 1)];
+    float radius01 = ((float)cell.y + 0.5) / max(1.0, (float)GeodynamicsRadialBins()) * max(0.05, _AtmosphereStartRadius);
+    _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 0)] = reservoir;
+    _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 1)] = kinematics;
+    _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 2)] = SeedMantleSlot(cell, radius01);
 }
 
 [numthreads(8, 8, 1)]
@@ -102,6 +131,7 @@ void AggregateInterior(uint3 id : SV_DispatchThreadID)
     float meanP = 0.0;
     float meltProxy = 0.0;
     float waterProxy = 0.0;
+    float conduitProxy = 0.0;
     float count = 0.0;
     [loop]
     for (int y = radStart; y < radEnd; y++)
@@ -112,11 +142,13 @@ void AggregateInterior(uint3 id : SV_DispatchThreadID)
             uint material = _MaterialRead.Load(int3(fine, 0));
             float4 state = _StateRead.Load(int3(fine, 0));
             float4 aux = _AuxRead.Load(int3(fine, 0));
+            float4 mantleField = _MantleFieldRead.Load(int3(fine, 0));
             meanT += state.x;
             meanP += state.y;
             if (material == 6u)
                 meltProxy += 1.0;
             waterProxy += max(0.0, aux.y);
+            conduitProxy += saturate(mantleField.x);
             count += 1.0;
         }
     }
@@ -126,8 +158,9 @@ void AggregateInterior(uint3 id : SV_DispatchThreadID)
         meanP /= count;
         meltProxy /= count;
         waterProxy /= count;
+        conduitProxy /= count;
     }
-    _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, cell.y)] = float4(meanT, meanP, meltProxy, waterProxy);
+    _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, cell.y)] = float4(meanT, conduitProxy, meltProxy, waterProxy);
 }
 
 [numthreads(8, 8, 1)]
@@ -139,6 +172,7 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     int rBins = GeodynamicsRadialBins();
     float4 prevRes = _GeodynamicsState[GeodynamicsStateIndex(cell.x, cell.y, 0)];
     float4 prevKin = _GeodynamicsState[GeodynamicsStateIndex(cell.x, cell.y, 1)];
+    float4 prevMantle = _GeodynamicsState[GeodynamicsStateIndex(cell.x, cell.y, 2)];
     float4 aggregate = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, cell.y)];
     float4 leftRes = _GeodynamicsState[GeodynamicsStateIndex(cell.x - 1, cell.y, 0)];
     float4 rightRes = _GeodynamicsState[GeodynamicsStateIndex(cell.x + 1, cell.y, 0)];
@@ -151,7 +185,9 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     float4 rightEv = _GeodynamicsEvents[GeodynamicsEventIndex(cell.x + 1, cell.y)];
 
     float radius01 = ((float)cell.y + 0.5) / max(1.0, (float)rBins) * max(0.05, _AtmosphereStartRadius);
-    float refT = GeoReferenceTemperature(radius01);
+    float plume = GeodynamicsMantleEnabled() > 0.5 ? GeodynamicsPlumePatternAt(cell.x, cell.y) : 0.0;
+    float plumeHeat = GeodynamicsMantleEnabled() > 0.5 ? max(0.0, _MantleA.w) : 0.0;
+    float refT = GeoReferenceTemperature(radius01, plume);
     float dt = max(1e-4, _DeltaTime);
     float convection = max(0.0, _GeodynamicsA.y);
     float build = max(0.0, _GeodynamicsA.z);
@@ -164,10 +200,11 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
     float thermal = prevRes.x;
     thermal = lerp(thermal, (aggregate.x - refT) * 0.01, saturate(heatK * dt));
     thermal += (downRes.x - upRes.x) * 0.08 * convection * dt;
+    thermal += plume * plumeHeat * 0.45 * dt;
     thermal *= 1.0 - saturate(0.04 * dt);
 
     float2 flow = prevKin.xy;
-    float buoyancy = thermal * convection;
+    float buoyancy = thermal * convection + plume * convection * (0.35 + plumeHeat);
     flow.y = lerp(flow.y, buoyancy, saturate(0.35 * dt));
     flow.x += (leftRes.x - rightRes.x) * 0.12 * convection * dt;
     flow.x += (leftKin.x + rightKin.x - 2.0 * flow.x) * 0.18 * dt;
@@ -231,8 +268,22 @@ void StepGeodynamics(uint3 id : SV_DispatchThreadID)
 
     float4 reservoir = float4(thermal, overpressure, strain, melt);
     float4 kinematics = float4(flow, weakness, refractory);
+    float conduitNet = saturate(aggregate.y);
+    float defaultLid = GeodynamicsDefaultLidBase();
+    float prevLid = prevMantle.y > 1e-4 ? prevMantle.y : defaultLid;
+    float lidTarget = defaultLid + plume * 0.08 * max(0.05, _AtmosphereStartRadius);
+    float lidThin = GeodynamicsMantleEnabled() > 0.5 ? max(0.0, _MantleB.x) : 0.0;
+    float lidBase = lerp(prevLid, lidTarget, saturate(lidThin * dt));
+    lidBase = clamp(lidBase, 0.12 * max(0.05, _AtmosphereStartRadius), 0.95 * max(0.05, _AtmosphereStartRadius));
+    float thickness = saturate((_AtmosphereStartRadius - lidBase) / max(0.05, _AtmosphereStartRadius));
+    float ventNow = ((int)round(ev.x) == 2) ? saturate(ev.y) : 0.0;
+    float geoFlux = GeodynamicsMantleEnabled() > 0.5
+        ? saturate(max(0.0, plume) * 0.55 + (1.0 - thickness) * 0.35 + ventNow * 0.4 + conduitNet * 0.25)
+        : 0.0;
+    float4 mantle = float4(plume, lidBase, conduitNet, geoFlux);
     _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 0)] = reservoir;
     _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 1)] = kinematics;
+    _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, cell.y, 2)] = mantle;
     _GeodynamicsEvents[GeodynamicsEventIndex(cell.x, cell.y)] = ev;
 }
 
@@ -259,7 +310,7 @@ void SelectEvents(uint3 id : SV_DispatchThreadID)
     float4 aggregate = _GeodynamicsColumns[GeodynamicsEventIndex(cell.x, cell.y)];
 
     float quakeScore = res.z * (1.0 - res.w * 0.65);
-    float volcanoScore = GeodynamicsVolcanoScoreAt(res, kin, cell.y);
+    float volcanoScore = GeodynamicsVolcanoScoreAt(res, kin, cell.x, cell.y);
     float hydroScore = saturate(aggregate.w * 4.0) * saturate(res.x * 0.05 + kin.z);
     float quakeT = max(0.1, _GeodynamicsC.x);
     float volcanoT = max(0.1, _GeodynamicsD.z);
@@ -292,8 +343,8 @@ void SelectEvents(uint3 id : SV_DispatchThreadID)
     float4 upKinN = _GeodynamicsStateWrite[GeodynamicsStateIndex(cell.x, min(rBins - 1, cell.y + 1), 1)];
     if (type == 2)
     {
-        neighborMax = max(max(GeodynamicsVolcanoScoreAt(left, leftKinN, cell.y), GeodynamicsVolcanoScoreAt(right, rightKinN, cell.y)),
-            max(GeodynamicsVolcanoScoreAt(down, downKinN, max(0, cell.y - 1)), GeodynamicsVolcanoScoreAt(up, upKinN, min(rBins - 1, cell.y + 1))));
+        neighborMax = max(max(GeodynamicsVolcanoScoreAt(left, leftKinN, cell.x - 1, cell.y), GeodynamicsVolcanoScoreAt(right, rightKinN, cell.x + 1, cell.y)),
+            max(GeodynamicsVolcanoScoreAt(down, downKinN, cell.x, max(0, cell.y - 1)), GeodynamicsVolcanoScoreAt(up, upKinN, cell.x, min(rBins - 1, cell.y + 1))));
     }
     if (type == 3)
     {

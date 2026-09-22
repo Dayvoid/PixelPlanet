@@ -9,7 +9,14 @@
 //   aux.w    = surfaceFailureStress only (crust, soil, clay, limestone).
 //              Recovers linearly via surfaceStressRecoveryRate (_Erosion.w) in ErosionAndCollapse.
 //              Tectonic strain, fault weakness, melt, and overpressure live on the coarse
-//              geodynamics lattice (see Geodynamics.hlsl). Mantle/Magma no longer store fault in aux.w.
+//              geodynamics lattice (see Geodynamics.hlsl). Slot 2 holds plume, lidBase,
+//              conduitNet, and geoFlux. Mantle/Magma no longer store fault in aux.w.
+// MantleField (dedicated RGBA16F, Storm-style ping-pong, excluded from Swap/WriteCell):
+//   .x conduit maturity (magma-tube memory)
+//   .y cached plume anomaly
+//   .z vent age
+//   .w reserved
+//   Written only by Mantle.compute MantleConduits. Geology reads it as an SRV.
 // Ecology (dedicated RGBA32F field, not packed into aux):
 //   ecology.x = viable spore load on air/water carriers and colonized substrate
 //   ecology.y = myco value in [0, 1] on Soil/Sediment (flora fertility threshold)
@@ -742,7 +749,7 @@ bool IsFaunaSupport(uint material)
 {
     return material == 4u || material == 5u || material == 7u || material == 8u
         || material == 9u || material == 10u || material == 12u || material == 13u
-        || material == 14u || material == 15u
+        || material == 14u || material == 15u || material == 16u
         || material == 131u || material == FLORA_ALGAE_ID || material == TREE_WOOD_ID || IsFaunaMaterial(material)
         || IsWaspEggMaterial(material);
 }
@@ -988,7 +995,7 @@ bool IsHardCrustMaterial(uint material)
 
 bool IsSoftCrustMaterial(uint material)
 {
-    return material == 7u || material == 8u || material == 15u;
+    return material == 7u || material == 8u || material == 15u || material == 16u;
 }
 
 bool IsAtmosphereMaterial(uint material, MaterialGpuData definition)

@@ -36,6 +36,7 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 
 #define GENESYS_CLIMATE_STATE_RW 1
 #include "../../Shaders/Simulation/Common/Climate.hlsl"
+#include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 
 bool IsExposedSurface(int2 cell, uint material)
 {
@@ -128,7 +129,7 @@ void ClimateAggregateColumns(uint3 id : SV_DispatchThreadID)
             organics += 1.0;
             landCount += 1.0;
         }
-        if (material == 12u)
+        if (material == 12u || material == 16u)
         {
             ash += 1.0;
             landCount += 1.0;
@@ -216,6 +217,21 @@ float MeanBinInsolation(int start, int endExclusive)
     return count > 0.5 ? sum / count : 0.0;
 }
 
+float MeanBinGeoFlux(int start, int endExclusive)
+{
+    float sum = 0.0;
+    float count = 0.0;
+    [loop]
+    for (int i = 0; i < 512; i++)
+    {
+        int theta = start + i;
+        if (theta >= endExclusive) break;
+        sum += GeodynamicsGeothermalFlux(theta);
+        count += 1.0;
+    }
+    return count > 0.5 ? sum / count : 0.0;
+}
+
 [numthreads(64, 1, 1)]
 void ClimateStep(uint3 id : SV_DispatchThreadID)
 {
@@ -272,6 +288,7 @@ void ClimateStep(uint3 id : SV_DispatchThreadID)
     float lw = max(0.0, _ClimateE.x);
     float heatGain = absorbed * max(0.0, _WeatherA.x) * 32.0;
     T_slab += _DeltaTime / capacity * (heatGain - lw * (T_slab - _WeatherA.y));
+    T_slab += MeanBinGeoFlux(start, endExclusive) * max(0.0, _ClimateE.y) * _DeltaTime;
     float leftT = init ? ClimateSkinT(leftLower, leftSurface) : ClimateMemoryOf(leftBin).x;
     float rightT = init ? ClimateSkinT(rightLower, rightSurface) : ClimateMemoryOf(rightBin).x;
     T_slab += max(0.0, _ClimateA.w) * (leftT + rightT - 2.0 * T_slab);

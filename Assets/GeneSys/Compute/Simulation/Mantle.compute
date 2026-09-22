@@ -1,0 +1,84 @@
+#pragma kernel MantleConduits
+#pragma target 5.0
+
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+Texture2D<float2> _FlowRead;
+Texture2D<float4> _AuxRead;
+Texture2D<float4> _MantleFieldRead;
+RWTexture2D<float4> _MantleFieldWrite;
+StructuredBuffer<MaterialGpuData> _MaterialDefinitions;
+
+int2 _GridSize;
+int _Tick;
+int _Seed;
+float _DeltaTime;
+float _PlayableInnerRadius;
+float _AtmosphereStartRadius;
+
+#include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
+
+int2 Cell(int2 value) { return ClampCell(value, _GridSize); }
+
+bool IsOpenCarrier(uint material)
+{
+    return material == 0u || material == 1u || material == 11u;
+}
+
+[numthreads(8, 8, 1)]
+void MantleConduits(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_GridSize.x || id.y >= (uint)_GridSize.y) return;
+    int2 cell = id.xy;
+    uint material = _MaterialRead.Load(int3(Cell(cell), 0));
+    float2 flow = _FlowRead.Load(int3(Cell(cell), 0));
+    float4 prev = _MantleFieldRead.Load(int3(Cell(cell), 0));
+    float radius = Radius01(cell.y, _GridSize.y);
+    float dt = max(1e-4, _DeltaTime);
+    float memory = saturate(_MantleB.w);
+    float dike = GeodynamicsDikeNucleation(cell.x, radius);
+    float volcanic = GeodynamicsVolcanicEnvelope(cell.x, radius);
+    float plume = GeodynamicsPlume(cell.x, radius);
+
+    float maturity = saturate(prev.x);
+    float grow = 0.0;
+    bool interior = radius < _AtmosphereStartRadius - 0.015;
+    if (material == 6u && interior)
+        grow += 0.55;
+    if (dike > 0.14)
+        grow += dike * 0.85;
+    if (material == 6u && max(0.0, flow.y) > 0.04)
+        grow += 0.35;
+    if (volcanic > 0.12 && interior)
+        grow += volcanic * 0.25;
+    maturity = saturate(maturity + grow * dt);
+    maturity *= exp(-memory * dt * 2.2);
+    maturity = saturate(maturity);
+
+    float neighbor = 0.0;
+    float nCount = 0.0;
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = cell + offsets[i];
+        if (n.y < 0 || n.y >= _GridSize.y) continue;
+        neighbor += saturate(_MantleFieldRead.Load(int3(Cell(n), 0)).x);
+        nCount += 1.0;
+    }
+    if (nCount > 0.5)
+        maturity = lerp(maturity, neighbor / nCount, 0.12);
+
+    float ventAge = saturate(prev.z);
+    uint above = cell.y < _GridSize.y - 1 ? _MaterialRead.Load(int3(Cell(cell + int2(0, 1)), 0)) : 1u;
+    bool exposed = IsOpenCarrier(above) && !IsOpenCarrier(material);
+    bool venting = exposed && (material == 6u || material == 12u || material == 16u || volcanic > 0.2);
+    if (venting)
+        ventAge = 1.0;
+    else
+        ventAge *= exp(-0.18 * dt);
+
+    _MantleFieldWrite[cell] = float4(saturate(maturity), plume, saturate(ventAge), 0.0);
+}

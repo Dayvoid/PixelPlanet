@@ -1,3 +1,4 @@
 Thermal: solarIntensity {solarIntensity}, coreHeatRate {coreHeatRate}, surfaceAirTemperature {surfaceAirTemperature}, thermalRate {thermalRate}. state.x is cell temperature.
+Mantle: mantleLayerEnable {mantleLayerEnable}, mantlePlumeHeat {mantlePlumeHeat}, geothermalSurfaceGain {geothermalSurfaceGain}, geothermalClimateGain {geothermalClimateGain}. Overlay 33 is plume/lid/geoflux; Tephra (16) is explosive ejecta; magma tubes live in MantleField.
 Hydrology: evaporationRate {evaporationRate}, condensationRate {condensationRate}, precipitationRate {precipitationRate}, infiltrationRate {infiltrationRate}, groundwaterRate {groundwaterRate}, runoffRate {runoffRate}. state.z surface water, aux.x vapor, aux.y groundwater, aux.z nutrients.
 Probe deposits are local (outer ring, ahead of travel). Deity planet_adjust_field is planetwide. set_world_parameter changes rates for the next sim tick.

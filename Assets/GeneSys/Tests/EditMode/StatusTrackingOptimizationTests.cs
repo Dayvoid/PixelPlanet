@@ -1,4 +1,5 @@
 using GeneSys.Simulation;
+using GeneSys.Simulation.Geodynamics;
 using GeneSys.Validation;
 using NUnit.Framework;
 using Unity.Collections;
@@ -110,7 +111,7 @@ namespace GeneSys.Tests
             const int angularBins = 16;
             const int radialBins = 8;
             int totalCells = angularBins * radialBins;
-            int stateSlots = totalCells * 2;
+            int stateSlots = totalCells * GeodynamicsGrid.StateSlotsPerCell;
 
             var state = new NativeArray<Vector4>(stateSlots, Allocator.Temp);
             var events = new NativeArray<Vector4>(totalCells, Allocator.Temp);
@@ -119,11 +120,14 @@ namespace GeneSys.Tests
                 // Populate specific reservoir and kinematic values
                 // SlotReservoir: (temp, overpressure, strain, melt)
                 // SlotKinematics: (flowTheta, flowR, faultWeakness, activeStress)
+                // SlotMantle: (plume, lidBase, conduitNet, geoFlux)
                 state[0] = new Vector4(100f, 0.25f, 0.10f, 0.05f);
                 state[1] = new Vector4(0f, 0f, 0.30f, 0f);
+                state[2] = new Vector4(0.4f, 0.6f, 0f, 0.2f);
 
-                state[2] = new Vector4(120f, 0.75f, 0.50f, 0.15f);
-                state[3] = new Vector4(0f, 0f, 0.10f, 0f);
+                state[3] = new Vector4(120f, 0.75f, 0.50f, 0.15f);
+                state[4] = new Vector4(0f, 0f, 0.10f, 0f);
+                state[5] = new Vector4(-0.2f, 0.55f, 0f, 0.05f);
 
                 // Event at bin 0: (eventType, eventIntensity, depth, releasedEnergy)
                 events[0] = new Vector4(1f, 0.8f, 2f, 25.5f);

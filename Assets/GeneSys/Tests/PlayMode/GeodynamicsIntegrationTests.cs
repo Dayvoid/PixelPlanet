@@ -201,6 +201,16 @@ namespace GeneSys.Tests
             host.Config.thermalRate = 0.35f;
             host.Config.coreHeatRate = 0.15f;
             host.Config.volcanicCoolingRate = 0.15f;
+            host.Config.mantleLayerEnable = true;
+            host.Config.mantleConvectionCells = 4;
+            host.Config.mantleDriftRate = 0.018f;
+            host.Config.mantlePlumeHeat = 0.22f;
+            host.Config.mantleLidThinning = 0.08f;
+            host.Config.geothermalSurfaceGain = 0.12f;
+            host.Config.geothermalClimateGain = 0.08f;
+            host.Config.mantleConduitMemory = 0.04f;
+            host.Config.mantleConduitReuse = 0.65f;
+            host.Config.eruptionTephraFraction = 0.55f;
             host.Config.enableRockChunks = false;
         }
 
@@ -225,7 +235,8 @@ namespace GeneSys.Tests
             {
                 uint id = materials[i];
                 if (id == MaterialIds.Core || id == MaterialIds.Mantle || id == MaterialIds.Basalt
-                    || id == MaterialIds.Magma || id == MaterialIds.Ash || id == MaterialIds.Rock)
+                    || id == MaterialIds.Magma || id == MaterialIds.Ash || id == MaterialIds.Rock
+                    || id == MaterialIds.Tephra)
                     count++;
             }
             return count;
@@ -696,9 +707,11 @@ namespace GeneSys.Tests
                 bool owned = enabled[i] == MaterialIds.Core || enabled[i] == MaterialIds.Mantle
                     || enabled[i] == MaterialIds.Basalt || enabled[i] == MaterialIds.Magma
                     || enabled[i] == MaterialIds.Ash || enabled[i] == MaterialIds.Rock
+                    || enabled[i] == MaterialIds.Tephra
                     || disabled[i] == MaterialIds.Core || disabled[i] == MaterialIds.Mantle
                     || disabled[i] == MaterialIds.Basalt || disabled[i] == MaterialIds.Magma
-                    || disabled[i] == MaterialIds.Ash || disabled[i] == MaterialIds.Rock;
+                    || disabled[i] == MaterialIds.Ash || disabled[i] == MaterialIds.Rock
+                    || disabled[i] == MaterialIds.Tephra;
                 if (!owned) continue;
                 geologyCells++;
                 if (enabled[i] != disabled[i]) changed++;

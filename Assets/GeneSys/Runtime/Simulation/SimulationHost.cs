@@ -31,6 +31,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader storm;
         [SerializeField] private ComputeShader climate;
         [SerializeField] private ComputeShader geodynamics;
+        [SerializeField] private ComputeShader mantle;
         [SerializeField] private ComputeShader margolusTransport;
         [SerializeField] private ComputeShader rockChunks;
         [Header("Scene")]
@@ -150,6 +151,8 @@ namespace GeneSys.Simulation
                 climate = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Climate.compute");
             if (geodynamics == null)
                 geodynamics = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Geodynamics.compute");
+            if (mantle == null)
+                mantle = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/Mantle.compute");
             if (margolusTransport == null)
                 margolusTransport = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
             if (rockChunks == null)
@@ -157,7 +160,7 @@ namespace GeneSys.Simulation
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, combustion: combustion, storm: storm, climate: climate, geodynamics: geodynamics, margolusTransport: margolusTransport, rockChunks: rockChunks);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, combustion: combustion, storm: storm, climate: climate, geodynamics: geodynamics, margolusTransport: margolusTransport, rockChunks: rockChunks, mantle: mantle);
             if (generateWorld)
                 scheduler.GenerateWorld();
             OrganismHistory.Clear();
@@ -248,6 +251,11 @@ namespace GeneSys.Simulation
         public void RebuildGeodynamics(bool init = false)
         {
             if (IsReady) scheduler.RebuildGeodynamics(init);
+        }
+
+        public void RebuildMantleSlot()
+        {
+            if (IsReady) scheduler.RebuildMantleSlot();
         }
 
         public void ClearDeepTectonicStress()

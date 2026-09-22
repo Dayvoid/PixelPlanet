@@ -73,7 +73,7 @@ bool IsMargolusGranular(uint material, MaterialGpuData def)
     // Landed Ice piles at its repose instead of sitting as an unowned 1-wide tower.
     // Airborne Ice still uses AirborneIceCanSlide (unrestricted fall/slide).
     return material == 8u || material == 7u || material == 15u || material == 12u
-        || material == 10u || material == FLORA_ALGAE_ID;
+        || material == 16u || material == 10u || material == FLORA_ALGAE_ID;
 }
 
 float MargolusEffectiveDensity(MargolusCell c, MaterialGpuData def)

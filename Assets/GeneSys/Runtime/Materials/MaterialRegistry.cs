@@ -79,6 +79,7 @@ namespace GeneSys.Materials
         public const uint Metal = 13;
         public const uint Limestone = 14;
         public const uint Clay = 15;
+        public const uint Tephra = 16;
         public const uint Algae = 128;
         public const uint Cricket = 129;
         public const uint CricketEgg = 130;

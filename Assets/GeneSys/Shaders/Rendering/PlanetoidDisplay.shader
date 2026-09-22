@@ -63,6 +63,7 @@ Shader "GeneSys/Planetoid Display"
             StructuredBuffer<float4> _GeodynamicsEvents;
             int _GeodynamicsAngularBins;
             int _GeodynamicsRadialBins;
+            Texture2D<float4> _MantleField;
             Texture2D<float4> _Palette;
             Texture2D<float4> _Properties;
             Texture2D<float4> _Categories;
@@ -350,6 +351,19 @@ Shader "GeneSys/Planetoid Display"
                                 color = puddleColor;
                             }
                         }
+                    }
+
+                    if (material == 3u || material == 2u)
+                    {
+                        float heat = saturate((state.x - 80.0) / 1400.0);
+                        float3 coldMantle = float3(0.18, 0.04, 0.03);
+                        float3 hotMantle = float3(1.0, 0.38, 0.05);
+                        color = lerp(coldMantle, hotMantle, heat);
+                    }
+                    if (material == 3u || material == 5u || material == 6u)
+                    {
+                        float vein = saturate(_MantleField.Load(int3(cell, 0)).x);
+                        color = lerp(color, float3(1.0, 0.55, 0.12), vein * 0.5);
                     }
 
                     float myco = saturate(ecology.y);
@@ -754,16 +768,17 @@ Shader "GeneSys/Planetoid Display"
                     color = lerp(color, float3(0.92, 0.94, 0.98), albedo * 0.35);
                     color = lerp(color, color * float3(0.75, 1.05, 0.7), saturate(land.w) * 0.25);
                 }
-                else if (_OverlayMode >= 29 && _OverlayMode <= 32)
+                else if (_OverlayMode >= 29 && _OverlayMode <= 33)
                 {
                     int aBins = max(16, _GeodynamicsAngularBins);
                     int rBins = max(8, _GeodynamicsRadialBins);
                     int ab = (int)((uint)cell.x * (uint)aBins / max(1u, width));
                     float outer = max(0.05, _AtmosphereStartRadius);
                     int rb = clamp((int)((simulationRadius / outer) * rBins), 0, rBins - 1);
-                    int stateIndex = ((ab * rBins) + rb) * 2;
+                    int stateIndex = ((ab * rBins) + rb) * 3;
                     float4 reservoir = _GeodynamicsState[stateIndex];
                     float4 kinematics = _GeodynamicsState[stateIndex + 1];
+                    float4 mantle = _GeodynamicsState[stateIndex + 2];
                     float4 ev = _GeodynamicsEvents[ab * rBins + rb];
                     if (_OverlayMode == 29)
                     {
@@ -780,13 +795,24 @@ Shader "GeneSys/Planetoid Display"
                     {
                         color = float3(saturate(reservoir.z), saturate(kinematics.z), 0.06);
                     }
-                    else
+                    else if (_OverlayMode == 32)
                     {
                         int type = (int)round(ev.x);
                         color = float3(0.04, 0.04, 0.05);
                         if (type == 1) color = lerp(color, float3(0.95, 0.82, 0.2), saturate(ev.y));
                         else if (type == 2) color = lerp(color, float3(1.0, 0.28, 0.06), saturate(ev.y));
                         else if (type == 3) color = lerp(color, float3(0.2, 0.75, 1.0), saturate(ev.y));
+                    }
+                    else
+                    {
+                        float plume = saturate(mantle.x * 0.5 + 0.5);
+                        float lid = saturate(mantle.y);
+                        float flux = saturate(mantle.w);
+                        float vein = saturate(_MantleField.Load(int3(cell, 0)).x);
+                        color = lerp(float3(0.08, 0.18, 0.42), float3(0.95, 0.32, 0.06), plume);
+                        color = lerp(color, float3(0.75, 0.62, 0.18), lid * 0.35);
+                        color = lerp(color, float3(1.0, 0.82, 0.22), flux * 0.45);
+                        color = lerp(color, float3(1.0, 0.55, 0.12), vein * 0.55);
                     }
                 }
 

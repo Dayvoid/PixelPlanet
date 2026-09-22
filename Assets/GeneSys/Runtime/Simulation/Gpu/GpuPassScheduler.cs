@@ -46,6 +46,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader storm;
         private readonly ComputeShader climate;
         private readonly ComputeShader geodynamics;
+        private readonly ComputeShader mantle;
         private readonly ComputeShader margolusTransport;
         private readonly ComputeShader rockChunks;
         private bool climateInit;
@@ -74,7 +75,8 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader fauna, ComputeShader grass = null, ComputeShader combustion = null, ComputeShader storm = null,
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
             ComputeShader climate = null, ComputeShader geodynamics = null,
-            ComputeShader margolusTransport = null, ComputeShader rockChunks = null)
+            ComputeShader margolusTransport = null, ComputeShader rockChunks = null,
+            ComputeShader mantle = null)
         {
             this.config = config;
             this.resources = resources;
@@ -91,6 +93,7 @@ namespace GeneSys.Simulation.Gpu
             this.storm = storm;
             this.climate = climate;
             this.geodynamics = geodynamics;
+            this.mantle = mantle;
             this.margolusTransport = margolusTransport;
             this.rockChunks = rockChunks;
             materialBuffer = registry.CreateGpuBuffer();
@@ -213,6 +216,7 @@ namespace GeneSys.Simulation.Gpu
             }
             resources.CopyReadToWrite();
             resources.ClearRockChunks();
+            resources.ClearMantleField();
             RebuildClimate();
             RebuildGeodynamics(true);
         }
@@ -306,6 +310,7 @@ namespace GeneSys.Simulation.Gpu
             {
                 float geoDt = CadenceDt(deltaTime, config.geodynamicsPeriodTicks);
                 DispatchGeodynamics(geoDt);
+                DispatchMantleConduits(geoDt);
                 DispatchTectonicKinematics(geoDt);
             }
 
@@ -733,6 +738,7 @@ namespace GeneSys.Simulation.Gpu
             climate.SetTexture(kernel, "_TreeRead", resources.TreeRead);
             climate.SetBuffer(kernel, "_ClimateColumns", resources.ClimateColumns);
             climate.SetBuffer(kernel, "_ClimateState", resources.ClimateState);
+            BindGeodynamicsState(climate, kernel);
         }
 
         private void BindClimateState(ComputeShader shader, int kernel)
@@ -755,6 +761,24 @@ namespace GeneSys.Simulation.Gpu
             if (init)
                 InitializeGeodynamicsFaults();
             DispatchGeodynamics(CadenceDt(1f / Mathf.Max(1f, config.ticksPerSecond), config.geodynamicsPeriodTicks), init);
+            if (init)
+                DispatchMantleInitialize();
+        }
+
+        public void RebuildMantleSlot()
+        {
+            DispatchMantleInitialize();
+        }
+
+        private void DispatchMantleInitialize()
+        {
+            if (geodynamics == null || !geodynamics.HasKernel("InitializeMantle") || resources.GeodynamicsStateWrite == null)
+                return;
+            int kernel = geodynamics.FindKernel("InitializeMantle");
+            BindGeodynamicsPass(kernel, 0f);
+            DispatchGeodynamicsGrid(geodynamics, kernel);
+            resources.SwapGeodynamics();
+            resources.CopyGeodynamicsReadToWrite();
         }
 
         private void InitializeGeodynamicsFaults()
@@ -778,6 +802,28 @@ namespace GeneSys.Simulation.Gpu
                 DispatchPass(geology, geology.FindKernel("TectonicDisplacement"), deltaTime);
             if (geology.HasKernel("TectonicVertical"))
                 DispatchPass(geology, geology.FindKernel("TectonicVertical"), deltaTime);
+        }
+
+        private void DispatchMantleConduits(float deltaTime)
+        {
+            if (mantle == null || resources.MantleFieldRead == null || resources.MantleFieldWrite == null)
+                return;
+            if (!config.geodynamicsLayerEnable || !config.mantleLayerEnable)
+                return;
+            if (!mantle.HasKernel("MantleConduits"))
+                return;
+            int kernel = mantle.FindKernel("MantleConduits");
+            SetCommon(mantle, kernel, deltaTime);
+            mantle.SetBuffer(kernel, "_MaterialDefinitions", materialBuffer);
+            mantle.SetTexture(kernel, "_MaterialRead", resources.MaterialRead);
+            mantle.SetTexture(kernel, "_StateRead", resources.StateRead);
+            mantle.SetTexture(kernel, "_FlowRead", resources.FlowRead);
+            mantle.SetTexture(kernel, "_AuxRead", resources.AuxRead);
+            mantle.SetTexture(kernel, "_MantleFieldRead", resources.MantleFieldRead);
+            mantle.SetTexture(kernel, "_MantleFieldWrite", resources.MantleFieldWrite);
+            BindGeodynamicsState(mantle, kernel);
+            Dispatch(mantle, kernel);
+            resources.SwapMantleField();
         }
 
         private void DispatchGeodynamics(float deltaTime, bool init = false)
@@ -829,12 +875,15 @@ namespace GeneSys.Simulation.Gpu
             geodynamics.SetBuffer(kernel, "_GeodynamicsEvents", resources.GeodynamicsEvents);
             geodynamics.SetBuffer(kernel, "_GeodynamicsColumns", resources.GeodynamicsColumns);
             geodynamics.SetBuffer(kernel, "_GeodynamicsEventCounter", resources.GeodynamicsEventCounter);
+            if (resources.MantleFieldRead != null)
+                geodynamics.SetTexture(kernel, "_MantleFieldRead", resources.MantleFieldRead);
         }
 
         private void BindGeodynamicsState(ComputeShader shader, int kernel)
         {
             if (resources.GeodynamicsStateRead == null || resources.GeodynamicsEvents == null) return;
-            if (shader != geology && shader != hydrology && shader != materialSimulation && shader != worldGeneration && shader != geodynamics)
+            if (shader != geology && shader != hydrology && shader != materialSimulation && shader != worldGeneration
+                && shader != geodynamics && shader != weather && shader != climate && shader != mantle)
                 return;
             shader.SetBuffer(kernel, "_GeodynamicsState", resources.GeodynamicsStateRead);
             shader.SetBuffer(kernel, "_GeodynamicsEvents", resources.GeodynamicsEvents);
@@ -908,6 +957,21 @@ namespace GeneSys.Simulation.Gpu
                 config.volcanicCoolingRate,
                 config.magmaViscosity,
                 config.volcanicMeltRate));
+            shader.SetVector("_MantleA", new Vector4(
+                config.mantleLayerEnable ? 1f : 0f,
+                config.mantleConvectionCells,
+                config.mantleDriftRate,
+                config.mantlePlumeHeat));
+            shader.SetVector("_MantleB", new Vector4(
+                config.mantleLidThinning,
+                config.geothermalSurfaceGain,
+                config.geothermalClimateGain,
+                config.mantleConduitMemory));
+            shader.SetVector("_MantleC", new Vector4(
+                config.mantleConduitReuse,
+                config.eruptionTephraFraction,
+                0f,
+                0f));
             shader.SetVector("_Hydrothermal", new Vector4(
                 config.hydrothermalNutrientRate,
                 config.hydrothermalNutrientYield,
@@ -1028,7 +1092,7 @@ namespace GeneSys.Simulation.Gpu
                 config.climateBaseAlbedo,
                 config.climateAshAlbedo,
                 config.climateBurnBucketPenalty));
-            shader.SetVector("_ClimateE", new Vector4(config.climateSlabRadiativeCooling, 0f, 0f, 0f));
+            shader.SetVector("_ClimateE", new Vector4(config.climateSlabRadiativeCooling, config.geothermalClimateGain, 0f, 0f));
             shader.SetVector("_MargolusParams", new Vector4(
                 1f,
                 config.margolusReposeFriction,
@@ -1070,6 +1134,8 @@ namespace GeneSys.Simulation.Gpu
             }
             BindClimateState(shader, kernel);
             BindGeodynamicsState(shader, kernel);
+            if (resources.MantleFieldRead != null && shader == geology)
+                shader.SetTexture(kernel, "_MantleFieldRead", resources.MantleFieldRead);
         }
 
         private void BindOrganismHistory(ComputeShader shader, int kernel)

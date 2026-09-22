@@ -229,6 +229,8 @@ namespace GeneSys.Rendering
                 displayMaterial.SetBuffer("_GeodynamicsState", resources.GeodynamicsStateRead);
             if (resources.GeodynamicsEvents != null)
                 displayMaterial.SetBuffer("_GeodynamicsEvents", resources.GeodynamicsEvents);
+            if (resources.MantleFieldRead != null)
+                displayMaterial.SetTexture("_MantleField", resources.MantleFieldRead);
             displayMaterial.SetInt("_GeodynamicsAngularBins", config != null ? GeodynamicsGrid.ClampAngularBins(config.geodynamicsAngularBins) : GeodynamicsGrid.DefaultAngularBins);
             displayMaterial.SetInt("_GeodynamicsRadialBins", config != null ? GeodynamicsGrid.ClampRadialBins(config.geodynamicsRadialBins) : GeodynamicsGrid.DefaultRadialBins);
         }

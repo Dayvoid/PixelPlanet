@@ -20,6 +20,13 @@ float4 _GeodynamicsC; // earthquakeThreshold, releaseFraction, footprint, cooldo
 float4 _GeodynamicsD; // maxConcurrent, surfaceCoupling, volcanicThreshold, volcanicReleaseFraction
 float4 _GeodynamicsK; // kinematicCoupling, upliftScale, convergenceScale, displacementScale
 float4 _GeodynamicsL; // coseismicScale, crustRatio, isostasyScale, magmaFractionLimit
+float4 _MantleA; // enable, convectionCells, driftRate, plumeHeat
+float4 _MantleB; // lidThinning, geothermalSurfaceGain, geothermalClimateGain, conduitMemory
+float4 _MantleC; // conduitReuse, tephraFraction, unused, unused
+#ifndef GENESYS_TICKS_PER_SECOND_DECLARED
+#define GENESYS_TICKS_PER_SECOND_DECLARED
+float _TicksPerSecond;
+#endif
 #ifndef GENESYS_VOLCANIC_DECLARED
 #define GENESYS_VOLCANIC_DECLARED
 float4 _Volcanic; // extrusionRate, coolingRate, magmaViscosity, meltRate
@@ -76,8 +83,8 @@ int GeodynamicsStateIndex(int angularBin, int radialBin, int slot)
     int rBins = GeodynamicsRadialBins();
     angularBin = GeodynamicsWrapBin(angularBin, aBins);
     radialBin = clamp(radialBin, 0, rBins - 1);
-    slot = clamp(slot, 0, 1);
-    return ((angularBin * rBins) + radialBin) * 2 + slot;
+    slot = clamp(slot, 0, 2);
+    return ((angularBin * rBins) + radialBin) * 3 + slot;
 }
 
 int GeodynamicsEventIndex(int angularBin, int radialBin)
@@ -89,14 +96,24 @@ int GeodynamicsEventIndex(int angularBin, int radialBin)
     return angularBin * rBins + radialBin;
 }
 
+float4 GeodynamicsStateSlot(int slot, int angularBin, int radialBin)
+{
+    return _GeodynamicsState[GeodynamicsStateIndex(angularBin, radialBin, slot)];
+}
+
 float4 GeodynamicsReservoir(int angularBin, int radialBin)
 {
-    return _GeodynamicsState[GeodynamicsStateIndex(angularBin, radialBin, 0)];
+    return GeodynamicsStateSlot(0, angularBin, radialBin);
 }
 
 float4 GeodynamicsKinematics(int angularBin, int radialBin)
 {
     return _GeodynamicsState[GeodynamicsStateIndex(angularBin, radialBin, 1)];
+}
+
+float4 GeodynamicsMantle(int angularBin, int radialBin)
+{
+    return _GeodynamicsState[GeodynamicsStateIndex(angularBin, radialBin, 2)];
 }
 
 float4 GeodynamicsEvent(int angularBin, int radialBin)
@@ -129,10 +146,10 @@ float4 GeodynamicsSampleLattice(int slot, int theta, float radius01)
     float ta = frac(af);
     float tr = saturate(rf - (float)r0);
     int r1 = min(r0 + 1, GeodynamicsRadialBins() - 1);
-    float4 v00 = slot == 0 ? GeodynamicsReservoir(a0, r0) : GeodynamicsKinematics(a0, r0);
-    float4 v10 = slot == 0 ? GeodynamicsReservoir(a0 + 1, r0) : GeodynamicsKinematics(a0 + 1, r0);
-    float4 v01 = slot == 0 ? GeodynamicsReservoir(a0, r1) : GeodynamicsKinematics(a0, r1);
-    float4 v11 = slot == 0 ? GeodynamicsReservoir(a0 + 1, r1) : GeodynamicsKinematics(a0 + 1, r1);
+    float4 v00 = GeodynamicsStateSlot(slot, a0, r0);
+    float4 v10 = GeodynamicsStateSlot(slot, a0 + 1, r0);
+    float4 v01 = GeodynamicsStateSlot(slot, a0, r1);
+    float4 v11 = GeodynamicsStateSlot(slot, a0 + 1, r1);
     return lerp(lerp(v00, v10, ta), lerp(v01, v11, ta), tr);
 }
 
@@ -144,6 +161,108 @@ float4 GeodynamicsSampleReservoir(int theta, float radius01)
 float4 GeodynamicsSampleKinematics(int theta, float radius01)
 {
     return GeodynamicsSampleLattice(1, theta, radius01);
+}
+
+float4 GeodynamicsSampleMantle(int theta, float radius01)
+{
+    return GeodynamicsSampleLattice(2, theta, radius01);
+}
+
+float GeodynamicsMantleEnabled()
+{
+    return (_GeodynamicsFlags.x > 0.5 && _MantleA.x > 0.5) ? 1.0 : 0.0;
+}
+
+float GeodynamicsPlumePhase()
+{
+    float drift = max(0.0, _MantleA.z);
+    float t = (float)_Tick / max(1.0, _TicksPerSecond);
+    float basePhase = Hash01((uint)_Seed * 747796405u + 17u) * 6.28318530718;
+    float wobble = sin(t * 0.035 + Hash01((uint)_Seed * 1103515245u + 12345u) * 6.28318530718) * 0.22;
+    return basePhase + t * drift + wobble;
+}
+
+float GeodynamicsPlumePatternAt(int angularBin, int radialBin)
+{
+    int aBins = GeodynamicsAngularBins();
+    int rBins = GeodynamicsRadialBins();
+    float cells = clamp(_MantleA.y, 2.0, 8.0);
+    float angular = ((float)GeodynamicsWrapBin(angularBin, aBins) + 0.5) / (float)aBins;
+    float r = ((float)clamp(radialBin, 0, rBins - 1) + 0.5) / (float)rBins;
+    float mid = saturate(1.0 - abs(r - 0.45) * 2.4);
+    float coreCut = saturate((r - 0.08) / 0.18);
+    float lidCut = saturate((0.88 - r) / 0.18);
+    float window = saturate(mid * coreCut * lidCut);
+    return sin(angular * cells * 6.28318530718 + GeodynamicsPlumePhase()) * window;
+}
+
+float GeodynamicsDefaultLidBase()
+{
+    float outer = max(0.05, _AtmosphereStartRadius);
+    float crust = clamp(_GeodynamicsL.y, 0.01, 0.25);
+    return saturate(outer * (1.0 - crust));
+}
+
+void GeodynamicsInterpAngular(int theta, out int bin0, out int bin1, out float t)
+{
+    int bins = GeodynamicsAngularBins();
+    int width = max(1, _GridSize.x);
+    theta = WrapTheta(theta, width);
+    float coord = ((float)theta + 0.5) * (float)bins / (float)width - 0.5;
+    float i0f = floor(coord);
+    t = coord - i0f;
+    int i0 = (int)i0f;
+    bin0 = GeodynamicsWrapBin(i0, bins);
+    bin1 = GeodynamicsWrapBin(bin0 + 1, bins);
+}
+
+float GeodynamicsPlume(int theta, float radius01)
+{
+    if (GeodynamicsMantleEnabled() < 0.5)
+        return 0.0;
+    return GeodynamicsSampleMantle(theta, radius01).x;
+}
+
+float GeodynamicsLidBase(int theta)
+{
+    float fallback = GeodynamicsDefaultLidBase();
+    if (GeodynamicsMantleEnabled() < 0.5)
+        return fallback;
+    float sampleR = max(0.12, _AtmosphereStartRadius * 0.82);
+    float lid = GeodynamicsSampleMantle(theta, sampleR).y;
+    return lid > 1e-4 ? lid : fallback;
+}
+
+float GeodynamicsGeothermalFlux(int theta)
+{
+    if (GeodynamicsMantleEnabled() < 0.5)
+        return 0.0;
+    int bin0, bin1;
+    float t;
+    GeodynamicsInterpAngular(theta, bin0, bin1, t);
+    int rBins = GeodynamicsRadialBins();
+    float a = 0.0;
+    float b = 0.0;
+    [loop]
+    for (int r = 0; r < 32; r++)
+    {
+        if (r >= rBins) break;
+        a += GeodynamicsMantle(bin0, r).w;
+        b += GeodynamicsMantle(bin1, r).w;
+    }
+    float inv = 1.0 / max(1.0, (float)rBins);
+    return saturate(lerp(a * inv, b * inv, t));
+}
+
+float GeodynamicsGeothermalDepthScale(float radius01)
+{
+    float outer = max(0.05, _AtmosphereStartRadius);
+    float inner = max(0.02, _PlayableInnerRadius);
+    if (radius01 >= outer)
+        return 0.0;
+    float depth = max(0.0, outer - radius01);
+    float eFolding = 0.04 * max(1e-5, outer - inner);
+    return exp(-depth / eFolding);
 }
 
 float GeodynamicsSafetyThrottle()
@@ -159,14 +278,15 @@ float GeodynamicsVolcanoScore(float4 res, float4 kin)
     return saturate(res.y) * (0.35 + heatDrive) * (0.25 + saturate(kin.z) + saturate(res.w));
 }
 
-float GeodynamicsVolcanoScoreAt(float4 res, float4 kin, int radialBin)
+float GeodynamicsVolcanoScoreAt(float4 res, float4 kin, int angularBin, int radialBin)
 {
     int rBins = GeodynamicsRadialBins();
     float r = ((float)clamp(radialBin, 0, rBins - 1) + 0.5) / max(1.0, (float)rBins);
     // Prefer asthenosphere / upper mantle so vents are not locked to the core.
     float window = saturate(1.0 - abs(r - 0.62) * 2.4);
     float coreCut = saturate((r - 0.10) / 0.22);
-    return saturate(GeodynamicsVolcanoScore(res, kin) * (0.16 + 0.84 * window) * (0.20 + 0.80 * coreCut));
+    float conduit = saturate(GeodynamicsMantle(angularBin, radialBin).z);
+    return saturate(GeodynamicsVolcanoScore(res, kin) * (0.16 + 0.84 * window) * (0.20 + 0.80 * coreCut) * (1.0 + conduit * 0.4));
 }
 
 void GeodynamicsNearestVolcanic(int theta, float radius01, out int bestA, out int bestR, out float bestY)
@@ -363,7 +483,8 @@ float GeodynamicsSeismicEnvelope(int theta, float radius01)
 float GeodynamicsHydrothermalEnvelope(int theta, float radius01)
 {
     float eventGain = GeodynamicsEnvelopeAt(theta, radius01, 3);
-    float seep = GeodynamicsFaultWeakness(theta, radius01) * saturate(GeodynamicsThermalAnomaly(theta, radius01) * 0.02);
+    float seep = GeodynamicsFaultWeakness(theta, radius01) *
+        saturate(GeodynamicsThermalAnomaly(theta, radius01) * 0.02 + GeodynamicsGeothermalFlux(theta) * 0.45);
     return saturate(max(eventGain, seep));
 }
 

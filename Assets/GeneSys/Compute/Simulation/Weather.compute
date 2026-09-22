@@ -59,6 +59,7 @@ MaterialGpuData D(uint material) { return _MaterialDefinitions[min(material, 255
 
 #include "../../Shaders/Simulation/Common/SurfaceWater.hlsl"
 #include "../../Shaders/Simulation/Common/Climate.hlsl"
+#include "../../Shaders/Simulation/Common/Geodynamics.hlsl"
 
 bool IsExposedSurface(int2 cell, uint material)
 {
@@ -165,6 +166,11 @@ void AtmosphericForcing(uint3 id : SV_DispatchThreadID)
         cloudCover = saturate(S(cell + int2(0, 1)).z);
     float cooling = (state.x - _WeatherA.y) * coolingRate * (1.0 - insolation) * (1.0 - cloudCover * 0.7) * 0.01;
     state.x += (heating - cooling) * _DeltaTime;
+    if (!atmosphere)
+    {
+        float geo = GeodynamicsGeothermalFlux(cell.x) * max(0.0, _MantleB.y) * GeodynamicsGeothermalDepthScale(radius);
+        state.x += geo * _DeltaTime;
+    }
 
     float heatCapacity = max(0.001, definition.transport.y);
     if (atmosphere && cell.y > 0)

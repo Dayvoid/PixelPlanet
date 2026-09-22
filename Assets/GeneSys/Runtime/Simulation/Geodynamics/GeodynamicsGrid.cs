@@ -10,9 +10,11 @@ namespace GeneSys.Simulation.Geodynamics
         public const int MinRadialBins = 8;
         public const int MaxRadialBins = 32;
         public const int DefaultRadialBins = 16;
-        public const int StateSlotsPerCell = 2;
+        public const int StateSlotsPerCell = 3;
+        public const int LegacyStateSlotsPerCell = 2;
         public const int SlotReservoir = 0;
         public const int SlotKinematics = 1;
+        public const int SlotMantle = 2;
         public const int EventTypeNone = 0;
         public const int EventTypeEarthquake = 1;
         public const int EventTypeVolcanic = 2;
@@ -86,6 +88,23 @@ namespace GeneSys.Simulation.Geodynamics
             StateIndex(angularBin, radialBin, SlotReservoir, angularBins, radialBins) / StateSlotsPerCell;
 
         public static int StateBufferCount() => MaxAngularBins * MaxRadialBins * StateSlotsPerCell;
+
+        public static int LegacyStateBufferCount() => MaxAngularBins * MaxRadialBins * LegacyStateSlotsPerCell;
+
+        public static void ExpandLegacyState(Vector4[] legacy, Vector4[] dest)
+        {
+            int cells = MaxAngularBins * MaxRadialBins;
+            if (legacy == null || dest == null) return;
+            for (int i = 0; i < cells; i++)
+            {
+                int src = i * LegacyStateSlotsPerCell;
+                int dst = i * StateSlotsPerCell;
+                if (src + 1 >= legacy.Length || dst + 2 >= dest.Length) break;
+                dest[dst + SlotReservoir] = legacy[src + SlotReservoir];
+                dest[dst + SlotKinematics] = legacy[src + SlotKinematics];
+                dest[dst + SlotMantle] = Vector4.zero;
+            }
+        }
 
         public static int EventBufferCount() => MaxAngularBins * MaxRadialBins;
 

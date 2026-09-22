@@ -35,6 +35,7 @@ namespace GeneSys.Persistence
         private const int Version14 = 14;
         private const int Version15 = 15;
         private const int Version16 = 16;
+        private const int Version17 = 17;
         private const int PayloadCountV8 = 10;
         private const int PayloadCountV9 = 16;
         private const int PayloadCountV10 = 31;
@@ -43,6 +44,7 @@ namespace GeneSys.Persistence
         private const int PayloadCountV14 = PayloadCountV12 + 6; // 53
         private const int PayloadCountV15 = PayloadCountV14 + 2; // 55
         private const int PayloadCountV16 = PayloadCountV12 + 2; // 49
+        private const int PayloadCountV17 = PayloadCountV16;
 
         private readonly string directoryOverride;
         private string resolvedDirectory;
@@ -106,17 +108,17 @@ namespace GeneSys.Persistence
         }
 
         public void Save(SimulationHost host, string path, Action<bool> completed = null) =>
-            Save(host, path, Version16, completed);
+            Save(host, path, Version17, completed);
 
         public void Save(SimulationHost host, string path, int version, Action<bool> completed)
         {
             if (host == null || !host.IsReady) { completed?.Invoke(false); return; }
-            int writeVersion = Mathf.Clamp(version, Version1, Version16);
+            int writeVersion = Mathf.Clamp(version, Version1, Version17);
             bool includeGrass = writeVersion >= Version10;
             bool includeWasp = writeVersion >= Version11;
             bool includeTree = writeVersion >= Version12;
             bool includeGeodynamics = writeVersion >= Version15;
-            int payloadCount = writeVersion >= Version16 ? PayloadCountV16
+            int payloadCount = writeVersion >= Version16 ? PayloadCountV17
                 : writeVersion >= Version15 ? PayloadCountV15
                 : writeVersion >= Version14 ? PayloadCountV14
                 : writeVersion >= Version12 ? PayloadCountV12
@@ -551,11 +553,17 @@ namespace GeneSys.Persistence
 
             if (version >= Version15)
             {
-                if (!TryLoadGeodynamicsPayload(reader, host.Resources.GeodynamicsStateRead, GeodynamicsGrid.StateBufferCount()))
+                int stateCount = version >= Version17
+                    ? GeodynamicsGrid.StateBufferCount()
+                    : GeodynamicsGrid.LegacyStateBufferCount();
+                if (!TryLoadGeodynamicsState(reader, host.Resources.GeodynamicsStateRead, stateCount, version < Version17))
                     return false;
                 if (!TryLoadGeodynamicsPayload(reader, host.Resources.GeodynamicsEvents, GeodynamicsGrid.EventBufferCount()))
                     return false;
                 host.Resources.CopyGeodynamicsReadToWrite();
+                if (version < Version17)
+                    host.RebuildMantleSlot();
+                host.Resources.ClearMantleField();
             }
             else
             {
@@ -569,6 +577,34 @@ namespace GeneSys.Persistence
             host.RebuildClimate();
             if (version < Version15)
                 host.RebuildGeodynamics(true);
+            return true;
+        }
+
+        private static bool TryLoadGeodynamicsState(BinaryReader reader, ComputeBuffer buffer, int count, bool expandLegacySlots)
+        {
+            int length = reader.ReadInt32();
+            byte[] payload = reader.ReadBytes(length);
+            if (payload.Length != length || buffer == null)
+                return false;
+            int expected = count * sizeof(float) * 4;
+            if (payload.Length != expected)
+                return false;
+            var floats = new float[count * 4];
+            Buffer.BlockCopy(payload, 0, floats, 0, expected);
+            var values = new Vector4[count];
+            for (int i = 0; i < count; i++)
+            {
+                int src = i * 4;
+                values[i] = new Vector4(floats[src], floats[src + 1], floats[src + 2], floats[src + 3]);
+            }
+            if (expandLegacySlots)
+            {
+                var expanded = new Vector4[GeodynamicsGrid.StateBufferCount()];
+                GeodynamicsGrid.ExpandLegacyState(values, expanded);
+                buffer.SetData(expanded);
+            }
+            else
+                buffer.SetData(values);
             return true;
         }
 

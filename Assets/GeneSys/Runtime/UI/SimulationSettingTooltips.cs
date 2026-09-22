@@ -150,7 +150,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.tectonicMaxConcurrentEvents)] =
                 "Soft cap on how many lattice cells may hold an active release at once. Defaults keep activity regional rather than globally synchronized.",
             [nameof(SimulationConfig.tectonicSurfaceCoupling)] =
-                "How much a seismic envelope adds to surfaceFailureStress on weak, wet, exposed, or unsupported crust. It never directly replaces terrain cells.",
+                "How easily magma punches through the lid. Higher values lower eruption burden resistance so vents break the surface; it also still scales seismic surfaceFailureStress.",
             [nameof(SimulationConfig.tectonicKinematicCoupling)] =
                 "Master mix for crustal kinematics. At 0, the lid stays put. Raising it scales how often lattice flow, convergence, and coseismic slip move terrain cells (unlike surface coupling, which only loads failure stress).",
             [nameof(SimulationConfig.tectonicUpliftScale)] =
@@ -186,7 +186,27 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.eruptionBurdenDepth)] =
                 "How many solid cells above magma count as eruptive lid. Deeper burden needs more pressure to blast; shallow burden lets vents open easily.",
             [nameof(SimulationConfig.eruptionBlastThreshold)] =
-                "Overdrive level required to explode the lid into ash. Lower thresholds produce frequent ash-rich blasts; higher ones favor quieter lava effusion.",
+                "Overdrive level required to explode the lid into ash or tephra. Lower thresholds produce frequent explosive blasts; higher ones favor quieter lava effusion.",
+            [nameof(SimulationConfig.eruptionTephraFraction)] =
+                "Share of explosive blasts that emit coarse Tephra instead of lofted Ash. Tephra piles into steep cones; ash rides wind and fertilizes soil.",
+            [nameof(SimulationConfig.mantleLayerEnable)] =
+                "Drives the drifting mantle convection pattern, lithosphere-base thinning, geothermal flux, and magma-tube memory. Disable to freeze interior plumes while leaving existing magma in place.",
+            [nameof(SimulationConfig.mantleConvectionCells)] =
+                "How many upwelling/downwelling pairs the mantle pattern uses around the planet. More cells make narrower hot columns.",
+            [nameof(SimulationConfig.mantleDriftRate)] =
+                "How quickly convection cells wander in longitude. Higher drift moves hotspots; zero locks the pattern to the seed.",
+            [nameof(SimulationConfig.mantlePlumeHeat)] =
+                "How strongly an upwelling warms the lattice and fine-grid mantle. Keep modest so melt stays gated by dikes and the magma-fraction safety limit.",
+            [nameof(SimulationConfig.mantleLidThinning)] =
+                "How fast the lithosphere base rises under a sustained plume and sinks under a downwelling. Higher values let magma chambers sit nearer the surface.",
+            [nameof(SimulationConfig.geothermalSurfaceGain)] =
+                "How much lattice geothermal flux heats near-surface crust and air through AtmosphericForcing. Creates regional warmth over active mantle.",
+            [nameof(SimulationConfig.geothermalClimateGain)] =
+                "How much mean-bin geothermal flux is added to the coarse climate slab. Small values bias regional climate without replacing solar forcing.",
+            [nameof(SimulationConfig.mantleConduitMemory)] =
+                "How quickly unused magma tubes forget their path. Lower memory keeps old dikes reusable as hotspots; higher memory heals conduits after a plume drifts away.",
+            [nameof(SimulationConfig.mantleConduitReuse)] =
+                "How much a mature tube lowers eruption resistance and substitutes for a live dike when melting mantle. Higher reuse prefers old plumbing.",
             [nameof(SimulationConfig.ashUpdraftStrength)] =
                 "How strongly eruption and heat loft ash into the atmosphere. Higher values spread ash with wind and weather; lower values keep fallout local.",
             [nameof(SimulationConfig.ashSettlingStrength)] =

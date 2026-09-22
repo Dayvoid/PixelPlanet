@@ -6,6 +6,7 @@ namespace GeneSys.Rendering
         public const int OverpressureOverlay = 30;
         public const int StrainOverlay = 31;
         public const int ReleaseOverlay = 32;
-        public const int MaxOverlayMode = ReleaseOverlay;
+        public const int MantleOverlay = 33;
+        public const int MaxOverlayMode = MantleOverlay;
     }
 }

@@ -27,6 +27,7 @@ namespace GeneSys.UI
             { "Geology", "geology" },
             { "Geodynamics", "geology" },
             { "Tectonics", "geology" },
+            { "Mantle", "geology" },
             { "Volcanism", "geology" },
             { "Eruption", "geology" },
             { "Ash", "geology" },
@@ -410,7 +411,7 @@ namespace GeneSys.UI
             4, 5, 8, 9, 10, 12, 13,
             16, 17, 18, 19,
             20, 23, 25, 26, 21, 22, 24,
-            28, 29, 30, 31, 32
+            28, 29, 30, 31, 32, 33
         };
 
         private static int OverlayModeFromChoice(int index) =>
@@ -430,7 +431,7 @@ namespace GeneSys.UI
                     "Mycology", "Fire", "Oxygen", "Storm Charge",
                     "Flora", "Fauna", "Grass", "Tree", "Light", "Genome", "Acoustic",
                     "Climate",
-                    "Interior Heat/Flow", "Overpressure/Melt", "Tectonic Strain", "Interior Releases"
+                    "Interior Heat/Flow", "Overpressure/Melt", "Tectonic Strain", "Interior Releases", "Mantle"
                 };
                 overlay.index = 0;
                 overlay.RegisterValueChangedCallback(_ => display.SetOverlay(OverlayModeFromChoice(overlay.index)));
@@ -1261,7 +1262,7 @@ namespace GeneSys.UI
             AttachNamedSettingTooltip(root, "speed", nameof(SimulationConfig.simulationSpeed));
             AttachNamedSettingTooltip(root, "overlay",
                 "Overlay",
-                "Chooses which world field the planetoid display color-codes. Material is the default view. Composite Water is landed film/pixels (red) plus vapor (green) and groundwater (blue); Landed Water, Vapor, and Groundwater split those reservoirs. Relative Humidity, Cloud, Wind, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, Acoustic, Climate, and the interior overlays reveal the systems those settings drive.");
+                "Chooses which world field the planetoid display color-codes. Material is the default view. Composite Water is landed film/pixels (red) plus vapor (green) and groundwater (blue); Landed Water, Vapor, and Groundwater split those reservoirs. Relative Humidity, Cloud, Wind, Mycology, Fire, Oxygen, Storm Charge, Flora, Light, Genome, Acoustic, Climate, and the interior overlays (including Mantle) reveal the systems those settings drive.");
             AttachNamedSettingTooltip(root, "brush-mode",
                 "Brush Mode",
                 "Selects what left-drag paints. Off does nothing; Material paints geology and Detritus; Life uses the Material field as a type picker for organisms and seeds; otherwise heat, water, pressure, humidity, or ignition. Hold right-click to inspect the cell under the cursor.");

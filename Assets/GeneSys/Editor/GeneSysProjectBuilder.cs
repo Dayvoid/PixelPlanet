@@ -59,6 +59,7 @@ namespace GeneSys.Editor
                 Define(13, "Metal", MaterialCategory.Solid, new Color(0.75f,0.78f,0.82f,1), 7.8f, 0.98f, 70, 1.5f, 0, 8f, 0.45f, 8f, 0, 0.01f, 1450, 2800, 0.008f, 0.015f, 13, 13, 11, false, 0, 0, 10000f, 10000f, 0, 0, 50f),
                 Define(14, "Limestone", MaterialCategory.Solid, new Color(0.78f,0.72f,0.58f,1), 2.5f, 0.75f, 40, 1.8f, 0, 0.10f, 1.7f, 0.04f, 0.35f, 0.40f, 825, 2200, 0.012f, 0.003f, 14, 6, 11, true, 0, 0, 10000f, 10000f, 0, 0, 60f),
                 Define(15, "Clay", MaterialCategory.Granular, new Color(0.62f,0.32f,0.18f,1), 1.8f, 0.22f, 28, 0.45f, 0, 0.35f, 1.35f, 0.06f, 0.9f, 0.45f, 950, 1800, 0.018f, 0, 15, 6, 11, true, 0, 0, 10000f, 10000f, 0, 0, 40f),
+                Define(16, "Tephra", MaterialCategory.Granular, new Color(0.22f,0.08f,0.06f,1), 1.6f, 0.12f, 35, 0.7f, 0.15f, 0.18f, 1.05f, 0.03f, 0.35f, 0.55f, 900, 2200, 0.015f, 0, 16, 16, 16, true, 0.04f, 0.2f, 10000f, 10000f, 0, 0, 20f),
                 Define(128, "AlgaeMoss", MaterialCategory.Biological, new Color(0.18f,0.55f,0.22f,1), 0.45f, 0.95f, 40, 0.6f, 0.6f, 0.18f, 1.6f, 0.03f, 0.8f, 0.4f, 90, 180, 0.02f, 0, 128, 128, 11, true, 0, 0.85f, 220f, 180f, 0.7f, 0.5f),
                 Define(129, "Cricket", MaterialCategory.Biological, new Color(0.42f,0.28f,0.12f,1), 0.8f, 0.99f, 80, 0.5f, 0.1f, 0.12f, 1.4f, 0.02f, 0.3f, 0.2f, 90, 180, 0.02f, 0, 129, 129, 11, true, 0, 0.7f, 200f, 170f, 0.75f, 0.45f),
                 Define(130, "CricketEgg", MaterialCategory.Biological, new Color(0.78f,0.72f,0.48f,1), 0.9f, 0.99f, 80, 0.35f, 0.05f, 0.14f, 1.5f, 0.01f, 0.6f, 0.25f, 80, 160, 0.02f, 0, 130, 130, 11, true, 0, 0.5f, 180f, 150f, 0.65f, 0.4f),
@@ -178,6 +179,7 @@ namespace GeneSys.Editor
             SetObject(host, "storm", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Storm.compute"));
             SetObject(host, "climate", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Climate.compute"));
             SetObject(host, "geodynamics", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Geodynamics.compute"));
+            SetObject(host, "mantle", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mantle.compute"));
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));
             SetObject(host, "rockChunks", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/RockChunks.compute"));
             SetObject(host, "display", display);
@@ -228,6 +230,7 @@ namespace GeneSys.Editor
             SetObject(host, "hydrostatic", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Hydrostatic.compute"));
             SetObject(host, "climate", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Climate.compute"));
             SetObject(host, "geodynamics", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Geodynamics.compute"));
+            SetObject(host, "mantle", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mantle.compute"));
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));
             SetObject(host, "rockChunks", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/RockChunks.compute"));
             document.panelSettings = panelSettings;

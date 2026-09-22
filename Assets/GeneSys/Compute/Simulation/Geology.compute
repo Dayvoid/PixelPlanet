@@ -18,6 +18,7 @@ Texture2D<float2> _FlowRead;
 RWTexture2D<float2> _FlowWrite;
 Texture2D<float4> _AuxRead;
 RWTexture2D<float4> _AuxWrite;
+Texture2D<float4> _MantleFieldRead;
 Texture2D<uint> _ShadeRead;
 RWTexture2D<uint> _ShadeWrite;
 Texture2D<float4> _EcologyRead;
@@ -64,11 +65,12 @@ float4 ReadCombustion(int2 cell) { return _CombustionRead.Load(int3(Cell(cell), 
 float4 ReadLife(int2 cell) { return SampleLife(_LifeGenomeRead, Cell(cell)); }
 uint4 ReadGenome(int2 cell) { return SampleGenome(_LifeGenomeRead, Cell(cell)); }
 
-bool IsEruptionPermeable(uint material, float weakness, float dike)
+bool IsEruptionPermeable(uint material, float weakness, float dike, float maturity)
 {
     if (IsSoftCrustMaterial(material)) return true;
-    if (IsHardCrustMaterial(material) && weakness > 0.28) return true;
-    if (material == 3u && (dike > 0.14 || weakness > 0.20)) return true;
+    if (maturity > 0.18) return true;
+    if (IsHardCrustMaterial(material) && (weakness > 0.28 || maturity > 0.12)) return true;
+    if (material == 3u && (dike > 0.14 || weakness > 0.20 || maturity > 0.10)) return true;
     return false;
 }
 
@@ -112,10 +114,13 @@ float ColumnBurden(int2 magmaCell, out float groundwater)
         float radius = Radius01(probe.y, _GridSize.y);
         float weakness = GeodynamicsFaultWeakness(probe.x, radius);
         float dike = GeodynamicsDikeNucleation(probe.x, radius);
-        if (above == 3u && (dike > 0.14 || weakness > 0.20))
+        float maturity = saturate(_MantleFieldRead.Load(int3(ClampCell(probe, _GridSize), 0)).x);
+        if (above == 3u && (dike > 0.14 || weakness > 0.20 || maturity > 0.10))
             continue;
-        if (!IsEruptionPermeable(above, weakness, dike)) break;
-        burden += CellBurden(above, weakness);
+        if (!IsEruptionPermeable(above, weakness, dike, maturity)) break;
+        float cellBurden = CellBurden(above, weakness);
+        cellBurden *= lerp(1.0, 0.42, saturate(maturity * max(0.0, _MantleC.x)));
+        burden += cellBurden;
         groundwater += max(0.0, ReadAux(probe).y);
     }
     return burden;
@@ -158,6 +163,18 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     float volcanic = GeodynamicsVolcanicEnvelope(cell.x, radius);
     float dike = GeodynamicsDikeNucleation(cell.x, radius);
     float safety = GeodynamicsSafetyThrottle();
+    float4 mantleField = _MantleFieldRead.Load(int3(cell, 0));
+    float maturity = saturate(mantleField.x);
+    float reuse = saturate(_MantleC.x);
+    float plume = GeodynamicsPlume(cell.x, radius);
+
+    if (mantle && GeodynamicsMantleEnabled() > 0.5)
+    {
+        float coreT = _ThermalA.z > 0.0 ? _ThermalA.z : 1500.0;
+        float refT = lerp(coreT, 15.0, saturate(radius / max(0.05, _AtmosphereStartRadius)));
+        float target = refT + plume * max(0.0, _MantleA.w) * 80.0;
+        state.x = lerp(state.x, target, saturate(0.12 * _DeltaTime));
+    }
 
     if (mantle || magma)
     {
@@ -173,9 +190,9 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
     float pressureAbove = ReadState(cell + int2(0, 1)).y;
     float pressureGradient = max(0.0, state.y - pressureAbove);
 
-    if (mantle && safety < 0.999)
+    if (mantle && safety < 0.999 && radius <= GeodynamicsLidBase(cell.x) + 0.03)
     {
-        float conduit = saturate(dike * (0.88 + volcanic * 0.35));
+        float conduit = saturate(max(dike * (0.88 + volcanic * 0.35), maturity * reuse));
         MaterialGpuData mantleDef = D(3u);
         float solidus = mantleDef.phase.x;
         float effectiveSolidus = max(380.0, solidus - conduit * 260.0 - overpressure * 110.0);
@@ -205,7 +222,7 @@ void Volcanism(uint3 id : SV_DispatchThreadID)
         // Volcanic cooling sink only. Magma↔Basalt ID flips are owned by PhaseChange
         // (Magma melt 700 °C, Basalt melt 780 °C = intentional hysteresis).
         // Funded conduits stay insulated so a pulse can climb before the magma freezes.
-        float buried = saturate(1.0 - volcanic * 0.85 - dike * 0.65);
+        float buried = saturate(1.0 - volcanic * 0.85 - dike * 0.65 - maturity * reuse * 0.8);
         float coolScale = radius > _AtmosphereStartRadius ? 3.0 : lerp(0.22, 1.0, buried);
         state.x -= _Volcanic.y * coolScale * _DeltaTime;
     }
@@ -238,7 +255,8 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
     float destRadius = Radius01(cell.y, _GridSize.y);
     float destWeakness = GeodynamicsFaultWeakness(cell.x, destRadius);
     float destDike = GeodynamicsDikeNucleation(cell.x, destRadius);
-    if (IsEruptionPermeable(material, destWeakness, destDike) && cell.y > 0)
+    float destMaturity = saturate(_MantleFieldRead.Load(int3(cell, 0)).x);
+    if (IsEruptionPermeable(material, destWeakness, destDike, destMaturity) && cell.y > 0)
     {
         int2 below = cell + int2(0, -1);
         uint belowMat = ReadMaterial(below);
@@ -255,7 +273,9 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
 
             float groundwater = 0.0;
             float burden = ColumnBurden(below, groundwater);
+            float coupling = saturate(_GeodynamicsD.y);
             float resistance = max(0.02, burden * lerp(1.0, 0.02, eruption) * lerp(1.0, 0.55, saturate(destWeakness)));
+            resistance *= lerp(1.12, 0.42, coupling);
             float overdrive = drive / max(0.02, resistance);
 
             if (overdrive > 1.0)
@@ -294,7 +314,8 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
         float aboveRadius = Radius01(above.y, _GridSize.y);
         float aboveWeakness = GeodynamicsFaultWeakness(above.x, aboveRadius);
         float aboveDike = GeodynamicsDikeNucleation(above.x, aboveRadius);
-        if (IsEruptionPermeable(aboveMat, aboveWeakness, aboveDike))
+        float aboveMaturity = saturate(_MantleFieldRead.Load(int3(ClampCell(above, _GridSize), 0)).x);
+        if (IsEruptionPermeable(aboveMat, aboveWeakness, aboveDike, aboveMaturity))
         {
             float4 aboveState = ReadState(above);
             float2 aboveFlow = ReadFlow(above);
@@ -311,7 +332,9 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                 * srcMobility * eruption * (0.65 + srcVolcanic * 0.7);
             float srcWater = 0.0;
             float srcBurden = ColumnBurden(cell, srcWater);
+            float srcCoupling = saturate(_GeodynamicsD.y);
             float srcResistance = max(0.02, srcBurden * lerp(1.0, 0.02, eruption) * lerp(1.0, 0.55, saturate(aboveWeakness)));
+            srcResistance *= lerp(1.12, 0.42, srcCoupling);
             float srcOverdrive = srcDrive / max(0.02, srcResistance);
 
             if (srcOverdrive > 1.0)
@@ -322,13 +345,23 @@ void EruptionMotion(uint3 id : SV_DispatchThreadID)
                 bool srcBlast = srcOverdrive >= srcBlastNeed;
                 if (srcBlast)
                 {
-                    material = 12u;
+                    float ventAge = saturate(_MantleFieldRead.Load(int3(cell, 0)).z);
+                    float explosive = saturate(srcVisc * 0.7 + saturate(srcWater * 2.0 + max(0.0, aboveAux.y) * 2.0) * 0.85 + (1.0 - ventAge) * 0.15);
+                    float tephraFrac = saturate(_MantleC.y);
+                    float roll = Hash01((uint)cell.x * 374761u + (uint)cell.y * 668265263u + (uint)_Tick * 1274126177u + (uint)_Seed);
+                    bool tephra = explosive > 0.35 && tephraFrac > 0.01 && roll < tephraFrac;
+                    material = tephra ? 16u : 12u;
                     state.x = max(state.x, aboveState.x * 0.35 + 250.0);
                     state.y = aboveState.y * 0.35;
                     state.z = aboveState.z;
                     state.w = aboveState.w;
                     flow = aboveFlow;
-                    flow.y += srcOverdrive * 1.25;
+                    flow.y += srcOverdrive * (tephra ? 1.05 : 1.25);
+                    if (tephra)
+                    {
+                        float kick = (Hash01((uint)cell.x * 83492791u + (uint)_Tick * 19349663u + (uint)_Seed) - 0.5) * 2.6;
+                        flow.x += kick * srcOverdrive;
+                    }
                     aux = aboveAux;
                     aux.z = max(aux.z, 0.15 * _EruptionB.w);
                     ecology = aboveEcology;
@@ -517,7 +550,8 @@ void ClearDeepTectonicStress(uint3 id : SV_DispatchThreadID)
 bool IsTectonicLidMaterial(uint material)
 {
     return material == 4u || material == 5u || material == 7u || material == 8u
-        || material == 10u || material == 13u || material == 14u || material == 15u;
+        || material == 10u || material == 13u || material == 14u || material == 15u
+        || material == 16u;
 }
 
 bool IsTectonicOpenCarrier(uint material)

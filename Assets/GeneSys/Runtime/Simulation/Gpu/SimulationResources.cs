@@ -85,6 +85,8 @@ namespace GeneSys.Simulation.Gpu
         public ComputeBuffer GeodynamicsStateWrite { get; private set; }
         public ComputeBuffer GeodynamicsEvents { get; private set; }
         public ComputeBuffer GeodynamicsEventCounter { get; private set; }
+        public RenderTexture MantleFieldRead { get; private set; }
+        public RenderTexture MantleFieldWrite { get; private set; }
         public RenderTexture RockSupportRead { get; private set; }
         public RenderTexture RockSupportWrite { get; private set; }
         public RenderTexture RockChunkClaims { get; private set; }
@@ -146,6 +148,8 @@ namespace GeneSys.Simulation.Gpu
             GeodynamicsStateWrite = CreateStructuredBuffer(GeodynamicsGrid.StateBufferCount());
             GeodynamicsEvents = CreateStructuredBuffer(GeodynamicsGrid.EventBufferCount());
             GeodynamicsEventCounter = CreateStructuredBuffer(GeodynamicsGrid.StatsBufferCount());
+            MantleFieldRead = CreateTexture("GeneSys MantleField A", GraphicsFormat.R16G16B16A16_SFloat);
+            MantleFieldWrite = CreateTexture("GeneSys MantleField B", GraphicsFormat.R16G16B16A16_SFloat);
             RockSupportRead = CreateTexture("GeneSys RockSupport A", GraphicsFormat.R32_UInt);
             RockSupportWrite = CreateTexture("GeneSys RockSupport B", GraphicsFormat.R32_UInt);
             RockChunkClaims = CreateTexture("GeneSys RockChunk Claims", GraphicsFormat.R32_UInt);
@@ -158,6 +162,7 @@ namespace GeneSys.Simulation.Gpu
             ClearWaterColumns();
             ClearClimate();
             ClearGeodynamics();
+            ClearMantleField();
             ClearRockChunks();
         }
 
@@ -188,6 +193,17 @@ namespace GeneSys.Simulation.Gpu
             if (GeodynamicsEvents != null)
                 GeodynamicsEvents.SetData(new Vector4[GeodynamicsGrid.EventBufferCount()]);
             GeodynamicsEventCounter?.SetData(new Vector4[GeodynamicsGrid.StatsBufferCount()]);
+        }
+
+        public void ClearMantleField()
+        {
+            ClearRenderTarget(MantleFieldRead);
+            ClearRenderTarget(MantleFieldWrite);
+        }
+
+        public void SwapMantleField()
+        {
+            (MantleFieldRead, MantleFieldWrite) = (MantleFieldWrite, MantleFieldRead);
         }
 
         public void ClearRockChunks()
@@ -326,6 +342,7 @@ namespace GeneSys.Simulation.Gpu
         public void Swap()
         {
             // Fine-grid ping-pong only. Geodynamics lattice buffers are also excluded; use SwapGeodynamics.
+            // MantleField is excluded; use SwapMantleField.
             (MaterialRead, MaterialWrite) = (MaterialWrite, MaterialRead);
             (StateRead, StateWrite) = (StateWrite, StateRead);
             (FlowRead, FlowWrite) = (FlowWrite, FlowRead);
@@ -385,6 +402,8 @@ namespace GeneSys.Simulation.Gpu
             Graphics.CopyTexture(PropaguleRead, PropaguleWrite);
             if (RockSupportRead != null && RockSupportWrite != null)
                 Graphics.CopyTexture(RockSupportRead, RockSupportWrite);
+            if (MantleFieldRead != null && MantleFieldWrite != null)
+                Graphics.CopyTexture(MantleFieldRead, MantleFieldWrite);
         }
 
         public void Dispose()
@@ -418,6 +437,7 @@ namespace GeneSys.Simulation.Gpu
             RockChunkMembers?.Release();
             Release(RockSupportRead); Release(RockSupportWrite);
             Release(RockChunkClaims); Release(RockChunkDest);
+            Release(MantleFieldRead); Release(MantleFieldWrite);
             MaterialRead = MaterialWrite = StateRead = StateWrite = null;
             FlowRead = FlowWrite = AuxRead = AuxWrite = null;
             ShadeRead = ShadeWrite = null;
@@ -445,6 +465,7 @@ namespace GeneSys.Simulation.Gpu
             RockChunkMembers = null;
             RockSupportRead = RockSupportWrite = null;
             RockChunkClaims = RockChunkDest = null;
+            MantleFieldRead = MantleFieldWrite = null;
         }
 
         private static void Release(RenderTexture texture)

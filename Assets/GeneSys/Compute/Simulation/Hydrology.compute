@@ -560,6 +560,18 @@ void AshFertilization(uint3 id : SV_DispatchThreadID)
             aux.z = 0.0;
         }
     }
+    else if (material == 16u)
+    {
+        uint above = cell.y < _GridSize.y - 1 ? M(cell + int2(0, 1)) : 1u;
+        MaterialGpuData aboveDef = D(above);
+        bool buried = above != 0u && above != 1u && above != 11u && aboveDef.metadata.x > 1.0;
+        float roll = Hash01((uint)cell.x * 73856093u + (uint)cell.y * 19349663u + (uint)_Tick * 83492791u + (uint)_Seed);
+        if (buried && roll < saturate(0.015 * fertility * _DeltaTime))
+        {
+            material = 7u;
+            aux.z = saturate(aux.z + 0.2 * fertility);
+        }
+    }
     else if (material == 8u)
     {
         uint above = M(cell + int2(0, 1));

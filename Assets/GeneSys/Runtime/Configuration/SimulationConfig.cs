@@ -125,6 +125,18 @@ namespace GeneSys.Configuration
         [Range(0f, 8f)] public float eruptionFlowStrength = 5f;
         [Range(1, 16)] public int eruptionBurdenDepth = 10;
         [Range(0.05f, 4f)] public float eruptionBlastThreshold = 1.25f;
+        [Range(0f, 1f)] public float eruptionTephraFraction = 0.55f;
+
+        [Header("Mantle")]
+        public bool mantleLayerEnable = true;
+        [Range(2, 8)] public int mantleConvectionCells = 4;
+        [Range(0f, 1f)] public float mantleDriftRate = 0.018f;
+        [Range(0f, 2f)] public float mantlePlumeHeat = 0.22f;
+        [Range(0f, 2f)] public float mantleLidThinning = 0.08f;
+        [Range(0f, 2f)] public float geothermalSurfaceGain = 0.12f;
+        [Range(0f, 2f)] public float geothermalClimateGain = 0.08f;
+        [Range(0f, 1f)] public float mantleConduitMemory = 0.04f;
+        [Range(0f, 1f)] public float mantleConduitReuse = 0.65f;
 
         [Header("Ash")]
         [Range(0f, 4f)] public float ashUpdraftStrength = 0.4f;
@@ -1109,6 +1121,15 @@ namespace GeneSys.Configuration
             volcanicMeltRate = Mathf.Max(0f, volcanicMeltRate);
             volcanicMagmaFractionLimit = Mathf.Clamp(volcanicMagmaFractionLimit, 0.05f, 1f);
             eruptionDriveScale = Mathf.Clamp01(eruptionDriveScale);
+            eruptionTephraFraction = Mathf.Clamp01(eruptionTephraFraction);
+            mantleConvectionCells = Mathf.Clamp(mantleConvectionCells, 2, 8);
+            mantleDriftRate = Mathf.Max(0f, mantleDriftRate);
+            mantlePlumeHeat = Mathf.Max(0f, mantlePlumeHeat);
+            mantleLidThinning = Mathf.Max(0f, mantleLidThinning);
+            geothermalSurfaceGain = Mathf.Max(0f, geothermalSurfaceGain);
+            geothermalClimateGain = Mathf.Max(0f, geothermalClimateGain);
+            mantleConduitMemory = Mathf.Clamp01(mantleConduitMemory);
+            mantleConduitReuse = Mathf.Clamp01(mantleConduitReuse);
             hydrothermalNutrientRate = Mathf.Max(0f, hydrothermalNutrientRate);
             hydrothermalNutrientYield = Mathf.Max(0f, hydrothermalNutrientYield);
             hydrothermalReleaseThreshold = Mathf.Max(0.1f, hydrothermalReleaseThreshold);
