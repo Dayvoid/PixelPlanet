@@ -1329,7 +1329,15 @@ bool IsDetritusMaterial(uint material)
 
 bool IsGrassSoilAnchor(uint material)
 {
-    return material == 7u;
+    return material == 7u || material == 8u || material == 15u;
+}
+
+// Exposed soil, sediment, or clay. aboveCategory is the cell above's material category.
+bool IsGrassExposedAnchor(int cellY, int gridHeight, uint material, float aboveCategory)
+{
+    if (!IsGrassSoilAnchor(material)) return false;
+    if (cellY >= gridHeight - 1) return false;
+    return aboveCategory <= 1.0;
 }
 
 int GrassSliceIndex(uint slot, uint field)

@@ -872,6 +872,16 @@ void ApplyFloraState(uint3 id : SV_DispatchThreadID)
         return;
     }
 
+    // Grass left in air, rock, or a buried grain does not survive the move.
+    if (identity.x == FLORA_ARCHETYPE_GRASS
+        && identity.y != FLORA_STAGE_EMPTY
+        && identity.y != FLORA_STAGE_DEAD
+        && !IsGrassExposedAnchor(cell.y, _GridSize.y, material, D(M(int2(cell.x, cell.y + 1))).metadata.x))
+    {
+        ClearFlora(_FloraWrite, cell);
+        return;
+    }
+
     _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
     _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
     _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = float4(topo);

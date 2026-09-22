@@ -156,6 +156,16 @@ namespace GeneSys.Tests
             string structs = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/SimulationStructs.hlsl");
             Assert.That(structs.Contains("SampleGrassNectar"));
             Assert.That(structs.Contains("DominantRareMycology"));
+            int anchorAt = structs.IndexOf("bool IsGrassSoilAnchor");
+            int exposedAt = structs.IndexOf("bool IsGrassExposedAnchor");
+            Assert.That(anchorAt, Is.GreaterThanOrEqualTo(0));
+            Assert.That(exposedAt, Is.GreaterThan(anchorAt));
+            string anchorBody = structs.Substring(anchorAt, exposedAt - anchorAt);
+            Assert.That(anchorBody, Does.Contain("material == 7u"));
+            Assert.That(anchorBody, Does.Contain("material == 8u"));
+            Assert.That(anchorBody, Does.Contain("material == 15u"));
+            Assert.That(anchorBody, Does.Not.Contain("material == 16u"));
+            Assert.That(structs.Contains("aboveCategory <= 1.0"));
             string display = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");
             Assert.That(display.Contains("FlowerHue"));
             Assert.That(display.Contains("if (rare == 2u)"));
@@ -169,6 +179,8 @@ namespace GeneSys.Tests
             Assert.That(flora.Contains("identity.y == FLORA_STAGE_JUVENILE"));
             Assert.That(flora.Contains("phys.x >= _GrassE.z"));
             Assert.That(flora.Contains("float4(0.0, 0.0, 7.0, 0.0)"));
+            Assert.That(flora.Contains("!IsGrassExposedAnchor"));
+            Assert.That(flora.Contains("ClearFlora(_FloraWrite, cell)"));
         }
     }
 }
