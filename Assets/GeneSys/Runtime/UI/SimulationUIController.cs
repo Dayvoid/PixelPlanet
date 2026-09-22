@@ -1303,7 +1303,7 @@ namespace GeneSys.UI
                 "Starts at 100. Active tools and life seed drain 3 per sim tick; otherwise it regenerates 10 per sim second. Stopped flight pauses regen. Actions still fire at 0.");
             AttachNamedSettingTooltip(root, "probe-camera-follow",
                 "Probe Camera",
-                "Centers the view on the probe and rotates the planetoid with its orbit so the orbiter stays pinned while the surface scrolls underneath.");
+                "Centers the view on the probe and rotates the planetoid with its orbit so the orbiter stays pinned while the surface scrolls underneath. Middle-click leaves follow and pans from the current view.");
             AttachNamedSettingTooltip(root, "probe-camera-globe",
                 "Globe Camera",
                 "Returns to the default camera: middle-drag pans, mouse wheel zooms, and Q/E rotates the planetoid independently of the probe.");
@@ -1473,7 +1473,7 @@ namespace GeneSys.UI
             RefreshSteerButtons();
             RefreshProbeEnergy();
             RefreshHudFades();
-            RefreshChatVisibility();
+            RefreshCameraModeButtons();
             RefreshAgentLoopButton();
         }
 

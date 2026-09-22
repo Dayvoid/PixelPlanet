@@ -163,7 +163,13 @@ namespace GeneSys.Rendering
             if (displayMaterial != null) displayMaterial.SetInt("_OverlayMode", OverlayMode);
         }
 
-        public void SetCameraViewMode(CameraViewMode mode)
+        public void SetCameraViewMode(CameraViewMode mode) => SetCameraViewMode(mode, restoreSavedPose: true);
+
+        /// <param name="restoreSavedPose">
+        /// When leaving probe follow for the globe camera, move back to the pose saved on entry.
+        /// Middle-drag passes false so panning continues from the camera's current pose.
+        /// </param>
+        public void SetCameraViewMode(CameraViewMode mode, bool restoreSavedPose)
         {
             if (mode == cameraViewMode) return;
             if (mode == CameraViewMode.ProbeFollow)
@@ -177,7 +183,8 @@ namespace GeneSys.Rendering
             else
             {
                 cameraViewMode = CameraViewMode.Globe;
-                RestoreGlobeCameraState();
+                if (restoreSavedPose)
+                    RestoreGlobeCameraState();
             }
         }
 
@@ -242,6 +249,11 @@ namespace GeneSys.Rendering
             bool overUi = ShouldBlockWorldInput != null && ShouldBlockWorldInput(pointer);
 
             bool follow = cameraViewMode == CameraViewMode.ProbeFollow;
+            if (follow && Mouse.current.middleButton.wasPressedThisFrame && !overUi)
+            {
+                SetCameraViewMode(CameraViewMode.Globe, restoreSavedPose: false);
+                follow = false;
+            }
 
             if (!follow)
             {
