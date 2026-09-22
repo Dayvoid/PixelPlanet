@@ -37,6 +37,9 @@ namespace GeneSys.Simulation
         public const uint RoleStem = 6;
         public const uint RoleLeaf = 7;
 
+        public const uint FlagAnchor = 1u;
+        public const uint FlagFlowering = 1u << 1;
+
         public const int PhysiologySlice = 0;
         public const int IdentitySlice = 1;
         public const int TopologySlice = 2;

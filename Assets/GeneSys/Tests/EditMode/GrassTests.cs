@@ -159,6 +159,16 @@ namespace GeneSys.Tests
             string display = File.ReadAllText("Assets/GeneSys/Shaders/Rendering/PlanetoidDisplay.shader");
             Assert.That(display.Contains("FlowerHue"));
             Assert.That(display.Contains("if (rare == 2u)"));
+            Assert.That(display.Contains("(uint4)round(_GrassTex.Load(int4(cell, 1, 0)))"));
+            Assert.That(display.Contains("1u + (exudation % 3u)"));
+            Assert.That(display.Contains("for (uint blade = 0u; blade < 3u; blade++)"));
+            Assert.That(display.Contains("identity.w & FLORA_FLAG_FLOWERING"));
+            string flora = File.ReadAllText("Assets/GeneSys/Compute/Simulation/Flora.compute");
+            Assert.That(flora.Contains("wasMature && phys.y >= _GrassB.w"));
+            Assert.That(flora.Contains("identity.w |= FLORA_FLAG_FLOWERING"));
+            Assert.That(flora.Contains("identity.y == FLORA_STAGE_JUVENILE"));
+            Assert.That(flora.Contains("phys.x >= _GrassE.z"));
+            Assert.That(flora.Contains("float4(0.0, 0.0, 7.0, 0.0)"));
         }
     }
 }

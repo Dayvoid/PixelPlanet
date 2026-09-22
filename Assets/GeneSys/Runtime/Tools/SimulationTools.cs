@@ -271,7 +271,7 @@ namespace GeneSys.Tools
 
             if (host.Resources.GrassRead.volumeDepth >= FloraGenome.SliceCount && host.Resources.GrassRead.volumeDepth < GrassGenome.GrassSliceCount)
             {
-                int remainingUnified = 2;
+                int remainingUnified = 3;
                 AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, FloraGenome.PhysiologySlice, 1, request =>
                 {
                     if (!request.hasError)
@@ -281,13 +281,30 @@ namespace GeneSys.Tools
                     }
                     CompleteGrassUnified();
                 });
+                AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, FloraGenome.IdentitySlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0)
+                        {
+                            Vector4 raw = data[0];
+                            inspection.grassIdentity = new Vector4(
+                                Mathf.Round(raw.x),
+                                Mathf.Round(raw.y),
+                                Mathf.Round(raw.z),
+                                Mathf.Round(raw.w));
+                        }
+                    }
+                    CompleteGrassUnified();
+                });
                 AsyncGPUReadback.Request(host.Resources.GrassRead, 0, cell.x, 1, cell.y, 1, FloraGenome.GenomeSlice, 1, request =>
                 {
                     if (!request.hasError)
                     {
                         NativeArray<Vector4> data = request.GetData<Vector4>();
                         if (data.Length > 0)
-                            inspection.grassGenomes[0] = GrassGenome.Sanitize(GrassGenome.FromFloatBits(data[0]));
+                            inspection.grassGenomes[0] = GrassGenome.FromFloatBits(data[0]);
                     }
                     CompleteGrassUnified();
                 });
@@ -538,6 +555,7 @@ namespace GeneSys.Tools
         public float light;
         public Vector2 flow;
         public Vector4[] grassLife;
+        public Vector4 grassIdentity;
         public Vector4[] grassTiming;
         public GrassGenome.Packed[] grassGenomes;
         public GrassGenome.Packed[] grassDonors;

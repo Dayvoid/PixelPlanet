@@ -1945,8 +1945,50 @@ namespace GeneSys.UI
             if (playButton != null) playButton.text = host.Clock.IsRunning ? "Pause" : "Play";
         }
 
+        private static string DescribeUnifiedGrassStage(uint stage) => stage switch
+        {
+            FloraGenome.StageSprout => "Sprout",
+            FloraGenome.StageJuvenile => "Juvenile",
+            FloraGenome.StageMature => "Mature",
+            _ => ""
+        };
+
+        private static bool TryFormatUnifiedGrass(CellInspection inspection, bool expanded, out string text)
+        {
+            text = "";
+            uint archetype = (uint)Mathf.Round(Mathf.Max(0f, inspection.grassIdentity.x));
+            uint stage = (uint)Mathf.Round(Mathf.Max(0f, inspection.grassIdentity.y));
+            uint flags = (uint)Mathf.Round(Mathf.Max(0f, inspection.grassIdentity.w));
+            if (archetype != FloraGenome.ArchetypeGrass) return false;
+            if (stage < FloraGenome.StageSprout || stage > FloraGenome.StageMature) return false;
+
+            string stageName = DescribeUnifiedGrassStage(stage);
+            if (!expanded)
+            {
+                text = "Grass " + stageName;
+                return true;
+            }
+
+            Vector4 life = inspection.grassLife != null && inspection.grassLife.Length > 0
+                ? inspection.grassLife[0] : Vector4.zero;
+            var body = new StringBuilder();
+            AppendInspectLine(body, stats =>
+            {
+                stats.Append("Grass ");
+                stats.Append(stageName);
+                AppendInspectStat(stats, "bio", life.x, "F2");
+                if ((flags & FloraGenome.FlagFlowering) != 0u)
+                    AppendInspectToken(stats, "flower open");
+            });
+            text = body.ToString();
+            return true;
+        }
+
         private static string FormatGrassInspection(CellInspection inspection, bool expanded, float expressionRange)
         {
+            if (TryFormatUnifiedGrass(inspection, expanded, out string unified))
+                return unified;
+
             int living = CountLivingGrass(inspection, out uint singleStage);
             if (living == 0) return "";
             if (!expanded)

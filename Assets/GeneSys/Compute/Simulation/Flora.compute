@@ -536,13 +536,14 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
         // Hydration drain / transpiration:
         phys.z = saturate(phys.z - (cost * 0.5 + energyGain * 0.2));
 
-        // Nectar / Exudate:
+        // Nectar / Exudate. A juvenile that matures this tick does not bloom in the same pass.
         if (identity.x == FLORA_ARCHETYPE_GRASS)
         {
+            bool wasMature = identity.y == FLORA_STAGE_MATURE;
+            if (wasMature && phys.y >= _GrassB.w)
+                identity.w |= FLORA_FLAG_FLOWERING;
             if ((identity.w & FLORA_FLAG_FLOWERING) != 0u)
-            {
                 phys.w = saturate(phys.w + _GrassE.w * energyGain * 2.0);
-            }
         }
         else if (identity.x == FLORA_ARCHETYPE_ALGAE)
         {
@@ -593,6 +594,11 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
 
         if (identity.x == FLORA_ARCHETYPE_ALGAE)
             phys.x = saturate(phys.x - FloraFragmentAmount(cell));
+
+        if (identity.x == FLORA_ARCHETYPE_GRASS
+            && identity.y == FLORA_STAGE_JUVENILE
+            && phys.x >= _GrassE.z)
+            identity.y = FLORA_STAGE_MATURE;
     }
 
     _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
@@ -978,7 +984,7 @@ void PropaguleGerminate(uint3 id : SV_DispatchThreadID)
 
             _FloraWrite[uint3((uint2)cell, FLORA_PHYSIOLOGY_SLICE)] = phys;
             _FloraWrite[uint3((uint2)cell, FLORA_IDENTITY_SLICE)] = float4(identity);
-            _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = 0.0;
+            _FloraWrite[uint3((uint2)cell, FLORA_TOPOLOGY_SLICE)] = float4(0.0, 0.0, 7.0, 0.0);
             _FloraWrite[uint3((uint2)cell, FLORA_GENOME_SLICE)] = asfloat(genome);
             _FloraWrite[uint3((uint2)cell, FLORA_PROPAGULE_SLICE)] = 0.0;
         }
