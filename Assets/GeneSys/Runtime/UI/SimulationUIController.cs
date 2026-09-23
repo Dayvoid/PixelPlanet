@@ -621,10 +621,10 @@ namespace GeneSys.UI
             followCameraButton = root.Q<Button>("probe-camera-follow");
             globeCameraButton = root.Q<Button>("probe-camera-globe");
             agentLoopButton = root.Q<Button>("probe-agent-loop");
-            followCameraButton?.UnregisterCallback<ClickEvent>(OnFollowCameraClicked);
+            followCameraButton?.UnregisterCallback<PointerUpEvent>(OnFollowCameraPointerUp);
             globeCameraButton?.UnregisterCallback<ClickEvent>(OnGlobeCameraClicked);
             agentLoopButton?.UnregisterCallback<ClickEvent>(OnAgentLoopClicked);
-            followCameraButton?.RegisterCallback<ClickEvent>(OnFollowCameraClicked);
+            followCameraButton?.RegisterCallback<PointerUpEvent>(OnFollowCameraPointerUp);
             globeCameraButton?.RegisterCallback<ClickEvent>(OnGlobeCameraClicked);
             agentLoopButton?.RegisterCallback<ClickEvent>(OnAgentLoopClicked);
             RefreshLifeSeedButton();
@@ -657,7 +657,20 @@ namespace GeneSys.UI
                 probeActivityTime = Time.unscaledTime;
         }
 
-        private void OnFollowCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.ProbeFollow);
+        private void OnFollowCameraPointerUp(PointerUpEvent evt)
+        {
+            if (evt.button == (int)MouseButton.RightMouse)
+            {
+                display?.InstantZoomProbeFollow(PlanetoidDisplayRenderer.MinOrthographicSize);
+                RefreshCameraModeButtons();
+                evt.StopPropagation();
+                return;
+            }
+
+            if (evt.button != (int)MouseButton.LeftMouse) return;
+            display?.EnterProbeFollowRestoringZoom();
+            RefreshCameraModeButtons();
+        }
 
         private void OnGlobeCameraClicked(ClickEvent _) => SetCameraViewMode(CameraViewMode.Globe);
 
@@ -1305,7 +1318,7 @@ namespace GeneSys.UI
                 "Starts at 100. Active tools and life seed drain 3 per sim tick; otherwise it regenerates 10 per sim second. Stopped flight pauses regen. Actions still fire at 0.");
             AttachNamedSettingTooltip(root, "probe-camera-follow",
                 "Probe Camera",
-                "Centers the view on the probe and rotates the planetoid with its orbit so the orbiter stays pinned while the surface scrolls underneath. Middle-click leaves follow and pans from the current view.");
+                "Centers the view on the probe and rotates the planetoid with its orbit so the orbiter stays pinned while the surface scrolls underneath. Right-click snaps to chat zoom and remembers the probe distance; left-click returns to that distance. Middle-click leaves follow and pans from the current view.");
             AttachNamedSettingTooltip(root, "probe-camera-globe",
                 "Globe Camera",
                 "Returns to the default camera: middle-drag pans, mouse wheel zooms, and Q/E rotates the planetoid independently of the probe.");

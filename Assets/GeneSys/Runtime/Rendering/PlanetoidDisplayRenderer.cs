@@ -42,12 +42,19 @@ namespace GeneSys.Rendering
         private float savedGlobeOrthoSize = 5.5f;
         private Quaternion savedGlobeDisplayRotation = Quaternion.identity;
         private bool hasGlobeCameraState;
+        private float savedProbeFollowOrtho;
+        private bool hasSavedProbeFollowZoom;
         private Camera visionCamera;
         private RenderTexture visionTarget;
         private bool planetVisible = true;
 
         public const float MinOrthographicSize = 0.75f;
         public const float MaxOrthographicSize = 20f;
+        /// <summary>
+        /// Matches <see cref="GeneSys.AI.AiAgentOrchestrator.FullyZoomedEpsilon"/> so a second
+        /// right-click while chat is open does not store the snapped zoom.
+        /// </summary>
+        private const float ChatZoomSlack = 0.02f;
         public static float VisionFollowOrthographicSize => Mathf.Lerp(MinOrthographicSize, MaxOrthographicSize, 0.5f);
 
         public int OverlayMode { get; private set; }
@@ -186,6 +193,61 @@ namespace GeneSys.Rendering
                 if (restoreSavedPose)
                     RestoreGlobeCameraState();
             }
+        }
+
+        /// <summary>
+        /// Saves the current probe-follow distance, enters follow, and snaps to chat zoom.
+        /// </summary>
+        public void InstantZoomProbeFollow(float chatSize)
+        {
+            float snap = Mathf.Clamp(chatSize, MinOrthographicSize, MaxOrthographicSize);
+            RememberProbeFollowZoom(snap + ChatZoomSlack);
+            EnterProbeFollow(snap);
+        }
+
+        /// <summary>
+        /// Enters probe follow at the zoom saved by <see cref="InstantZoomProbeFollow"/>.
+        /// With nothing saved, enters at <see cref="SimulationConfig.probeFollowZoom"/> and
+        /// leaves an existing follow view unchanged.
+        /// </summary>
+        public void EnterProbeFollowRestoringZoom()
+        {
+            if (hasSavedProbeFollowZoom)
+                EnterProbeFollow(savedProbeFollowOrtho);
+            else
+                SetCameraViewMode(CameraViewMode.ProbeFollow);
+        }
+
+        private void RememberProbeFollowZoom(float chatThreshold)
+        {
+            float candidate;
+            if (cameraViewMode == CameraViewMode.ProbeFollow)
+            {
+                if (targetCamera == null) return;
+                candidate = targetCamera.orthographicSize;
+            }
+            else
+            {
+                if (config == null) return;
+                candidate = config.probeFollowZoom;
+            }
+
+            if (candidate <= chatThreshold) return;
+            savedProbeFollowOrtho = candidate;
+            hasSavedProbeFollowZoom = true;
+        }
+
+        private void EnterProbeFollow(float orthographicSize)
+        {
+            if (cameraViewMode != CameraViewMode.ProbeFollow)
+            {
+                SaveGlobeCameraState();
+                cameraViewMode = CameraViewMode.ProbeFollow;
+            }
+
+            if (targetCamera != null)
+                targetCamera.orthographicSize = Mathf.Clamp(orthographicSize, MinOrthographicSize, MaxOrthographicSize);
+            ApplyProbeFollow();
         }
 
         private void LateUpdate()

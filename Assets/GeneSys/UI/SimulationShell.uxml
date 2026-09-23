@@ -103,7 +103,7 @@
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement name="probe-camera-card" class="probe-camera-card" picking-mode="Position">
-                <ui:Button name="probe-camera-follow" class="probe-camera-button probe-camera-follow" tooltip="Follow probe" />
+                <ui:Button name="probe-camera-follow" class="probe-camera-button probe-camera-follow" tooltip="Follow probe. Right-click snaps to chat; left-click restores zoom." />
                 <ui:Button name="probe-agent-loop" text="▶" class="probe-camera-button probe-agent-loop" tooltip="Play/pause AI agent loop" />
                 <ui:Button name="probe-camera-globe" class="probe-camera-button probe-camera-globe probe-camera-last probe-camera-button--active" tooltip="Globe camera" />
             </ui:VisualElement>
