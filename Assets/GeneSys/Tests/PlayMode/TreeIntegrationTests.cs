@@ -176,6 +176,7 @@ namespace GeneSys.Tests
             host.Config.treeMaxHeight = 12;
             host.Config.treeLeafLifeTicks = 400;
             host.Config.treeRotTicks = 500;
+            host.Config.treeGrowthRate = 1f;
             host.Config.treeExposureDamage = 0.08f;
             host.Config.detritusDecompositionRate = 0f;
             host.Config.detritusInitialNutrient = 0.8f;
@@ -209,20 +210,45 @@ namespace GeneSys.Tests
             yield return null;
         }
 
+        private static uint LegacyTreeRole(uint floraRole) => floraRole switch
+        {
+            FloraGenome.RoleRoot => TreeGenome.RoleRoot,
+            FloraGenome.RoleTrunk => TreeGenome.RoleTrunk,
+            FloraGenome.RoleBranch => TreeGenome.RoleBranch,
+            FloraGenome.RoleStem => TreeGenome.RoleJuvenileShoot,
+            FloraGenome.RoleLeaf => TreeGenome.RoleLeaf,
+            _ => TreeGenome.RoleNone
+        };
+
         private static IEnumerator ReadTreeCell(SimulationHost host, int x, int y,
             Action<uint, Vector4, TreeGenome.Packed, TreeGenome.Packed> consume)
         {
             int idx = Index(host, x, y);
             uint material = 0;
             Vector4 phys = Vector4.zero;
-            var topology = default(TreeGenome.Packed);
+            Vector4 identity = Vector4.zero;
+            Vector4 topoRaw = Vector4.zero;
             var genome = default(TreeGenome.Packed);
             yield return RequestTexture<uint>(host.Resources.MaterialRead, data => material = data[idx]);
-            yield return RequestSlice(host.Resources.TreeRead, TreeGenome.PhysiologySlice, data => phys = data[idx]);
-            yield return RequestSlice(host.Resources.TreeRead, TreeGenome.TopologySlice,
-                data => topology = TreeGenome.FromFloatBits(data[idx]));
-            yield return RequestSlice(host.Resources.TreeRead, TreeGenome.GenomeSlice,
+            yield return RequestSlice(host.Resources.TreeRead, FloraGenome.PhysiologySlice, data => phys = data[idx]);
+            yield return RequestSlice(host.Resources.TreeRead, FloraGenome.IdentitySlice, data => identity = data[idx]);
+            yield return RequestSlice(host.Resources.TreeRead, FloraGenome.TopologySlice, data => topoRaw = data[idx]);
+            yield return RequestSlice(host.Resources.TreeRead, FloraGenome.GenomeSlice,
                 data => genome = TreeGenome.Sanitize(TreeGenome.FromFloatBits(data[idx])));
+            var topology = default(TreeGenome.Packed);
+            uint archetype = (uint)Mathf.Round(Mathf.Max(0f, identity.x));
+            if (archetype == FloraGenome.ArchetypeTree)
+            {
+                uint stage = (uint)Mathf.Round(Mathf.Max(0f, identity.y));
+                uint role = LegacyTreeRole((uint)Mathf.Round(Mathf.Max(0f, identity.z)));
+                uint flags = (uint)Mathf.Round(Mathf.Max(0f, identity.w));
+                topology = TreeGenome.Packed.FromUint4(
+                    (uint)Mathf.Round(Mathf.Max(0f, topoRaw.x)),
+                    (uint)Mathf.Round(Mathf.Max(0f, topoRaw.y)),
+                    TreeGenome.PackTopology(stage, role, flags, 0u),
+                    (uint)Mathf.Round(Mathf.Max(0f, topoRaw.w)));
+                genome = TreeGenome.PackMeta(genome, stage, TreeGenome.Generation(genome), TreeGenome.Lineage(genome), TreeGenome.ToxinDose(genome));
+            }
             consume(material, phys, topology, genome);
         }
 
@@ -396,14 +422,27 @@ namespace GeneSys.Tests
             {
                 for (int dy = 1; dy <= 5 && !foundLeaf; dy++)
                 {
-                    uint material = 0;
-                    yield return ReadTreeCell(host, x + dx, y + dy, (mat, _, __, ___) => material = mat);
-                    if (material == MaterialIds.Leaf)
+                    uint role = 0;
+                    uint parentPacked = 0;
+                    yield return ReadTreeCell(host, x + dx, y + dy, (_, __, topology, ___) =>
                     {
-                        leafX = x + dx;
-                        leafY = y + dy;
-                        foundLeaf = true;
-                    }
+                        role = TreeGenome.Role(topology.Z);
+                        parentPacked = topology.X;
+                    });
+                    if (role != TreeGenome.RoleLeaf || parentPacked == 0u)
+                        continue;
+                    int width = host.Grid.angularResolution;
+                    int parentIndex = (int)parentPacked - 1;
+                    int parentX = parentIndex % width;
+                    int parentY = parentIndex / width;
+                    uint parentRole = TreeGenome.RoleNone;
+                    yield return ReadTreeCell(host, parentX, parentY, (_, __, topology, ___) =>
+                        parentRole = TreeGenome.Role(topology.Z));
+                    if (parentRole != TreeGenome.RoleJuvenileShoot && parentRole != TreeGenome.RoleTrunk)
+                        continue;
+                    leafX = x + dx;
+                    leafY = y + dy;
+                    foundLeaf = true;
                 }
             }
             Assert.That(foundLeaf, Is.True, "Sprout should grow at least one leaf or juvenile shoot.");
@@ -671,7 +710,7 @@ namespace GeneSys.Tests
             });
             yield return Step(host, 8);
             float hydrationFast = 0f;
-            yield return ReadTreeCell(host, x, y, (_, phys, __, ___) => hydrationFast = phys.y);
+            yield return ReadTreeCell(host, x, y, (_, phys, __, ___) => hydrationFast = phys.z);
 
             yield return PrepareIsolatedWorld(host);
             host.Config.treeInitialHydration = 0.25f;
@@ -696,9 +735,142 @@ namespace GeneSys.Tests
             });
             yield return Step(host, 8);
             float hydrationSlow = 0f;
-            yield return ReadTreeCell(host, x, y, (_, phys, __, ___) => hydrationSlow = phys.y);
+            yield return ReadTreeCell(host, x, y, (_, phys, __, ___) => hydrationSlow = phys.z);
             Assert.That(hydrationSlow, Is.EqualTo(hydrationFast).Within(0.08f),
                 $"Receipt cadence should preserve hydration. interval1={hydrationFast:F3} interval4={hydrationSlow:F3}");
+        }
+
+        [UnityTest]
+        public IEnumerator GrowthStopsWhenEnergyCannotPay()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.treeGrowthCost = 0.8f;
+            host.Config.treeInitialEnergy = 0.05f;
+            host.Config.treeInitialHydration = 1f;
+            host.Config.treeInitialNutrient = 1f;
+            host.Config.treeGrowthRate = 1f;
+            int x = 42;
+            int y = SurfaceY(host);
+            yield return PlantSprout(host, x, y);
+            yield return Step(host, 8);
+            uint anchor = 0;
+            yield return ReadTreeCell(host, x, y, (mat, _, __, ___) => anchor = mat);
+            Assert.That(anchor, Is.EqualTo(MaterialIds.Wood));
+            for (int dy = 1; dy <= 4; dy++)
+            {
+                uint material = 0;
+                yield return ReadTreeCell(host, x, y + dy, (mat, _, __, ___) => material = mat);
+                Assert.That(material, Is.Not.EqualTo(MaterialIds.Wood).And.Not.EqualTo(MaterialIds.Leaf),
+                    "A tip below the growth cost should not claim wood or leaf.");
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator CrownStaysWithinMatureHeight()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.treeSproutHeight = 2;
+            host.Config.treeSaplingHeight = 4;
+            host.Config.treeMaxHeight = 8;
+            host.Config.treeGrowthRate = 1f;
+            host.Config.treeGrowthCost = 0f;
+            host.Config.treeGeneExpressionRange = 0f;
+            int x = 44;
+            int y = SurfaceY(host);
+            yield return PlantSprout(host, x, y);
+            yield return Step(host, 24);
+            int maxDy = 0;
+            int crownLimit = Mathf.Min(16, host.Grid.radialResolution - 1 - y);
+            for (int dy = 1; dy <= crownLimit; dy++)
+            {
+                uint role = TreeGenome.RoleNone;
+                yield return ReadTreeCell(host, x, y + dy, (_, __, topology, ___) => role = TreeGenome.Role(topology.Z));
+                if (role == TreeGenome.RoleJuvenileShoot || role == TreeGenome.RoleTrunk || role == TreeGenome.RoleLeaf)
+                    maxDy = dy;
+            }
+            Assert.That(maxDy, Is.GreaterThanOrEqualTo(2), "The crown should grow when growth is free.");
+            Assert.That(maxDy, Is.LessThanOrEqualTo(host.Config.treeMaxHeight),
+                "Apical wood should stop at the gene-scaled mature height.");
+        }
+
+        [UnityTest]
+        public IEnumerator SaplingBranchesStayWithinBudgetAndGrowLeaves()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.treeSproutHeight = 2;
+            host.Config.treeSaplingHeight = 4;
+            host.Config.treeMaxHeight = 12;
+            host.Config.treeGrowthRate = 1f;
+            host.Config.treeGrowthCost = 0f;
+            int x = 46;
+            int y = SurfaceY(host);
+            yield return PlantSprout(host, x, y);
+            yield return Step(host, 24);
+            var genome = default(TreeGenome.Packed);
+            yield return ReadTreeCell(host, x, y, (_, __, ___, genes) => genome = genes);
+            int budget = TreeGenome.SaplingBranchCount(genome, host.Config.treeSaplingBranchMin, host.Config.treeSaplingBranchMax);
+            int branches = 0;
+            int leaves = 0;
+            int branchLimit = Mathf.Min(12, host.Grid.radialResolution - 1 - y);
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                for (int dy = 0; dy <= branchLimit; dy++)
+                {
+                    uint material = 0;
+                    uint role = 0;
+                    yield return ReadTreeCell(host, x + dx, y + dy, (mat, _, topology, __) =>
+                    {
+                        material = mat;
+                        role = TreeGenome.Role(topology.Z);
+                    });
+                    if (role == TreeGenome.RoleBranch) branches++;
+                    if (material == MaterialIds.Leaf && role == TreeGenome.RoleLeaf) leaves++;
+                }
+            }
+            Assert.That(leaves, Is.GreaterThanOrEqualTo(1), "A sapling should place canopy leaves.");
+            Assert.That(branches, Is.GreaterThanOrEqualTo(1), "A sapling should place wood branches.");
+            Assert.That(branches, Is.LessThanOrEqualTo(budget),
+                $"Branch count {branches} exceeded genome budget {budget}.");
+        }
+
+        [UnityTest]
+        public IEnumerator BuriedRootKeepsSoilAndCountsBesideIt()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.treeGrowthRate = 1f;
+            host.Config.treeGrowthCost = 0f;
+            int x = 48;
+            int y = SurfaceY(host);
+            yield return PlantSprout(host, x, y);
+            Paint(host, x, y - 1, MaterialIds.Soil);
+            Paint(host, x, y - 2, MaterialIds.Soil);
+            Paint(host, x, y - 3, MaterialIds.Soil);
+            yield return Step(host, 8);
+            uint material = 0;
+            uint role = 0;
+            yield return ReadTreeCell(host, x, y - 1, (mat, _, topology, __) =>
+            {
+                material = mat;
+                role = TreeGenome.Role(topology.Z);
+            });
+            Assert.That(material, Is.EqualTo(MaterialIds.Soil), "A buried root should leave the soil pixel in place.");
+            Assert.That(role, Is.EqualTo(TreeGenome.RoleRoot));
+            Vector4[] identity = null;
+            yield return RequestSlice(host.Resources.TreeRead, FloraGenome.IdentitySlice, data => identity = data);
+            int roots = TreeGenome.CountAdjacentLivingRoots(identity, host.Grid.angularResolution, host.Grid.radialResolution, x, y);
+            Assert.That(roots, Is.GreaterThan(0), "A live root should count toward soil cohesion beside its neighbor.");
         }
 
         private sealed class SimulationConfigSnapshot

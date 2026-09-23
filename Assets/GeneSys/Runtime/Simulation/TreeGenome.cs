@@ -129,6 +129,46 @@ namespace GeneSys.Simulation
         public static bool IsLivingStage(uint stage) => stage == StageSprout || stage == StageSapling || stage == StageTree;
         public static bool IsValidRole(uint role) => role <= RoleLeaf;
 
+        public static bool IsLivingFloraRoot(Vector4 identity)
+        {
+            uint archetype = (uint)Mathf.Round(Mathf.Max(0f, identity.x));
+            uint stage = (uint)Mathf.Round(Mathf.Max(0f, identity.y));
+            uint role = (uint)Mathf.Round(Mathf.Max(0f, identity.z));
+            return archetype == FloraGenome.ArchetypeTree
+                && role == FloraGenome.RoleRoot
+                && IsLivingStage(stage);
+        }
+
+        public static int CountAdjacentLivingRoots(Vector4[] identity, int width, int height, int x, int y)
+        {
+            if (identity == null || width <= 0 || height <= 0) return 0;
+            int count = 0;
+            int[] dx = { -1, 1, 0, 0 };
+            int[] dy = { 0, 0, -1, 1 };
+            for (int i = 0; i < 4; i++)
+            {
+                int ny = y + dy[i];
+                if (ny < 0 || ny >= height) continue;
+                int nx = x + dx[i];
+                nx %= width;
+                if (nx < 0) nx += width;
+                int index = ny * width + nx;
+                if ((uint)index < (uint)identity.Length && IsLivingFloraRoot(identity[index]))
+                    count++;
+            }
+            return count;
+        }
+
+        public static string DescribeFloraRole(uint role) => role switch
+        {
+            FloraGenome.RoleRoot => "Root",
+            FloraGenome.RoleTrunk => "Trunk",
+            FloraGenome.RoleBranch => "Branch",
+            FloraGenome.RoleStem => "Shoot",
+            FloraGenome.RoleLeaf => "Leaf",
+            _ => "None"
+        };
+
         public static uint Role(uint packedTopology) => (packedTopology >> 8) & 255u;
         public static uint TopologyStage(uint packedTopology) => packedTopology & 255u;
         public static uint Flags(uint packedTopology) => (packedTopology >> 16) & 255u;

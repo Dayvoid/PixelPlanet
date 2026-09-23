@@ -458,12 +458,11 @@ namespace GeneSys.Tools
                 return;
             }
 
-            int topoSlice = host.Resources.FloraRead != null && host.Resources.FloraRead.volumeDepth >= FloraGenome.SliceCount
-                ? FloraGenome.TopologySlice : TreeGenome.TopologySlice;
-            int genSlice = host.Resources.FloraRead != null && host.Resources.FloraRead.volumeDepth >= FloraGenome.SliceCount
-                ? FloraGenome.GenomeSlice : TreeGenome.GenomeSlice;
+            bool unified = host.Resources.FloraRead != null && host.Resources.FloraRead.volumeDepth >= FloraGenome.SliceCount;
+            int topoSlice = unified ? FloraGenome.TopologySlice : TreeGenome.TopologySlice;
+            int genSlice = unified ? FloraGenome.GenomeSlice : TreeGenome.GenomeSlice;
 
-            int remaining = 3;
+            int remaining = unified ? 5 : 3;
             AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, FloraGenome.PhysiologySlice, 1, request =>
             {
                 if (!request.hasError)
@@ -473,12 +472,42 @@ namespace GeneSys.Tools
                 }
                 CompleteTree();
             });
+            if (unified)
+            {
+                AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, FloraGenome.IdentitySlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0) inspection.treeIdentity = data[0];
+                    }
+                    CompleteTree();
+                });
+                AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, FloraGenome.PropaguleSlice, 1, request =>
+                {
+                    if (!request.hasError)
+                    {
+                        NativeArray<Vector4> data = request.GetData<Vector4>();
+                        if (data.Length > 0) inspection.treeNutrient = data[0].y;
+                    }
+                    CompleteTree();
+                });
+            }
             AsyncGPUReadback.Request(host.Resources.TreeRead, 0, cell.x, 1, cell.y, 1, topoSlice, 1, request =>
             {
                 if (!request.hasError)
                 {
                     NativeArray<Vector4> data = request.GetData<Vector4>();
-                    if (data.Length > 0) inspection.treeTopology = TreeGenome.FromFloatBits(data[0]);
+                    if (data.Length > 0)
+                    {
+                        inspection.treeTopology = unified
+                            ? TreeGenome.Packed.FromUint4(
+                                (uint)Mathf.Round(Mathf.Max(0f, data[0].x)),
+                                (uint)Mathf.Round(Mathf.Max(0f, data[0].y)),
+                                (uint)Mathf.Round(Mathf.Max(0f, data[0].z)),
+                                (uint)Mathf.Round(Mathf.Max(0f, data[0].w)))
+                            : TreeGenome.FromFloatBits(data[0]);
+                    }
                 }
                 CompleteTree();
             });
@@ -560,6 +589,8 @@ namespace GeneSys.Tools
         public GrassGenome.Packed[] grassGenomes;
         public GrassGenome.Packed[] grassDonors;
         public Vector4 treePhysiology;
+        public Vector4 treeIdentity;
+        public float treeNutrient;
         public TreeGenome.Packed treeTopology;
         public TreeGenome.Packed treeGenome;
         public int climateBin;

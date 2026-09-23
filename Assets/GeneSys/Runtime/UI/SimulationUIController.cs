@@ -1670,7 +1670,8 @@ namespace GeneSys.UI
             WaspGenome.Stage(inspection.waspGenome) != WaspGenome.StageEmpty;
 
         private static bool HasTree(CellInspection inspection) =>
-            TreeGenome.Stage(inspection.treeGenome) != TreeGenome.StageEmpty
+            Mathf.Round(Mathf.Max(0f, inspection.treeIdentity.x)) == FloraGenome.ArchetypeTree
+            || TreeGenome.Stage(inspection.treeGenome) != TreeGenome.StageEmpty
             || inspection.treeTopology.X != 0;
 
         private static int CountLivingGrass(CellInspection inspection, out uint singleStage)
@@ -1900,14 +1901,22 @@ namespace GeneSys.UI
         private static string FormatTreeInspection(CellInspection inspection, bool expanded, float expressionRange)
         {
             if (!HasTree(inspection)) return "";
-            uint stage = TreeGenome.Stage(inspection.treeGenome);
-            uint role = TreeGenome.Role(inspection.treeTopology.Z);
+            bool unified = Mathf.Round(Mathf.Max(0f, inspection.treeIdentity.x)) == FloraGenome.ArchetypeTree;
+            uint stage = unified
+                ? (uint)Mathf.Round(Mathf.Max(0f, inspection.treeIdentity.y))
+                : TreeGenome.Stage(inspection.treeGenome);
+            uint role = unified
+                ? (uint)Mathf.Round(Mathf.Max(0f, inspection.treeIdentity.z))
+                : TreeGenome.Role(inspection.treeTopology.Z);
+            uint flags = unified
+                ? (uint)Mathf.Round(Mathf.Max(0f, inspection.treeIdentity.w))
+                : TreeGenome.Flags(inspection.treeTopology.Z);
             var text = new StringBuilder("Tree ");
             text.Append(TreeGenome.DescribeStage(stage));
-            if (role != TreeGenome.RoleNone)
+            if (role != TreeGenome.RoleNone && role != FloraGenome.RoleNone)
             {
                 text.Append(" / ");
-                text.Append(TreeGenome.DescribeRole(role));
+                text.Append(unified ? TreeGenome.DescribeFloraRole(role) : TreeGenome.DescribeRole(role));
             }
             if (!expanded) return text.ToString();
 
@@ -1917,22 +1926,35 @@ namespace GeneSys.UI
             text.Append(TreeGenome.Lineage(inspection.treeGenome));
             AppendInspectLine(text, stats =>
             {
-                AppendInspectStat(stats, "energy", inspection.treePhysiology.x, "F2");
-                AppendInspectStat(stats, "hyd", inspection.treePhysiology.y, "F2");
-                AppendInspectStat(stats, "nut", inspection.treePhysiology.z, "F2");
-                AppendInspectStat(stats, "hp", inspection.treePhysiology.w, "F2");
+                if (unified)
+                {
+                    AppendInspectStat(stats, "biomass", inspection.treePhysiology.x, "F2");
+                    AppendInspectStat(stats, "energy", inspection.treePhysiology.y, "F2");
+                    AppendInspectStat(stats, "hyd", inspection.treePhysiology.z, "F2");
+                    AppendInspectStat(stats, "hp", inspection.treePhysiology.w, "F2");
+                    AppendInspectStat(stats, "nut", inspection.treeNutrient, "F2");
+                }
+                else
+                {
+                    AppendInspectStat(stats, "energy", inspection.treePhysiology.x, "F2");
+                    AppendInspectStat(stats, "hyd", inspection.treePhysiology.y, "F2");
+                    AppendInspectStat(stats, "nut", inspection.treePhysiology.z, "F2");
+                    AppendInspectStat(stats, "hp", inspection.treePhysiology.w, "F2");
+                }
             });
             AppendInspectLine(text, stats =>
             {
                 if (inspection.treeTopology.X != 0)
-                    AppendInspectToken(stats, "owner " + inspection.treeTopology.X);
+                    AppendInspectToken(stats, "parent " + inspection.treeTopology.X);
                 if (inspection.treeTopology.Y != 0)
-                    AppendInspectToken(stats, "parent " + inspection.treeTopology.Y);
-                uint flags = TreeGenome.Flags(inspection.treeTopology.Z);
+                    AppendInspectToken(stats, "anchor " + inspection.treeTopology.Y);
                 if (flags != 0)
                     AppendInspectToken(stats, "flags " + flags);
-                float timer = BitConverter.Int32BitsToSingle(unchecked((int)inspection.treeTopology.W));
-                if ((role == TreeGenome.RoleLeaf || stage == TreeGenome.StageDead) && HasInspectValue(timer, "F0"))
+                float timer = unified ? inspection.treeTopology.W : BitConverter.Int32BitsToSingle(unchecked((int)inspection.treeTopology.W));
+                bool timed = unified
+                    ? role == FloraGenome.RoleLeaf || stage == TreeGenome.StageDead
+                    : role == TreeGenome.RoleLeaf || stage == TreeGenome.StageDead;
+                if (timed && HasInspectValue(timer, "F0"))
                     AppendInspectToken(stats, "timer " + timer.ToString("F0"));
             });
             AppendInspectSection(text, FormatNonNeutralGenes(

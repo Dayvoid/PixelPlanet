@@ -1384,6 +1384,7 @@ namespace GeneSys.Simulation.Gpu
                     SetCommon(flora, claim, slowDt);
                     flora.SetBuffer(claim, "_MaterialDefinitions", materialBuffer);
                     BindFloraWorldReads(claim);
+                    flora.SetTexture(claim, "_LightRead", resources.LightField);
                     flora.SetTexture(claim, "_FloraRead", resources.FloraRead);
                     flora.SetTexture(claim, "_FloraClaimsWrite", resources.FloraClaims);
                     Dispatch(flora, claim);

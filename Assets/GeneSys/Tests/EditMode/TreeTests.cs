@@ -149,6 +149,7 @@ namespace GeneSys.Tests
             Assert.That(structs.Contains("#define TREE_WOOD_ID 135u"));
             Assert.That(structs.Contains("TreeFuel"));
             Assert.That(structs.Contains("CountTreeRootsOnCell"));
+            Assert.That(structs.Contains("FLORA_ROLE_TREE_ROOT"));
             string motion = File.ReadAllText("Assets/GeneSys/Shaders/Simulation/Common/MargolusCommon.hlsl");
             Assert.That(motion.Contains("IsTreeMaterial(c.material)"));
             string builder = File.ReadAllText("Assets/GeneSys/Editor/GeneSysProjectBuilder.cs");
@@ -187,13 +188,38 @@ namespace GeneSys.Tests
                 TreeGenome.PackMeta(default, TreeGenome.StageDead, 1, 2, 0),
                 default
             };
-            TreeMetrics metrics = SimulationMetrics.ComputeTreeMetrics(materials, phys, topology, genomes);
+            TreeMetrics legacy = SimulationMetrics.ComputeTreeMetrics(materials, phys, topology, genomes);
+            Assert.That(legacy.PixelCount, Is.EqualTo(3));
+            Assert.That(legacy.TotalEnergy, Is.EqualTo(0.7d).Within(0.001d));
+
+            var identity = new[]
+            {
+                new Vector4(FloraGenome.ArchetypeTree, TreeGenome.StageSprout, FloraGenome.RoleRoot, TreeGenome.FlagAnchor),
+                new Vector4(FloraGenome.ArchetypeTree, TreeGenome.StageSapling, FloraGenome.RoleLeaf, 0f),
+                new Vector4(FloraGenome.ArchetypeTree, TreeGenome.StageDead, FloraGenome.RoleTrunk, TreeGenome.FlagAnchor),
+                Vector4.zero
+            };
+            TreeMetrics metrics = SimulationMetrics.ComputeTreeMetrics(materials, phys, topology, genomes, identity);
             Assert.That(metrics.PixelCount, Is.EqualTo(3));
             Assert.That(metrics.AnchorCount, Is.EqualTo(2));
             Assert.That(metrics.SproutCount, Is.EqualTo(1));
             Assert.That(metrics.SaplingCount, Is.EqualTo(1));
             Assert.That(metrics.DeadCount, Is.EqualTo(1));
-            Assert.That(metrics.TotalEnergy, Is.EqualTo(0.7d).Within(0.001d));
+            Assert.That(metrics.TotalEnergy, Is.EqualTo(1.0d).Within(0.001d));
+            Assert.That(metrics.TotalHydration, Is.EqualTo(0.6d).Within(0.001d));
+            Assert.That(metrics.TotalHealth, Is.EqualTo(1.9d).Within(0.001d));
+        }
+
+        [Test]
+        public void AdjacentLivingRootsCountTowardCohesion()
+        {
+            var identity = new Vector4[9];
+            identity[1 * 3 + 0] = new Vector4(FloraGenome.ArchetypeTree, TreeGenome.StageSprout, FloraGenome.RoleRoot, TreeGenome.FlagAnchor);
+            Assert.That(TreeGenome.CountAdjacentLivingRoots(identity, 3, 3, 1, 1), Is.EqualTo(1));
+            Vector4 deadRoot = identity[1 * 3 + 0];
+            deadRoot.y = TreeGenome.StageDead;
+            identity[1 * 3 + 0] = deadRoot;
+            Assert.That(TreeGenome.CountAdjacentLivingRoots(identity, 3, 3, 1, 1), Is.EqualTo(0));
         }
     }
 }

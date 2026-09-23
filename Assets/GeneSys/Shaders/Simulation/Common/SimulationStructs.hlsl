@@ -2266,6 +2266,9 @@ float TreeCanopyOpacity(uint material, float4 phys, float scale)
 uint CountTreeRootsOnCell(Texture2DArray<float4> tree, int2 cell, int2 gridSize)
 {
     uint taps = 0u;
+    uint width, height, elements;
+    tree.GetDimensions(width, height, elements);
+    bool flora = elements == (uint)FLORA_SLICE_COUNT;
     int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
     [unroll]
     for (int i = 0; i < 4; i++)
@@ -2273,6 +2276,14 @@ uint CountTreeRootsOnCell(Texture2DArray<float4> tree, int2 cell, int2 gridSize)
         int2 n = cell + offsets[i];
         if (offsets[i].y != 0 && (n.y < 0 || n.y >= gridSize.y)) continue;
         int2 neighbor = ClampCell(n, gridSize);
+        if (flora)
+        {
+            uint4 identity = SampleFloraIdentity(tree, neighbor);
+            if (identity.x != FLORA_ARCHETYPE_TREE || identity.z != FLORA_ROLE_TREE_ROOT) continue;
+            if (identity.y == FLORA_STAGE_EMPTY || identity.y == FLORA_STAGE_DEAD) continue;
+            taps++;
+            continue;
+        }
         uint4 topo = SampleTreeTopology(tree, neighbor);
         if (!TreeIsOccupied(topo) || TreeRole(topo) != TREE_ROLE_ROOT) continue;
         uint stage = TreeStage(SampleTreeGenome(tree, neighbor));

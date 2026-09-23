@@ -1194,7 +1194,17 @@ namespace GeneSys.Validation
                                 topology[i] = TreeGenome.FromFloatBits(topologyBits[i]);
                             for (int i = 0; i < genomeBits.Length; i++)
                                 genomes[i] = TreeGenome.FromFloatBits(genomeBits[i]);
-                            completed?.Invoke(ComputeTreeMetrics(materials, phys, topology, genomes));
+                            int identitySlice = FloraGenome.IdentitySlice;
+                            if (treeTex.volumeDepth < FloraGenome.SliceCount)
+                            {
+                                completed?.Invoke(ComputeTreeMetrics(materials, phys, topology, genomes));
+                                return;
+                            }
+                            RequestFieldSlice(treeTex, identitySlice, fail, identityRequest =>
+                            {
+                                Vector4[] identity = identityRequest.GetData<Vector4>().ToArray();
+                                completed?.Invoke(ComputeTreeMetrics(materials, phys, topology, genomes, identity));
+                            });
                         });
                     });
                 });
@@ -1203,22 +1213,43 @@ namespace GeneSys.Validation
 
         public static TreeMetrics ComputeTreeMetrics(uint[] materials, Vector4[] phys, TreeGenome.Packed[] topology, TreeGenome.Packed[] genomes)
         {
+            return ComputeTreeMetrics(materials, phys, topology, genomes, null);
+        }
+
+        public static TreeMetrics ComputeTreeMetrics(uint[] materials, Vector4[] phys, TreeGenome.Packed[] topology, TreeGenome.Packed[] genomes, Vector4[] identity)
+        {
             var metrics = new TreeMetrics();
             int count = Math.Min(materials.Length, Math.Min(phys.Length, Math.Min(topology.Length, genomes.Length)));
+            bool flora = identity != null;
+            if (flora) count = Math.Min(count, identity.Length);
             for (int i = 0; i < count; i++)
             {
-                if (topology[i].X == 0) continue;
-                TreeGenome.Packed genome = TreeGenome.Sanitize(genomes[i]);
-                uint stage = TreeGenome.Stage(genome);
+                uint stage;
+                bool anchor;
+                if (flora)
+                {
+                    uint archetype = (uint)Math.Round(Math.Max(0f, identity[i].x));
+                    uint role = (uint)Math.Round(Math.Max(0f, identity[i].z));
+                    if (archetype != FloraGenome.ArchetypeTree || role == FloraGenome.RoleNone) continue;
+                    stage = (uint)Math.Round(Math.Max(0f, identity[i].y));
+                    anchor = ((uint)Math.Round(Math.Max(0f, identity[i].w)) & FloraGenome.FlagAnchor) != 0;
+                    metrics.TotalEnergy += Math.Max(0d, phys[i].y);
+                    metrics.TotalHydration += Math.Max(0d, phys[i].z);
+                }
+                else
+                {
+                    if (topology[i].X == 0) continue;
+                    stage = TreeGenome.Stage(TreeGenome.Sanitize(genomes[i]));
+                    anchor = (TreeGenome.Flags(topology[i].Z) & TreeGenome.FlagAnchor) != 0;
+                    metrics.TotalEnergy += Math.Max(0d, phys[i].x);
+                    metrics.TotalHydration += Math.Max(0d, phys[i].y);
+                }
                 metrics.PixelCount++;
-                if ((TreeGenome.Flags(topology[i].Z) & TreeGenome.FlagAnchor) != 0)
-                    metrics.AnchorCount++;
+                if (anchor) metrics.AnchorCount++;
                 if (stage == TreeGenome.StageSprout) metrics.SproutCount++;
                 else if (stage == TreeGenome.StageSapling) metrics.SaplingCount++;
                 else if (stage == TreeGenome.StageTree) metrics.TreeCount++;
                 else if (stage == TreeGenome.StageDead) metrics.DeadCount++;
-                metrics.TotalEnergy += Math.Max(0d, phys[i].x);
-                metrics.TotalHydration += Math.Max(0d, phys[i].y);
                 metrics.TotalHealth += Math.Max(0d, phys[i].w);
             }
             return metrics;

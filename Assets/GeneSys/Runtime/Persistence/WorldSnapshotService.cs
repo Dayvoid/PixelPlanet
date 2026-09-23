@@ -291,7 +291,7 @@ namespace GeneSys.Persistence
             using var reader = new BinaryReader(stream);
             if (reader.ReadUInt32() != Magic) return false;
             int version = reader.ReadInt32();
-            if (version < Version1 || version > Version16) return false;
+            if (version < Version1 || version > Version17) return false;
 
             int width = reader.ReadInt32();
             int height = reader.ReadInt32();

@@ -232,8 +232,9 @@ namespace GeneSys.Validation
                                                                 for (int i = 0; i < treePhys.Length; i++)
                                                                 {
                                                                     if (!Finite(treePhys[i])) { Complete(false, $"Non-finite tree physiology at cell {i}."); return; }
-                                                                    if (treePhys[i].x < -0.01f || treePhys[i].x > 1.01f) { Complete(false, $"Tree energy out of range at cell {i}."); return; }
-                                                                    if (treePhys[i].y < -0.01f || treePhys[i].y > 1.01f) { Complete(false, $"Tree hydration out of range at cell {i}."); return; }
+                                                                    if (treePhys[i].x < -0.01f || treePhys[i].x > 1.01f) { Complete(false, $"Tree biomass out of range at cell {i}."); return; }
+                                                                    if (treePhys[i].y < -0.01f || treePhys[i].y > 1.01f) { Complete(false, $"Tree energy out of range at cell {i}."); return; }
+                                                                    if (treePhys[i].z < -0.01f || treePhys[i].z > 1.01f) { Complete(false, $"Tree hydration out of range at cell {i}."); return; }
                                                                     if (treePhys[i].w < -0.01f || treePhys[i].w > 1.01f) { Complete(false, $"Tree health out of range at cell {i}."); return; }
                                                                 }
                                                                 int topoSlice = treeTex.volumeDepth >= FloraGenome.SliceCount ? FloraGenome.TopologySlice : TreeGenome.TopologySlice;
@@ -254,24 +255,32 @@ namespace GeneSys.Validation
                                                                             uint[] materials = materialRequest.GetData<uint>().ToArray();
                                                                             int width = host.Resources.TreeRead != null ? host.Resources.TreeRead.width : 0;
                                                                             int height = host.Resources.TreeRead != null ? host.Resources.TreeRead.height : 0;
+                                                                            bool unified = treeTex.volumeDepth >= FloraGenome.SliceCount;
                                                                             for (int i = 0; i < treeGenomeBits.Length; i++)
                                                                             {
                                                                                 TreeGenome.Packed genome = TreeGenome.Sanitize(TreeGenome.FromFloatBits(treeGenomeBits[i]));
                                                                                 TreeGenome.Packed topology = TreeGenome.FromFloatBits(treeTopoBits[i]);
                                                                                 uint stage = TreeGenome.Stage(genome);
                                                                                 uint role = TreeGenome.Role(topology.Z);
+                                                                                uint parentPacked = topology.Y;
+                                                                                bool occupied = topology.X != 0;
+                                                                                if (unified)
+                                                                                {
+                                                                                    Vector4 topoRaw = treeTopoBits[i];
+                                                                                    parentPacked = (uint)Mathf.Round(Mathf.Max(0f, topoRaw.x));
+                                                                                    occupied = parentPacked != 0u;
+                                                                                    role = 0u;
+                                                                                }
                                                                                 if (!TreeGenome.IsValidStage(stage))
                                                                                 { Complete(false, $"Invalid tree stage {stage} at cell {i}."); return; }
-                                                                                if (!TreeGenome.IsValidRole(role))
+                                                                                if (!unified && !TreeGenome.IsValidRole(role))
                                                                                 { Complete(false, $"Invalid tree role {role} at cell {i}."); return; }
                                                                                 uint material = i < materials.Length ? materials[i] : 0u;
-                                                                                bool occupied = topology.X != 0;
                                                                                 if (!occupied && (material == MaterialIds.Leaf || material == MaterialIds.Wood))
                                                                                 { Complete(false, $"Orphan tree material {material} at cell {i}."); return; }
-                                                                                if (occupied && topology.Y != 0)
+                                                                                if (occupied && parentPacked != 0u)
                                                                                 {
-                                                                                    uint packed = topology.Y;
-                                                                                    int parent = (int)packed - 1;
+                                                                                    int parent = (int)parentPacked - 1;
                                                                                     if (parent < 0 || parent >= width * height)
                                                                                     { Complete(false, $"Invalid tree parent link at cell {i}."); return; }
                                                                                 }

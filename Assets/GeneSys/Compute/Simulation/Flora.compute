@@ -342,6 +342,297 @@ float4 SeedDetritusAux(float4 aux)
     return aux;
 }
 
+bool TreeLiving(uint4 identity)
+{
+    return identity.x == FLORA_ARCHETYPE_TREE
+        && identity.y != FLORA_STAGE_EMPTY
+        && identity.y != FLORA_STAGE_DEAD;
+}
+
+uint TreeAnchorPack(int2 cell, uint4 identity, uint4 topo)
+{
+    if ((identity.w & FLORA_FLAG_ANCHOR) != 0u)
+        return PackFaunaCell(cell, _GridSize);
+    return topo.y;
+}
+
+bool SameTree(int2 a, int2 b)
+{
+    uint4 idA = SampleFloraIdentity(_FloraRead, a);
+    uint4 idB = SampleFloraIdentity(_FloraRead, b);
+    if (!TreeLiving(idA) || !TreeLiving(idB)) return false;
+    uint anchorA = TreeAnchorPack(a, idA, SampleFloraTopology(_FloraRead, a));
+    uint anchorB = TreeAnchorPack(b, idB, SampleFloraTopology(_FloraRead, b));
+    return anchorA != 0u && anchorA == anchorB;
+}
+
+int2 TreeAnchorCell(int2 cell, uint4 identity, uint4 topo)
+{
+    if ((identity.w & FLORA_FLAG_ANCHOR) != 0u) return cell;
+    int2 owner = OwnerCell(topo);
+    return owner.y >= 0 ? owner : cell;
+}
+
+int TreeColumnHeight(int2 anchor)
+{
+    int limit = clamp((int)round(_TreeF.z), 1, 48);
+    int height = 0;
+    for (int dy = 1; dy <= limit; dy++)
+    {
+        int y = anchor.y + dy;
+        if (y >= _GridSize.y) break;
+        int2 p = int2(anchor.x, y);
+        if (!SameTree(anchor, p)) break;
+        uint role = SampleFloraIdentity(_FloraRead, p).z;
+        if (role != FLORA_ROLE_TREE_STEM && role != FLORA_ROLE_TREE_TRUNK) break;
+        height = dy;
+    }
+    return height;
+}
+
+int TreeCrownCap(uint4 genome)
+{
+    float scale = lerp(1.0, TreeMatureHeightScale(genome), saturate(_TreeC.x));
+    int cap = (int)floor(max(1.0, _TreeF.z) * scale + 1e-4);
+    int sapling = clamp((int)round(_TreeF.y), 1, 48);
+    return clamp(max(cap, sapling), 1, 48);
+}
+
+int TreeRootDepth(int2 anchor)
+{
+    int depth = 0;
+    for (int dy = 1; dy <= 8; dy++)
+    {
+        int y = anchor.y - dy;
+        if (y < 0) break;
+        int2 p = int2(anchor.x, y);
+        if (!SameTree(anchor, p)) break;
+        if (SampleFloraIdentity(_FloraRead, p).z != FLORA_ROLE_TREE_ROOT) break;
+        depth = dy;
+    }
+    return depth;
+}
+
+int TreeBranchCount(int2 anchor, int height)
+{
+    int count = 0;
+    int span = max(height, 1);
+    for (int dy = 1; dy <= span; dy++)
+    {
+        int y = anchor.y + dy;
+        if (y >= _GridSize.y) break;
+        int2 trunk = int2(anchor.x, y);
+        uint self = PackFaunaCell(trunk, _GridSize);
+        [unroll]
+        for (int dir = -1; dir <= 1; dir += 2)
+        {
+            int2 side = C(trunk + int2(dir, 0));
+            if (!SameTree(anchor, side)) continue;
+            uint4 id = SampleFloraIdentity(_FloraRead, side);
+            uint4 topo = SampleFloraTopology(_FloraRead, side);
+            if (id.z == FLORA_ROLE_TREE_BRANCH && topo.x == self) count++;
+        }
+    }
+    return count;
+}
+
+bool TreeSideIsLeaf(int2 shoot, int dir, int2 anchor)
+{
+    int2 side = C(shoot + int2(dir, 0));
+    uint4 id = SampleFloraIdentity(_FloraRead, side);
+    if (!TreeLiving(id) || id.z != FLORA_ROLE_TREE_LEAF) return false;
+    uint4 topo = SampleFloraTopology(_FloraRead, side);
+    if (topo.x == PackFaunaCell(shoot, _GridSize)) return true;
+    return TreeAnchorPack(side, id, topo) == PackFaunaCell(anchor, _GridSize);
+}
+
+bool TreeHasLateralLeaf(int2 anchor, int height)
+{
+    int span = max(height, 1);
+    for (int dy = 1; dy <= span; dy++)
+    {
+        int y = anchor.y + dy;
+        if (y >= _GridSize.y) break;
+        int2 shoot = int2(anchor.x, y);
+        if (TreeSideIsLeaf(shoot, -1, anchor) || TreeSideIsLeaf(shoot, 1, anchor)) return true;
+    }
+    return false;
+}
+
+bool TreeHasLeafChild(int2 cell)
+{
+    uint self = PackFaunaCell(cell, _GridSize);
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = cell + offsets[i];
+        if (n.y < 0 || n.y >= _GridSize.y) continue;
+        n = C(n);
+        uint4 id = SampleFloraIdentity(_FloraRead, n);
+        if (!TreeLiving(id) || id.z != FLORA_ROLE_TREE_LEAF) continue;
+        if (SampleFloraTopology(_FloraRead, n).x == self) return true;
+    }
+    return false;
+}
+
+int TreeChildCount(int2 cell)
+{
+    int count = 0;
+    uint self = PackFaunaCell(cell, _GridSize);
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = cell + offsets[i];
+        if (n.y < 0 || n.y >= _GridSize.y) continue;
+        n = C(n);
+        if (!TreeLiving(SampleFloraIdentity(_FloraRead, n))) continue;
+        if (SampleFloraTopology(_FloraRead, n).x == self) count++;
+    }
+    return count;
+}
+
+int TreeWrappedDx(int2 from, int2 to)
+{
+    int dx = to.x - from.x;
+    if (dx > _GridSize.x / 2) dx -= _GridSize.x;
+    if (dx < -_GridSize.x / 2) dx += _GridSize.x;
+    return dx;
+}
+
+int TreeWindDir(int2 cell, uint4 genome)
+{
+    float lean = F(cell).x * max(0.0, _TreeE.w) * TreeWindResponse(genome);
+    if (abs(lean) > 0.02) return lean > 0.0 ? 1 : -1;
+    return HashCell(cell, 29u) < 0.5 ? -1 : 1;
+}
+
+bool TreeTouchesAir(int2 cell)
+{
+    int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        int2 n = cell + offsets[i];
+        if (n.y < 0 || n.y >= _GridSize.y) continue;
+        if (IsOpenHabitat(M(C(n)))) return true;
+    }
+    return false;
+}
+
+bool TreeGrowthNiche(int2 tip, int2 anchor, bool needsLight)
+{
+    float temp = S(tip).x;
+    if (temp < _TreeC.y || temp > _TreeC.z) return false;
+    float moist = MoistureOf(S(anchor), A(anchor));
+    if (moist < _TreeC.w || moist > _TreeD.x) return false;
+    if (needsLight && LightOf(tip) < _TreeE.y) return false;
+    return true;
+}
+
+bool TreeCanAfford(float4 phys, float nutrient)
+{
+    float cost = max(0.0, _TreeE.z);
+    return phys.y >= cost && phys.z >= cost * 0.5 && nutrient >= cost * 0.5;
+}
+
+bool TreeGrowthRoll(int2 cell, uint4 genome)
+{
+    float metabolic = TreeExpressFactor(DecodeGene(genome, TREE_GENE_METABOLIC), saturate(_TreeC.x));
+    float chance = saturate(max(0.0, _TreeA.w) * metabolic);
+    if (chance <= 0.0) return false;
+    return HashCell(cell, 17u) < chance;
+}
+
+bool TreeTargetFree(int2 target)
+{
+    if (target.y < 0 || target.y >= _GridSize.y) return false;
+    return SampleFloraIdentity(_FloraRead, target).x == FLORA_ARCHETYPE_NONE;
+}
+
+bool TreeEmit(int2 target, int2 source)
+{
+    if (!TreeTargetFree(target) || all(target == source)) return false;
+    uint packed = PackFaunaCell(source, _GridSize);
+    uint original;
+    InterlockedMin(_FloraClaimsWrite[target], packed, original);
+    return original == FLORA_CLAIM_EMPTY || packed <= original;
+}
+
+bool TreeEmitOpen(int2 target, int2 source)
+{
+    if (target.y < 0 || target.y >= _GridSize.y) return false;
+    if (!IsOpenHabitat(M(target))) return false;
+    return TreeEmit(target, source);
+}
+
+int TreeTrunkWidth(int2 anchor)
+{
+    int width = 1;
+    [unroll]
+    for (int dir = -1; dir <= 1; dir += 2)
+    {
+        for (int step = 1; step <= 8; step++)
+        {
+            int2 p = C(anchor + int2(dir * step, 0));
+            if (p.y != anchor.y) break;
+            if (!SameTree(anchor, p)) break;
+            if (SampleFloraIdentity(_FloraRead, p).z != FLORA_ROLE_TREE_TRUNK) break;
+            width++;
+        }
+    }
+    return width;
+}
+
+void TreeVascularPair(int2 donorParent, int2 child, out float waterFlux, out float nutrientFlux, out float energyFlux)
+{
+    float4 parentPhys = SampleFloraPhysiology(_FloraRead, donorParent);
+    float4 childPhys = SampleFloraPhysiology(_FloraRead, child);
+    float parentNutrient = SampleFloraPropagule(_FloraRead, donorParent).y;
+    float childNutrient = SampleFloraPropagule(_FloraRead, child).y;
+    int kids = max(1, TreeChildCount(donorParent));
+    float rate = max(0.0, _TreeB.w) * _DeltaTime;
+    waterFlux = min(max(0.0, parentPhys.z - childPhys.z) * rate, max(0.0, parentPhys.z) / (float)kids);
+    nutrientFlux = min(max(0.0, parentNutrient - childNutrient) * rate, max(0.0, parentNutrient) / (float)kids);
+    energyFlux = min(max(0.0, childPhys.y - parentPhys.y) * rate, max(0.0, childPhys.y));
+}
+
+uint TreeGrowthRole(int2 cell, int2 parent, uint4 parentIdentity, uint4 parentTopo)
+{
+    int sapling = clamp((int)round(_TreeF.y), 1, 48);
+    int2 anchor = TreeAnchorCell(parent, parentIdentity, parentTopo);
+    int height = TreeColumnHeight(anchor);
+    if (IsTreeHabitat(M(cell)) && cell.y < parent.y)
+        return FLORA_ROLE_TREE_ROOT;
+    if (cell.y > parent.y)
+        return height >= sapling ? FLORA_ROLE_TREE_TRUNK : FLORA_ROLE_TREE_STEM;
+    if (parentIdentity.z == FLORA_ROLE_TREE_BRANCH
+        || parentIdentity.z == FLORA_ROLE_TREE_STEM
+        || parentIdentity.z == FLORA_ROLE_TREE_LEAF)
+        return FLORA_ROLE_TREE_LEAF;
+    if (parentIdentity.z == FLORA_ROLE_TREE_ROOT)
+        return FLORA_ROLE_TREE_TRUNK;
+    return FLORA_ROLE_TREE_BRANCH;
+}
+
+uint TreeBodyMaterial(uint role, uint flags, uint current)
+{
+    if (role == FLORA_ROLE_TREE_ROOT && (flags & FLORA_FLAG_ANCHOR) == 0u)
+        return current;
+    if (role == FLORA_ROLE_TREE_STEM || role == FLORA_ROLE_TREE_LEAF)
+        return TREE_LEAF_ID;
+    return TREE_WOOD_ID;
+}
+
+bool TreeBodyPresent(uint material, uint role, uint flags)
+{
+    if (role == FLORA_ROLE_TREE_ROOT && (flags & FLORA_FLAG_ANCHOR) == 0u)
+        return IsTreeHabitat(material);
+    if (material == TREE_LEAF_ID || material == TREE_WOOD_ID) return true;
+    return role == FLORA_ROLE_TREE_ROOT && (flags & FLORA_FLAG_ANCHOR) != 0u && IsTreeHabitat(material);
+}
+
 // -------------------------------------------------------------------------
 // 1. LIGHT ATTENUATION
 // Scans downward through columns. Attenuates through clouds, vapor, canopies, water.
@@ -392,6 +683,8 @@ void LightAttenuation(uint3 id : SV_DispatchThreadID)
         {
             if (identity.z == FLORA_ROLE_TREE_LEAF)
                 opacity += (0.18 + saturate(phys.w) * 0.22) * saturate(_TreeH.z);
+            else if (identity.z == FLORA_ROLE_TREE_STEM)
+                opacity += 0.08 * saturate(_TreeH.z);
             else if (identity.z == FLORA_ROLE_TREE_TRUNK || identity.z == FLORA_ROLE_TREE_BRANCH)
                 opacity += 0.45 * saturate(_TreeH.z);
         }
@@ -460,7 +753,10 @@ void RootUptake(uint3 id : SV_DispatchThreadID)
         aux.z = max(0.0, aux.z - pullN);
 
         phys.z = saturate(phys.z + pullW);
-        phys.y = saturate(phys.y + pullN * 0.5);
+        if (identity.x == FLORA_ARCHETYPE_TREE)
+            prop.y = saturate(prop.y + pullN);
+        else
+            phys.y = saturate(phys.y + pullN * 0.5);
     }
 
     _AuxWrite[cell] = SafeFinite4(max(aux, 0.0), 0.0);
@@ -500,21 +796,26 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
     if (identity.x != FLORA_ARCHETYPE_NONE && identity.y != FLORA_STAGE_EMPTY && identity.y != FLORA_STAGE_DEAD)
     {
         float temp = state.x;
-        float expr = saturate(_FloraD.y);
+        bool tree = identity.x == FLORA_ARCHETYPE_TREE;
+        float expr = tree ? saturate(_TreeC.x) : saturate(_FloraD.y);
 
-        float optT = identity.x == FLORA_ARCHETYPE_TREE ? _TreeC.y : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassC.y : _FloraD.z);
-        float tolT = identity.x == FLORA_ARCHETYPE_TREE ? _TreeC.z : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassC.z : _FloraD.w);
-        float photoRate = identity.x == FLORA_ARCHETYPE_TREE ? _TreeA.z : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassA.z : _FloraB.w);
-        float maintRate = identity.x == FLORA_ARCHETYPE_TREE ? _TreeB.y : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassB.y : _FloraG.x);
-        float nightDrain = identity.x == FLORA_ARCHETYPE_TREE ? _TreeB.z : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassB.z : _FloraG.y);
+        float optT = tree ? _TreeC.y : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassC.y : _FloraD.z);
+        float tolT = tree ? _TreeC.z : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassC.z : _FloraD.w);
+        float photoRate = tree ? _TreeA.z : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassA.z : _FloraB.w);
+        float maintRate = tree ? _TreeB.y : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassB.y : _FloraG.x);
+        float nightDrain = tree ? _TreeB.z : (identity.x == FLORA_ARCHETYPE_GRASS ? _GrassB.z : _FloraG.y);
 
         float tempFactor = saturate(1.0 - abs(temp - optT) / max(5.0, tolT));
-        float lightAffinity = FloraExpressFactor(DecodeGene(genome, FLORA_GENE_LIGHT_AFFINITY), expr);
-        float metabolic = FloraExpressFactor(DecodeGene(genome, FLORA_GENE_METABOLIC), expr);
+        float lightAffinity = tree
+            ? TreeExpressFactor(DecodeGene(genome, TREE_GENE_LIGHT_AFFINITY), expr)
+            : FloraExpressFactor(DecodeGene(genome, FLORA_GENE_LIGHT_AFFINITY), expr);
+        float metabolic = tree
+            ? TreeExpressFactor(DecodeGene(genome, TREE_GENE_METABOLIC), expr)
+            : FloraExpressFactor(DecodeGene(genome, FLORA_GENE_METABOLIC), expr);
 
         bool canPhotosynthesize = identity.x == FLORA_ARCHETYPE_ALGAE
                                || identity.x == FLORA_ARCHETYPE_GRASS
-                               || (identity.x == FLORA_ARCHETYPE_TREE && identity.z == FLORA_ROLE_TREE_LEAF);
+                               || (tree && (identity.z == FLORA_ROLE_TREE_LEAF || identity.z == FLORA_ROLE_TREE_STEM));
 
         float energyGain = 0.0;
         if (canPhotosynthesize)
@@ -552,37 +853,57 @@ void Photosynthesis(uint3 id : SV_DispatchThreadID)
             aux.z = max(0.0, aux.z + emit * 0.15);
         }
 
-        // Tree Vascular Flow:
-        if (identity.x == FLORA_ARCHETYPE_TREE)
+        // Tree vascular flow is conservative: the child and its parent both
+        // apply the same read-only flux. Water and nutrient move up; energy moves down.
+        if (tree)
         {
             int2 parent = ParentCell(topo);
-            if (parent.y >= 0 && parent.y < _GridSize.y)
+            bool linked = parent.y >= 0 && parent.y < _GridSize.y && !all(parent == cell)
+                && TreeLiving(SampleFloraIdentity(_FloraRead, parent));
+            if (linked)
             {
-                float4 pPhys = SampleFloraPhysiology(_FloraRead, parent);
-                // Water flows up towards leaves (deficit-driven):
-                if (pPhys.z > phys.z)
-                {
-                    float wFlux = (pPhys.z - phys.z) * _TreeB.w * _DeltaTime;
-                    phys.z = saturate(phys.z + wFlux);
-                }
-                // Energy flows down towards trunk/roots:
-                if (phys.y > pPhys.y)
-                {
-                    float eFlux = (phys.y - pPhys.y) * _TreeB.w * _DeltaTime;
-                    phys.y = saturate(phys.y - eFlux);
-                }
+                float waterFlux, nutrientFlux, energyFlux;
+                TreeVascularPair(parent, cell, waterFlux, nutrientFlux, energyFlux);
+                phys.z = saturate(phys.z + waterFlux);
+                prop.y = saturate(prop.y + nutrientFlux);
+                phys.y = saturate(phys.y - energyFlux);
             }
 
-            // Leaf longevity timer:
+            int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+            uint self = PackFaunaCell(cell, _GridSize);
+            [unroll]
+            for (int i = 0; i < 4; i++)
+            {
+                int2 n = cell + offsets[i];
+                if (n.y < 0 || n.y >= _GridSize.y) continue;
+                n = C(n);
+                if (!TreeLiving(SampleFloraIdentity(_FloraRead, n))) continue;
+                if (SampleFloraTopology(_FloraRead, n).x != self) continue;
+                float waterFlux, nutrientFlux, energyFlux;
+                TreeVascularPair(cell, n, waterFlux, nutrientFlux, energyFlux);
+                phys.z = max(0.0, phys.z - waterFlux);
+                prop.y = max(0.0, prop.y - nutrientFlux);
+                phys.y = saturate(phys.y + energyFlux);
+            }
+
             if (identity.z == FLORA_ROLE_TREE_LEAF)
             {
-                topo.w += 1.0;
-                if ((float)topo.w > _TreeI.x) identity.w |= FLORA_FLAG_SHED;
+                topo.w += 1u;
+                float life = max(1.0, _TreeI.x) * lerp(1.0, TreeLeafLifeScale(genome), saturate(_TreeC.x));
+                if ((float)topo.w > life) identity.w |= FLORA_FLAG_SHED;
             }
-        }
 
-        // Health decay from starvation or desiccation:
-        if (phys.y <= 0.01 || phys.z <= 0.01)
+            float moist = max(MoistureOf(state, aux), phys.z);
+            bool survive = temp >= _TreeD.y && temp <= _TreeD.z && moist >= _TreeD.w && moist <= _TreeE.x;
+            if (!survive)
+                phys.w = max(0.0, phys.w - max(0.0, _TreeB.x) * _DeltaTime);
+            if (phys.y <= 0.01 || phys.z <= 0.01)
+                phys.w = max(0.0, phys.w - max(0.0, _TreeB.x) * _DeltaTime);
+            if (identity.z == FLORA_ROLE_TREE_ROOT && TreeTouchesAir(cell))
+                phys.w = max(0.0, phys.w - max(0.0, _TreeH.w) * _DeltaTime);
+            if (phys.w <= 0.02) identity.y = FLORA_STAGE_DEAD;
+        }
+        else if (phys.y <= 0.01 || phys.z <= 0.01)
         {
             phys.x = max(0.0, phys.x - _FloraB.z * _DeltaTime);
             if (phys.x <= 0.02) identity.y = FLORA_STAGE_DEAD;
@@ -665,42 +986,80 @@ void ClaimGrowth(uint3 id : SV_DispatchThreadID)
     uint4 identity = SampleFloraIdentity(_FloraRead, cell);
     uint4 topo = SampleFloraTopology(_FloraRead, cell);
     uint4 genome = SampleFloraGenome(_FloraRead, cell);
+    float nutrient = SampleFloraPropagule(_FloraRead, cell).y;
 
-    if (identity.x == FLORA_ARCHETYPE_TREE && identity.y != FLORA_STAGE_EMPTY && identity.y != FLORA_STAGE_DEAD)
+    if (TreeLiving(identity))
     {
-        if (phys.y > _TreeE.z && phys.z > 0.3) // Sufficient energy & water
-        {
-            uint packedSource = PackFaunaCell(cell, _GridSize);
+        int2 anchor = TreeAnchorCell(cell, identity, topo);
+        int height = TreeColumnHeight(anchor);
+        int2 apical = height <= 0 ? anchor : int2(anchor.x, anchor.y + height);
+        bool afford = TreeCanAfford(phys, nutrient);
+        bool rolled = TreeGrowthRoll(cell, genome);
+        bool shootNiche = TreeGrowthNiche(cell, anchor, true);
+        bool rootNiche = TreeGrowthNiche(anchor, anchor, false);
+        bool claimed = false;
 
-            // Trunk/branch extension upward / outward:
-            if (identity.z == FLORA_ROLE_TREE_TRUNK || identity.z == FLORA_ROLE_TREE_BRANCH || identity.z == FLORA_ROLE_TREE_STEM)
+        if (all(cell == apical) && afford && rolled && shootNiche)
+        {
+            int sprout = clamp((int)round(_TreeF.x), 1, 8);
+            int cap = TreeCrownCap(genome);
+            if (height < sprout && cell.y + 1 < _GridSize.y)
+                claimed = TreeEmitOpen(cell + int2(0, 1), cell);
+            else if (height == sprout && !TreeHasLateralLeaf(anchor, height))
             {
-                int2 up = C(cell + int2(0, 1));
-                if (IsOpenHabitat(M(up)) && cell.y < _GridSize.y - 1)
-                {
-                    uint original;
-                    InterlockedMin(_FloraClaimsWrite[up], packedSource, original);
-                }
-                // Lateral branches:
-                if (identity.z == FLORA_ROLE_TREE_TRUNK && HashCell(cell, 13u) < 0.35)
-                {
-                    int dir = HashCell(cell, 29u) < 0.5 ? -1 : 1;
-                    int2 lateral = C(cell + int2(dir, 0));
-                    if (IsOpenHabitat(M(lateral)))
-                    {
-                        uint original;
-                        InterlockedMin(_FloraClaimsWrite[lateral], packedSource, original);
-                    }
-                }
+                int dir = TreeWindDir(cell, genome);
+                claimed = TreeEmitOpen(C(cell + int2(dir, 0)), cell);
+                if (!claimed) claimed = TreeEmitOpen(C(cell + int2(-dir, 0)), cell);
             }
-            // Root extension downward into soil:
-            else if (identity.z == FLORA_ROLE_TREE_ROOT)
+
+            // One claim per tip. If the inverted-L leaf is already placed, or both
+            // sides are blocked, keep extending the shoot up to the crown cap.
+            if (!claimed && height >= sprout && height < cap && cell.y + 1 < _GridSize.y)
+                claimed = TreeEmitOpen(cell + int2(0, 1), cell);
+        }
+
+        if (!claimed && identity.z == FLORA_ROLE_TREE_TRUNK && !all(cell == apical) && afford && rolled && shootNiche)
+        {
+            int budget = TreeSaplingBranchCount(genome, (int)round(_TreeI.w), (int)round(_TreeJ.x));
+            int count = TreeBranchCount(anchor, height);
+            int sapling = clamp((int)round(_TreeF.y), 1, 48);
+            int stride = max(1, sapling / (budget + 1));
+            int slot = (count + 1) * stride;
+            if (count < budget && cell.y == anchor.y + slot)
+            {
+                int dir = TreeWindDir(cell, genome);
+                claimed = TreeEmitOpen(C(cell + int2(dir, 0)), cell);
+                if (!claimed) claimed = TreeEmitOpen(C(cell + int2(-dir, 0)), cell);
+            }
+        }
+
+        if (!claimed && identity.z == FLORA_ROLE_TREE_BRANCH && afford && rolled && shootNiche && !TreeHasLeafChild(cell))
+        {
+            int2 parent = ParentCell(topo);
+            int dir = parent.y >= 0 ? (TreeWrappedDx(parent, cell) >= 0 ? 1 : -1) : TreeWindDir(cell, genome);
+            claimed = TreeEmitOpen(C(cell + int2(dir, 0)), cell);
+        }
+
+        if (!claimed && identity.z == FLORA_ROLE_TREE_ROOT && !all(cell == apical) && afford && rolled && rootNiche)
+        {
+            int budget = max(1, TreeRootForkBudget(genome));
+            int depth = TreeRootDepth(anchor);
+            int2 rootTip = depth <= 0 ? anchor : int2(anchor.x, anchor.y - depth);
+            if (depth < budget && all(cell == rootTip) && cell.y > 0)
             {
                 int2 down = cell + int2(0, -1);
-                if (down.y >= 0 && IsTreeHabitat(M(C(down))))
+                if (IsTreeHabitat(M(down)))
+                    claimed = TreeEmit(down, cell);
+            }
+            if (!claimed && (identity.w & FLORA_FLAG_ANCHOR) != 0u && height >= TreeCrownCap(genome))
+            {
+                int width = TreeTrunkWidth(anchor);
+                int maxWidth = clamp((int)round(_TreeF.w), 1, 8);
+                if (width < maxWidth)
                 {
-                    uint original;
-                    InterlockedMin(_FloraClaimsWrite[C(down)], packedSource, original);
+                    int dir = TreeWindDir(cell, genome);
+                    claimed = TreeEmitOpen(C(cell + int2(dir, 0)), cell);
+                    if (!claimed) claimed = TreeEmitOpen(C(cell + int2(-dir, 0)), cell);
                 }
             }
         }
@@ -748,38 +1107,38 @@ void ApplyFloraWorld(uint3 id : SV_DispatchThreadID)
 
         if (pIdentity.x == FLORA_ARCHETYPE_TREE)
         {
-            if (IsTreeHabitat(material))
-            {
-                // Root growth - retains soil habitat
-            }
-            else if (cell.y > parentCell.y)
-            {
-                material = TREE_WOOD_ID;
-            }
-            else
-            {
-                material = TREE_WOOD_ID;
-            }
+            uint4 pTopo = SampleFloraTopology(_FloraRead, parentCell);
+            uint role = TreeGrowthRole(cell, parentCell, pIdentity, pTopo);
+            if (role != FLORA_ROLE_TREE_ROOT)
+                material = TreeBodyMaterial(role, 0u, material);
         }
     }
 
     // Material updates & mortality:
     if (identity.x == FLORA_ARCHETYPE_TREE)
     {
-        if (identity.y == FLORA_STAGE_DEAD || (identity.w & FLORA_FLAG_SHED) != 0u)
+        uint4 treeTopo = SampleFloraTopology(_FloraRead, cell);
+        bool shed = (identity.w & FLORA_FLAG_SHED) != 0u;
+        bool dead = identity.y == FLORA_STAGE_DEAD;
+        bool leafy = identity.z == FLORA_ROLE_TREE_LEAF || identity.z == FLORA_ROLE_TREE_STEM;
+        bool present = TreeBodyPresent(material, identity.z, identity.w);
+        if (!present && !dead && !shed)
         {
-            if (material == TREE_LEAF_ID || material == TREE_WOOD_ID)
-            {
-                material = MATERIAL_DETRITUS;
-                aux = SeedDetritusAux(aux);
-            }
+            // Fauna, fire, or burial already removed the body. Do not write it back.
         }
-        else
+        else if ((shed || (dead && leafy)) && (material == TREE_LEAF_ID || material == TREE_WOOD_ID))
         {
-            if (identity.z == FLORA_ROLE_TREE_TRUNK || identity.z == FLORA_ROLE_TREE_BRANCH || identity.z == FLORA_ROLE_TREE_ROOT)
-                material = TREE_WOOD_ID;
-            else if (identity.z == FLORA_ROLE_TREE_LEAF)
-                material = TREE_LEAF_ID;
+            material = MATERIAL_DETRITUS;
+            aux = SeedDetritusAux(aux);
+        }
+        else if (dead && (float)treeTopo.w > _TreeI.y && (material == TREE_LEAF_ID || material == TREE_WOOD_ID))
+        {
+            material = MATERIAL_DETRITUS;
+            aux = SeedDetritusAux(aux);
+        }
+        else if (present)
+        {
+            material = TreeBodyMaterial(identity.z, identity.w, material);
         }
     }
     else if (identity.x == FLORA_ARCHETYPE_ALGAE)
@@ -837,40 +1196,95 @@ void ApplyFloraState(uint3 id : SV_DispatchThreadID)
         uint4 pTopo = SampleFloraTopology(_FloraRead, parentCell);
         uint4 pGenome = SampleFloraGenome(_FloraRead, parentCell);
 
-        if (pIdentity.x == FLORA_ARCHETYPE_TREE)
+        if (TreeLiving(pIdentity))
         {
-            identity.x = FLORA_ARCHETYPE_TREE;
-            identity.y = FLORA_STAGE_VEGETATIVE;
-            genome = MutateTreeGenome(pGenome, _FloraC.w, _FloraD.x, (uint)_Tick + (uint)cell.x);
-
-            topo.x = claim; // Parent cell packed
-            topo.y = pTopo.y != 0u ? pTopo.y : claim; // Owner cell packed
-
-            if (IsTreeHabitat(material))
-            {
-                identity.z = FLORA_ROLE_TREE_ROOT;
-                identity.w = FLORA_FLAG_ANCHOR;
-            }
-            else if (cell.y > parentCell.y)
-            {
-                identity.z = FLORA_ROLE_TREE_TRUNK;
-                identity.w = 0u;
-            }
-            else
-            {
-                identity.z = FLORA_ROLE_TREE_BRANCH;
-                identity.w = 0u;
-            }
-
-            phys = float4(0.35, 0.4, 0.4, 0.5); // Initial new node biomass, energy, hydration, health
+            float cost = max(0.0, _TreeE.z);
+            uint role = TreeGrowthRole(cell, parentCell, pIdentity, pTopo);
+            uint anchor = TreeAnchorPack(parentCell, pIdentity, pTopo);
+            identity = uint4(FLORA_ARCHETYPE_TREE, FLORA_STAGE_SPROUT, role, 0u);
+            topo = uint4(claim, anchor, 0u, 0u);
+            genome = pGenome;
+            genome.w = PackTreeMeta(FLORA_STAGE_SPROUT, TreeGeneration(pGenome), TreeLineage(pGenome), TreeToxinDose(pGenome));
+            phys = float4(0.2, cost * 0.25, cost * 0.125, pPhys.w);
+            prop = float4(0.0, cost * 0.125, 0.0, 0.0);
         }
     }
 
-    if (identity.y == FLORA_STAGE_DEAD || (identity.w & FLORA_FLAG_SHED) != 0u)
+    bool tree = identity.x == FLORA_ARCHETYPE_TREE;
+    bool created = tree && claim != FLORA_CLAIM_EMPTY && SampleFloraIdentity(_FloraRead, cell).x == FLORA_ARCHETYPE_NONE;
+    bool shed = tree && (identity.w & FLORA_FLAG_SHED) != 0u;
+    bool dead = tree && identity.y == FLORA_STAGE_DEAD;
+    bool leafy = identity.z == FLORA_ROLE_TREE_LEAF || identity.z == FLORA_ROLE_TREE_STEM;
+
+    if (tree && !created && !shed && !TreeBodyPresent(material, identity.z, identity.w))
     {
         ClearFlora(_FloraWrite, cell);
         return;
     }
+
+    if (tree && (shed || (dead && leafy) || (dead && (float)topo.w > _TreeI.y)))
+    {
+        ClearFlora(_FloraWrite, cell);
+        return;
+    }
+
+    if (!tree && (identity.y == FLORA_STAGE_DEAD || (identity.w & FLORA_FLAG_SHED) != 0u))
+    {
+        ClearFlora(_FloraWrite, cell);
+        return;
+    }
+
+    if (tree && !dead && !shed)
+    {
+        int2 anchor = TreeAnchorCell(cell, identity, topo);
+        int height = TreeColumnHeight(anchor);
+        int sapling = clamp((int)round(_TreeF.y), 1, 48);
+        int cap = TreeCrownCap(genome);
+        uint stage = FLORA_STAGE_SPROUT;
+        if (height >= cap) stage = FLORA_STAGE_MATURE;
+        else if (height >= sapling) stage = FLORA_STAGE_VEGETATIVE;
+        identity.y = stage;
+        if (identity.z == FLORA_ROLE_TREE_STEM && height >= sapling)
+            identity.z = FLORA_ROLE_TREE_TRUNK;
+        genome.w = PackTreeMeta(stage, TreeGeneration(genome), TreeLineage(genome), TreeToxinDose(genome));
+
+        bool anchorCell = (identity.w & FLORA_FLAG_ANCHOR) != 0u;
+        if (!anchorCell)
+        {
+            int2 parent = ParentCell(topo);
+            bool parentAlive = parent.y >= 0 && parent.y < _GridSize.y && TreeLiving(SampleFloraIdentity(_FloraRead, parent));
+            topo.z = parentAlive ? 0u : topo.z + 1u;
+            if ((float)topo.z > _TreeI.z) identity.y = FLORA_STAGE_DEAD;
+        }
+
+        if (!created && identity.y != FLORA_STAGE_DEAD)
+        {
+            float cost = max(0.0, _TreeE.z);
+            if (cost > 0.0)
+            {
+                int pays = 0;
+                uint self = PackFaunaCell(cell, _GridSize);
+                int2 offsets[4] = { int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1) };
+                [unroll]
+                for (int i = 0; i < 4; i++)
+                {
+                    int2 n = cell + offsets[i];
+                    if (n.y < 0 || n.y >= _GridSize.y) continue;
+                    n = C(n);
+                    if (_FloraClaims.Load(int3(n, 0)) == self) pays++;
+                }
+                if (pays > 0)
+                {
+                    phys.y = max(0.0, phys.y - cost * (float)pays);
+                    phys.z = max(0.0, phys.z - cost * 0.5 * (float)pays);
+                    prop.y = max(0.0, prop.y - cost * 0.5 * (float)pays);
+                }
+            }
+        }
+    }
+
+    if (tree && identity.y == FLORA_STAGE_DEAD)
+        topo.w += 1u;
 
     // Grass left in air, rock, or a buried grain does not survive the move.
     if (identity.x == FLORA_ARCHETYPE_GRASS
@@ -1092,12 +1506,14 @@ void PaintFlora(uint3 id : SV_DispatchThreadID)
         else if (archetype == FLORA_ARCHETYPE_TREE && (IsTreeHabitat(M(cell)) || IsOpenHabitat(M(cell))))
         {
             bool onSoil = IsTreeHabitat(M(cell));
-            uint role = onSoil ? FLORA_ROLE_TREE_ROOT : FLORA_ROLE_TREE_TRUNK;
+            uint role = onSoil ? FLORA_ROLE_TREE_ROOT : FLORA_ROLE_TREE_STEM;
             uint4 identity = uint4(FLORA_ARCHETYPE_TREE, FLORA_STAGE_SPROUT, role, FLORA_FLAG_ANCHOR);
-            float4 phys = float4(0.5, 0.6, 0.7, 1.0);
-            uint4 topo = uint4(PackFaunaCell(cell, _GridSize), PackFaunaCell(cell, _GridSize), onSoil ? 7u : 0u, 0u);
-            genome.w = PackFloraMeta(FLORA_STAGE_SPROUT, 0u, FloraLineage(genome), 0u);
-            WriteFlora(_FloraWrite, cell, phys, identity, topo, genome, 0.0);
+            float4 phys = float4(0.35, saturate(_TreeG.x), saturate(_TreeG.y), saturate(_TreeG.w));
+            float4 prop = float4(0.0, saturate(_TreeG.z), 0.0, 0.0);
+            uint packed = PackFaunaCell(cell, _GridSize);
+            uint4 topo = uint4(packed, packed, 0u, 0u);
+            genome = RandomTreeGenome((uint2)cell, _Seed, _Tick);
+            WriteFlora(_FloraWrite, cell, phys, identity, topo, genome, prop);
         }
     }
 }

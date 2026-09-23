@@ -568,8 +568,9 @@ Shader "GeneSys/Planetoid Display"
                     }
                     else if (archetype == 3u) // TREES: Warm Amber Wood & Deep Forest Leaf
                     {
-                        bool isWood = role == 4u || role == 5u || role == 6u || material == 135u;
-                        bool isRoot = role == 3u;
+                        uint treeRole = floraIdent.z;
+                        bool isWood = treeRole == 4u || treeRole == 5u || material == 135u;
+                        bool isRoot = treeRole == 3u;
                         float3 treeColor = isWood ? float3(0.88, 0.48, 0.14)
                                          : (isRoot ? float3(0.52, 0.28, 0.10) : float3(0.12, 0.65, 0.22));
                         if (stage == 4u)
