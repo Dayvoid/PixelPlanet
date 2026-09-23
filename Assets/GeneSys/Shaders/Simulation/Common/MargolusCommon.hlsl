@@ -42,7 +42,7 @@ bool IsMargolusPinned(MargolusCell c, MaterialGpuData def)
     // Override table: dedicated organism solvers and planetary basement.
     // Fauna IDs stay pinned so Margolus never separates a cricket/egg pixel from
     // its sidecar state. Gravity and hops belong to Fauna.compute.
-    if (IsTreeMaterial(c.material) || IsAnyFaunaMaterial(c.material)) return true;
+    if (IsTreeMaterial(c.material) || IsAnyFaunaMaterial(c.material) || IsSensorMaterial(c.material)) return true;
     if (c.material == 2u || c.material == 3u) return true;
 
     // Algae films settle with Margolus even though the asset rigidity is solid-ish.

@@ -67,7 +67,8 @@ namespace GeneSys.Editor
                 Define(132, "Wasp", MaterialCategory.Biological, new Color(0.86f,0.68f,0.12f,1), 0.55f, 0.99f, 80, 0.4f, 0.2f, 0.11f, 1.3f, 0.02f, 0.25f, 0.18f, 90, 180, 0.02f, 0, 132, 132, 11, true, 0, 0.65f, 195f, 165f, 0.75f, 0.45f),
                 Define(133, "WaspEgg", MaterialCategory.Biological, new Color(0.88f,0.84f,0.6f,1), 0.85f, 0.99f, 80, 0.3f, 0.05f, 0.14f, 1.5f, 0.01f, 0.6f, 0.25f, 80, 160, 0.02f, 0, 133, 133, 11, true, 0, 0.45f, 180f, 150f, 0.65f, 0.4f),
                 Define(134, "Leaf", MaterialCategory.Biological, new Color(0.22f,0.58f,0.18f,1), 0.32f, 0.35f, 28, 0.45f, 0.7f, 0.12f, 1.4f, 0.02f, 0.55f, 0.4f, 90, 180, 0.02f, 0, 134, 134, 11, true, 0, 0.9f, 145f, 120f, 0.45f, 0.7f),
-                Define(135, "Wood", MaterialCategory.Solid, new Color(0.28f,0.16f,0.08f,1), 0.75f, 0.88f, 55, 1.1f, 0.15f, 0.08f, 1.7f, 0.01f, 0.35f, 0.18f, 380, 900, 0.01f, 0, 135, 135, 11, true, 0, 0.75f, 320f, 260f, 0.85f, 0.55f)
+                Define(135, "Wood", MaterialCategory.Solid, new Color(0.28f,0.16f,0.08f,1), 0.75f, 0.88f, 55, 1.1f, 0.15f, 0.08f, 1.7f, 0.01f, 0.35f, 0.18f, 380, 900, 0.01f, 0, 135, 135, 11, true, 0, 0.75f, 320f, 260f, 0.85f, 0.55f),
+                Define(136, "Sensor", MaterialCategory.Solid, new Color(0.35f,0.82f,0.28f,1), 2.4f, 0.99f, 70, 1f, 0f, 0.6f, 0.9f, 0.2f, 0.02f, 0.02f, 2000, 4000, 0.001f, 0, 136, 136, 1, false, 0, 0, 10000f, 10000f, 0, 0)
             };
 
             MaterialRegistry registry = LoadOrCreate<MaterialRegistry>(DataRoot + "/MaterialRegistry.asset");
@@ -182,6 +183,7 @@ namespace GeneSys.Editor
             SetObject(host, "mantle", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mantle.compute"));
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));
             SetObject(host, "rockChunks", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/RockChunks.compute"));
+            SetObject(host, "sensorArrays", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/SensorArrays.compute"));
             SetObject(host, "display", display);
             SetObject(host, "visuals", visuals);
             SetObject(host, "ui", ui);
@@ -233,6 +235,7 @@ namespace GeneSys.Editor
             SetObject(host, "mantle", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/Mantle.compute"));
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));
             SetObject(host, "rockChunks", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/RockChunks.compute"));
+            SetObject(host, "sensorArrays", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/SensorArrays.compute"));
             document.panelSettings = panelSettings;
             EditorUtility.SetDirty(document);
             EditorSceneManager.MarkSceneDirty(host.gameObject.scene);

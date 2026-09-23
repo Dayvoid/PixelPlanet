@@ -1,0 +1,505 @@
+#pragma kernel IntegrateSensors
+#pragma target 5.1
+
+// Pose rules are a direct transcription of GeneSys.Simulation.SensorArrayLogic.
+#include "../../Shaders/Simulation/Common/SimulationStructs.hlsl"
+
+struct SensorSlot
+{
+    uint alive;
+    uint serial;
+    int anchorAx;
+    int anchorAy;
+    int anchorBx;
+    int anchorBy;
+    uint surfaceMaterial;
+    uint pad0;
+    float atmTemp;
+    float atmVapor;
+    float atmWater;
+    float surfaceTemp;
+    float surfaceFilm;
+    float surfaceGround;
+    float pad1;
+    float pad2;
+};
+
+struct SensorSpawn
+{
+    uint slot;
+    uint serial;
+    int anchorAx;
+    int anchorAy;
+    int anchorBx;
+    int anchorBy;
+    uint pad0;
+    uint pad1;
+};
+
+struct SensorPayload
+{
+    uint material;
+    float4 state;
+    float2 flow;
+    float4 aux;
+    uint shade;
+};
+
+RWStructuredBuffer<SensorSlot> _Slots;
+StructuredBuffer<SensorSpawn> _Spawns;
+int _SpawnCount;
+int2 _GridSize;
+int _Seed;
+
+RWTexture2D<uint> _Material;
+RWTexture2D<float4> _State;
+RWTexture2D<float2> _Flow;
+RWTexture2D<float4> _Aux;
+RWTexture2D<uint> _Shade;
+
+bool SensorIsOpen(uint material)
+{
+    return material == 0u || material == 1u || material == 11u;
+}
+
+int SensorWrap(int x, int width)
+{
+    int m = x % width;
+    return m < 0 ? m + width : m;
+}
+
+int SensorSigned(int fromX, int toX, int width)
+{
+    int d = toX - fromX;
+    int half = width / 2;
+    if (d > half) d -= width;
+    if (d < -half) d += width;
+    return d;
+}
+
+int SensorChebyshev(int2 a, int2 b, int width)
+{
+    int dx = abs(SensorSigned(a.x, b.x, width));
+    int dy = abs(a.y - b.y);
+    return max(dx, dy);
+}
+
+bool SensorSame(int2 a, int2 b)
+{
+    return a.x == b.x && a.y == b.y;
+}
+
+bool SensorInBody(int2 cell, int2 p0, int2 p1, int2 p2, int2 p3)
+{
+    return SensorSame(cell, p0) || SensorSame(cell, p1) || SensorSame(cell, p2) || SensorSame(cell, p3);
+}
+
+int2 SensorCell(int x, int y, int width)
+{
+    return int2(SensorWrap(x, width), y);
+}
+
+uint SensorMat(int x, int y)
+{
+    return _Material[SensorCell(x, y, _GridSize.x)];
+}
+
+bool SensorTryBody(inout int2 a, inout int2 b, int width, int height, out int2 capA, out int2 capB)
+{
+    a = SensorCell(a.x, a.y, width);
+    b = SensorCell(b.x, b.y, width);
+    capA = int2(a.x, a.y + 1);
+    capB = int2(b.x, b.y + 1);
+    if (a.y < 0 || b.y < 0 || capA.y >= height || capB.y >= height)
+        return false;
+    if (SensorChebyshev(a, b, width) != 1)
+        return false;
+    if (SensorSigned(a.x, b.x, width) == 0)
+        return false;
+    if (SensorSame(a, b) || SensorSame(a, capA) || SensorSame(a, capB) || SensorSame(b, capA) || SensorSame(b, capB) || SensorSame(capA, capB))
+        return false;
+    return true;
+}
+
+bool SensorSupported(int2 anchor)
+{
+    if (anchor.y <= 0) return true;
+    uint below = SensorMat(anchor.x, anchor.y - 1);
+    if (below == SENSOR_ID) return false;
+    return !SensorIsOpen(below);
+}
+
+bool SensorCellFree(int2 cell, int2 oldA, int2 oldB, int2 oldCapA, int2 oldCapB)
+{
+    if (SensorInBody(cell, oldA, oldB, oldCapA, oldCapB)) return true;
+    return SensorIsOpen(SensorMat(cell.x, cell.y));
+}
+
+bool SensorBodyFree(int2 a, int2 b, int2 capA, int2 capB, int2 oldA, int2 oldB, int2 oldCapA, int2 oldCapB)
+{
+    return SensorCellFree(a, oldA, oldB, oldCapA, oldCapB)
+        && SensorCellFree(b, oldA, oldB, oldCapA, oldCapB)
+        && SensorCellFree(capA, oldA, oldB, oldCapA, oldCapB)
+        && SensorCellFree(capB, oldA, oldB, oldCapA, oldCapB);
+}
+
+bool SensorTryFall(int2 a, int2 b, int width, int height, int2 oldA, int2 oldB, int2 oldCapA, int2 oldCapB, out int2 nextA, out int2 nextB)
+{
+    nextA = int2(a.x, a.y - 1);
+    nextB = int2(b.x, b.y - 1);
+    int2 capA, capB;
+    if (!SensorTryBody(nextA, nextB, width, height, capA, capB))
+        return false;
+    return SensorBodyFree(nextA, nextB, capA, capB, oldA, oldB, oldCapA, oldCapB);
+}
+
+bool SensorTryRoll(int2 pivot, int2 freeAnchor, int width, int height, int2 oldA, int2 oldB, int2 oldCapA, int2 oldCapB, out int2 nextA, out int2 nextB)
+{
+    nextA = pivot;
+    nextB = freeAnchor;
+    int side = SensorSigned(pivot.x, freeAnchor.x, width);
+    int sideSign = side < 0 ? -1 : 1;
+    int dxOrder[3];
+    dxOrder[0] = sideSign;
+    dxOrder[1] = -sideSign;
+    dxOrder[2] = 0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            int dx = dxOrder[i];
+            if (dx == 0 && dy == 0) continue;
+            int2 candidate = SensorCell(pivot.x + dx, pivot.y + dy, width);
+            if (candidate.y < 0) continue;
+            int2 poseA = pivot;
+            int2 poseB = candidate;
+            int2 capA, capB;
+            if (!SensorTryBody(poseA, poseB, width, height, capA, capB))
+                continue;
+            if (!SensorBodyFree(poseA, poseB, capA, capB, oldA, oldB, oldCapA, oldCapB))
+                continue;
+            if (!SensorSupported(candidate))
+                continue;
+            nextA = poseA;
+            nextB = poseB;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SensorTryStep(inout int2 a, inout int2 b, int width, int height)
+{
+    int2 capA, capB;
+    if (!SensorTryBody(a, b, width, height, capA, capB))
+        return false;
+    int2 oldA = a;
+    int2 oldB = b;
+    int2 oldCapA = capA;
+    int2 oldCapB = capB;
+    bool supA = SensorSupported(a);
+    bool supB = SensorSupported(b);
+    if (supA && supB)
+        return false;
+    if (!supA && !supB)
+    {
+        int2 fallenA, fallenB;
+        if (!SensorTryFall(a, b, width, height, oldA, oldB, oldCapA, oldCapB, fallenA, fallenB))
+            return false;
+        a = fallenA;
+        b = fallenB;
+        return true;
+    }
+
+    int2 pivot = supA ? a : b;
+    int2 freeAnchor = supA ? b : a;
+    int2 dropped = int2(freeAnchor.x, freeAnchor.y - 1);
+    if (dropped.y >= 0)
+    {
+        int2 shearedA = pivot;
+        int2 shearedB = dropped;
+        int2 shearedCapA, shearedCapB;
+        if (SensorTryBody(shearedA, shearedB, width, height, shearedCapA, shearedCapB)
+            && SensorBodyFree(shearedA, shearedB, shearedCapA, shearedCapB, oldA, oldB, oldCapA, oldCapB))
+        {
+            a = shearedA;
+            b = shearedB;
+            return true;
+        }
+    }
+
+    int2 rolledA, rolledB;
+    if (SensorTryRoll(pivot, freeAnchor, width, height, oldA, oldB, oldCapA, oldCapB, rolledA, rolledB))
+    {
+        a = rolledA;
+        b = rolledB;
+        return true;
+    }
+
+    int2 fallenA, fallenB;
+    if (!SensorTryFall(a, b, width, height, oldA, oldB, oldCapA, oldCapB, fallenA, fallenB))
+        return false;
+    a = fallenA;
+    b = fallenB;
+    return true;
+}
+
+SensorPayload SensorLoad(int2 cell)
+{
+    cell = SensorCell(cell.x, cell.y, _GridSize.x);
+    SensorPayload payload;
+    payload.material = _Material[cell];
+    payload.state = _State[cell];
+    payload.flow = _Flow[cell];
+    payload.aux = _Aux[cell];
+    payload.shade = _Shade[cell];
+    return payload;
+}
+
+void SensorStore(int2 cell, SensorPayload payload)
+{
+    cell = SensorCell(cell.x, cell.y, _GridSize.x);
+    if (cell.y < 0 || cell.y >= _GridSize.y) return;
+    _Material[cell] = payload.material;
+    _State[cell] = payload.state;
+    _Flow[cell] = payload.flow;
+    _Aux[cell] = payload.aux;
+    _Shade[cell] = payload.shade;
+}
+
+void SensorDematerialize(int2 cell)
+{
+    cell = SensorCell(cell.x, cell.y, _GridSize.x);
+    if (cell.y < 0 || cell.y >= _GridSize.y) return;
+    if (_Material[cell] != SENSOR_ID) return;
+    _Material[cell] = 1u;
+    _Shade[cell] = 0u;
+}
+
+void SensorStamp(int2 cell)
+{
+    cell = SensorCell(cell.x, cell.y, _GridSize.x);
+    if (cell.y < 0 || cell.y >= _GridSize.y) return;
+    _Material[cell] = SENSOR_ID;
+    _Shade[cell] = PickMaterialShade(4.0, (uint2)cell, SENSOR_ID, _Seed);
+}
+
+void SensorRelocate(int2 oldA, int2 oldB, int2 oldCapA, int2 oldCapB, int2 newA, int2 newB, int2 newCapA, int2 newCapB)
+{
+    int2 oldP[4] = { oldA, oldB, oldCapA, oldCapB };
+    int2 newP[4] = { newA, newB, newCapA, newCapB };
+    SensorPayload oldPay[4];
+    SensorPayload destPay[4];
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        oldPay[i] = SensorLoad(oldP[i]);
+        destPay[i] = SensorLoad(newP[i]);
+    }
+
+    [unroll]
+    for (int j = 0; j < 4; j++)
+    {
+        SensorPayload pay = oldPay[j];
+        pay.material = SENSOR_ID;
+        pay.shade = PickMaterialShade(4.0, (uint2)SensorCell(newP[j].x, newP[j].y, _GridSize.x), SENSOR_ID, _Seed);
+        SensorStore(newP[j], pay);
+    }
+
+    int disp[4];
+    int vac[4];
+    int nDisp = 0;
+    int nVac = 0;
+    [unroll]
+    for (int k = 0; k < 4; k++)
+    {
+        if (!SensorInBody(newP[k], oldA, oldB, oldCapA, oldCapB))
+            disp[nDisp++] = k;
+        if (!SensorInBody(oldP[k], newA, newB, newCapA, newCapB))
+            vac[nVac++] = k;
+    }
+
+    for (int n = 0; n < nVac; n++)
+    {
+        int2 cell = oldP[vac[n]];
+        cell = SensorCell(cell.x, cell.y, _GridSize.x);
+        if (_Material[cell] != SENSOR_ID) continue;
+        SensorPayload pay;
+        if (n < nDisp)
+            pay = destPay[disp[n]];
+        else
+            pay = oldPay[vac[n]];
+        if (!SensorIsOpen(pay.material))
+            pay.material = 1u;
+        pay.shade = pay.material == 0u ? 0u : PickMaterialShade(1.0, (uint2)cell, pay.material, _Seed);
+        SensorStore(cell, pay);
+    }
+}
+
+bool SensorReadAtmosphere(int2 cell, inout SensorSlot slot)
+{
+    if (cell.y < 0 || cell.y >= _GridSize.y) return false;
+    if (!SensorIsOpen(SensorMat(cell.x, cell.y))) return false;
+    SensorPayload payload = SensorLoad(cell);
+    slot.atmTemp = payload.state.x;
+    slot.atmVapor = payload.aux.x;
+    slot.atmWater = payload.state.z;
+    return true;
+}
+
+bool SensorReadSurface(int2 cell, inout SensorSlot slot)
+{
+    if (cell.y < 0 || cell.y >= _GridSize.y) return false;
+    uint material = SensorMat(cell.x, cell.y);
+    if (SensorIsOpen(material) || material == SENSOR_ID) return false;
+    SensorPayload payload = SensorLoad(cell);
+    slot.surfaceMaterial = material;
+    slot.surfaceTemp = payload.state.x;
+    slot.surfaceFilm = payload.state.z;
+    slot.surfaceGround = payload.aux.y;
+    return true;
+}
+
+void SensorClearSample(inout SensorSlot slot)
+{
+    slot.surfaceMaterial = 0u;
+    slot.atmTemp = 0.0;
+    slot.atmVapor = 0.0;
+    slot.atmWater = 0.0;
+    slot.surfaceTemp = 0.0;
+    slot.surfaceFilm = 0.0;
+    slot.surfaceGround = 0.0;
+}
+
+void SensorSample(inout SensorSlot slot, int2 a, int2 b, int2 capA, int2 capB)
+{
+    SensorClearSample(slot);
+    int2 higher = capA.y >= capB.y ? capA : capB;
+    bool atmFound = SensorReadAtmosphere(int2(higher.x, higher.y + 1), slot);
+    int2 offsets[8] = {
+        int2(0, 1), int2(0, -1), int2(1, 0), int2(-1, 0),
+        int2(1, 1), int2(1, -1), int2(-1, 1), int2(-1, -1)
+    };
+    int2 body[4] = { a, b, capA, capB };
+    if (!atmFound)
+    {
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            [unroll]
+            for (int j = 0; j < 8; j++)
+            {
+                if (!atmFound)
+                    atmFound = SensorReadAtmosphere(body[i] + offsets[j], slot);
+            }
+        }
+    }
+
+    int2 first = a.y <= b.y ? a : b;
+    int2 second = a.y <= b.y ? b : a;
+    if (SensorReadSurface(int2(first.x, first.y - 1), slot)) return;
+    if (SensorReadSurface(int2(second.x, second.y - 1), slot)) return;
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        [unroll]
+        for (int j = 0; j < 8; j++)
+        {
+            if (SensorReadSurface(body[i] + offsets[j], slot))
+                return;
+        }
+    }
+}
+
+bool SensorApplySpawn(inout SensorSlot slot, SensorSpawn cmd)
+{
+    int width = _GridSize.x;
+    int height = _GridSize.y;
+    int2 a = int2(cmd.anchorAx, cmd.anchorAy);
+    int2 b = int2(cmd.anchorBx, cmd.anchorBy);
+    int2 capA, capB;
+    if (!SensorTryBody(a, b, width, height, capA, capB))
+        return false;
+
+    int2 oldA = int2(slot.anchorAx, slot.anchorAy);
+    int2 oldB = int2(slot.anchorBx, slot.anchorBy);
+    int2 oldCapA = int2(0, 0);
+    int2 oldCapB = int2(0, 0);
+    bool hadBody = SensorTryBody(oldA, oldB, width, height, oldCapA, oldCapB);
+    bool had = slot.alive != 0u && hadBody;
+    int2 fresh[4] = { a, b, capA, capB };
+    bool can = true;
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        bool own = had && SensorInBody(fresh[i], oldA, oldB, oldCapA, oldCapB);
+        if (!own && !SensorIsOpen(SensorMat(fresh[i].x, fresh[i].y)))
+            can = false;
+    }
+    if (!can) return false;
+
+    if (had)
+    {
+        SensorDematerialize(oldA);
+        SensorDematerialize(oldB);
+        SensorDematerialize(oldCapA);
+        SensorDematerialize(oldCapB);
+    }
+    SensorStamp(a);
+    SensorStamp(b);
+    SensorStamp(capA);
+    SensorStamp(capB);
+    slot.alive = 1u;
+    slot.serial = cmd.serial;
+    slot.anchorAx = a.x;
+    slot.anchorAy = a.y;
+    slot.anchorBx = b.x;
+    slot.anchorBy = b.y;
+    return true;
+}
+
+[numthreads(3, 1, 1)]
+void IntegrateSensors(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= 3u) return;
+    SensorSlot slot = _Slots[id.x];
+    for (int s = 0; s < _SpawnCount; s++)
+    {
+        SensorSpawn cmd = _Spawns[s];
+        if (cmd.slot != id.x) continue;
+        SensorApplySpawn(slot, cmd);
+    }
+
+    if (slot.alive != 0u)
+    {
+        int width = _GridSize.x;
+        int height = _GridSize.y;
+        int2 a = int2(slot.anchorAx, slot.anchorAy);
+        int2 b = int2(slot.anchorBx, slot.anchorBy);
+        int2 oldCapA, oldCapB;
+        bool legal = SensorTryBody(a, b, width, height, oldCapA, oldCapB);
+        if (legal)
+        {
+            int2 oldA = a;
+            int2 oldB = b;
+            bool moved = SensorTryStep(a, b, width, height);
+            if (moved)
+            {
+                int2 newCapA, newCapB;
+                if (SensorTryBody(a, b, width, height, newCapA, newCapB))
+                {
+                    SensorRelocate(oldA, oldB, oldCapA, oldCapB, a, b, newCapA, newCapB);
+                    slot.anchorAx = a.x;
+                    slot.anchorAy = a.y;
+                    slot.anchorBx = b.x;
+                    slot.anchorBy = b.y;
+                    oldCapA = newCapA;
+                    oldCapB = newCapB;
+                }
+            }
+            SensorSample(slot, a, b, oldCapA, oldCapB);
+        }
+    }
+
+    _Slots[id.x] = slot;
+}

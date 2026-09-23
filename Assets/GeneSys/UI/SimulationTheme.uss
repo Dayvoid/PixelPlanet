@@ -128,6 +128,49 @@
     margin-left: 70px;
 }
 
+.sensor-readout {
+    position: absolute;
+    width: 240px;
+    display: none;
+}
+
+.sensor-readout-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.sensor-readout-title {
+    flex-grow: 1;
+}
+
+.unity-button.sensor-readout-close {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    margin-left: 8px;
+    padding-top: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    font-size: 16px;
+    color: rgb(210, 228, 240);
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    border-radius: 4px;
+}
+
+.unity-button.sensor-readout-close:hover {
+    background-color: rgba(48, 140, 170, 0.35);
+    color: rgb(255, 255, 255);
+}
+
 .tools-drawer {
     flex-grow: 1;
     min-height: 40px;
@@ -734,6 +777,12 @@
 .unity-button.probe-tool-heat:active,
 .unity-button.probe-tool-heat.probe-tool-button--held {
     background-image: url("project://database/Assets/Concept/Art/Heat-Button.png");
+}
+
+.unity-button.probe-tool-sensor,
+.unity-button.probe-tool-sensor:hover,
+.unity-button.probe-tool-sensor:active {
+    background-image: url("project://database/Assets/Concept/Art/Sensor-Button.png");
 }
 
 .unity-button.probe-tool-life,

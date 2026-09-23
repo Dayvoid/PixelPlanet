@@ -88,6 +88,7 @@ namespace GeneSys.Materials
         public const uint WaspEgg = 133;
         public const uint Leaf = 134;
         public const uint Wood = 135;
+        public const uint Sensor = 136;
         public const uint BiologicalStart = 128;
     }
 }

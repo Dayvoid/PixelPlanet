@@ -13,6 +13,7 @@ using GeneSys.Simulation.Scenarios;
 using GeneSys.Tools;
 using GeneSys.Validation;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 namespace GeneSys.UI
@@ -136,6 +137,15 @@ namespace GeneSys.UI
         private Button statusHeader;
         private Button historyHeader;
         private VisualElement inspectBar;
+        private VisualElement sensorReadout;
+        private Label sensorReadoutBody;
+        private bool sensorReadoutOpen;
+        private int openSensorSlot = -1;
+        private uint openSensorSerial;
+        private Vector2Int sensorAnchorCell;
+        private float sensorReadoutTimer;
+        private int sensorSeenGeneration = -1;
+        private readonly SensorSlotGpu[] sensorSlotScratch = new SensorSlotGpu[SensorArrayLogic.MaxSensors];
         private VisualElement toolsDrawer;
         private VisualElement statusDrawer;
         private VisualElement historyDrawer;
@@ -246,6 +256,16 @@ namespace GeneSys.UI
             lifeInspectTitle = root.Q<Label>("life-inspect-title");
             envInspectLabel = root.Q<Label>("env-inspection");
             lifeInspectLabel = root.Q<Label>("life-inspection");
+            sensorReadout = root.Q("sensor-readout");
+            sensorReadoutBody = root.Q<Label>("sensor-readout-body");
+            Button sensorReadoutClose = root.Q<Button>("sensor-readout-close");
+            sensorReadoutClose?.UnregisterCallback<ClickEvent>(OnSensorReadoutClose);
+            sensorReadoutClose?.RegisterCallback<ClickEvent>(OnSensorReadoutClose);
+            if (sensorReadout != null)
+            {
+                sensorReadout.style.display = DisplayStyle.None;
+                sensorReadout.pickingMode = PickingMode.Ignore;
+            }
             worldMetricsLabel = root.Q<Label>("world-metrics");
             simulationStatusLabel = root.Q<Label>("simulation-status");
             playButton = root.Q<Button>("play");
@@ -603,6 +623,9 @@ namespace GeneSys.UI
             BindProbeActionButton(root.Q<Button>("probe-action-soil"), ProbeAction.Soil);
             BindProbeActionButton(root.Q<Button>("probe-action-cool"), ProbeAction.Cool);
             BindProbeActionButton(root.Q<Button>("probe-action-heat"), ProbeAction.Heat);
+            Button sensorButton = root.Q<Button>("probe-action-sensor");
+            sensorButton?.UnregisterCallback<ClickEvent>(OnSensorClicked);
+            sensorButton?.RegisterCallback<ClickEvent>(OnSensorClicked);
 
             lifeSeedButton = root.Q<Button>("probe-action-life");
             lifeSeedButton?.UnregisterCallback<ClickEvent>(OnLifeSeedClicked);
@@ -679,6 +702,12 @@ namespace GeneSys.UI
             if (ai == null || !ai.AiSystemsEnabled || ai.Settings == null || !ai.Settings.AgentLoopAllowed) return;
             ai.SetAgentLoopEnabled(!ai.AgentLoopEnabled);
             RefreshAgentLoopButton();
+        }
+
+        private void OnSensorClicked(ClickEvent evt)
+        {
+            probe?.TryDeploySensor();
+            evt.StopImmediatePropagation();
         }
 
         private void OnLifeSeedClicked(ClickEvent evt)
@@ -1490,6 +1519,7 @@ namespace GeneSys.UI
             RefreshHudFades();
             RefreshCameraModeButtons();
             RefreshAgentLoopButton();
+            RefreshSensorReadout();
         }
 
         private void RefreshHudFades()
@@ -1554,6 +1584,37 @@ namespace GeneSys.UI
         public static Vector2 ToUiToolkitScreenPosition(Vector2 screenPosition, float screenHeight) =>
             new(screenPosition.x, screenHeight - screenPosition.y);
 
+        public static Vector2 ClampPanelPosition(Vector2 anchor, Vector2 panelSize, Vector2 rootSize, float margin, float gap)
+        {
+            float width = Mathf.Max(1f, panelSize.x);
+            float height = Mathf.Max(1f, panelSize.y);
+            float maxX = Mathf.Max(margin, rootSize.x - width - margin);
+            float maxY = Mathf.Max(margin, rootSize.y - height - margin);
+            float left = anchor.x + gap;
+            if (left > maxX)
+                left = anchor.x - gap - width;
+            float top = anchor.y - height * 0.5f;
+            return new Vector2(Mathf.Clamp(left, margin, maxX), Mathf.Clamp(top, margin, maxY));
+        }
+
+        public static string FormatSensorReadout(SensorSlotGpu slot, string surfaceName, float vaporScale)
+        {
+            float humidity = SimulationMetrics.RelativeHumidity(slot.AtmVapor, slot.AtmTemp, vaporScale);
+            float water = Mathf.Max(0f, slot.AtmVapor) + Mathf.Max(0f, slot.AtmWater);
+            float moisture = Mathf.Max(0f, slot.SurfaceFilm) + Mathf.Max(0f, slot.SurfaceGround);
+            string surface = string.IsNullOrEmpty(surfaceName) ? "None" : surfaceName;
+            var text = new StringBuilder();
+            text.Append("Atmosphere\n");
+            text.Append($"T {slot.AtmTemp:F2}\n");
+            text.Append($"Humidity {humidity * 100f:F0}%  Water {water:F3}\n");
+            text.Append("Surface\n");
+            text.Append(surface);
+            text.Append('\n');
+            text.Append($"T {slot.SurfaceTemp:F2}\n");
+            text.Append($"Moisture {moisture:F3}");
+            return text.ToString();
+        }
+
         public static bool ShouldBlockWorldBrush(bool pointerOverInteractiveUi, ProbeAction probeAction) =>
             pointerOverInteractiveUi || probeAction != ProbeAction.None;
 
@@ -1587,6 +1648,159 @@ namespace GeneSys.UI
             });
         }
 
+        private void RefreshSensorReadout()
+        {
+            if (!sensorReadoutOpen || sensorReadout == null || host == null) return;
+            if (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
+            {
+                Vector2 pointer = Mouse.current.position.ReadValue();
+                if (!IsPointerOverUi(pointer) && (display == null || !display.TryScreenToCell(pointer, out _)))
+                {
+                    CloseSensorReadout();
+                    return;
+                }
+            }
+
+            sensorReadoutTimer -= Time.unscaledDeltaTime;
+            if (sensorReadoutTimer <= 0f)
+            {
+                sensorReadoutTimer = 0.4f;
+                host.RequestSensorSlotReadback();
+            }
+
+            int width = host.Grid.angularResolution;
+            int height = host.Grid.radialResolution;
+            bool copied = host.TryCopySensorSlots(sensorSlotScratch, ref sensorSeenGeneration);
+            if (copied || openSensorSlot < 0)
+            {
+                if (openSensorSlot >= 0)
+                {
+                    SensorSlotGpu current = sensorSlotScratch[openSensorSlot];
+                    if (current.Alive == 0 || current.Serial != openSensorSerial)
+                    {
+                        CloseSensorReadout();
+                        return;
+                    }
+                }
+                else
+                {
+                    int match = SensorArrayLogic.MatchSlot(sensorSlotScratch, width, height, sensorAnchorCell.x, sensorAnchorCell.y, 2);
+                    if (match >= 0)
+                    {
+                        openSensorSlot = match;
+                        openSensorSerial = sensorSlotScratch[match].Serial;
+                    }
+                }
+            }
+
+            if (sensorReadoutBody != null)
+            {
+                if (openSensorSlot >= 0)
+                {
+                    SensorSlotGpu slot = sensorSlotScratch[openSensorSlot];
+                    string surface = "None";
+                    if (slot.SurfaceMaterial != 0)
+                    {
+                        GeneSys.Materials.MaterialDefinition definition = host.MaterialRegistry != null
+                            ? host.MaterialRegistry.Get((int)slot.SurfaceMaterial)
+                            : null;
+                        surface = definition != null ? definition.displayName : slot.SurfaceMaterial.ToString();
+                    }
+                    float scale = host.Config != null ? host.Config.vaporCapacityScale : 0.01f;
+                    sensorReadoutBody.text = FormatSensorReadout(slot, surface, scale);
+                }
+                else
+                    sensorReadoutBody.text = "Sampling…";
+            }
+
+            if (!TrySensorPanelAnchor(out Vector2 panelPoint) || document == null || document.rootVisualElement == null)
+                return;
+            float panelWidth = sensorReadout.resolvedStyle.width;
+            float panelHeight = sensorReadout.resolvedStyle.height;
+            if (float.IsNaN(panelWidth) || panelWidth < 8f) panelWidth = 240f;
+            if (float.IsNaN(panelHeight) || panelHeight < 8f) panelHeight = 148f;
+            Vector2 rootSize = document.rootVisualElement.layout.size;
+            if (rootSize.x < 8f || rootSize.y < 8f) rootSize = new Vector2(Screen.width, Screen.height);
+            Vector2 clamped = ClampPanelPosition(panelPoint, new Vector2(panelWidth, panelHeight), rootSize, 8f, 16f);
+            sensorReadout.style.left = clamped.x;
+            sensorReadout.style.top = clamped.y;
+        }
+
+        private bool TrySensorPanelAnchor(out Vector2 panelPoint)
+        {
+            panelPoint = default;
+            if (document == null || document.rootVisualElement == null || document.rootVisualElement.panel == null || display == null)
+                return false;
+            Vector2 sum = Vector2.zero;
+            int count = 0;
+            if (openSensorSlot >= 0 && host != null && host.IsReady)
+            {
+                SensorSlotGpu slot = sensorSlotScratch[openSensorSlot];
+                int width = host.Grid.angularResolution;
+                int height = host.Grid.radialResolution;
+                if (slot.Alive != 0 && SensorArrayLogic.TryGetBody(SensorArrayLogic.PoseOf(slot), width, height, out SensorAnchor a, out SensorAnchor b, out SensorAnchor capA, out SensorAnchor capB))
+                {
+                    Accumulate(a);
+                    Accumulate(b);
+                    Accumulate(capA);
+                    Accumulate(capB);
+                }
+            }
+            if (count == 0 && display.TryCellToScreen(sensorAnchorCell, out Vector2 fallback))
+            {
+                sum = fallback;
+                count = 1;
+            }
+            if (count == 0) return false;
+            Vector2 screenCenter = sum / count;
+            panelPoint = RuntimePanelUtils.ScreenToPanel(
+                document.rootVisualElement.panel,
+                ToUiToolkitScreenPosition(screenCenter, Screen.height));
+            return true;
+
+            void Accumulate(SensorAnchor anchor)
+            {
+                if (!display.TryCellToScreen(new Vector2Int(anchor.X, anchor.Y), out Vector2 point)) return;
+                sum += point;
+                count++;
+            }
+        }
+
+        private void OpenSensorReadout(Vector2Int cell)
+        {
+            if (!sensorReadoutOpen || cell != sensorAnchorCell)
+                openSensorSlot = -1;
+            sensorAnchorCell = cell;
+            bool wasOpen = sensorReadoutOpen;
+            sensorReadoutOpen = true;
+            if (sensorReadout != null)
+            {
+                sensorReadout.style.display = DisplayStyle.Flex;
+                sensorReadout.pickingMode = PickingMode.Position;
+            }
+            if (!wasOpen)
+            {
+                sensorReadoutTimer = 0.4f;
+                sensorSeenGeneration = -1;
+                host?.RequestSensorSlotReadback();
+            }
+        }
+
+        private void OnSensorReadoutClose(ClickEvent evt)
+        {
+            CloseSensorReadout();
+            evt.StopImmediatePropagation();
+        }
+
+        private void CloseSensorReadout()
+        {
+            sensorReadoutOpen = false;
+            openSensorSlot = -1;
+            if (sensorReadout == null) return;
+            sensorReadout.style.display = DisplayStyle.None;
+            sensorReadout.pickingMode = PickingMode.Ignore;
+        }
+
         private void SetInspection(CellInspection inspection)
         {
             lastInspection = inspection;
@@ -1596,6 +1810,10 @@ namespace GeneSys.UI
             SetElementOpacity(inspectBar, 1f);
             SetInspectPicking(true);
             RefreshInspectionDisplay();
+            if (inspection.materialId == MaterialIds.Sensor)
+                OpenSensorReadout(inspection.cell);
+            else if (Mouse.current != null && Mouse.current.rightButton.isPressed)
+                CloseSensorReadout();
         }
 
         private void RefreshInspectionDisplay()

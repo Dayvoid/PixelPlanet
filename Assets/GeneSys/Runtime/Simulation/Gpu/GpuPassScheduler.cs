@@ -49,6 +49,7 @@ namespace GeneSys.Simulation.Gpu
         private readonly ComputeShader mantle;
         private readonly ComputeShader margolusTransport;
         private readonly ComputeShader rockChunks;
+        private readonly ComputeShader sensorArrays;
         private bool climateInit;
         private bool geodynamicsInit;
         private readonly GraphicsBuffer strikeSeedBuffer;
@@ -56,6 +57,19 @@ namespace GeneSys.Simulation.Gpu
         private readonly uint[] strikeCounterZero = new uint[1];
         private readonly GraphicsBuffer organismHistoryBuffer;
         private readonly GraphicsBuffer organismHistoryCounterBuffer;
+        private readonly GraphicsBuffer sensorSlotBuffer;
+        private readonly GraphicsBuffer sensorSpawnBuffer;
+        private readonly SensorSlotGpu[] sensorSlotScratch;
+        private readonly SensorSlotGpu[] sensorReadback;
+        private readonly SensorSpawnCommand[] sensorSpawnCommands;
+        private readonly uint[] sensorSerials = new uint[SensorArrayLogic.MaxSensors];
+        private readonly bool[] sensorAlive = new bool[SensorArrayLogic.MaxSensors];
+        private uint nextSensorSerial = 1;
+        private int sensorSpawnCount;
+        private int sensorReadbackGeneration;
+        private int sensorResetSerial;
+        private bool sensorReadbackPending;
+        private bool sensorReadbackReady;
         private readonly uint[] organismHistoryCounterZero = new uint[1];
         private readonly uint[] organismHistoryCounterRead = new uint[1];
         private readonly OrganismHistoryLog.GpuEvent[] organismHistoryScratch;
@@ -76,7 +90,7 @@ namespace GeneSys.Simulation.Gpu
             ComputeShader wasp = null, ComputeShader plantResources = null, ComputeShader tree = null,
             ComputeShader climate = null, ComputeShader geodynamics = null,
             ComputeShader margolusTransport = null, ComputeShader rockChunks = null,
-            ComputeShader mantle = null)
+            ComputeShader mantle = null, ComputeShader sensorArrays = null)
         {
             this.config = config;
             this.resources = resources;
@@ -96,6 +110,7 @@ namespace GeneSys.Simulation.Gpu
             this.mantle = mantle;
             this.margolusTransport = margolusTransport;
             this.rockChunks = rockChunks;
+            this.sensorArrays = sensorArrays;
             materialBuffer = registry.CreateGpuBuffer();
             brushBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxBrushCommands, BrushCommand.Stride);
             strikeSeedBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxStrikeSeeds, StrikeSeedStride);
@@ -104,6 +119,18 @@ namespace GeneSys.Simulation.Gpu
             organismHistoryCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
             organismHistoryScratch = new OrganismHistoryLog.GpuEvent[OrganismHistoryGpuCapacity];
             ResetOrganismHistoryCounter();
+            sensorSlotBuffer = new GraphicsBuffer(
+                GraphicsBuffer.Target.Structured,
+                SensorArrayLogic.MaxSensors,
+                SensorSlotGpu.Stride);
+            sensorSpawnBuffer = new GraphicsBuffer(
+                GraphicsBuffer.Target.Structured,
+                SensorArrayLogic.MaxSensors,
+                SensorSpawnCommand.Stride);
+            sensorSlotScratch = new SensorSlotGpu[SensorArrayLogic.MaxSensors];
+            sensorReadback = new SensorSlotGpu[SensorArrayLogic.MaxSensors];
+            sensorSpawnCommands = new SensorSpawnCommand[SensorArrayLogic.MaxSensors];
+            sensorSlotBuffer.SetData(sensorSlotScratch);
         }
 
         public void ResetOrganismHistoryCounter()
@@ -152,6 +179,7 @@ namespace GeneSys.Simulation.Gpu
         {
             tick = 0;
             ResetOrganismHistoryCounter();
+            ResetSensors();
             string kernelName = config.useOgWorldgen ? "GenerateWorld" : "GenerateWorldV2";
             int kernel = worldGeneration.FindKernel(kernelName);
             if (kernel < 0)
@@ -337,6 +365,8 @@ namespace GeneSys.Simulation.Gpu
                 for (int m = 0; m < config.margolusSubsteps; m++)
                     DispatchMargolus(deltaTime / config.margolusSubsteps);
             }
+
+            DispatchSensors();
 
             if (combustion != null)
                 DispatchPass(combustion, combustion.FindKernel("Combustion"), deltaTime);
@@ -1580,6 +1610,102 @@ namespace GeneSys.Simulation.Gpu
             fauna.SetTexture(kernel, "_FloraRead", resources.FloraRead);
         }
 
+        public bool TryQueueSensorDeploy(int theta, int angularResolution, int radialResolution)
+        {
+            if (sensorSpawnCount >= SensorArrayLogic.MaxSensors)
+                return false;
+            int slot = SensorArrayLogic.ChooseSpawnSlot(sensorSerials, sensorAlive);
+            int spacedTheta = SensorArrayLogic.WrapTheta(theta + slot * 2, angularResolution);
+            if (!SensorArrayLogic.TrySpawnPose(spacedTheta, angularResolution, radialResolution, out SensorPose pose))
+                return false;
+            uint serial = nextSensorSerial++;
+            if (nextSensorSerial == 0)
+                nextSensorSerial = 1;
+            sensorSerials[slot] = serial;
+            sensorAlive[slot] = true;
+            sensorSpawnCommands[sensorSpawnCount++] = new SensorSpawnCommand
+            {
+                Slot = (uint)slot,
+                Serial = serial,
+                AnchorAx = pose.A.X,
+                AnchorAy = pose.A.Y,
+                AnchorBx = pose.B.X,
+                AnchorBy = pose.B.Y
+            };
+            return true;
+        }
+
+        public void ResetSensors()
+        {
+            sensorResetSerial++;
+            for (int i = 0; i < SensorArrayLogic.MaxSensors; i++)
+            {
+                sensorSerials[i] = 0;
+                sensorAlive[i] = false;
+                sensorSlotScratch[i] = default;
+                sensorReadback[i] = default;
+            }
+            nextSensorSerial = 1;
+            sensorSpawnCount = 0;
+            sensorReadbackReady = false;
+            sensorSlotBuffer?.SetData(sensorSlotScratch);
+        }
+
+        public void RequestSensorReadback()
+        {
+            if (sensorSlotBuffer == null || sensorReadbackPending) return;
+            sensorReadbackPending = true;
+            int resetSerial = sensorResetSerial;
+            AsyncGPUReadback.Request(sensorSlotBuffer, request =>
+            {
+                sensorReadbackPending = false;
+                if (resetSerial != sensorResetSerial || request.hasError) return;
+                Unity.Collections.NativeArray<SensorSlotGpu> data = request.GetData<SensorSlotGpu>();
+                for (int i = 0; i < sensorReadback.Length && i < data.Length; i++)
+                    sensorReadback[i] = data[i];
+                sensorReadbackReady = true;
+                sensorReadbackGeneration++;
+            });
+        }
+
+        public bool TryCopySensorSlots(SensorSlotGpu[] destination, ref int seenGeneration)
+        {
+            if (!sensorReadbackReady || destination == null || seenGeneration == sensorReadbackGeneration)
+                return false;
+            int count = Mathf.Min(destination.Length, sensorReadback.Length);
+            for (int i = 0; i < count; i++)
+                destination[i] = sensorReadback[i];
+            seenGeneration = sensorReadbackGeneration;
+            return true;
+        }
+
+        private void DispatchSensors()
+        {
+            if (sensorArrays == null || sensorSlotBuffer == null) return;
+            int kernel = sensorArrays.FindKernel("IntegrateSensors");
+            if (kernel < 0)
+            {
+                UnityEngine.Debug.LogError("GeneSys: IntegrateSensors kernel missing. Reimport SensorArrays.compute.");
+                sensorSpawnCount = 0;
+                return;
+            }
+
+            sensorArrays.SetInts("_GridSize", resources.Grid.angularResolution, resources.Grid.radialResolution);
+            sensorArrays.SetInt("_Seed", config.seed);
+            sensorArrays.SetInt("_SpawnCount", sensorSpawnCount);
+            if (sensorSpawnCount > 0)
+                sensorSpawnBuffer.SetData(sensorSpawnCommands, 0, 0, sensorSpawnCount);
+            sensorArrays.SetBuffer(kernel, "_Slots", sensorSlotBuffer);
+            sensorArrays.SetBuffer(kernel, "_Spawns", sensorSpawnBuffer);
+            sensorArrays.SetTexture(kernel, "_Material", resources.MaterialRead);
+            sensorArrays.SetTexture(kernel, "_State", resources.StateRead);
+            sensorArrays.SetTexture(kernel, "_Flow", resources.FlowRead);
+            sensorArrays.SetTexture(kernel, "_Aux", resources.AuxRead);
+            sensorArrays.SetTexture(kernel, "_Shade", resources.ShadeRead);
+            sensorArrays.Dispatch(kernel, 1, 1, 1);
+            sensorSpawnCount = 0;
+        }
+
         public void Dispose()
         {
             materialBuffer?.Dispose();
@@ -1588,6 +1714,8 @@ namespace GeneSys.Simulation.Gpu
             strikeCounterBuffer?.Dispose();
             organismHistoryBuffer?.Dispose();
             organismHistoryCounterBuffer?.Dispose();
+            sensorSlotBuffer?.Dispose();
+            sensorSpawnBuffer?.Dispose();
         }
     }
 }

@@ -573,6 +573,7 @@ namespace GeneSys.Persistence
             }
 
             host.Resources.CopyReadToWrite();
+            host.ClearDeployedSensors();
             host.RestoreSimulationTick(tick);
             host.RebuildClimate();
             if (version < Version15)

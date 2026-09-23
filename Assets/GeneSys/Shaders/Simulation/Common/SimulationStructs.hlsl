@@ -659,6 +659,7 @@ void CopyFlora(Texture2DArray<float4> src, RWTexture2DArray<float4> dst, int2 ce
 #define WASP_EGG_ID 133u
 #define TREE_LEAF_ID 134u
 #define TREE_WOOD_ID 135u
+#define SENSOR_ID 136u
 #define FAUNA_STAGE_EMPTY 0u
 #define FAUNA_STAGE_EGG 1u
 #define FAUNA_STAGE_JUVENILE 2u
@@ -745,13 +746,18 @@ bool IsFaunaOpenHabitat(uint material)
     return material == 0u || material == 1u || material == 11u;
 }
 
+bool IsSensorMaterial(uint material)
+{
+    return material == SENSOR_ID;
+}
+
 bool IsFaunaSupport(uint material)
 {
     return material == 4u || material == 5u || material == 7u || material == 8u
         || material == 9u || material == 10u || material == 12u || material == 13u
         || material == 14u || material == 15u || material == 16u
         || material == 131u || material == FLORA_ALGAE_ID || material == TREE_WOOD_ID || IsFaunaMaterial(material)
-        || IsWaspEggMaterial(material);
+        || IsWaspEggMaterial(material) || IsSensorMaterial(material);
 }
 
 uint FaunaStage(uint4 genome)

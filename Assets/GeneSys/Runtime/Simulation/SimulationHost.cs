@@ -34,6 +34,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader mantle;
         [SerializeField] private ComputeShader margolusTransport;
         [SerializeField] private ComputeShader rockChunks;
+        [SerializeField] private ComputeShader sensorArrays;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -157,10 +158,12 @@ namespace GeneSys.Simulation
                 margolusTransport = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/MargolusTransport.compute");
             if (rockChunks == null)
                 rockChunks = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/RockChunks.compute");
+            if (sensorArrays == null)
+                sensorArrays = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/SensorArrays.compute");
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
-            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, combustion: combustion, storm: storm, climate: climate, geodynamics: geodynamics, margolusTransport: margolusTransport, rockChunks: rockChunks, mantle: mantle);
+            scheduler = new GpuPassScheduler(config, Resources, materialRegistry, worldGeneration, materialSimulation, geology, hydrology, hydrostatic, weather, mycology, flora, fauna, combustion: combustion, storm: storm, climate: climate, geodynamics: geodynamics, margolusTransport: margolusTransport, rockChunks: rockChunks, mantle: mantle, sensorArrays: sensorArrays);
             if (generateWorld)
                 scheduler.GenerateWorld();
             OrganismHistory.Clear();
@@ -277,6 +280,28 @@ namespace GeneSys.Simulation
         public void QueueBrush(GpuPassScheduler.BrushCommand command)
         {
             if (IsReady) scheduler.QueueBrush(command);
+        }
+
+        public bool TryDeploySensor(Vector2Int aimCell)
+        {
+            if (!IsReady) return false;
+            return scheduler.TryQueueSensorDeploy(aimCell.x, Grid.angularResolution, Grid.radialResolution);
+        }
+
+        public void ClearDeployedSensors()
+        {
+            if (IsReady) scheduler.ResetSensors();
+        }
+
+        public void RequestSensorSlotReadback()
+        {
+            if (IsReady) scheduler.RequestSensorReadback();
+        }
+
+        public bool TryCopySensorSlots(SensorSlotGpu[] destination, ref int seenGeneration)
+        {
+            if (!IsReady || destination == null) return false;
+            return scheduler.TryCopySensorSlots(destination, ref seenGeneration);
         }
 
         public void RefreshMaterialDefinitions()

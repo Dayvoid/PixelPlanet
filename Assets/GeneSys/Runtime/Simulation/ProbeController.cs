@@ -152,6 +152,20 @@ namespace GeneSys.Simulation
 
         public void SetAction(ProbeAction probeAction) => action = probeAction;
 
+        public void TryDeploySensor()
+        {
+            if (host == null || !host.IsReady || host.Config == null) return;
+            if (!host.TryDeploySensor(AimCell(host.Grid))) return;
+            energy = ApplyEnergyTick(
+                energy,
+                actionActive: true,
+                regenAllowed: false,
+                host.Config.probeEnergyActionDrain,
+                regenPerSecond: 0f,
+                tickDuration: 0f,
+                host.Config.probeEnergyMax);
+        }
+
         public void SetFlightMode(ProbeFlightMode mode)
         {
             flightMode = mode;

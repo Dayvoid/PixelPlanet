@@ -99,6 +99,7 @@
                     <ui:Button name="probe-action-soil" class="probe-tool-button probe-tool-soil" tooltip="Hold to drop soil" />
                     <ui:Button name="probe-action-cool" class="probe-tool-button probe-tool-cool" tooltip="Hold to cool" />
                     <ui:Button name="probe-action-heat" class="probe-tool-button probe-tool-heat" tooltip="Hold to heat" />
+                    <ui:Button name="probe-action-sensor" class="probe-tool-button probe-tool-sensor" tooltip="Drop a sensor array (max 3)" />
                     <ui:Button name="probe-action-life" class="probe-tool-button probe-tool-life probe-tool-last" tooltip="Toggle life seed" />
                 </ui:VisualElement>
             </ui:VisualElement>
@@ -272,6 +273,14 @@
                     <ui:Button name="preset-confirm" text="Save" class="row-last" />
                 </ui:VisualElement>
             </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="sensor-readout" class="inspect-panel sensor-readout" picking-mode="Ignore">
+            <ui:VisualElement class="sensor-readout-header" picking-mode="Ignore">
+                <ui:Label name="sensor-readout-title" text="Sensor" class="section-title inspector-title sensor-readout-title" picking-mode="Ignore" />
+                <ui:Button name="sensor-readout-close" text="×" class="sensor-readout-close" tooltip="Close" />
+            </ui:VisualElement>
+            <ui:Label name="sensor-readout-body" text="" class="inspection" picking-mode="Ignore" />
         </ui:VisualElement>
 
         <ui:VisualElement name="setting-tooltip" class="setting-tooltip hidden" picking-mode="Ignore">

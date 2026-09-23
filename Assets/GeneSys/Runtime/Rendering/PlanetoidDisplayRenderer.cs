@@ -522,6 +522,21 @@ namespace GeneSys.Rendering
             visionCamera.transform.position = new Vector3(world.x - offset.x, world.y - offset.y, z);
         }
 
+        public bool TryCellToScreen(Vector2Int cell, out Vector2 screenPosition)
+        {
+            screenPosition = default;
+            if (targetCamera == null || grid.angularResolution <= 0) return false;
+            Vector2 sim = PolarCoordinateTransforms.CellToSimulationPosition(grid, cell);
+            float simRadius = sim.magnitude;
+            float displayRadius = PolarCoordinateTransforms.SimulationRadiusToDisplayRadius(grid, simRadius);
+            Vector2 p = simRadius > 1e-6f ? sim / simRadius * displayRadius : Vector2.zero;
+            Vector3 world = transform.TransformPoint(new Vector3(p.x * 0.5f, p.y * 0.5f, 0f));
+            Vector3 screen = targetCamera.WorldToScreenPoint(world);
+            if (screen.z <= 0f) return false;
+            screenPosition = new Vector2(screen.x, screen.y);
+            return true;
+        }
+
         public bool TryScreenToCell(Vector2 screenPosition, out Vector2Int cell)
         {
             cell = default;
