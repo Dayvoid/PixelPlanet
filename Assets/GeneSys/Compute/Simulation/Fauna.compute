@@ -222,6 +222,13 @@ int2 CricketMoveDest(int2 cell, float4 motion, uint material)
     return dest;
 }
 
+// Unsupported eggs fall through open air. Supported wasp eggs do not slide.
+int2 EggFallDest(int2 cell, float4 motion)
+{
+    float2 nextFrac;
+    return CricketTransitDest(cell, CricketMotionStep(motion, nextFrac));
+}
+
 int2 FaunaStepTaken(int2 source, int2 dest)
 {
     int2 step = dest - source;
@@ -310,11 +317,11 @@ void IntegrateCricketAirborne(int2 cell, uint4 genome, float4 vitals, inout floa
     motion.y = clamp(motion.y, -4.0, 4.0);
 }
 
-void IntegrateEggFall(int2 cell, inout float4 motion)
+void IntegrateEggFall(int2 cell, inout float4 motion, float windCoupling)
 {
     if (HasLandingSupport(cell)) return;
     float dt = max(1e-4, _DeltaTime);
-    motion.x += F(cell).x * max(0.0, _FaunaJ.x) * dt;
+    motion.x += F(cell).x * max(0.0, windCoupling) * dt;
     motion.y -= max(0.0, _Mechanics.x) * dt;
     motion.x = clamp(motion.x, -4.0, 4.0);
     motion.y = clamp(motion.y, -4.0, 4.0);
@@ -874,7 +881,7 @@ void FaunaMetabolism(uint3 id : SV_DispatchThreadID)
                 LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, FaunaGeneration(genome), FaunaLineage(genome), ORGANISM_CAUSE_DESICCATION);
             }
             else
-                IntegrateEggFall(cell, motion);
+                IntegrateEggFall(cell, motion, _FaunaJ.x);
             WriteFaunaState(_FaunaWrite, cell, vitals, motion, genome, partner);
             return;
         }
@@ -1009,6 +1016,8 @@ void FaunaMetabolism(uint3 id : SV_DispatchThreadID)
                 genome.w = PackWaspMeta(WASP_STAGE_DEAD, WASP_BEHAVIOR_IDLE, WaspGeneration(genome), WaspLineage(genome));
                 LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_DEATH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_DESICCATION);
             }
+            else
+                IntegrateEggFall(cell, motion, _WaspE.z);
             WriteWaspState(_FaunaWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
             return;
         }
@@ -1203,6 +1212,16 @@ void ClaimFaunaActions(uint3 id : SV_DispatchThreadID)
     // ---------------------------------------------------------------------
     // WASP CLAIMS
     // ---------------------------------------------------------------------
+    if (IsWaspEggMaterial(material))
+    {
+        uint4 genome = WaspGenomeOf(cell);
+        if (WaspStage(genome) != WASP_STAGE_EGG) return;
+        int2 dest = EggFallDest(cell, WaspMotionOf(cell));
+        if (!all(dest == cell))
+            Claim(dest, FAUNA_CLAIM_MOVE, cell);
+        return;
+    }
+
     if (IsWaspMaterial(material))
     {
         uint4 genome = WaspGenomeOf(cell);
@@ -1367,9 +1386,18 @@ void ApplyFaunaWorld(uint3 id : SV_DispatchThreadID)
             vacated = true;
         }
     }
-    else if (!consumed && IsWaspEggMaterial(material) && WaspEggReadyToHatch(WaspGenomeOf(cell), WaspVitalsOf(cell)))
+    else if (!consumed && IsWaspEggMaterial(material))
     {
-        material = WASP_ID;
+        int2 dest = EggFallDest(cell, WaspMotionOf(cell));
+        if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
+        {
+            material = 1u;
+            vacated = true;
+        }
+        else if (WaspEggReadyToHatch(WaspGenomeOf(cell), WaspVitalsOf(cell)))
+        {
+            material = WASP_ID;
+        }
     }
 
     // 4. MOVEMENT ARRIVAL:
@@ -1447,9 +1475,19 @@ void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
             uint4 cargo2 = WaspCargoOf(source, 2u);
 
             float2 nextFrac = motion.zw + motion.xy * _DeltaTime;
-            if (abs(nextFrac.x) >= 0.5) nextFrac.x -= sign(nextFrac.x);
-            if (abs(nextFrac.y) >= 0.5) nextFrac.y -= sign(nextFrac.y);
-            motion.zw = nextFrac;
+            if (IsWaspEggMaterial(srcMat))
+            {
+                int2 step = FaunaStepTaken(source, cell);
+                motion.zw = ConsumeMotionStep(nextFrac, step);
+                if (CricketShouldLand(cell, motion, step))
+                    motion = 0.0;
+            }
+            else
+            {
+                if (abs(nextFrac.x) >= 0.5) nextFrac.x -= sign(nextFrac.x);
+                if (abs(nextFrac.y) >= 0.5) nextFrac.y -= sign(nextFrac.y);
+                motion.zw = nextFrac;
+            }
             WriteWaspState(_FaunaWrite, cell, vitals, motion, genome, partner, cargo0, cargo1, cargo2);
             return;
         }
@@ -1519,6 +1557,12 @@ void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
     {
         float4 motion = CricketMotionOf(cell);
         int2 dest = CricketMoveDest(cell, motion, material);
+        if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
+            vacated = true;
+    }
+    else if (IsWaspEggMaterial(material))
+    {
+        int2 dest = EggFallDest(cell, WaspMotionOf(cell));
         if (!all(dest == cell) && ClaimAt(dest, FAUNA_CLAIM_MOVE) == packedSelf)
             vacated = true;
     }
@@ -1754,7 +1798,29 @@ void ApplyFaunaState(uint3 id : SV_DispatchThreadID)
             LogOrganismEvent((uint)(_Tick + 1), ORGANISM_KIND_BIRTH, WaspGeneration(genome), WaspLineage(genome), ORGANISM_CAUSE_HATCHED);
         }
 
-        if (IsWaspMaterial(material))
+        if (IsWaspEggMaterial(material))
+        {
+            float2 nextFrac;
+            int2 step = CricketMotionStep(motion, nextFrac);
+            int2 dest = EggFallDest(cell, motion);
+            if (any(step != int2(0, 0)) && all(dest == cell))
+            {
+                if (step.x != 0)
+                {
+                    motion.x = 0.0;
+                    nextFrac.x = 0.0;
+                }
+                if (step.y != 0)
+                {
+                    motion.y = 0.0;
+                    nextFrac.y = 0.0;
+                }
+            }
+            motion.zw = clamp(nextFrac, -0.49, 0.49);
+            if (CricketShouldLand(cell, motion, step))
+                motion = 0.0;
+        }
+        else if (IsWaspMaterial(material))
         {
             motion.zw = clamp(motion.zw + motion.xy * _DeltaTime, -0.49, 0.49);
         }

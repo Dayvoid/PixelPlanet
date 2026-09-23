@@ -625,6 +625,124 @@ namespace GeneSys.Tests
         }
 
         [UnityTest]
+        public IEnumerator HighAltitudeWaspEggFallsOntoSupportAndRests()
+        {
+            SceneManager.LoadScene("Terrarium");
+            yield return WaitForHostAndSnapshot();
+            SimulationHost host = UnityEngine.Object.FindFirstObjectByType<SimulationHost>();
+            yield return PrepareIsolatedWorld(host);
+            host.Config.gravityStrength = 1f;
+            host.Config.ticksPerSecond = 20f;
+            host.Config.waspWindCoupling = 0f;
+            host.Config.waspUpdraftCoupling = 0f;
+            host.Config.waspHatchTicksMin = 5000;
+            host.Config.waspHatchTicksMax = 5000;
+            int x = 72;
+            int restX = x + 4;
+            int y = SurfaceY(host);
+            int startY = y + 6;
+            yield return StampSky(host, x + 2, y, 6, 8);
+            for (int dx = -6; dx <= 6; dx++)
+            {
+                for (int dy = -6; dy <= -1; dy++)
+                    Paint(host, x + 2 + dx, y + dy, dy <= -3 ? MaterialIds.Core : MaterialIds.Rock);
+                Paint(host, x + 2 + dx, y, MaterialIds.Rock);
+            }
+            yield return Step(host, 2);
+            Paint(host, x, startY, MaterialIds.WaspEgg);
+            Paint(host, restX, y + 1, MaterialIds.WaspEgg);
+            yield return Step(host, 3);
+
+            uint lineage = 0;
+            float hatchAt = 0f;
+            yield return ReadWaspEggs(host, (materials, vitals, genomes) =>
+            {
+                int start = Index(host, x, startY);
+                Assert.That(materials[start], Is.EqualTo(MaterialIds.WaspEgg));
+                Assert.That(WaspGenome.Stage(genomes[start]), Is.EqualTo(WaspGenome.StageEgg));
+                lineage = WaspGenome.Lineage(genomes[start]);
+                hatchAt = vitals[start].w;
+                int rest = Index(host, restX, y + 1);
+                Assert.That(materials[rest], Is.EqualTo(MaterialIds.WaspEgg));
+                Assert.That(WaspGenome.Stage(genomes[rest]), Is.EqualTo(WaspGenome.StageEgg));
+            });
+
+            yield return Step(host, 120);
+            yield return ReadWaspEggs(host, (materials, vitals, genomes) =>
+            {
+                Assert.That(FindMaterialInBand(host, materials, MaterialIds.WaspEgg, x, y, startY, 2, out int eggX, out int eggY), Is.True,
+                    DescribeEggColumn(host, materials, x, y, startY));
+                int landed = Index(host, eggX, eggY);
+                Assert.That(eggY, Is.EqualTo(y + 1),
+                    $"Unsupported wasp egg should rest on the surface, ended at ({eggX},{eggY}).");
+                Assert.That(materials[Index(host, x, startY)], Is.Not.EqualTo(MaterialIds.WaspEgg));
+                Assert.That(WaspGenome.Stage(genomes[landed]), Is.EqualTo(WaspGenome.StageEgg));
+                Assert.That(WaspGenome.Lineage(genomes[landed]), Is.EqualTo(lineage));
+                Assert.That(vitals[landed].w, Is.EqualTo(hatchAt).Within(0.01f));
+
+                int rest = Index(host, restX, y + 1);
+                Assert.That(materials[rest], Is.EqualTo(MaterialIds.WaspEgg),
+                    "A wasp egg painted on support must stay put while another falls.");
+                Assert.That(WaspGenome.Stage(genomes[rest]), Is.EqualTo(WaspGenome.StageEgg));
+            });
+        }
+
+        private static IEnumerator ReadWaspEggs(SimulationHost host, Action<uint[], Vector4[], FaunaGenome.Packed[]> consume)
+        {
+            uint[] materials = null;
+            Vector4[] vitals = null;
+            FaunaGenome.Packed[] genomes = null;
+            yield return ReadWorld(host, data => materials = data);
+            yield return ReadSlice(host.Resources.WaspRead, FaunaGenome.WaspVitalsSlice, data => vitals = data);
+            yield return ReadSlice(host.Resources.WaspRead, FaunaGenome.WaspGenomeSlice, data =>
+            {
+                genomes = new FaunaGenome.Packed[data.Length];
+                for (int i = 0; i < data.Length; i++)
+                    genomes[i] = WaspGenome.Sanitize(WaspGenome.FromFloatBits(data[i]));
+            });
+            consume(materials, vitals, genomes);
+        }
+
+        private static string DescribeEggColumn(SimulationHost host, uint[] materials, int x, int y, int startY)
+        {
+            var column = new System.Text.StringBuilder();
+            column.Append($"No wasp egg near ({x},{startY}) down to y={y}. Column:");
+            int top = Mathf.Min(startY + 1, host.Grid.radialResolution - 1);
+            int bottom = Mathf.Max(0, y - 8);
+            for (int scanY = top; scanY >= bottom; scanY--)
+            {
+                uint id = materials[Index(host, x, scanY)];
+                if (id == MaterialIds.Air) continue;
+                column.Append($" ({x},{scanY})={id}");
+            }
+            return column.ToString();
+        }
+
+        private static bool FindMaterialInBand(SimulationHost host, uint[] materials, uint id,
+            int centerX, int yMin, int yMax, int radius, out int foundX, out int foundY)
+        {
+            foundX = -1;
+            foundY = -1;
+            int height = host.Grid.radialResolution;
+            int lo = Mathf.Clamp(yMin, 0, height - 1);
+            int hi = Mathf.Clamp(yMax, 0, height - 1);
+            for (int scanY = hi; scanY >= lo; scanY--)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    int scanX = host.Grid.WrapTheta(centerX + dx);
+                    if (materials[Index(host, scanX, scanY)] == id)
+                    {
+                        foundX = scanX;
+                        foundY = scanY;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        [UnityTest]
         public IEnumerator SnapshotRoundTripPreservesWaspStateAndOlderSavesClearIt()
         {
             SceneManager.LoadScene("Terrarium");
