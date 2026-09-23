@@ -304,6 +304,8 @@ namespace GeneSys.Simulation
             return scheduler.TryCopySensorSlots(destination, ref seenGeneration);
         }
 
+        public int SensorSlotGeneration => IsReady ? scheduler.SensorReadbackGeneration : 0;
+
         public void RefreshMaterialDefinitions()
         {
             if (!IsReady) return;

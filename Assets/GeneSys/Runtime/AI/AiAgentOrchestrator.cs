@@ -19,6 +19,15 @@ namespace GeneSys.AI
         public const string OccupiedNotice =
             "*the Deity seems occupied but pulses with consideration of your words*";
 
+        public const string AliceOccupiedNotice =
+            "*Alice is occupied, but she catches your words*";
+
+        public const string CrewmateVisionLine =
+            "A probe-follow screenshot at 50% zoom is attached to each prompt.";
+
+        public const string CrewmateAgentTurn =
+            "Continue the ACT loop. Monitor conditions and attempt to stabilize planetary conditions to establish a thriving ecosystem.";
+
         [SerializeField] private SimulationHost host;
         [SerializeField] private ProbeController probe;
         [SerializeField] private SimulationTools tools;
@@ -111,13 +120,26 @@ namespace GeneSys.AI
         public static bool ShouldShowOccupiedNotice(bool loopBusy, bool verboseCrewLogs) =>
             loopBusy && !verboseCrewLogs;
 
+        public static string OccupiedNoticeFor(GameMode mode) =>
+            mode == GameMode.AiCrewmate ? AliceOccupiedNotice : OccupiedNotice;
+
+        public static bool IncludesLivePlanetSummary(GameMode mode) => mode != GameMode.AiCrewmate;
+
+        public static bool AttachesVisionToEachPrompt(GameMode mode, bool visionCapable) =>
+            mode == GameMode.AiCrewmate && visionCapable;
+
+        public static string AgentTurnPrompt(GameMode mode) =>
+            mode == GameMode.AiCrewmate
+                ? CrewmateAgentTurn
+                : "Continue the ACT loop toward stable organism populations.";
+
         public void EnqueueUserPrompt(string text)
         {
             if (!AiSystemsEnabled || string.IsNullOrWhiteSpace(text)) return;
             string trimmed = text.Trim();
             AppendChat("user", trimmed, false);
             if (ShouldShowOccupiedNotice(busy, settings != null && settings.verboseCrewLogs))
-                AppendChat("assistant", OccupiedNotice, false);
+                AppendChat("assistant", OccupiedNoticeFor(settings != null ? settings.Mode : GameMode.Sandbox), false);
             queue.EnqueueUser(trimmed);
             if (!busy) StartNext();
         }
@@ -182,7 +204,7 @@ namespace GeneSys.AI
 
         private void EnqueueAgentTurn()
         {
-            queue.EnqueueAgent("Continue the ACT loop toward stable organism populations.");
+            queue.EnqueueAgent(AgentTurnPrompt(settings.Mode));
             loopDelayRemaining = Mathf.Max(1f, settings.agentLoopDelaySeconds);
             if (!busy) StartNext();
         }
@@ -199,7 +221,8 @@ namespace GeneSys.AI
             busy = true;
             currentPromptKind = prompt.Kind;
             LoopStateChanged?.Invoke();
-            yield return RefreshPlanetSummary();
+            if (settings == null || IncludesLivePlanetSummary(settings.Mode))
+                yield return RefreshPlanetSummary();
             loop.Begin();
             BindToolContext();
             conversation.Add(new LlmMessage { Role = "user", Content = BuildTurnContent(prompt) });
@@ -363,26 +386,51 @@ namespace GeneSys.AI
 
         private List<LlmMessage> BuildMessages()
         {
+            byte[] promptVision = TryCaptureCrewmatePromptVision();
+            bool visionAttached = promptVision != null && promptVision.Length > 0;
             var messages = new List<LlmMessage>
             {
                 new()
                 {
                     Role = "system",
-                    Content = BuildSystemContent()
+                    Content = BuildSystemContent(visionAttached)
                 }
             };
             messages.AddRange(conversation);
+            if (visionAttached)
+            {
+                messages.Add(new LlmMessage
+                {
+                    Role = "user",
+                    Content = "Probe-follow view (50% zoom) attached to this prompt.",
+                    ImageJpegBase64 = Convert.ToBase64String(promptVision)
+                });
+            }
+
             return messages;
         }
 
-        private string BuildSystemContent()
+        private byte[] TryCaptureCrewmatePromptVision()
+        {
+            if (settings == null || !AttachesVisionToEachPrompt(settings.Mode, settings.visionCapable))
+                return null;
+            if (display == null || !display.TryCaptureProbeFollowVision(768, 512, out byte[] jpeg, out _))
+                return null;
+            return jpeg;
+        }
+
+        private string BuildSystemContent(bool crewmateVisionAttached)
         {
             SimulationConfig config = host != null ? host.Config : null;
             var builder = new StringBuilder();
             builder.AppendLine(AiPrimerLibrary.BuildSystemPrompt(config, settings.Mode));
-            builder.AppendLine();
-            builder.AppendLine("Current planetary summary:");
-            builder.AppendLine(cachedPlanetSummary);
+            if (settings == null || IncludesLivePlanetSummary(settings.Mode))
+            {
+                builder.AppendLine();
+                builder.AppendLine("Current planetary summary:");
+                builder.AppendLine(cachedPlanetSummary);
+            }
+
             builder.AppendLine();
             builder.AppendLine("Scratchpad:");
             builder.AppendLine(string.IsNullOrWhiteSpace(scratchpad?.Read()) ? "(empty)" : scratchpad.Read());
@@ -394,7 +442,14 @@ namespace GeneSys.AI
                 builder.AppendLine();
                 builder.Append("This loop replies to a player message. During Convert you may only call send_chat (to speak to the player) and next_step. Do not terraform or steer the probe in this Convert step.");
             }
-            if (settings != null && settings.visionCapable)
+            if (settings != null && AttachesVisionToEachPrompt(settings.Mode, settings.visionCapable))
+            {
+                builder.AppendLine();
+                builder.Append(crewmateVisionAttached
+                    ? CrewmateVisionLine
+                    : "Vision is enabled, but the probe-follow screenshot could not be captured for this prompt.");
+            }
+            else if (settings != null && settings.visionCapable)
             {
                 builder.AppendLine();
                 builder.Append("Vision is enabled. During Assess and Think you may call capture_probe_view to attach a probe-follow screenshot at 50% zoom.");

@@ -83,6 +83,9 @@ namespace GeneSys.AI
     {
         public static string BuildSystemPrompt(SimulationConfig config, GameMode mode)
         {
+            if (mode == GameMode.AiCrewmate)
+                return BuildCrewmatePrompt(config);
+
             var builder = new StringBuilder();
             builder.AppendLine(Interpolate(GoalPrimer, config));
             builder.AppendLine();
@@ -97,6 +100,21 @@ namespace GeneSys.AI
                 builder.AppendLine("Deity tools are available during Convert.");
             else
                 builder.AppendLine("Deity tools are disabled in this mode.");
+            return builder.ToString();
+        }
+
+        private static string BuildCrewmatePrompt(SimulationConfig config)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine(Interpolate(CrewmateGoalPrimer, config));
+            builder.AppendLine();
+            builder.AppendLine(Interpolate(SurvivalPrimer, config));
+            builder.AppendLine();
+            builder.AppendLine(Interpolate(CrewmatePlanetaryPrimer, config));
+            builder.AppendLine();
+            builder.AppendLine(Interpolate(CrewmateToolsPrimer, config));
+            builder.AppendLine();
+            builder.Append("Game mode: ").AppendLine(GameMode.AiCrewmate.ToString());
             return builder.ToString();
         }
 
@@ -154,6 +172,34 @@ namespace GeneSys.AI
             "Convert: probe_steer, probe_use_tool, probe_toggle_life_seed, probe_status, plus deity tools in AI sandbox, then next_step.\n" +
             "Think: sensors, capture_probe_view (if vision enabled), scratchpad_read/write, log_note, next_step. End Think with a short player-facing summary of what you did and why.\n" +
             "Player-chat ACT: Assess uses the same sensors; Convert is send_chat then next_step only; Think is unchanged.\n" +
+            "Coordinates: theta01 is 0..1 around the circle, radius01 is 0 at the core and 1 at the rim.";
+
+        public const string CrewmateGoalPrimer =
+            "You are Alice, a fellow crewmember aboard the planetary probe in GeneSys, a GPU polar-grid terrarium. " +
+            "You control the probe and its tools. " +
+            "Your goal: Monitor conditions and attempt to stabilize planetary conditions to establish a thriving ecosystem. " +
+            "Prefer gradual, reversible adjustments. " +
+            "Work in ACT loops: Assess (observe and plan), Convert (issue in-game actions), Think (log, reflect, summarize for the player). " +
+            "Player messages run their own ACT loop: Assess gathers context, Convert replies with send_chat (no world actions), Think reflects. " +
+            "Call next_step when the current ACT stage is done. You may call as many other tools as needed before next_step.";
+
+        public const string CrewmatePlanetaryPrimer =
+            "Thermal: solarIntensity {solarIntensity}, coreHeatRate {coreHeatRate}, surfaceAirTemperature {surfaceAirTemperature}, thermalRate {thermalRate}. " +
+            "state.x is cell temperature.\n" +
+            "Mantle: mantleLayerEnable {mantleLayerEnable}, mantlePlumeHeat {mantlePlumeHeat}, geothermalSurfaceGain {geothermalSurfaceGain}, geothermalClimateGain {geothermalClimateGain}. " +
+            "Overlay 33 is plume/lid/geoflux; Tephra (16) is explosive ejecta; magma tubes live in MantleField.\n" +
+            "Hydrology: evaporationRate {evaporationRate}, condensationRate {condensationRate}, precipitationRate {precipitationRate}, " +
+            "infiltrationRate {infiltrationRate}, groundwaterRate {groundwaterRate}, runoffRate {runoffRate}. " +
+            "state.z surface water, aux.x vapor, aux.y groundwater, aux.z nutrients.\n" +
+            "Probe deposits are local (outer ring, ahead of travel). " +
+            "Placed sensor arrays report local atmosphere temperature, humidity, water, surface material, surface temperature, and moisture.";
+
+        public const string CrewmateToolsPrimer =
+            "Assess: poll_sensor_arrays, probe_status, scratchpad_read, scratchpad_write, log_note, next_step.\n" +
+            "Convert: probe_steer, probe_use_tool, probe_toggle_life_seed, probe_status, next_step.\n" +
+            "Think: poll_sensor_arrays, probe_status, scratchpad_read, scratchpad_write, log_note, next_step. End Think with a short player-facing summary of what you did and why.\n" +
+            "Player-chat ACT: Assess uses poll_sensor_arrays; Convert is send_chat then next_step only; Think is unchanged.\n" +
+            "probe_use_tool names: humidity, water, soil, cool, heat. probe_steer directions: clockwise, counterclockwise, stopped.\n" +
             "Coordinates: theta01 is 0..1 around the circle, radius01 is 0 at the core and 1 at the rim.";
     }
 }

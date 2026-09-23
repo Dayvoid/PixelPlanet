@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using GeneSys.AI;
 using GeneSys.Configuration;
+using GeneSys.Simulation;
+using GeneSys.UI;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -76,6 +78,24 @@ namespace GeneSys.Tests
             Assert.That(settings.AiSystemsEnabled, Is.True);
             Assert.That(settings.AgentLoopAllowed, Is.False);
             Assert.That(settings.DeityToolsAllowed, Is.False);
+        }
+
+        [Test]
+        public void CrewmateKeepsAgentLoopWithoutDeityTools()
+        {
+            var source = new AiCrewSettings();
+            source.Mode = GameMode.AiCrewmate;
+            source.Sanitize();
+            Assert.That(source.Mode, Is.EqualTo(GameMode.AiCrewmate));
+            Assert.That(source.AiSystemsEnabled, Is.True);
+            Assert.That(source.AgentLoopAllowed, Is.True);
+            Assert.That(source.DeityToolsAllowed, Is.False);
+            Assert.That(service.Save(source, out string saveError), Is.True, saveError);
+
+            AiCrewSettings loaded = service.LoadOrDefault();
+            Assert.That(loaded.Mode, Is.EqualTo(GameMode.AiCrewmate));
+            Assert.That(loaded.AgentLoopAllowed, Is.True);
+            Assert.That(loaded.DeityToolsAllowed, Is.False);
         }
     }
 
@@ -165,6 +185,94 @@ namespace GeneSys.Tests
             Assert.That(assessOn, Does.Contain("capture_probe_view"));
             Assert.That(thinkOn, Does.Contain("capture_probe_view"));
             Assert.That(convertOn, Does.Not.Contain("capture_probe_view"));
+            Assert.That(assessOn, Does.Not.Contain("poll_sensor_arrays"));
+        }
+
+        [Test]
+        public void CrewmateExposesProbeAndPlacedSensorsWithoutOmniscience()
+        {
+            var registry = new AiToolRegistry();
+            AiBuiltinTools.RegisterAll(registry);
+            var assess = ToolNames(registry.BuildOpenAiTools(ActStep.Assess, GameMode.AiCrewmate, true));
+            var convert = ToolNames(registry.BuildOpenAiTools(ActStep.Convert, GameMode.AiCrewmate, true));
+            var think = ToolNames(registry.BuildOpenAiTools(ActStep.Think, GameMode.AiCrewmate, true));
+            var userConvert = ToolNames(registry.BuildOpenAiTools(ActStep.Convert, GameMode.AiCrewmate, true, PromptKind.User));
+
+            Assert.That(assess, Does.Contain("poll_sensor_arrays"));
+            Assert.That(assess, Does.Contain("probe_status"));
+            Assert.That(assess, Does.Contain("next_step"));
+            Assert.That(assess, Does.Not.Contain("probe_steer"));
+            Assert.That(assess, Does.Not.Contain("get_planet_summary"));
+            Assert.That(assess, Does.Not.Contain("get_species_metrics"));
+            Assert.That(assess, Does.Not.Contain("inspect_cell"));
+            Assert.That(assess, Does.Not.Contain("get_recent_organism_events"));
+            Assert.That(assess, Does.Not.Contain("capture_probe_view"));
+            Assert.That(assess, Does.Not.Contain("planet_adjust_field"));
+
+            Assert.That(convert, Does.Contain("probe_steer"));
+            Assert.That(convert, Does.Contain("probe_use_tool"));
+            Assert.That(convert, Does.Contain("probe_toggle_life_seed"));
+            Assert.That(convert, Does.Contain("probe_status"));
+            Assert.That(convert, Does.Not.Contain("poll_sensor_arrays"));
+            Assert.That(convert, Does.Not.Contain("planet_adjust_field"));
+            Assert.That(convert, Does.Not.Contain("set_world_parameter"));
+            Assert.That(convert, Does.Not.Contain("terraform"));
+            Assert.That(convert, Does.Not.Contain("seed_life"));
+            Assert.That(convert, Does.Not.Contain("capture_probe_view"));
+            Assert.That(convert, Does.Not.Contain("get_planet_summary"));
+
+            Assert.That(think, Does.Contain("poll_sensor_arrays"));
+            Assert.That(think, Does.Not.Contain("capture_probe_view"));
+            Assert.That(think, Does.Not.Contain("probe_steer"));
+            Assert.That(userConvert, Is.EquivalentTo(new[] { "next_step", "send_chat" }));
+
+            string status = Description(registry.BuildOpenAiTools(ActStep.Assess, GameMode.AiCrewmate), "probe_status");
+            Assert.That(status, Does.Not.Contain("energy").IgnoreCase);
+            string sandboxStatus = Description(registry.BuildOpenAiTools(ActStep.Assess, GameMode.AiSandbox), "probe_status");
+            Assert.That(sandboxStatus, Does.Contain("energy").IgnoreCase);
+        }
+
+        [Test]
+        public void ProbeStatusOmitsEnergyForCrewmate()
+        {
+            string crew = AiBuiltinTools.FormatProbeStatus(
+                0.5f, ProbeFlightMode.Stopped, ProbeAction.Heat, false, new Vector2Int(1, 2), false, 0.25f);
+            string sandbox = AiBuiltinTools.FormatProbeStatus(
+                0.5f, ProbeFlightMode.Stopped, ProbeAction.Heat, true, new Vector2Int(1, 2), true, 0.25f);
+            Assert.That(crew, Does.Not.Contain("energy").IgnoreCase);
+            Assert.That(crew, Does.Contain("flight=Stopped"));
+            Assert.That(crew, Does.Contain("action=Heat"));
+            Assert.That(crew, Does.Contain("aim=(1,2)"));
+            Assert.That(sandbox, Does.Contain("energy="));
+            Assert.That(sandbox, Does.Contain("lifeSeed=True"));
+        }
+
+        [Test]
+        public void FormatSensorArrayReadoutsUsesPlacedSlotText()
+        {
+            var slot = new SensorSlotGpu
+            {
+                Alive = 1,
+                Serial = 7,
+                AnchorAx = 3,
+                AnchorAy = 10,
+                AnchorBx = 4,
+                AnchorBy = 10,
+                SurfaceMaterial = 7,
+                AtmTemp = 21.5f,
+                AtmVapor = 0.01f,
+                AtmWater = 0.2f,
+                SurfaceTemp = 18.25f,
+                SurfaceFilm = 0.4f,
+                SurfaceGround = 0.1f
+            };
+            string text = AiBuiltinTools.FormatSensorArrayReadouts(new[] { slot }, _ => "Soil", 0.01f);
+            Assert.That(text, Does.Contain("slot 0 serial=7 anchors=(3,10)-(4,10)"));
+            Assert.That(text, Does.Contain(SimulationUIController.FormatSensorReadout(slot, "Soil", 0.01f)));
+
+            var empty = new SensorSlotGpu[SensorArrayLogic.MaxSensors];
+            Assert.That(AiBuiltinTools.FormatSensorArrayReadouts(empty, _ => "Soil", 0.01f), Is.EqualTo("No sensor arrays are placed."));
+            Assert.That(AiBuiltinTools.FormatSensorArrayReadouts(null, _ => "Soil", 0.01f), Is.EqualTo("No sensor arrays are placed."));
         }
 
         private static List<string> ToolNames(Newtonsoft.Json.Linq.JArray tools)
@@ -173,6 +281,17 @@ namespace GeneSys.Tests
             foreach (var token in tools)
                 names.Add(token["function"]?["name"]?.ToString());
             return names;
+        }
+
+        private static string Description(Newtonsoft.Json.Linq.JArray tools, string name)
+        {
+            foreach (var token in tools)
+            {
+                if (token["function"]?["name"]?.ToString() == name)
+                    return token["function"]?["description"]?.ToString();
+            }
+
+            return string.Empty;
         }
     }
 
@@ -219,6 +338,20 @@ namespace GeneSys.Tests
             Assert.That(AiAgentOrchestrator.ShouldShowOccupiedNotice(true, true), Is.False);
             Assert.That(AiAgentOrchestrator.ShouldShowOccupiedNotice(false, false), Is.False);
             Assert.That(AiAgentOrchestrator.ShouldShowOccupiedNotice(false, true), Is.False);
+        }
+
+        [Test]
+        public void CrewmateNoticeNamesAliceAndSkipsLiveSummary()
+        {
+            Assert.That(AiAgentOrchestrator.OccupiedNoticeFor(GameMode.AiCrewmate), Does.Contain("Alice"));
+            Assert.That(AiAgentOrchestrator.OccupiedNoticeFor(GameMode.AiSandbox), Does.Contain("Deity"));
+            Assert.That(AiAgentOrchestrator.IncludesLivePlanetSummary(GameMode.AiCrewmate), Is.False);
+            Assert.That(AiAgentOrchestrator.IncludesLivePlanetSummary(GameMode.AiSandbox), Is.True);
+            Assert.That(AiAgentOrchestrator.AttachesVisionToEachPrompt(GameMode.AiCrewmate, true), Is.True);
+            Assert.That(AiAgentOrchestrator.AttachesVisionToEachPrompt(GameMode.AiCrewmate, false), Is.False);
+            Assert.That(AiAgentOrchestrator.AttachesVisionToEachPrompt(GameMode.AiSandbox, true), Is.False);
+            Assert.That(AiAgentOrchestrator.AgentTurnPrompt(GameMode.AiCrewmate), Is.EqualTo(AiAgentOrchestrator.CrewmateAgentTurn));
+            Assert.That(AiAgentOrchestrator.CrewmateVisionLine, Does.Contain("attached to each prompt"));
         }
     }
 
@@ -325,6 +458,27 @@ namespace GeneSys.Tests
 
     public sealed class AiPrimerTests
     {
+        [Test]
+        public void CrewmatePromptIntroducesAliceWithoutDeityOrEnergy()
+        {
+            SimulationConfig config = ScriptableObject.CreateInstance<SimulationConfig>();
+            config.floraGrowthTempMin = 17.375f;
+            string prompt = AiPrimerLibrary.BuildSystemPrompt(config, GameMode.AiCrewmate);
+            Assert.That(prompt, Does.Contain("Alice"));
+            Assert.That(prompt, Does.Contain("Monitor conditions and attempt to stabilize planetary conditions to establish a thriving ecosystem."));
+            Assert.That(prompt, Does.Contain("17.375"));
+            Assert.That(prompt, Does.Contain("poll_sensor_arrays"));
+            Assert.That(prompt, Does.Not.Contain("Current planetary"));
+            Assert.That(prompt, Does.Not.Contain("planet_adjust_field"));
+            Assert.That(prompt, Does.Not.Contain("set_world_parameter"));
+            Assert.That(prompt, Does.Not.Contain("terraform"));
+            Assert.That(prompt, Does.Not.Contain("seed_life"));
+            Assert.That(prompt, Does.Not.Contain("capture_probe_view"));
+            Assert.That(prompt, Does.Not.Contain("energy").IgnoreCase);
+            Assert.That(prompt, Does.Not.Contain("Deity"));
+            UnityEngine.Object.DestroyImmediate(config);
+        }
+
         [Test]
         public void InterpolateInsertsLiveSurvivalValues()
         {

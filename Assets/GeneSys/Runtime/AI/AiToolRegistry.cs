@@ -10,10 +10,13 @@ namespace GeneSys.AI
     {
         public string Name;
         public string Description;
+        public string CrewmateDescription;
         public JObject Parameters;
         public ActStepMask AllowedSteps;
         public bool RequiresDeity;
         public bool RequiresVision;
+        public bool Omniscient;
+        public bool PlacedSensors;
         public bool UserChatReply;
         public AiToolHandler Handler;
     }
@@ -71,13 +74,16 @@ namespace GeneSys.AI
             {
                 AiTool tool = tools[i];
                 if (!IsAvailable(tool, step, mode, visionCapable, kind)) continue;
+                string description = tool.Description ?? string.Empty;
+                if (mode == GameMode.AiCrewmate && !string.IsNullOrEmpty(tool.CrewmateDescription))
+                    description = tool.CrewmateDescription;
                 array.Add(new JObject
                 {
                     ["type"] = "function",
                     ["function"] = new JObject
                     {
                         ["name"] = tool.Name,
-                        ["description"] = tool.Description ?? string.Empty,
+                        ["description"] = description,
                         ["parameters"] = tool.Parameters ?? EmptyObjectSchema()
                     }
                 });
@@ -92,7 +98,9 @@ namespace GeneSys.AI
             if (tool == null) return false;
             if (mode == GameMode.Sandbox) return false;
             if (tool.RequiresDeity && mode != GameMode.AiSandbox) return false;
-            if (tool.RequiresVision && !visionCapable) return false;
+            if (tool.RequiresVision && (mode == GameMode.AiCrewmate || !visionCapable)) return false;
+            if (tool.Omniscient && mode == GameMode.AiCrewmate) return false;
+            if (tool.PlacedSensors && mode != GameMode.AiCrewmate) return false;
             if ((tool.AllowedSteps & Mask(step)) == 0) return false;
             if (kind == PromptKind.User && step == ActStep.Convert)
                 return IsUserConvertTool(tool);

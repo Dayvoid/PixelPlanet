@@ -6,6 +6,7 @@ using GeneSys.Rendering;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Topology;
 using GeneSys.Tools;
+using GeneSys.UI;
 using GeneSys.Validation;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -108,6 +109,7 @@ namespace GeneSys.AI
                 Description = "Read mean temperature, humidity, water masses, fire, and organism counts.",
                 Parameters = AiToolRegistry.EmptyObjectSchema(),
                 AllowedSteps = ActStepMask.Assess | ActStepMask.Think,
+                Omniscient = true,
                 Handler = (_, done) =>
                 {
                     SimulationHost host = registry.Context?.Host;
@@ -126,6 +128,7 @@ namespace GeneSys.AI
                 Description = "Read living counts for flora, crickets, wasps, or trees.",
                 Parameters = AiToolRegistry.ObjectSchema(("species", AiToolRegistry.StringProp("Species to measure.", "flora", "cricket", "wasp", "tree"), true)),
                 AllowedSteps = ActStepMask.Assess | ActStepMask.Think,
+                Omniscient = true,
                 Handler = (args, done) =>
                 {
                     SimulationHost host = registry.Context?.Host;
@@ -170,6 +173,7 @@ namespace GeneSys.AI
                     ("theta01", AiToolRegistry.NumberProp("Angular position 0..1."), true),
                     ("radius01", AiToolRegistry.NumberProp("Radial position 0..1."), true)),
                 AllowedSteps = ActStepMask.Assess | ActStepMask.Think,
+                Omniscient = true,
                 Handler = (args, done) =>
                 {
                     AiToolContext ctx = registry.Context;
@@ -197,6 +201,7 @@ namespace GeneSys.AI
                 Description = "Return the latest organism history lines (birth, death, reproduce).",
                 Parameters = AiToolRegistry.ObjectSchema(("count", AiToolRegistry.IntegerProp("How many recent events to return."), false)),
                 AllowedSteps = ActStepMask.Assess | ActStepMask.Think,
+                Omniscient = true,
                 Handler = (args, done) =>
                 {
                     SimulationHost host = registry.Context?.Host;
@@ -251,6 +256,25 @@ namespace GeneSys.AI
 
                     registry.Context.OnVisionFrame?.Invoke(jpeg, width, height);
                     done?.Invoke($"Captured probe-follow vision frame ({jpeg.Length} bytes JPEG, {width}x{height}, 50% zoom). The image is attached for the next model request.");
+                }
+            });
+            registry.Add(new AiTool
+            {
+                Name = "poll_sensor_arrays",
+                Description = "Read every placed sensor array. Each alive array reports its slot, serial, anchor cells, and local atmosphere and surface conditions.",
+                Parameters = AiToolRegistry.EmptyObjectSchema(),
+                AllowedSteps = ActStepMask.Assess | ActStepMask.Think,
+                PlacedSensors = true,
+                Handler = (_, done) =>
+                {
+                    AiToolContext ctx = registry.Context;
+                    if (ctx?.StartRoutine == null)
+                    {
+                        done?.Invoke("Sensor polling is unavailable.");
+                        return;
+                    }
+
+                    ctx.StartRoutine(PollSensorArrays(ctx, done));
                 }
             });
         }
@@ -344,6 +368,7 @@ namespace GeneSys.AI
             {
                 Name = "probe_status",
                 Description = "Read probe angle, energy, flight mode, active tool, and aim cell.",
+                CrewmateDescription = "Read probe angle, flight mode, active tool, and aim cell.",
                 Parameters = AiToolRegistry.EmptyObjectSchema(),
                 AllowedSteps = ActStepMask.All,
                 Handler = (_, done) =>
@@ -358,9 +383,15 @@ namespace GeneSys.AI
 
                     PolarGridDefinition grid = ctx.Host != null ? ctx.Host.Grid : default;
                     Vector2Int aim = probe.AimCell(grid);
-                    done?.Invoke(
-                        $"angle01={probe.ProbeAngle01:0.###} energy={probe.EnergyNormalized:0.###} flight={probe.FlightMode} " +
-                        $"action={probe.ActiveAction} lifeSeed={probe.LifeSeedActive} aim=({aim.x},{aim.y})");
+                    bool includeEnergy = ctx == null || ctx.Mode != GameMode.AiCrewmate;
+                    done?.Invoke(FormatProbeStatus(
+                        probe.ProbeAngle01,
+                        probe.FlightMode,
+                        probe.ActiveAction,
+                        probe.LifeSeedActive,
+                        aim,
+                        includeEnergy,
+                        probe.EnergyNormalized));
                 }
             });
         }
@@ -609,6 +640,82 @@ namespace GeneSys.AI
                 case "clay": materialId = MaterialIds.Clay; return true;
                 default: return false;
             }
+        }
+
+        public static string FormatProbeStatus(
+            float angle01,
+            ProbeFlightMode flight,
+            ProbeAction action,
+            bool lifeSeed,
+            Vector2Int aim,
+            bool includeEnergy,
+            float energyNormalized)
+        {
+            string energy = includeEnergy ? $" energy={energyNormalized:0.###}" : string.Empty;
+            return $"angle01={angle01:0.###}{energy} flight={flight} action={action} lifeSeed={lifeSeed} aim=({aim.x},{aim.y})";
+        }
+
+        public static string FormatSensorArrayReadouts(SensorSlotGpu[] slots, Func<uint, string> surfaceName, float vaporScale)
+        {
+            if (slots == null || slots.Length == 0)
+                return "No sensor arrays are placed.";
+
+            var builder = new StringBuilder();
+            int count = Math.Min(slots.Length, SensorArrayLogic.MaxSensors);
+            for (int i = 0; i < count; i++)
+            {
+                SensorSlotGpu slot = slots[i];
+                if (slot.Alive == 0) continue;
+                if (builder.Length > 0) builder.Append("\n\n");
+                string surface = surfaceName != null ? surfaceName(slot.SurfaceMaterial) : null;
+                builder.Append("slot ").Append(i)
+                    .Append(" serial=").Append(slot.Serial)
+                    .Append(" anchors=(").Append(slot.AnchorAx).Append(',').Append(slot.AnchorAy)
+                    .Append(")-(").Append(slot.AnchorBx).Append(',').Append(slot.AnchorBy).Append(")\n");
+                builder.Append(SimulationUIController.FormatSensorReadout(slot, surface, vaporScale));
+            }
+
+            return builder.Length == 0 ? "No sensor arrays are placed." : builder.ToString();
+        }
+
+        private static System.Collections.IEnumerator PollSensorArrays(AiToolContext ctx, Action<string> done)
+        {
+            SimulationHost host = ctx?.Host;
+            if (host == null || !host.IsReady)
+            {
+                done?.Invoke("Simulation is not ready.");
+                yield break;
+            }
+
+            int seen = host.SensorSlotGeneration;
+            host.RequestSensorSlotReadback();
+            var slots = new SensorSlotGpu[SensorArrayLogic.MaxSensors];
+            float timeout = 3f;
+            while (timeout > 0f)
+            {
+                if (host.TryCopySensorSlots(slots, ref seen))
+                {
+                    float vaporScale = host.Config != null ? host.Config.vaporCapacityScale : 0.01f;
+                    done?.Invoke(FormatSensorArrayReadouts(slots, material => SensorSurfaceName(host, material), vaporScale));
+                    yield break;
+                }
+
+                timeout -= Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            done?.Invoke("Sensor readback timed out.");
+        }
+
+        private static string SensorSurfaceName(SimulationHost host, uint materialId)
+        {
+            if (materialId == 0) return "None";
+            MaterialDefinition definition = host?.MaterialRegistry != null
+                ? host.MaterialRegistry.Get((int)materialId)
+                : null;
+            return definition != null && !string.IsNullOrEmpty(definition.displayName)
+                ? definition.displayName
+                : materialId.ToString();
         }
 
         private static string FormatPlanet(WorldWaterMetrics metrics)

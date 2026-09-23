@@ -79,6 +79,7 @@ namespace GeneSys.Simulation.Gpu
         private int tick;
 
         public int TickIndex => tick;
+        public int SensorReadbackGeneration => sensorReadbackGeneration;
         public void SetTickIndex(int value) => tick = Math.Max(0, value);
         public double LastTickMilliseconds { get; private set; }
         public float SolarAngle01 => Mathf.Repeat(tick / Mathf.Max(1f, config.ticksPerSecond * config.dayLengthSeconds), 1f);

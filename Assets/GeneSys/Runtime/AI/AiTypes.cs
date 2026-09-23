@@ -8,7 +8,8 @@ namespace GeneSys.AI
     {
         Story = 0,
         Sandbox = 1,
-        AiSandbox = 2
+        AiSandbox = 2,
+        AiCrewmate = 3
     }
 
     public enum ActStep

@@ -16,14 +16,16 @@ namespace GeneSys.AI
         public bool visionCapable;
         public bool verboseCrewLogs;
 
+        public const int MaxGameMode = (int)GameMode.AiCrewmate;
+
         public GameMode Mode
         {
-            get => (GameMode)Mathf.Clamp(gameMode, 0, 2);
+            get => (GameMode)Mathf.Clamp(gameMode, 0, MaxGameMode);
             set => gameMode = (int)value;
         }
 
         public bool AiSystemsEnabled => Mode != GameMode.Sandbox;
-        public bool AgentLoopAllowed => Mode == GameMode.AiSandbox;
+        public bool AgentLoopAllowed => Mode == GameMode.AiSandbox || Mode == GameMode.AiCrewmate;
         public bool DeityToolsAllowed => Mode == GameMode.AiSandbox;
 
         public string BaseUrl
@@ -44,7 +46,7 @@ namespace GeneSys.AI
             port = Mathf.Clamp(port, 1, 65535);
             agentLoopDelaySeconds = Mathf.Clamp(agentLoopDelaySeconds, 1f, 600f);
             maxToolCallsPerStep = Mathf.Clamp(maxToolCallsPerStep, 1, 64);
-            gameMode = Mathf.Clamp(gameMode, 0, 2);
+            gameMode = Mathf.Clamp(gameMode, 0, MaxGameMode);
             model ??= string.Empty;
         }
     }
