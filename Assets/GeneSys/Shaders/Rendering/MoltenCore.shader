@@ -108,6 +108,26 @@ Shader "GeneSys/Molten Core"
                 return value;
             }
 
+            // One soft wax body. Vertical motion is a sine (rise, then sink). A slower
+            // cosine drifts it sideways. Radius breathes. Kernels sum so overlaps bridge.
+            void AccumulateLavaBlob(float2 p, float time, float speed, float index, inout float field, inout float2 carry)
+            {
+                float phase = index * 1.37;
+                float rate = 0.85 + 0.22 * frac(index * 0.37);
+                // 2*pi/10: a full rise-and-fall is about ten seconds at speed 1 and rate 1.
+                float omega = 0.628 * speed * rate;
+                float yPhase = time * omega + phase;
+                float xPhase = time * omega * 0.37 + phase * 1.7;
+                float2 center = float2(cos(xPhase) * 0.42, sin(yPhase) * 0.62);
+                float radius = 0.22 + 0.05 * sin(time * 0.4 * speed + phase);
+                float2 delta = p - center;
+                float kernel = exp(-dot(delta, delta) / max(radius * radius, 1e-3));
+                kernel *= 1.0 - smoothstep(0.68, 0.92, length(center));
+                field += kernel;
+                float2 velocity = float2(-sin(xPhase) * 0.42 * omega * 0.37, cos(yPhase) * 0.62 * omega);
+                carry += velocity * kernel;
+            }
+
             half4 Frag(Varyings input) : SV_Target
             {
                 float2 p = input.uv * 2.0 - 1.0;
@@ -116,31 +136,40 @@ Shader "GeneSys/Molten Core"
 
                 float phi = atan2(p.y, p.x);
                 float speed = _CirculationSpeed;
+                float time = _Time.y;
 
-                // Differential fluid rotation: inner bands rotate faster than outer mantle edge
-                float differentialOmega = (0.75 + 0.55 / max(0.15, r + 0.18)) * speed;
-                float swirlAngle = phi + _Time.y * differentialOmega;
-                float2 swirlP = float2(cos(swirlAngle), sin(swirlAngle)) * r;
+                float blobField = 0.0;
+                float2 blobCarry = 0.0;
+                [unroll]
+                for (int i = 0; i < 7; i++)
+                {
+                    AccumulateLavaBlob(p, time, speed, (float)i, blobField, blobCarry);
+                }
 
-                // Domain warped multi-scale convection fields
+                // Resting radial warp (the time-zero convection field) plus a bounded
+                // standing wave. Blob velocity pushes that texture locally so it travels
+                // with the wax instead of shearing around the disc.
                 float2 warpOffset = float2(
-                    sin(r * 5.2 - _Time.y * 0.7 * speed + phi * 2.0),
-                    cos(r * 4.4 + _Time.y * 0.6 * speed - phi * 2.0)
+                    sin(r * 5.2 + phi * 2.0),
+                    cos(r * 4.4 - phi * 2.0)
                 ) * 0.18;
+                float2 standing = float2(
+                    sin(p.y * 2.4 + time * 0.35 * speed) - sin(p.y * 2.4),
+                    sin(p.x * 2.1 - time * 0.28 * speed) - sin(p.x * 2.1)
+                ) * 0.07;
+                float2 sampleP = p + standing - blobCarry * 0.35;
 
-                float2 coord1 = swirlP * 3.4 + warpOffset + float2(_Time.y * 0.12 * speed, 0.0);
-                float2 coord2 = swirlP * 6.8 - warpOffset * 1.5 - float2(0.0, _Time.y * 0.18 * speed);
+                float2 coord1 = sampleP * 3.4 + warpOffset;
+                float2 coord2 = sampleP * 6.8 - warpOffset * 1.5;
 
                 float n1 = ConvectionFbm(coord1);
                 float n2 = ConvectionFbm(coord2 + n1 * 0.65);
 
-                // Thermal plumes & incandescent magnetic filaments
-                float filamentAngle = swirlAngle * 3.0 + n1 * 6.28;
-                float filament = pow(saturate(sin(filamentAngle) * 0.5 + 0.5), 3.5);
-                float microFilament = pow(saturate(cos(swirlAngle * 5.0 - n2 * 8.0) * 0.5 + 0.5), 4.0);
+                float blobHeat = saturate(blobField * 0.85);
+                float blobPeak = pow(saturate((blobField - 0.72) / 0.85), 1.4);
 
-                // Viscous semi-solid slag rafts and cooling crust flakes
-                float slagPattern = ConvectionFbm(swirlP * 8.5 + float2(n1, n2) * 0.8);
+                // Viscous semi-solid slag rafts. Hot blobs and the white center stay clear of crust.
+                float slagPattern = ConvectionFbm(sampleP * 8.5 + float2(n1, n2) * 0.8);
                 float slag = smoothstep(0.56, 0.72, slagPattern + (r - 0.25) * 0.35);
 
                 // Convective heartbeat / thermal breathing pulse
@@ -149,12 +178,13 @@ Shader "GeneSys/Molten Core"
                 // Blinding white-hot central core zone
                 float coreSolid = 1.0 - smoothstep(0.0, 0.42, r);
 
-                // Multi-tier incandescent molten metal palette
-                float3 molten = lerp(_DeepColor.rgb, _MagmaColor.rgb, saturate(n2 * 1.35 + (1.0 - r) * 0.4));
-                molten = lerp(molten, _CoreColor.rgb, saturate(coreSolid * 0.9 + filament * 0.5 + microFilament * 0.3));
+                // Multi-tier incandescent molten metal palette. Blob peaks and noise
+                // carry the bright accents; gaps stay deeper and pick up more slag.
+                float3 molten = lerp(_DeepColor.rgb, _MagmaColor.rgb, saturate(n2 * 1.35 + (1.0 - r) * 0.4 + blobHeat * 0.45));
+                float accent = saturate(coreSolid * 0.9 + blobPeak * 0.7 + saturate(n2 - 0.55) * 0.25);
+                molten = lerp(molten, _CoreColor.rgb, accent);
 
-                // Apply slag rafts (darker cooling flakes floating on top)
-                molten = lerp(molten, _SlagColor.rgb, slag * (1.0 - coreSolid * 0.85) * 0.8);
+                molten = lerp(molten, _SlagColor.rgb, slag * (1.0 - coreSolid * 0.85) * (1.0 - blobHeat * 0.8) * 0.8);
 
                 // Thermal glow scaling and incandescence boost
                 float simHeat = max(0.25, _SimHeatGlow);

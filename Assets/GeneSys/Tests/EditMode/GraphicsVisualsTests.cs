@@ -70,6 +70,9 @@ namespace GeneSys.Tests
             Assert.That(shader.Contains("_MagmaColor"));
             Assert.That(shader.Contains("_DeepColor"));
             Assert.That(shader.Contains("_SlagColor"));
+            Assert.That(shader.Contains("AccumulateLavaBlob"));
+            Assert.That(shader.Contains("differentialOmega"), Is.False);
+            Assert.That(shader.Contains("swirlAngle"), Is.False);
         }
 
         [Test]

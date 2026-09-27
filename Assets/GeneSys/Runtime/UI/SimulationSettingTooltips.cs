@@ -984,7 +984,7 @@ namespace GeneSys.UI
             [nameof(SimulationConfig.coreVisualStrength)] =
                 "Overall brightness and opacity of the molten metal core and convective circulation. Visual only.",
             [nameof(SimulationConfig.coreCirculationSpeed)] =
-                "Speed of fluid convection, differential rotation, and eddy currents in the molten core dynamo. Visual only.",
+                "Speed of buoyant blob convection in the molten core. Hot bodies rise and sink, merge, and drift. Visual only.",
             [nameof(SimulationConfig.coreHeatGlow)] =
                 "Intensity of incandescent thermal radiation and thermal bloom at the core-mantle boundary. Visual only.",
             [nameof(SimulationConfig.coreVisualScale)] =
