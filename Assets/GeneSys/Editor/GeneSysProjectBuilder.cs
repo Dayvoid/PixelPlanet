@@ -141,6 +141,8 @@ namespace GeneSys.Editor
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.005f, 0.008f, 0.014f, 1f);
             camera.transform.position = new Vector3(0, 0, -10);
+            if (cameraObject.GetComponent<AudioListener>() == null)
+                cameraObject.AddComponent<AudioListener>();
 
             GameObject displayObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
             displayObject.name = "Planetoid Display";
@@ -184,6 +186,7 @@ namespace GeneSys.Editor
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));
             SetObject(host, "rockChunks", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/RockChunks.compute"));
             SetObject(host, "sensorArrays", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/SensorArrays.compute"));
+            SetObject(host, "viewAmbience", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Audio/ViewAmbience.compute"));
             SetObject(host, "display", display);
             SetObject(host, "visuals", visuals);
             SetObject(host, "ui", ui);
@@ -236,6 +239,7 @@ namespace GeneSys.Editor
             SetObject(host, "margolusTransport", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/MargolusTransport.compute"));
             SetObject(host, "rockChunks", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/RockChunks.compute"));
             SetObject(host, "sensorArrays", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Simulation/SensorArrays.compute"));
+            SetObject(host, "viewAmbience", AssetDatabase.LoadAssetAtPath<ComputeShader>(Root + "/Compute/Audio/ViewAmbience.compute"));
             document.panelSettings = panelSettings;
             EditorUtility.SetDirty(document);
             EditorSceneManager.MarkSceneDirty(host.gameObject.scene);

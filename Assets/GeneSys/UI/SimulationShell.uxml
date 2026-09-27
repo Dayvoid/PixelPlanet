@@ -9,6 +9,10 @@
                     <ui:Button name="regenerate" text="Regenerate" class="row-last" />
                 </ui:VisualElement>
                 <ui:Slider name="speed" label="Speed" low-value="0.05" high-value="8" show-input-field="true" />
+                <ui:VisualElement name="sound-row" class="sound-row">
+                    <ui:Toggle name="sound-enabled" label="Sound" class="sound-enabled" />
+                    <ui:Slider name="sound-volume" low-value="0" high-value="1" class="sound-volume" />
+                </ui:VisualElement>
                 <ui:DropdownField name="overlay" label="Overlay" />
                 <ui:Label name="status" text="Initializing GeneSys..." class="status" />
             </ui:VisualElement>

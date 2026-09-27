@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using GeneSys.AI;
+using GeneSys.Audio;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Persistence;
@@ -309,6 +310,7 @@ namespace GeneSys.UI
             if (radius != null) { radius.value = tools.Radius; radius.RegisterValueChangedCallback(evt => tools.Radius = evt.newValue); }
             var strength = root.Q<Slider>("brush-strength");
             if (strength != null) { strength.value = tools.Strength; strength.RegisterValueChangedCallback(evt => tools.Strength = evt.newValue); }
+            SetupSound(root);
 
             SetupSettingTooltip(root);
             SetupDrawers();
@@ -335,6 +337,36 @@ namespace GeneSys.UI
             RefreshChat(force: true);
             RefreshChatVisibility();
             RefreshAgentLoopButton();
+        }
+
+        private void SetupSound(VisualElement root)
+        {
+            Toggle toggle = root.Q<Toggle>("sound-enabled");
+            Slider slider = root.Q<Slider>("sound-volume");
+            DiegeticSoundDirector sound = host != null ? host.Sound : null;
+            if (toggle != null)
+            {
+                toggle.UnregisterCallback<ChangeEvent<bool>>(OnSoundEnabledChanged);
+                toggle.SetValueWithoutNotify(sound == null || !sound.Muted);
+                toggle.RegisterCallback<ChangeEvent<bool>>(OnSoundEnabledChanged);
+            }
+
+            if (slider != null)
+            {
+                slider.UnregisterCallback<ChangeEvent<float>>(OnSoundVolumeChanged);
+                slider.SetValueWithoutNotify(sound != null ? sound.Volume : 0.7f);
+                slider.RegisterCallback<ChangeEvent<float>>(OnSoundVolumeChanged);
+            }
+        }
+
+        private void OnSoundEnabledChanged(ChangeEvent<bool> evt)
+        {
+            host?.Sound?.SetMuted(!evt.newValue);
+        }
+
+        private void OnSoundVolumeChanged(ChangeEvent<float> evt)
+        {
+            host?.Sound?.SetVolume(evt.newValue);
         }
 
         private void SetupDrawers()

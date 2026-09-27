@@ -1,4 +1,6 @@
+using System;
 using GeneSys.AI;
+using GeneSys.Audio;
 using GeneSys.Configuration;
 using GeneSys.Materials;
 using GeneSys.Rendering;
@@ -35,6 +37,7 @@ namespace GeneSys.Simulation
         [SerializeField] private ComputeShader margolusTransport;
         [SerializeField] private ComputeShader rockChunks;
         [SerializeField] private ComputeShader sensorArrays;
+        [SerializeField] private ComputeShader viewAmbience;
         [Header("Scene")]
         [SerializeField] private PlanetoidDisplayRenderer display;
         [SerializeField] private TerrariumVisualController visuals;
@@ -46,6 +49,7 @@ namespace GeneSys.Simulation
         private GpuPassScheduler scheduler;
         private readonly WorldScenarioDirector scenarioDirector = new();
         private SceneTransitionDirector transitions;
+        private DiegeticSoundDirector sound;
         private long lastPerformanceTick;
         private double dispatchMilliseconds;
         private int dispatchSamples;
@@ -60,6 +64,7 @@ namespace GeneSys.Simulation
         public double LastTickMilliseconds => scheduler?.LastTickMilliseconds ?? 0d;
         public OrganismHistoryLog OrganismHistory { get; } = new();
         public ProbeController Probe => probe;
+        public DiegeticSoundDirector Sound => sound;
         public bool TransitionScenesEnabled => config != null && config.enableTransitionScenes != 0;
         public SimulationTools Tools => tools;
         public PolarGridDefinition Grid => Resources?.Grid ?? config.grid;
@@ -104,12 +109,36 @@ namespace GeneSys.Simulation
             return transitions;
         }
 
+        public DiegeticSoundDirector EnsureDiegeticSound()
+        {
+            if (sound == null)
+                sound = GetComponent<DiegeticSoundDirector>();
+            if (sound == null)
+                sound = gameObject.AddComponent<DiegeticSoundDirector>();
+            sound.Bind(this, display, viewAmbience);
+            return sound;
+        }
+
+        public void SubscribeStrikes(Action<GpuPassScheduler.StrikeSeedGpu[], int> handler)
+        {
+            if (scheduler == null || handler == null) return;
+            scheduler.StrikesReady -= handler;
+            scheduler.StrikesReady += handler;
+        }
+
+        public void UnsubscribeStrikes(Action<GpuPassScheduler.StrikeSeedGpu[], int> handler)
+        {
+            if (scheduler == null || handler == null) return;
+            scheduler.StrikesReady -= handler;
+        }
+
         public void GenerateWorldOnly()
         {
             if (scheduler == null) return;
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
+            sound?.ResetListening();
             if (config != null)
                 scenarioDirector.Bind(config.worldScenario);
             validator?.ResetBaseline();
@@ -160,6 +189,8 @@ namespace GeneSys.Simulation
                 rockChunks = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/RockChunks.compute");
             if (sensorArrays == null)
                 sensorArrays = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Simulation/SensorArrays.compute");
+            if (viewAmbience == null)
+                viewAmbience = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/GeneSys/Compute/Audio/ViewAmbience.compute");
 #endif
             config.grid.Validate();
             Resources = new SimulationResources(config.grid);
@@ -178,6 +209,7 @@ namespace GeneSys.Simulation
             if (probe == null) probe = GetComponent<ProbeController>();
             if (probe != null) probe.Initialize(this, display);
             if (display != null) display.FollowProbe = probe;
+            EnsureDiegeticSound();
             if (tools != null) { tools.Radius = config.brushRadius; tools.Strength = config.brushStrength; }
             AiAgentOrchestrator aiCrew = GetComponent<AiAgentOrchestrator>();
             if (aiCrew != null) aiCrew.Initialize(this, probe, tools, display);
@@ -211,6 +243,7 @@ namespace GeneSys.Simulation
             scheduler.GenerateWorld();
             OrganismHistory.Clear();
             Clock.Reset();
+            sound?.ResetListening();
             scenarioDirector.Bind(config.worldScenario);
             validator?.ResetBaseline();
         }
@@ -236,6 +269,7 @@ namespace GeneSys.Simulation
             scheduler?.SetTickIndex((int)Mathf.Min(int.MaxValue, tick));
             OrganismHistory.Clear();
             scheduler?.ResetOrganismHistoryCounter();
+            sound?.ResetListening();
             scenarioDirector.Sync(tick);
             validator?.ResetBaseline();
         }
@@ -479,6 +513,7 @@ namespace GeneSys.Simulation
 
         private void Shutdown()
         {
+            sound?.InvalidateReadbacks();
             scheduler?.Dispose();
             scheduler = null;
             if (display != null) display.ClearResources();

@@ -68,6 +68,26 @@
     margin-right: 0;
 }
 
+.sound-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+
+.sound-enabled {
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.sound-volume {
+    flex-grow: 1;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
+}
+
 .status {
     margin-top: 4px;
     white-space: normal;

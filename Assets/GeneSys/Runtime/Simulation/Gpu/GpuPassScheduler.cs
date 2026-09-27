@@ -55,6 +55,18 @@ namespace GeneSys.Simulation.Gpu
         private readonly GraphicsBuffer strikeSeedBuffer;
         private readonly GraphicsBuffer strikeCounterBuffer;
         private readonly uint[] strikeCounterZero = new uint[1];
+        private int strikeEpoch;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct StrikeSeedGpu
+        {
+            public int CellX;
+            public int CellY;
+            public float Charge;
+            public uint Kind;
+        }
+
+        public event Action<StrikeSeedGpu[], int> StrikesReady;
         private readonly GraphicsBuffer organismHistoryBuffer;
         private readonly GraphicsBuffer organismHistoryCounterBuffer;
         private readonly GraphicsBuffer sensorSlotBuffer;
@@ -1264,6 +1276,30 @@ namespace GeneSys.Simulation.Gpu
             BindStormWalkTextures(walk);
             int groups = Mathf.Max(1, Mathf.CeilToInt(MaxStrikeSeeds / 32f));
             storm.Dispatch(walk, groups, 1, 1);
+            RequestStrikeSnapshot();
+        }
+
+        private void RequestStrikeSnapshot()
+        {
+            if (StrikesReady == null || strikeCounterBuffer == null || strikeSeedBuffer == null) return;
+            int epoch = strikeEpoch;
+            AsyncGPUReadback.Request(strikeCounterBuffer, countRequest =>
+            {
+                if (epoch != strikeEpoch || countRequest.hasError || StrikesReady == null) return;
+                var countData = countRequest.GetData<uint>();
+                int count = countData.Length > 0 ? (int)Math.Min(countData[0], (uint)MaxStrikeSeeds) : 0;
+                if (count <= 0) return;
+                AsyncGPUReadback.Request(strikeSeedBuffer, count * StrikeSeedStride, 0, seedRequest =>
+                {
+                    if (epoch != strikeEpoch || seedRequest.hasError || StrikesReady == null) return;
+                    var data = seedRequest.GetData<StrikeSeedGpu>();
+                    int n = Math.Min(count, data.Length);
+                    if (n <= 0) return;
+                    var copy = new StrikeSeedGpu[n];
+                    for (int i = 0; i < n; i++) copy[i] = data[i];
+                    StrikesReady.Invoke(copy, n);
+                });
+            });
         }
 
         private void DispatchStormInPlace(ComputeShader shader, int kernel, float deltaTime)
@@ -1709,6 +1745,8 @@ namespace GeneSys.Simulation.Gpu
 
         public void Dispose()
         {
+            strikeEpoch++;
+            StrikesReady = null;
             materialBuffer?.Dispose();
             brushBuffer?.Dispose();
             strikeSeedBuffer?.Dispose();

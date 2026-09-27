@@ -406,6 +406,7 @@ MonoBehaviour:
   geodynamics: {fileID: 7200000, guid: 6d1e8c4a2f5b7093e0a7c1d8b4f26350, type: 3}
   margolusTransport: {fileID: 7200000, guid: 7f6b8a23e5c94e7d91a2c6e9e3f7b0a5, type: 3}
   sensorArrays: {fileID: 7200000, guid: e4a7c9d12f5b4e6380a6c2d8f1b34759, type: 3}
+  viewAmbience: {fileID: 7200000, guid: c3a91e70b4d64f2e8a5c1d7b6e0f3948, type: 3}
   display: {fileID: 1464804660}
   visuals: {fileID: 1393613925}
   ui: {fileID: 1401685496}

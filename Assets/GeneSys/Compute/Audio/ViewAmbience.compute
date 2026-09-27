@@ -1,0 +1,199 @@
+#pragma kernel ReduceView
+#pragma target 4.5
+
+// Slot order matches GeneSys.Audio.ViewAmbienceLayout.
+Texture2D<uint> _MaterialRead;
+Texture2D<float4> _StateRead;
+Texture2D<float2> _FlowRead;
+Texture2D<float4> _CombustionRead;
+RWStructuredBuffer<uint> _Accum;
+
+int2 _GridSize;
+int _Stride;
+float _AtmosphereStart;
+float _VisualCoreRadius;
+float _VisualCoreSquash;
+float _CloudRetain;
+float4x4 _ObjectToCamera;
+float2 _ViewHalf;
+
+float DisplayRadius(float simRadius)
+{
+    float core = max(1e-5, _VisualCoreRadius);
+    if (simRadius >= core)
+    {
+        float displayedCore = core * _VisualCoreSquash;
+        return lerp(displayedCore, 1.0, (simRadius - core) / max(1e-5, 1.0 - core));
+    }
+    return simRadius * _VisualCoreSquash;
+}
+
+groupshared uint g[576];
+
+[numthreads(8, 8, 1)]
+void ReduceView(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex)
+{
+    uint samples = 0;
+    uint atmo = 0;
+    uint windMilli = 0;
+    uint rainMilli = 0;
+    uint fireMilli = 0;
+    uint tephra = 0;
+    uint surface = 0;
+    uint surfaceWater = 0;
+    uint magma = 0;
+
+    int stride = max(_Stride, 1);
+    int cellX = (int)id.x * stride;
+    int cellY = (int)id.y * stride;
+    if (cellX < _GridSize.x && cellY < _GridSize.y)
+    {
+        float theta = ((float)cellX + 0.5) / (float)max(_GridSize.x, 1) * 6.28318530718;
+        float simR = ((float)cellY + 0.5) / (float)max(_GridSize.y, 1);
+        float displayR = DisplayRadius(simR);
+        float2 p = float2(cos(theta), sin(theta)) * displayR;
+        float4 cam = mul(_ObjectToCamera, float4(p.x * 0.5, p.y * 0.5, 0.0, 1.0));
+        bool inView = cam.z < 0.1 && abs(cam.x) <= _ViewHalf.x && abs(cam.y) <= _ViewHalf.y;
+        if (inView)
+        {
+            int3 coord = int3(cellX, cellY, 0);
+            uint material = _MaterialRead.Load(coord);
+            float4 state = _StateRead.Load(coord);
+            float2 flow = _FlowRead.Load(coord);
+            float4 combustion = _CombustionRead.Load(coord);
+            samples = 1;
+            fireMilli = (uint)round(saturate(combustion.y) * 1000.0);
+            if (material == 6u)
+                magma = 1;
+
+            bool atmosphere = material == 1u || material == 11u || (material == 0u && simR >= _AtmosphereStart);
+            if (atmosphere)
+            {
+                atmo = 1;
+                float speed = length(flow);
+                windMilli = (uint)round(min(speed, 8.0) * 1000.0);
+                float rain = 0.0;
+                if (material == 9u || material == 10u)
+                    rain = 1.0;
+                else if (material == 1u || material == 11u)
+                {
+                    float deck = max(0.05, max(0.01, _CloudRetain) * 0.5);
+                    if (state.z > deck)
+                        rain = saturate((state.z - deck) * 1.5);
+                }
+                rainMilli = (uint)round(rain * 1000.0);
+                if (material == 12u || material == 16u)
+                    tephra = 1;
+            }
+            else
+            {
+                surface = 1;
+                if (material == 9u || material == 10u || state.z > 0.15)
+                    surfaceWater = 1;
+            }
+        }
+    }
+
+    g[gi] = samples;
+    g[64 + gi] = atmo;
+    g[128 + gi] = windMilli;
+    g[192 + gi] = rainMilli;
+    g[256 + gi] = fireMilli;
+    g[320 + gi] = tephra;
+    g[384 + gi] = surface;
+    g[448 + gi] = surfaceWater;
+    g[512 + gi] = magma;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (gi < 32)
+    {
+        g[gi] += g[32 + gi];
+        g[64 + gi] += g[96 + gi];
+        g[128 + gi] += g[160 + gi];
+        g[192 + gi] += g[224 + gi];
+        g[256 + gi] += g[288 + gi];
+        g[320 + gi] += g[352 + gi];
+        g[384 + gi] += g[416 + gi];
+        g[448 + gi] += g[480 + gi];
+        g[512 + gi] += g[544 + gi];
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (gi < 16)
+    {
+        g[gi] += g[16 + gi];
+        g[64 + gi] += g[80 + gi];
+        g[128 + gi] += g[144 + gi];
+        g[192 + gi] += g[208 + gi];
+        g[256 + gi] += g[272 + gi];
+        g[320 + gi] += g[336 + gi];
+        g[384 + gi] += g[400 + gi];
+        g[448 + gi] += g[464 + gi];
+        g[512 + gi] += g[528 + gi];
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (gi < 8)
+    {
+        g[gi] += g[8 + gi];
+        g[64 + gi] += g[72 + gi];
+        g[128 + gi] += g[136 + gi];
+        g[192 + gi] += g[200 + gi];
+        g[256 + gi] += g[264 + gi];
+        g[320 + gi] += g[328 + gi];
+        g[384 + gi] += g[392 + gi];
+        g[448 + gi] += g[456 + gi];
+        g[512 + gi] += g[520 + gi];
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (gi < 4)
+    {
+        g[gi] += g[4 + gi];
+        g[64 + gi] += g[68 + gi];
+        g[128 + gi] += g[132 + gi];
+        g[192 + gi] += g[196 + gi];
+        g[256 + gi] += g[260 + gi];
+        g[320 + gi] += g[324 + gi];
+        g[384 + gi] += g[388 + gi];
+        g[448 + gi] += g[452 + gi];
+        g[512 + gi] += g[516 + gi];
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (gi < 2)
+    {
+        g[gi] += g[2 + gi];
+        g[64 + gi] += g[66 + gi];
+        g[128 + gi] += g[130 + gi];
+        g[192 + gi] += g[194 + gi];
+        g[256 + gi] += g[258 + gi];
+        g[320 + gi] += g[322 + gi];
+        g[384 + gi] += g[386 + gi];
+        g[448 + gi] += g[450 + gi];
+        g[512 + gi] += g[514 + gi];
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (gi < 1)
+    {
+        g[gi] += g[1 + gi];
+        g[64 + gi] += g[65 + gi];
+        g[128 + gi] += g[129 + gi];
+        g[192 + gi] += g[193 + gi];
+        g[256 + gi] += g[257 + gi];
+        g[320 + gi] += g[321 + gi];
+        g[384 + gi] += g[385 + gi];
+        g[448 + gi] += g[449 + gi];
+        g[512 + gi] += g[513 + gi];
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    if (gi == 0)
+    {
+        if (g[0] > 0) InterlockedAdd(_Accum[0], g[0]);
+        if (g[64] > 0) InterlockedAdd(_Accum[1], g[64]);
+        if (g[128] > 0) InterlockedAdd(_Accum[2], g[128]);
+        if (g[192] > 0) InterlockedAdd(_Accum[3], g[192]);
+        if (g[256] > 0) InterlockedAdd(_Accum[4], g[256]);
+        if (g[320] > 0) InterlockedAdd(_Accum[5], g[320]);
+        if (g[384] > 0) InterlockedAdd(_Accum[6], g[384]);
+        if (g[448] > 0) InterlockedAdd(_Accum[7], g[448]);
+        if (g[512] > 0) InterlockedAdd(_Accum[8], g[512]);
+    }
+}

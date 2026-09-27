@@ -65,6 +65,7 @@ namespace GeneSys.Rendering
         /// <summary>When set, returns true if world zoom/pan should ignore the pointer (e.g. over UI).</summary>
         public Func<Vector2, bool> ShouldBlockWorldInput { get; set; }
         public bool CinematicCameraActive { get; set; }
+        public bool IsPlanetVisible => planetVisible;
 
         public void Initialize(SimulationResources state, MaterialRegistry registry, PolarGridDefinition definition)
             => Initialize(state, registry, definition, null, null);
