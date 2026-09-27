@@ -55,6 +55,11 @@ namespace GeneSys.UI
             { "Probe", "probe" }
         };
 
+        private static readonly string[] SettingsPageNames =
+        {
+            "world", "geology", "hydrology", "weather", "performance", "ecology", "combustion", "storm", "probe", "ai"
+        };
+
         private static readonly string[] EcologySubTabs =
         {
             "mycology", "algae", "cricket", "wasp", "grass", "tree", "detritus"
@@ -156,6 +161,15 @@ namespace GeneSys.UI
         private VisualElement historyBody;
         private ScrollView historyLog;
         private VisualElement settingsOverlay;
+        private Label settingsDialogTitle;
+        private Button settingsModeToggle;
+        private EventCallback<ClickEvent> gameSettingsModeClicked;
+        private bool gameSettingsMode;
+        private string activeSettingsTab = "world";
+        private Action<string> showSettingsPage;
+        private SimulationConfig gameSettingsDefaults;
+        private readonly List<Slider> gameSettingsSliders = new();
+        private readonly Dictionary<string, float> gameAxisValues = new();
         private Button followCameraButton;
         private Button globeCameraButton;
         private Button lifeSeedButton;
@@ -213,6 +227,12 @@ namespace GeneSys.UI
         private Button toolsLoadButton;
         private Button worldLoadButton;
         private bool worldOpsInteractable = true;
+
+        private void OnDestroy()
+        {
+            if (gameSettingsDefaults != null)
+                Destroy(gameSettingsDefaults);
+        }
 
         public void Initialize(SimulationHost simulationHost, PlanetoidDisplayRenderer renderer, SimulationTools simulationTools)
         {
@@ -319,6 +339,8 @@ namespace GeneSys.UI
             SetupTabs(root);
             SetupEcologySubTabs(root);
             BuildSettings(root);
+            BuildGameSettings(root);
+            ApplySettingsDialogMode(root);
             SetupProbeHud(root);
             SetupAiCrew(root);
             SetupInspectPanels();
@@ -402,6 +424,12 @@ namespace GeneSys.UI
                 settingsOverlay.focusable = true;
             root.Q<Button>("settings-open")?.RegisterCallback<ClickEvent>(_ => ShowSettingsModal());
             root.Q<Button>("settings-close")?.RegisterCallback<ClickEvent>(_ => HideSettingsModal());
+            settingsDialogTitle = root.Q<Label>("settings-dialog-title");
+            settingsModeToggle = root.Q<Button>("settings-mode-toggle");
+            if (settingsModeToggle != null && gameSettingsModeClicked != null)
+                settingsModeToggle.UnregisterCallback(gameSettingsModeClicked);
+            gameSettingsModeClicked = _ => ToggleGameSettingsMode(root);
+            settingsModeToggle?.RegisterCallback(gameSettingsModeClicked);
             settingsOverlay?.RegisterCallback<ClickEvent>(evt =>
             {
                 if (evt.target == settingsOverlay)
@@ -441,6 +469,119 @@ namespace GeneSys.UI
         {
             HideSettingTooltip();
             settingsOverlay?.AddToClassList("hidden");
+        }
+
+        private void ToggleGameSettingsMode(VisualElement root)
+        {
+            HideSettingTooltip();
+            bool returnToSimulationSettings = gameSettingsMode;
+            gameSettingsMode = !gameSettingsMode;
+            if (returnToSimulationSettings)
+                BuildSettings(root);
+            ApplySettingsDialogMode(root);
+        }
+
+        private void ApplySettingsDialogMode(VisualElement root)
+        {
+            if (settingsDialogTitle != null)
+                settingsDialogTitle.text = gameSettingsMode ? "Game Settings" : "Simulation Settings";
+            if (settingsModeToggle != null)
+            {
+                settingsModeToggle.text = gameSettingsMode ? "<" : ">";
+                settingsModeToggle.tooltip = gameSettingsMode ? "Simulation Settings" : "Game Settings";
+            }
+
+            VisualElement tabRow = root.Q("settings-tab-row");
+            VisualElement tabRowSecondary = root.Q("settings-tab-row-secondary");
+            if (tabRow != null)
+                tabRow.style.display = gameSettingsMode ? DisplayStyle.None : DisplayStyle.Flex;
+            if (tabRowSecondary != null)
+                tabRowSecondary.style.display = gameSettingsMode ? DisplayStyle.None : DisplayStyle.Flex;
+
+            VisualElement gamePage = root.Q("page-game-settings");
+            if (gamePage != null)
+                gamePage.style.display = gameSettingsMode ? DisplayStyle.Flex : DisplayStyle.None;
+
+            if (gameSettingsMode)
+            {
+                foreach (string pageName in SettingsPageNames)
+                {
+                    VisualElement page = root.Q($"page-{pageName}");
+                    if (page != null) page.style.display = DisplayStyle.None;
+                }
+                return;
+            }
+
+            showSettingsPage?.Invoke(activeSettingsTab);
+        }
+
+        private void BuildGameSettings(VisualElement root)
+        {
+            ScrollView container = root.Q<ScrollView>("settings-game");
+            if (container == null) return;
+            container.Clear();
+            container.verticalScroller.valueChanged -= OnSettingsScrolled;
+            container.verticalScroller.valueChanged += OnSettingsScrolled;
+            gameSettingsSliders.Clear();
+            SimulationConfig defaults = GameSettingsDefaults();
+            foreach (GameSettingsAxis axis in GameSettingsAxes.All)
+            {
+                GameSettingsAxis captured = axis;
+                var block = new VisualElement();
+                block.AddToClassList("game-axis");
+                var title = new Label(axis.Title);
+                title.AddToClassList("game-axis-title");
+                var row = new VisualElement();
+                row.AddToClassList("game-axis-row");
+                var low = new Label(axis.LowLabel);
+                low.AddToClassList("game-axis-end");
+                low.AddToClassList("game-axis-end-low");
+                var high = new Label(axis.HighLabel);
+                high.AddToClassList("game-axis-end");
+                high.AddToClassList("game-axis-end-high");
+                float value = gameAxisValues.TryGetValue(axis.Id, out float stored) ? stored : 0.5f;
+                var slider = new Slider(0f, 1f, SliderDirection.Horizontal)
+                {
+                    name = "game-axis-" + axis.Id,
+                    showInputField = false
+                };
+                slider.AddToClassList("game-axis-slider");
+                slider.labelElement.style.display = DisplayStyle.None;
+                slider.SetValueWithoutNotify(value);
+                slider.RegisterValueChangedCallback(evt =>
+                {
+                    gameAxisValues[captured.Id] = evt.newValue;
+                    if (host?.Config == null) return;
+                    GameSettingsAxes.Apply(host.Config, captured, evt.newValue, defaults);
+                });
+                BindSettingTooltip(slider, axis.Title, axis.Tooltip);
+                BindSettingTooltip(title, axis.Title, axis.Tooltip);
+                row.Add(low);
+                row.Add(slider);
+                row.Add(high);
+                block.Add(title);
+                block.Add(row);
+                container.Add(block);
+                gameSettingsSliders.Add(slider);
+            }
+        }
+
+        private SimulationConfig GameSettingsDefaults()
+        {
+            if (gameSettingsDefaults == null)
+            {
+                gameSettingsDefaults = ScriptableObject.CreateInstance<SimulationConfig>();
+                gameSettingsDefaults.hideFlags = HideFlags.HideAndDontSave;
+            }
+            return gameSettingsDefaults;
+        }
+
+        private void ResetGameSettingsSliders()
+        {
+            foreach (GameSettingsAxis axis in GameSettingsAxes.All)
+                gameAxisValues[axis.Id] = 0.5f;
+            for (int i = 0; i < gameSettingsSliders.Count; i++)
+                gameSettingsSliders[i].SetValueWithoutNotify(0.5f);
         }
 
         private void ToggleDrawer(Button header, VisualElement body, VisualElement drawer, string title)
@@ -584,11 +725,12 @@ namespace GeneSys.UI
 
         private void SetupTabs(VisualElement root)
         {
-            string[] names = { "world", "geology", "hydrology", "weather", "performance", "ecology", "combustion", "storm", "probe", "ai" };
             void Show(string name)
             {
+                activeSettingsTab = name;
+                if (gameSettingsMode) return;
                 HideSettingTooltip();
-                foreach (string pageName in names)
+                foreach (string pageName in SettingsPageNames)
                 {
                     VisualElement page = root.Q($"page-{pageName}");
                     if (page != null) page.style.display = pageName == name ? DisplayStyle.Flex : DisplayStyle.None;
@@ -597,7 +739,8 @@ namespace GeneSys.UI
                 }
             }
 
-            foreach (string name in names)
+            showSettingsPage = Show;
+            foreach (string name in SettingsPageNames)
             {
                 Button button = root.Q<Button>($"tab-{name}");
                 string captured = name;
@@ -942,6 +1085,7 @@ namespace GeneSys.UI
             }
 
             host.ApplyLoadedSettings();
+            ResetGameSettingsSliders();
             HidePresetDialog();
             HideSettingTooltip();
             RefreshBoundControls(root);
@@ -1130,6 +1274,7 @@ namespace GeneSys.UI
         private void RestoreDefaultSettings(VisualElement root)
         {
             host.RestoreDefaultSettings();
+            ResetGameSettingsSliders();
             RefreshBoundControls(root);
             BuildSettings(root);
             RefreshPlayLabel();

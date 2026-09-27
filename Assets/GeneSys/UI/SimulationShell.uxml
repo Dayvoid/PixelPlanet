@@ -117,18 +117,19 @@
         <ui:VisualElement name="settings-overlay" class="settings-overlay hidden" picking-mode="Position">
             <ui:VisualElement name="settings-dialog" class="settings-dialog">
                 <ui:VisualElement class="settings-dialog-header">
-                    <ui:Label text="Simulation Settings" class="section-title settings-dialog-title" />
+                    <ui:Label name="settings-dialog-title" text="Simulation Settings" class="section-title settings-dialog-title" />
+                    <ui:Button name="settings-mode-toggle" text=">" class="settings-mode-button" tooltip="Game Settings" />
                     <ui:Button name="settings-close" text="Close" class="settings-close-button" />
                 </ui:VisualElement>
                 <ui:VisualElement name="settings-body" class="settings-dialog-body">
-                    <ui:VisualElement class="tab-row">
+                    <ui:VisualElement name="settings-tab-row" class="tab-row">
                         <ui:Button name="tab-world" text="World" class="tab-button tab-button--active" />
                         <ui:Button name="tab-geology" text="Geo" class="tab-button" />
                         <ui:Button name="tab-hydrology" text="Water" class="tab-button" />
                         <ui:Button name="tab-weather" text="Weather" class="tab-button" />
                         <ui:Button name="tab-performance" text="Perf" class="tab-button" />
                     </ui:VisualElement>
-                    <ui:VisualElement class="tab-row tab-row-secondary">
+                    <ui:VisualElement name="settings-tab-row-secondary" class="tab-row tab-row-secondary">
                         <ui:Button name="tab-ecology" text="Ecology" class="tab-button" />
                         <ui:Button name="tab-combustion" text="Fire" class="tab-button" />
                         <ui:Button name="tab-storm" text="Storm" class="tab-button" />
@@ -234,6 +235,11 @@
                         </ui:VisualElement>
                         <ui:Button name="restore-defaults" text="Restore Default Settings" />
                         <ui:Label text="Restores all simulation settings to the current defaults and regenerates the world. Load the defaultsOLD1 preset to recover the previous default set. Use the Validation grid preset for fast iteration." class="help" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement name="page-game-settings" class="settings-page hidden">
+                        <ui:Label text="The center of each slider is the current default balance. Dragging rewrites that theme's simulation settings. Oceans, ice, faults, limestone, and relief apply the next time you regenerate. Wind, temperature, volcanism, and erosion change while the world is running." class="help game-settings-help" />
+                        <ui:ScrollView name="settings-game" class="settings-scroll" />
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
