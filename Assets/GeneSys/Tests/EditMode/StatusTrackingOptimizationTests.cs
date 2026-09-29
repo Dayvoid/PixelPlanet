@@ -1,3 +1,4 @@
+using GeneSys.Materials;
 using GeneSys.Simulation;
 using GeneSys.Simulation.Geodynamics;
 using GeneSys.Validation;
@@ -148,6 +149,76 @@ namespace GeneSys.Tests
                 state.Dispose();
                 events.Dispose();
             }
+        }
+
+        [Test]
+        public void StatusAirTemperatureIgnoresInteriorAndOuterRows()
+        {
+            const int width = 8;
+            const int height = 32;
+            const float atmosphereStart = 0.5f;
+            const int stride = SimulationMetrics.DefaultStatusSampleStride;
+            int skip = SimulationMetrics.StatusAirTemperatureOuterSkipRows(height, atmosphereStart);
+            Assert.That(skip, Is.EqualTo(4));
+            Assert.That(SimulationMetrics.StatusAirTemperatureOuterSkipRows(512, 0.9f), Is.EqualTo(13));
+
+            var materials = new uint[width * height];
+            var temperatures = new float[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                bool outer = y >= height - skip;
+                for (int x = 0; x < width; x++)
+                {
+                    int index = y * width + x;
+                    if (outer)
+                    {
+                        materials[index] = MaterialIds.Air;
+                        temperatures[index] = -80f;
+                    }
+                    else if (y < 8)
+                    {
+                        materials[index] = MaterialIds.Rock;
+                        temperatures[index] = 1500f;
+                    }
+                    else
+                    {
+                        materials[index] = MaterialIds.Air;
+                        temperatures[index] = 20f;
+                    }
+                }
+            }
+
+            float mean = SimulationMetrics.MeanStatusAirTemperature(
+                width, height, materials, temperatures, stride, atmosphereStart);
+            Assert.That(mean, Is.EqualTo(20f).Within(0.01f));
+        }
+
+        [Test]
+        public void StatusAirTemperatureIsZeroWhenOnlyOuterAirRemains()
+        {
+            const int width = 8;
+            const int height = 32;
+            const float atmosphereStart = 0.5f;
+            const int stride = SimulationMetrics.DefaultStatusSampleStride;
+            int skip = SimulationMetrics.StatusAirTemperatureOuterSkipRows(height, atmosphereStart);
+            Assert.That(skip, Is.GreaterThanOrEqualTo(2));
+
+            var materials = new uint[width * height];
+            var temperatures = new float[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                bool outer = y >= height - skip;
+                for (int x = 0; x < width; x++)
+                {
+                    int index = y * width + x;
+                    materials[index] = outer ? MaterialIds.Air : MaterialIds.Rock;
+                    temperatures[index] = outer ? -80f : 1500f;
+                }
+            }
+
+            float mean = SimulationMetrics.MeanStatusAirTemperature(
+                width, height, materials, temperatures, stride, atmosphereStart);
+            Assert.That(mean, Is.EqualTo(0f).Within(0.01f));
         }
 
         [Test]

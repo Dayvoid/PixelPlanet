@@ -217,6 +217,101 @@ namespace GeneSys.Validation
     public static class SimulationMetrics
     {
         public const int DefaultStatusSampleStride = 4;
+        public const float StatusAirTemperatureOuterShellFraction = 0.25f;
+
+        // Outer quarter of the nominal atmosphere shell, at least two rows, leaving at least half the column.
+        public static int StatusAirTemperatureOuterSkipRows(int radialResolution, float atmosphereStartRadius)
+        {
+            int height = Math.Max(1, radialResolution);
+            float shellRows = (1f - Mathf.Clamp01(atmosphereStartRadius)) * height;
+            int skip = Math.Max(2, (int)Math.Round(shellRows * StatusAirTemperatureOuterShellFraction, MidpointRounding.AwayFromZero));
+            return Math.Min(skip, height / 2);
+        }
+
+        // Stride-sampled Air cells only, excluding the outermost radial rows. Returns 0 when none match.
+        public static float MeanStatusAirTemperature(
+            int width,
+            int height,
+            uint[] materials,
+            float[] temperatures,
+            int sampleStride,
+            float atmosphereStartRadius)
+        {
+            if (materials == null || temperatures == null || width <= 0 || height <= 0)
+                return 0f;
+
+            sampleStride = Math.Max(1, sampleStride);
+            int sampledX = (width + sampleStride - 1) / sampleStride;
+            int sampledY = (height + sampleStride - 1) / sampleStride;
+            var sampledMaterials = new uint[sampledX * sampledY];
+            var sampledTemperatures = new float[sampledX * sampledY];
+            int cellCount = Math.Min(materials.Length, temperatures.Length);
+            int sampleIndex = 0;
+            for (int y = 0; y < height; y += sampleStride)
+            {
+                for (int x = 0; x < width; x += sampleStride)
+                {
+                    int idx = y * width + x;
+                    if (idx >= 0 && idx < cellCount)
+                    {
+                        sampledMaterials[sampleIndex] = materials[idx];
+                        sampledTemperatures[sampleIndex] = temperatures[idx];
+                    }
+                    else
+                    {
+                        sampledMaterials[sampleIndex] = MaterialIds.Void;
+                        sampledTemperatures[sampleIndex] = float.NaN;
+                    }
+                    sampleIndex++;
+                }
+            }
+
+            return MeanSampledStatusAirTemperature(
+                width,
+                height,
+                sampleStride,
+                StatusAirTemperatureOuterSkipRows(height, atmosphereStartRadius),
+                sampledMaterials,
+                sampledTemperatures);
+        }
+
+        static float MeanSampledStatusAirTemperature(
+            int width,
+            int height,
+            int sampleStride,
+            int outerSkipRows,
+            uint[] sampledMaterials,
+            float[] sampledTemperatures)
+        {
+            if (sampledMaterials == null || sampledTemperatures == null || width <= 0 || height <= 0)
+                return 0f;
+
+            sampleStride = Math.Max(1, sampleStride);
+            int yCutoff = height - Math.Max(0, outerSkipRows);
+            int count = Math.Min(sampledMaterials.Length, sampledTemperatures.Length);
+            double sum = 0d;
+            int n = 0;
+            int i = 0;
+            for (int y = 0; y < height && i < count; y += sampleStride)
+            {
+                bool includeRow = y < yCutoff;
+                for (int x = 0; x < width && i < count; x += sampleStride)
+                {
+                    if (includeRow && sampledMaterials[i] == MaterialIds.Air)
+                    {
+                        float temperature = sampledTemperatures[i];
+                        if (float.IsFinite(temperature))
+                        {
+                            sum += temperature;
+                            n++;
+                        }
+                    }
+                    i++;
+                }
+            }
+
+            return n > 0 ? (float)(sum / n) : 0f;
+        }
 
         public static void MeasureStatusSampledAsync(SimulationHost host, Action<SimulationStatusSnapshot> completed, int sampleStride = DefaultStatusSampleStride)
         {
@@ -271,6 +366,25 @@ namespace GeneSys.Validation
             if (hasGeoStats) pendingRequests++;
 
             bool failed = false;
+            int statusSampleStride = sampleStride;
+            int sampledX = (width + statusSampleStride - 1) / statusSampleStride;
+            int sampledY = (height + statusSampleStride - 1) / statusSampleStride;
+            int statusSampleCount = sampledX * sampledY;
+            int outerSkipRows = StatusAirTemperatureOuterSkipRows(height, grid.atmosphereStartRadius);
+            uint[] sampledAirMaterials = null;
+            float[] sampledAirTemperatures = null;
+            bool statusVaporReady = false;
+            float statusMeanVapor = 0f;
+
+            void PublishStatusAtmosphere()
+            {
+                if (failed || sampledAirMaterials == null || sampledAirTemperatures == null)
+                    return;
+                snapshot.MeanTemperature = MeanSampledStatusAirTemperature(
+                    width, height, statusSampleStride, outerSkipRows, sampledAirMaterials, sampledAirTemperatures);
+                if (statusVaporReady)
+                    snapshot.MeanRelativeHumidity = RelativeHumidity(statusMeanVapor, snapshot.MeanTemperature, vaporScale);
+            }
 
             void CheckDone()
             {
@@ -371,6 +485,20 @@ namespace GeneSys.Validation
                     snapshot.InteriorMagmaCount = interiorMagma;
                     snapshot.SurfaceMagmaCount = surfaceMagma;
 
+                    var sampledMaterials = new uint[statusSampleCount];
+                    int sampleIndex = 0;
+                    for (int y = 0; y < height; y += statusSampleStride)
+                    {
+                        for (int x = 0; x < width; x += statusSampleStride)
+                        {
+                            int idx = y * width + x;
+                            sampledMaterials[sampleIndex] = idx >= 0 && idx < cellCount ? materials[idx] : MaterialIds.Void;
+                            sampleIndex++;
+                        }
+                    }
+                    sampledAirMaterials = sampledMaterials;
+                    PublishStatusAtmosphere();
+
                     CheckDone();
                 });
             }
@@ -385,7 +513,6 @@ namespace GeneSys.Validation
                     NativeArray<Vector4> states = req.GetData<Vector4>();
                     int cellCount = states.Length;
                     int areaFactor = sampleStride * sampleStride;
-                    double tempSum = 0d;
                     double presSum = 0d;
                     double moistureSum = 0d;
                     double surfWaterSum = 0d;
@@ -394,6 +521,8 @@ namespace GeneSys.Validation
                     int cloudCells = 0;
                     int sampledCount = 0;
                     float peakTemperature = float.NegativeInfinity;
+                    var sampledTemperatures = new float[statusSampleCount];
+                    int sampleIndex = 0;
 
                     float atmoStart = grid.atmosphereStartRadius;
                     for (int y = 0; y < height; y += sampleStride)
@@ -403,29 +532,34 @@ namespace GeneSys.Validation
                         for (int x = 0; x < width; x += sampleStride)
                         {
                             int idx = y * width + x;
-                            if (idx >= cellCount) continue;
-                            Vector4 s = states[idx];
-                            tempSum += s.x;
-                            peakTemperature = Mathf.Max(peakTemperature, s.x);
-                            presSum += s.y;
-                            moistureSum += Math.Max(0f, s.z);
-                            if (isAtmo)
-                                cloudMassSum += Math.Max(0d, s.z);
-                            else
-                                surfWaterSum += Math.Max(0d, s.z);
-                            sampledCount++;
-
-                            if (isAtmo)
+                            float temperature = float.NaN;
+                            if (idx < cellCount)
                             {
-                                atmoCells++;
-                                if (s.z > 0.05f) cloudCells++;
+                                Vector4 s = states[idx];
+                                temperature = s.x;
+                                peakTemperature = Mathf.Max(peakTemperature, s.x);
+                                presSum += s.y;
+                                moistureSum += Math.Max(0f, s.z);
+                                if (isAtmo)
+                                    cloudMassSum += Math.Max(0d, s.z);
+                                else
+                                    surfWaterSum += Math.Max(0d, s.z);
+                                sampledCount++;
+
+                                if (isAtmo)
+                                {
+                                    atmoCells++;
+                                    if (s.z > 0.05f) cloudCells++;
+                                }
                             }
+                            sampledTemperatures[sampleIndex] = temperature;
+                            sampleIndex++;
                         }
                     }
 
+                    sampledAirTemperatures = sampledTemperatures;
                     if (sampledCount > 0)
                     {
-                        snapshot.MeanTemperature = (float)(tempSum / sampledCount);
                         snapshot.MeanPressure = (float)(presSum / sampledCount);
                         snapshot.MeanMoisture = (float)(moistureSum / sampledCount);
                     }
@@ -435,6 +569,7 @@ namespace GeneSys.Validation
                     if (float.IsFinite(peakTemperature))
                         snapshot.PeakTemperature = peakTemperature;
 
+                    PublishStatusAtmosphere();
                     CheckDone();
                 });
             }
@@ -477,8 +612,9 @@ namespace GeneSys.Validation
 
                     snapshot.GroundwaterMass = groundSum * areaFactor;
                     snapshot.VaporMass = vaporSum * areaFactor;
-                    float meanVapor = atmoCells > 0 ? (float)(atmoVaporSum / atmoCells) : 0f;
-                    snapshot.MeanRelativeHumidity = RelativeHumidity(meanVapor, snapshot.MeanTemperature, vaporScale);
+                    statusMeanVapor = atmoCells > 0 ? (float)(atmoVaporSum / atmoCells) : 0f;
+                    statusVaporReady = true;
+                    PublishStatusAtmosphere();
 
                     CheckDone();
                 });
